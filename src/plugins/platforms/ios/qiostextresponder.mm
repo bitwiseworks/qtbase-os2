@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -92,12 +98,12 @@
     return [QUITextPosition positionWithIndex:(self.range.location + self.range.length)];
 }
 
-- (NSRange) range
+- (NSRange)range
 {
     return _range;
 }
 
--(BOOL)isEmpty
+- (BOOL)isEmpty
 {
     return (self.range.length == 0);
 }
@@ -111,7 +117,7 @@
 
 @implementation WrapperView
 
--(id)initWithView:(UIView *)view
+- (id)initWithView:(UIView *)view
 {
     if (self = [self init]) {
         [self addSubview:view];
@@ -143,7 +149,7 @@
 // retained, we ensure that all messages sent to the view during
 // its lifetime in a window hierarcy will be able to traverse the
 // responder chain.
--(void)willMoveToWindow:(UIWindow *)window
+- (void)willMoveToWindow:(UIWindow *)window
 {
     if (window)
         [[self nextResponder] retain];
@@ -157,7 +163,7 @@
 
 @implementation QIOSTextInputResponder
 
-- (id)initWithInputContext:(QIOSInputContext *)inputContext
+- (id)initWithInputContext:(QT_PREPEND_NAMESPACE(QIOSInputContext) *)inputContext
 {
     if (!(self = [self init]))
         return self;
@@ -170,9 +176,31 @@
     QVariantMap platformData = m_configuredImeState->value(Qt::ImPlatformData).toMap();
     Qt::InputMethodHints hints = Qt::InputMethodHints(m_configuredImeState->value(Qt::ImHints).toUInt());
 
-    self.returnKeyType = platformData.value(kImePlatformDataReturnKeyType).isValid() ?
-        UIReturnKeyType(platformData.value(kImePlatformDataReturnKeyType).toInt()) :
-        (hints & Qt::ImhMultiLine) ? UIReturnKeyDefault : UIReturnKeyDone;
+    Qt::EnterKeyType enterKeyType = Qt::EnterKeyType(m_configuredImeState->value(Qt::ImEnterKeyType).toUInt());
+
+    switch (enterKeyType) {
+    case Qt::EnterKeyReturn:
+        self.returnKeyType = UIReturnKeyDefault;
+        break;
+    case Qt::EnterKeyDone:
+        self.returnKeyType = UIReturnKeyDone;
+        break;
+    case Qt::EnterKeyGo:
+        self.returnKeyType = UIReturnKeyGo;
+        break;
+    case Qt::EnterKeySend:
+        self.returnKeyType = UIReturnKeySend;
+        break;
+    case Qt::EnterKeySearch:
+        self.returnKeyType = UIReturnKeySearch;
+        break;
+    case Qt::EnterKeyNext:
+        self.returnKeyType = UIReturnKeyNext;
+        break;
+    default:
+        self.returnKeyType = (hints & Qt::ImhMultiLine) ? UIReturnKeyDefault : UIReturnKeyDone;
+        break;
+    }
 
     self.secureTextEntry = BOOL(hints & Qt::ImhHiddenText);
     self.autocorrectionType = (hints & Qt::ImhNoPredictiveText) ?
@@ -209,6 +237,21 @@
     if (UIView *accessoryView = static_cast<UIView *>(platformData.value(kImePlatformDataInputAccessoryView).value<void *>()))
         self.inputAccessoryView = [[[WrapperView alloc] initWithView:accessoryView] autorelease];
 
+#ifndef Q_OS_TVOS
+    if (__builtin_available(iOS 9, *)) {
+        if (platformData.value(kImePlatformDataHideShortcutsBar).toBool()) {
+            // According to the docs, leadingBarButtonGroups/trailingBarButtonGroups should be set to nil to hide the shortcuts bar.
+            // However, starting with iOS 10, the API has been surrounded with NS_ASSUME_NONNULL, which contradicts this and causes
+            // compiler warnings. Still it is the way to go to really hide the space reserved for that.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonnull"
+            self.inputAssistantItem.leadingBarButtonGroups = nil;
+            self.inputAssistantItem.trailingBarButtonGroups = nil;
+#pragma clang diagnostic pop
+        }
+    }
+#endif
+
     self.undoManager.groupsByEvent = NO;
     [self rebuildUndoStack];
 
@@ -233,12 +276,12 @@
         // as well, as the IM state that we were based on may have been invalidated when
         // IM was switched off.
 
-        qImDebug() << "IM was turned on, we need to check hints and platform data as well";
+        qImDebug("IM was turned on, we need to check hints and platform data as well");
         updatedProperties |= (Qt::ImHints | Qt::ImPlatformData);
     }
 
     // Based on what we set up in initWithInputContext above
-    updatedProperties &= (Qt::ImHints | Qt::ImPlatformData);
+    updatedProperties &= (Qt::ImHints | Qt::ImEnterKeyType | Qt::ImPlatformData);
 
     if (!updatedProperties)
         return NO;
@@ -283,7 +326,7 @@
     // Don't allow activation events of the window that we're doing text on behalf on
     // to steal responder.
     if (FirstResponderCandidate::currentCandidate() == [self nextResponder]) {
-        qImDebug() << "not allowing parent window to steal responder";
+        qImDebug("not allowing parent window to steal responder");
         return NO;
     }
 
@@ -296,13 +339,17 @@
     // a regular responder transfer to another window. In the former case, iOS
     // will set the new first-responder to our next-responder, and in the latter
     // case we'll have an active responder candidate.
-    if ([UIResponder currentFirstResponder] == [self nextResponder]) {
+    if (![UIResponder currentFirstResponder] && !FirstResponderCandidate::currentCandidate()) {
+        // No first responder set anymore, sync this with Qt by clearing the
+        // focus object.
+        m_inputContext->clearCurrentFocusObject();
+    } else if ([UIResponder currentFirstResponder] == [self nextResponder]) {
         // We have resigned the keyboard, and transferred first responder back to the parent view
         Q_ASSERT(!FirstResponderCandidate::currentCandidate());
         if ([self currentImeState:Qt::ImEnabled].toBool()) {
             // The current focus object expects text input, but there
             // is no keyboard to get input from. So we clear focus.
-            qImDebug() << "no keyboard available, clearing focus object";
+            qImDebug("no keyboard available, clearing focus object");
             m_inputContext->clearCurrentFocusObject();
         }
     } else {
@@ -310,7 +357,7 @@
         // another QIOSTextResponder was made first-responder, another UIView was
         // made first-responder, or the first-responder was cleared globally. In
         // either of these cases we don't have to do anything.
-        qImDebug() << "lost first responder, but not clearing focus object";
+        qImDebug("lost first responder, but not clearing focus object");
     }
 
     return YES;
@@ -327,6 +374,7 @@
 
 - (void)sendKeyPressRelease:(Qt::Key)key modifiers:(Qt::KeyboardModifiers)modifiers
 {
+    QScopedValueRollback<BOOL> rollback(m_inSendEventToFocusObject, true);
     QWindowSystemInterface::handleKeyEvent(qApp->focusWindow(), QEvent::KeyPress, key, modifiers);
     QWindowSystemInterface::handleKeyEvent(qApp->focusWindow(), QEvent::KeyRelease, key, modifiers);
 }
@@ -339,6 +387,32 @@
     Qt::Key key = Qt::Key(keys & 0x0000FFFF);
     Qt::KeyboardModifiers modifiers = Qt::KeyboardModifiers(keys & 0xFFFF0000);
     [self sendKeyPressRelease:key modifiers:modifiers];
+}
+
+- (BOOL)canPerformAction:(SEL)action withSender:(id)sender
+{
+    bool isEditAction = (action == @selector(cut:)
+        || action == @selector(copy:)
+        || action == @selector(paste:)
+        || action == @selector(delete:)
+        || action == @selector(toggleBoldface:)
+        || action == @selector(toggleItalics:)
+        || action == @selector(toggleUnderline:)
+        || action == @selector(undo)
+        || action == @selector(redo));
+
+    bool isSelectAction = (action == @selector(select:)
+        || action == @selector(selectAll:)
+        || action == @selector(paste:)
+        || action == @selector(undo)
+        || action == @selector(redo));
+
+    const bool unknownAction = !isEditAction && !isSelectAction;
+    const bool hasSelection = ![self selectedTextRange].empty;
+
+    if (unknownAction)
+        return [super canPerformAction:action withSender:sender];
+    return (hasSelection && isEditAction) || (!hasSelection && isSelectAction);
 }
 
 - (void)cut:(id)sender
@@ -357,6 +431,13 @@
 {
     Q_UNUSED(sender);
     [self sendShortcut:QKeySequence::Paste];
+}
+
+- (void)select:(id)sender
+{
+    Q_UNUSED(sender);
+    [self sendShortcut:QKeySequence::MoveToPreviousWord];
+    [self sendShortcut:QKeySequence::SelectNextWord];
 }
 
 - (void)selectAll:(id)sender
@@ -545,19 +626,20 @@
     return m_inputContext->imeState().currentState.value(query);
 }
 
--(id<UITextInputTokenizer>)tokenizer
+- (id<UITextInputTokenizer>)tokenizer
 {
-    return [[[UITextInputStringTokenizer alloc] initWithTextInput:id<UITextInput>(self)] autorelease];
+    return [[[UITextInputStringTokenizer alloc] initWithTextInput:self] autorelease];
 }
 
--(UITextPosition *)beginningOfDocument
+- (UITextPosition *)beginningOfDocument
 {
     return [QUITextPosition positionWithIndex:0];
 }
 
--(UITextPosition *)endOfDocument
+- (UITextPosition *)endOfDocument
 {
-    int endPosition = [self currentImeState:Qt::ImSurroundingText].toString().length();
+    QString surroundingText = [self currentImeState:Qt::ImSurroundingText].toString();
+    int endPosition = surroundingText.length() + m_markedText.length();
     return [QUITextPosition positionWithIndex:endPosition];
 }
 
@@ -588,9 +670,18 @@
 
 - (NSString *)textInRange:(UITextRange *)range
 {
+    QString text = [self currentImeState:Qt::ImSurroundingText].toString();
+    if (!m_markedText.isEmpty()) {
+        // [UITextInput textInRange] is sparsely documented, but it turns out that unconfirmed
+        // marked text should be seen as a part of the text document. This is different from
+        // ImSurroundingText, which excludes it.
+        int cursorPos = [self currentImeState:Qt::ImCursorPosition].toInt();
+        text = text.left(cursorPos) + m_markedText + text.mid(cursorPos);
+    }
+
     int s = static_cast<QUITextPosition *>([range start]).index;
     int e = static_cast<QUITextPosition *>([range end]).index;
-    return [self currentImeState:Qt::ImSurroundingText].toString().mid(s, e - s).toNSString();
+    return text.mid(s, e - s).toNSString();
 }
 
 - (void)setMarkedText:(NSString *)markedText selectedRange:(NSRange)selectedRange
@@ -603,11 +694,7 @@
     if (markedTextFormat.isEmpty()) {
         // There seems to be no way to query how the preedit text
         // should be drawn. So we need to hard-code the color.
-        QSysInfo::MacVersion iosVersion = QSysInfo::MacintoshVersion;
-        if (iosVersion < QSysInfo::MV_IOS_7_0)
-            markedTextFormat.setBackground(QColor(235, 239, 247));
-        else
-            markedTextFormat.setBackground(QColor(206, 221, 238));
+        markedTextFormat.setBackground(QColor(206, 221, 238));
     }
 
     QList<QInputMethodEvent::Attribute> attrs;
@@ -735,7 +822,7 @@
         [self sendEventToFocusObject:e];
     }
 
-    return toCGRect(startRect.united(endRect));
+    return startRect.united(endRect).toCGRect();
 }
 
 - (NSArray *)selectionRectsForRange:(UITextRange *)range
@@ -753,7 +840,7 @@
     // Assume for now that position is always the same as
     // cursor index until a better API is in place:
     QRectF cursorRect = qApp->inputMethod()->cursorRectangle();
-    return toCGRect(cursorRect);
+    return cursorRect.toCGRect();
 }
 
 - (void)replaceRange:(UITextRange *)range withText:(NSString *)text
@@ -792,9 +879,10 @@
 
 - (UITextPosition *)closestPositionToPoint:(CGPoint)point
 {
-    // No API in Qt for determining this. Use sensible default instead:
-    Q_UNUSED(point);
-    return [QUITextPosition positionWithIndex:[self currentImeState:Qt::ImCursorPosition].toInt()];
+    QPointF p = QPointF::fromCGPoint(point);
+    const QTransform mapToLocal = QGuiApplication::inputMethod()->inputItemTransform().inverted();
+    int textPos = QInputMethod::queryFocusObject(Qt::ImCursorPosition, p * mapToLocal).toInt();
+    return [QUITextPosition positionWithIndex:textPos];
 }
 
 - (UITextPosition *)closestPositionToPoint:(CGPoint)point withinRange:(UITextRange *)range
@@ -820,6 +908,7 @@
     // text instead of just guessing...
 }
 
+#ifndef Q_OS_TVOS
 - (NSDictionary *)textStylingAtPosition:(UITextPosition *)position inDirection:(UITextStorageDirection)direction
 {
     Q_UNUSED(position);
@@ -837,10 +926,11 @@
     UIFont *uifont = [UIFont fontWithName:qfont.family().toNSString() size:qfont.pointSize()];
     if (!uifont)
         return [NSDictionary dictionary];
-    return [NSDictionary dictionaryWithObject:uifont forKey:UITextInputTextFontKey];
+    return [NSDictionary dictionaryWithObject:uifont forKey:NSFontAttributeName];
 }
+#endif
 
--(NSDictionary *)markedTextStyle
+- (NSDictionary *)markedTextStyle
 {
     return [NSDictionary dictionary];
 }
@@ -859,7 +949,16 @@
     if ([text isEqualToString:@"\n"]) {
         [self sendKeyPressRelease:Qt::Key_Return modifiers:Qt::NoModifier];
 
-        if (self.returnKeyType == UIReturnKeyDone)
+        // An onEnter handler of a TextInput might move to the next input by calling
+        // nextInput.forceActiveFocus() which changes the focusObject.
+        // In that case we don't want to hide the VKB.
+        if (focusObject != QGuiApplication::focusObject()) {
+            qImDebug() << "focusObject already changed, not resigning first responder.";
+            return;
+        }
+
+        if (self.returnKeyType == UIReturnKeyDone || self.returnKeyType == UIReturnKeyGo
+            || self.returnKeyType == UIReturnKeySend || self.returnKeyType == UIReturnKeySearch)
             [self resignFirstResponder];
 
         return;
@@ -875,7 +974,6 @@
     // UITextInput selects the text to be deleted before calling this method. To avoid
     // drawing the selection, we flush after posting the key press/release.
     [self sendKeyPressRelease:Qt::Key_Backspace modifiers:Qt::NoModifier];
-    QWindowSystemInterface::flushWindowSystemEvents();
 }
 
 @end

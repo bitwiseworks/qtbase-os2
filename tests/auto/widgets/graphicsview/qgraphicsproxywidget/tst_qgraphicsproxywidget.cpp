@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,8 +32,6 @@
 #include <QtWidgets>
 #include <private/qgraphicsproxywidget_p.h>
 #include <private/qlayoutengine_p.h>    // qSmartMin functions...
-
-#include "../../../qtest-config.h"
 
 static void sendMouseMove(QWidget *widget, const QPoint &point, Qt::MouseButton button = Qt::NoButton)
 {
@@ -84,21 +77,17 @@ class tst_QGraphicsProxyWidget : public QObject
 {
     Q_OBJECT
 
-public slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void init();
-    void cleanup();
-
 private slots:
+    void initTestCase();
+    void cleanup();
     void qgraphicsproxywidget_data();
     void qgraphicsproxywidget();
     void paint();
     void paint_2();
     void setWidget_data();
     void setWidget();
-    void eventFilter_data();
-    void eventFilter();
+    void testEventFilter_data();
+    void testEventFilter();
     void focusInEvent_data();
     void focusInEvent();
     void focusInEventNoWidget();
@@ -106,7 +95,7 @@ private slots:
     void focusNextPrevChild();
     void focusOutEvent_data();
     void focusOutEvent();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void hoverEnterLeaveEvent_data();
     void hoverEnterLeaveEvent();
 #endif
@@ -123,7 +112,7 @@ private slots:
     void resizeEvent_data();
     void resizeEvent();
     void paintEvent();
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
     void wheelEvent();
 #endif
     void sizeHint_data();
@@ -149,7 +138,7 @@ private slots:
     void setFocus_complexTwoWidgets();
     void popup_basic();
     void popup_subwidget();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void changingCursor_basic();
 #endif
     void tooltip_basic();
@@ -162,7 +151,9 @@ private slots:
     void fontPropagation();
     void dontCrashWhenDie();
     void createProxyForChildWidget();
+#ifndef QT_NO_CONTEXTMENU
     void actionsContextMenu();
+#endif // QT_NO_CONTEXTMENU
     void actionsContextMenu_data();
     void deleteProxyForChildWidget();
     void bypassGraphicsProxyWidget_data();
@@ -179,6 +170,7 @@ private slots:
     void mapToGlobal();
     void mapToGlobalWithoutScene();
     void QTBUG_43780_visibility();
+    void forwardTouchEvent();
 };
 
 // Subclass that exposes the protected functions.
@@ -262,7 +254,7 @@ public:
     int focusOut;
 };
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 class WheelWidget : public QWidget
 {
 public:
@@ -272,37 +264,24 @@ public:
 
     bool wheelEventCalled;
 };
-#endif // !QT_NO_WHEELEVENT
+#endif // QT_CONFIG(wheelevent)
 
 // This will be called before the first test function is executed.
 // It is only called once.
 void tst_QGraphicsProxyWidget::initTestCase()
 {
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
     // Disable menu animations to prevent the alpha widget from getting in the way
     // in actionsContextMenu().
     QApplication::setEffectEnabled(Qt::UI_AnimateMenu, false);
     // Disable combo for QTBUG_43780_visibility()/Windows Vista.
     QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
-}
-
-// This will be called after the last test function is executed.
-// It is only called once.
-void tst_QGraphicsProxyWidget::cleanupTestCase()
-{
-}
-
-// This will be called before each test function is executed.
-void tst_QGraphicsProxyWidget::init()
-{
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
 }
 
 // This will be called after every test function.
 void tst_QGraphicsProxyWidget::cleanup()
 {
-    QVERIFY(QApplication::topLevelWidgets().isEmpty());
+    QTRY_VERIFY(QApplication::topLevelWidgets().isEmpty());
 }
 
 void tst_QGraphicsProxyWidget::qgraphicsproxywidget_data()
@@ -314,7 +293,7 @@ void tst_QGraphicsProxyWidget::qgraphicsproxywidget()
     SubQGraphicsProxyWidget proxy;
     proxy.paint(0, 0, 0);
     proxy.setWidget(0);
-    QVERIFY(proxy.type() == QGraphicsProxyWidget::Type);
+    QCOMPARE(proxy.type(), int(QGraphicsProxyWidget::Type));
     QVERIFY(!proxy.widget());
     QEvent event(QEvent::None);
     proxy.call_eventFilter(0, &event);
@@ -414,6 +393,7 @@ void tst_QGraphicsProxyWidget::setWidget()
     QGraphicsScene scene;
     QGraphicsView view(&scene);
     view.show();
+    QScopedPointer<QStyle> style(QStyleFactory::create(QLatin1String("Fusion")));
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QPointer<SubQGraphicsProxyWidget> proxy = new SubQGraphicsProxyWidget;
     SubQGraphicsProxyWidget parentProxy;
@@ -431,12 +411,12 @@ void tst_QGraphicsProxyWidget::setWidget()
     }
 
     QWidget *widget = new QWidget;
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     widget->setCursor(Qt::IBeamCursor);
 #endif
     widget->setPalette(QPalette(Qt::magenta));
     widget->setLayoutDirection(Qt::RightToLeft);
-    widget->setStyle(QStyleFactory::create(QLatin1String("Fusion")));
+    widget->setStyle(style.data());
     widget->setFont(QFont("Times"));
     widget->setVisible(true);
     QApplication::setActiveWindow(widget);
@@ -468,7 +448,7 @@ void tst_QGraphicsProxyWidget::setWidget()
         QVERIFY(subWidget->testAttribute(Qt::WA_DontShowOnScreen));
         QVERIFY(!subWidget->testAttribute(Qt::WA_QuitOnClose));
         QCOMPARE(proxy->acceptHoverEvents(), true);
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
         QVERIFY(proxy->hasCursor());
 
         // These should match
@@ -491,7 +471,7 @@ void tst_QGraphicsProxyWidget::setWidget()
         QCOMPARE(proxy->rect().toRect(), widget->rect());
         QCOMPARE(proxy->focusPolicy(), Qt::WheelFocus);
         QVERIFY(proxy->acceptDrops());
-        QCOMPARE(proxy->acceptsHoverEvents(), true); // to get widget enter events
+        QCOMPARE(proxy->acceptHoverEvents(), true); // to get widget enter events
         int left, top, right, bottom;
         widget->getContentsMargins(&left, &top, &right, &bottom);
         qreal rleft, rtop, rright, rbottom;
@@ -502,7 +482,7 @@ void tst_QGraphicsProxyWidget::setWidget()
         QCOMPARE((qreal)bottom, rbottom);
     } else {
         // proxy shouldn't mess with the widget if it can't insert it.
-        QCOMPARE(proxy->widget(), (QWidget*)0);
+        QCOMPARE(proxy->widget(), nullptr);
         QCOMPARE(proxy->acceptHoverEvents(), false);
         if (subWidget) {
             QVERIFY(!subWidget->testAttribute(Qt::WA_DontShowOnScreen));
@@ -513,7 +493,7 @@ void tst_QGraphicsProxyWidget::setWidget()
     }
 
     if (widgetExists) {
-        QCOMPARE(existingSubWidget->parent(), static_cast<QObject*>(0));
+        QCOMPARE(existingSubWidget->parent(), nullptr);
         QVERIFY(!existingSubWidget->testAttribute(Qt::WA_DontShowOnScreen));
         QVERIFY(!existingSubWidget->testAttribute(Qt::WA_QuitOnClose));
     }
@@ -533,26 +513,27 @@ void tst_QGraphicsProxyWidget::setWidget()
 }
 
 Q_DECLARE_METATYPE(QEvent::Type)
-void tst_QGraphicsProxyWidget::eventFilter_data()
+void tst_QGraphicsProxyWidget::testEventFilter_data()
 {
     QTest::addColumn<QEvent::Type>("eventType");
     QTest::addColumn<bool>("fromObject"); // big grin evil
     QTest::newRow("none") << QEvent::None << false;
     for (int i = 0; i < 2; ++i) {
         bool fromObject = (i == 0);
-        QTest::newRow(QString("resize %1").arg(fromObject).toLatin1()) << QEvent::Resize << fromObject;
-        QTest::newRow(QString("move %1").arg(fromObject).toLatin1()) << QEvent::Move << fromObject;
-        QTest::newRow(QString("hide %1").arg(fromObject).toLatin1()) << QEvent::Hide << fromObject;
-        QTest::newRow(QString("show %1").arg(fromObject).toLatin1()) << QEvent::Show << fromObject;
-        QTest::newRow(QString("enabled %1").arg(fromObject).toLatin1()) << QEvent::EnabledChange << fromObject;
-        QTest::newRow(QString("focusIn %1").arg(fromObject).toLatin1()) << QEvent::FocusIn << fromObject;
-        QTest::newRow(QString("focusOut %1").arg(fromObject).toLatin1()) << QEvent::FocusOut << fromObject;
-        QTest::newRow(QString("keyPress %1").arg(fromObject).toLatin1()) << QEvent::KeyPress << fromObject;
+        const char fromObjectC = fromObject ? '1' : '0';
+        QTest::newRow((QByteArrayLiteral("resize ") + fromObjectC).constData()) << QEvent::Resize << fromObject;
+        QTest::newRow((QByteArrayLiteral("move ") + fromObjectC).constData()) << QEvent::Move << fromObject;
+        QTest::newRow((QByteArrayLiteral("hide ") + fromObjectC).constData()) << QEvent::Hide << fromObject;
+        QTest::newRow((QByteArrayLiteral("show ") + fromObjectC).constData()) << QEvent::Show << fromObject;
+        QTest::newRow((QByteArrayLiteral("enabled ") + fromObjectC).constData()) << QEvent::EnabledChange << fromObject;
+        QTest::newRow((QByteArrayLiteral("focusIn ") + fromObjectC).constData()) << QEvent::FocusIn << fromObject;
+        QTest::newRow((QByteArrayLiteral("focusOut ") + fromObjectC).constData()) << QEvent::FocusOut << fromObject;
+        QTest::newRow((QByteArrayLiteral("keyPress ") + fromObjectC).constData()) << QEvent::KeyPress << fromObject;
     }
 }
 
 // protected bool eventFilter(QObject* object, QEvent* event)
-void tst_QGraphicsProxyWidget::eventFilter()
+void tst_QGraphicsProxyWidget::testEventFilter()
 {
     QFETCH(QEvent::Type, eventType);
     QFETCH(bool, fromObject);
@@ -759,8 +740,10 @@ void tst_QGraphicsProxyWidget::focusNextPrevChild_data()
                 bool hasWidget = (j == 0);
                 bool hasScene = (k == 0);
                 bool result = hasScene && hasWidget;
-                QString name = QString("Forward: %1, hasWidget: %2, hasScene: %3, result: %4").arg(next).arg(hasWidget).arg(hasScene).arg(result);
-                QTest::newRow(name.toLatin1()) << hasWidget << hasScene << next << result;
+                QByteArray name = QByteArrayLiteral("Forward: ") + (next ? '1' : '0')
+                    + ", hasWidget: " + (hasWidget ? '1' : '0') + ", hasScene: "
+                    + (hasScene ? '1' : '0') + ", result: " + (result ? '1' : '0');
+                QTest::newRow(name.constData()) << hasWidget << hasScene << next << result;
             }
         }
     }
@@ -841,7 +824,7 @@ void tst_QGraphicsProxyWidget::focusOutEvent()
     QApplication::setActiveWindow(&view);
     view.activateWindow();
     view.setFocus();
-    QTest::qWaitForWindowActive(&view);
+    QVERIFY(QTest::qWaitForWindowActive(&view));
     QTRY_VERIFY(view.isVisible());
     QTRY_COMPARE(QApplication::activeWindow(), (QWidget*)&view);
 
@@ -948,7 +931,7 @@ protected:
     }
 };
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QGraphicsProxyWidget::hoverEnterLeaveEvent_data()
 {
     QTest::addColumn<bool>("hasWidget");
@@ -1025,8 +1008,10 @@ void tst_QGraphicsProxyWidget::hoverMoveEvent_data()
                     bool hoverEnabled = (j == 0);
                     bool mouseTracking = (k == 0);
                     bool mouseDown = (l == 0);
-                    QString name = QString("hasWidget:%1, hover:%2, mouseTracking:%3, mouseDown: %4").arg(hasWidget).arg(hoverEnabled).arg(mouseTracking).arg(mouseDown);
-                    QTest::newRow(name.toLatin1()) << hasWidget << hoverEnabled << mouseTracking << mouseDown;
+                    QByteArray name = QByteArrayLiteral("hasWidget:") + (hasWidget ? '1' : '0') + ", hover:"
+                        + (hoverEnabled ? '1' : '0') + ", mouseTracking:"
+                        + (mouseTracking ? '1' : '0') + ", mouseDown: " + (mouseDown ? '1' : '0');
+                    QTest::newRow(name.constData()) << hasWidget << hoverEnabled << mouseTracking << mouseDown;
                 }
             }
         }
@@ -1223,6 +1208,7 @@ void tst_QGraphicsProxyWidget::mousePressReleaseEvent()
 
     QGraphicsScene scene;
     QGraphicsView view(&scene);
+    view.resize(500, 500);
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
@@ -1231,7 +1217,6 @@ void tst_QGraphicsProxyWidget::mousePressReleaseEvent()
     QPushButton *widget = new QPushButton;
     QSignalSpy spy(widget, SIGNAL(clicked()));
     widget->resize(50, 50);
-    view.resize(100, 100);
     if (hasWidget) {
         proxy->setWidget(widget);
         proxy->show();
@@ -1308,11 +1293,11 @@ void tst_QGraphicsProxyWidget::paintEvent()
     proxy.paintCount = 0;
 
     w->update();
-    QTRY_COMPARE(proxy.paintCount, 1); //the widget should have been painted now
+    QTRY_VERIFY(proxy.paintCount >= 1); //the widget should have been painted now
 }
 
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 void tst_QGraphicsProxyWidget::wheelEvent()
 {
     QGraphicsScene scene;
@@ -1336,7 +1321,7 @@ void tst_QGraphicsProxyWidget::wheelEvent()
     QVERIFY(event.isAccepted());
     QVERIFY(wheelWidget->wheelEventCalled);
 }
-#endif // !QT_NO_WHEELEVENT
+#endif // QT_CONFIG(wheelevent)
 
 Q_DECLARE_METATYPE(Qt::SizeHint)
 void tst_QGraphicsProxyWidget::sizeHint_data()
@@ -1486,6 +1471,15 @@ protected:
     }
 };
 
+// ### work around missing QVector ctor from iterator pair:
+static QVector<QRect> rects(const QRegion &region)
+{
+    QVector<QRect> result;
+    for (QRect r : region)
+        result.push_back(r);
+    return result;
+}
+
 void tst_QGraphicsProxyWidget::scrollUpdate()
 {
     ScrollWidget *widget = new ScrollWidget;
@@ -1507,10 +1501,10 @@ void tst_QGraphicsProxyWidget::scrollUpdate()
     // QRect(0, 0, 200, 12) is the first update, expanded (-2, -2, 2, 2)
     // QRect(0, 12, 102, 10) is the scroll update, expanded (-2, -2, 2, 2),
     // intersected with the above update.
-    QCOMPARE(view.paintEventRegion.rects(),
+    QCOMPARE(rects(view.paintEventRegion),
              QVector<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
     QCOMPARE(widget->npaints, 2);
-    QCOMPARE(widget->paintEventRegion.rects(),
+    QCOMPARE(rects(widget->paintEventRegion),
              QVector<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
 }
 
@@ -1534,7 +1528,7 @@ void tst_QGraphicsProxyWidget::setWidget_simple()
     // Properties
     // QCOMPARE(proxy.focusPolicy(), lineEdit->focusPolicy());
     // QCOMPARE(proxy.palette(), lineEdit->palette());
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     QCOMPARE(proxy.cursor().shape(), lineEdit->cursor().shape());
 #endif
     QCOMPARE(proxy.layoutDirection(), lineEdit->layoutDirection());
@@ -1583,7 +1577,7 @@ void tst_QGraphicsProxyWidget::resize_simple_data()
     QTest::addColumn<QSizeF>("size");
 
     QTest::newRow("200, 200") << QSizeF(200, 200);
-#if !defined(Q_PROCESSOR_ARM) && !defined(Q_OS_WINCE)
+#if !defined(Q_PROCESSOR_ARM)
     QTest::newRow("1000, 1000") << QSizeF(1000, 1000);
     // Since 4.5, 10000x10000 runs out of memory.
     // QTest::newRow("10000, 10000") << QSizeF(10000, 10000);
@@ -2551,7 +2545,7 @@ void tst_QGraphicsProxyWidget::popup_subwidget()
     QCOMPARE(popup->size(), child->size().toSize());
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QGraphicsProxyWidget::changingCursor_basic()
 {
     // Confirm that mouse events are working properly by checking that
@@ -2580,6 +2574,22 @@ void tst_QGraphicsProxyWidget::changingCursor_basic()
     QTRY_COMPARE(view.viewport()->cursor().shape(), Qt::ArrowCursor);
 }
 #endif
+
+static bool findViewAndTipLabel(const QWidget *view)
+{
+    bool foundView = false;
+    bool foundTipLabel = false;
+    const QWidgetList &topLevels = QApplication::topLevelWidgets();
+    for (const QWidget *widget : topLevels) {
+        if (widget == view)
+            foundView = true;
+        if (widget->inherits("QTipLabel"))
+            foundTipLabel = true;
+        if (foundView && foundTipLabel)
+            return true;
+    }
+    return false;
+}
 
 void tst_QGraphicsProxyWidget::tooltip_basic()
 {
@@ -2633,18 +2643,7 @@ void tst_QGraphicsProxyWidget::tooltip_basic()
         QHelpEvent helpEvent(QEvent::ToolTip, view.mapFromScene(proxy->boundingRect().center()),
                              view.viewport()->mapToGlobal(view.mapFromScene(proxy->boundingRect().center())));
         QApplication::sendEvent(view.viewport(), &helpEvent);
-        QTest::qWait(350);
-
-        bool foundView = false;
-        bool foundTipLabel = false;
-        foreach (QWidget *widget, QApplication::topLevelWidgets()) {
-            if (widget == &view)
-                foundView = true;
-            if (widget->inherits("QTipLabel"))
-                foundTipLabel = true;
-        }
-        QVERIFY(foundView);
-        QVERIFY(foundTipLabel);
+        QTRY_VERIFY(findViewAndTipLabel(&view));
     }
 }
 
@@ -2676,9 +2675,6 @@ void tst_QGraphicsProxyWidget::childPos_data()
 
 void tst_QGraphicsProxyWidget::childPos()
 {
-#ifdef Q_OS_IRIX
-    QSKIP("This test is not reliable on IRIX.");
-#endif
     QFETCH(bool, moveCombo);
     QFETCH(QPoint, comboPos);
     QFETCH(QPointF, proxyPos);
@@ -2790,7 +2786,7 @@ void tst_QGraphicsProxyWidget::windowOpacity()
     // disabled on platforms without alpha channel support in QPixmap (e.g.,
     // X11 without XRender).
     int paints = 0;
-#ifdef Q_DEAD_CODE_FROM_QT4_X11
+#if 0 // Used to be included in Qt4 for Q_WS_X11
     paints = !X11->use_xrender;
 #endif
     QTRY_COMPARE(eventSpy.counts[QEvent::UpdateRequest], 0);
@@ -3017,36 +3013,36 @@ void tst_QGraphicsProxyWidget::createProxyForChildWidget()
     layout->addWidget(rightDial);
     window.setLayout(layout);
 
-    QVERIFY(window.graphicsProxyWidget() == 0);
-    QVERIFY(checkbox->graphicsProxyWidget() == 0);
+    QVERIFY(!window.graphicsProxyWidget());
+    QVERIFY(!checkbox->graphicsProxyWidget());
 
     QGraphicsProxyWidget *windowProxy = scene.addWidget(&window);
     QGraphicsView view(&scene);
     view.show();
     view.resize(500,500);
 
-    QVERIFY(window.graphicsProxyWidget() == windowProxy);
-    QVERIFY(box->graphicsProxyWidget() == 0);
-    QVERIFY(checkbox->graphicsProxyWidget() == 0);
+    QCOMPARE(window.graphicsProxyWidget(), windowProxy);
+    QVERIFY(!box->graphicsProxyWidget());
+    QVERIFY(!checkbox->graphicsProxyWidget());
 
     QPointer<QGraphicsProxyWidget> checkboxProxy = windowProxy->createProxyForChildWidget(checkbox);
 
     QGraphicsProxyWidget *boxProxy = box->graphicsProxyWidget();
 
     QVERIFY(boxProxy);
-    QVERIFY(checkbox->graphicsProxyWidget() == checkboxProxy);
-    QVERIFY(checkboxProxy->parentItem() == boxProxy);
-    QVERIFY(boxProxy->parentItem() == windowProxy);
+    QCOMPARE(checkbox->graphicsProxyWidget(), checkboxProxy.data());
+    QCOMPARE(checkboxProxy->parentItem(), boxProxy);
+    QCOMPARE(boxProxy->parentItem(), windowProxy);
 
     QVERIFY(checkboxProxy->mapToScene(QPointF()) == checkbox->mapTo(&window, QPoint()));
-    QVERIFY(checkboxProxy->size() == checkbox->size());
-    QVERIFY(boxProxy->size() == box->size());
+    QCOMPARE(checkboxProxy->size().toSize(), checkbox->size());
+    QCOMPARE(boxProxy->size().toSize(), box->size());
 
     window.resize(500,500);
-    QVERIFY(windowProxy->size() == QSize(500,500));
+    QCOMPARE(windowProxy->size().toSize(), QSize(500,500));
     QVERIFY(checkboxProxy->mapToScene(QPointF()) == checkbox->mapTo(&window, QPoint()));
-    QVERIFY(checkboxProxy->size() == checkbox->size());
-    QVERIFY(boxProxy->size() == box->size());
+    QCOMPARE(checkboxProxy->size().toSize(), checkbox->size());
+    QCOMPARE(boxProxy->size().toSize(), box->size());
 
     QTest::qWait(10);
 
@@ -3064,13 +3060,14 @@ void tst_QGraphicsProxyWidget::createProxyForChildWidget()
 
     boxProxy->setWidget(0);
 
-    QVERIFY(checkbox->graphicsProxyWidget() == 0);
-    QVERIFY(box->graphicsProxyWidget() == 0);
-    QVERIFY(checkboxProxy == 0);
+    QVERIFY(!checkbox->graphicsProxyWidget());
+    QVERIFY(!box->graphicsProxyWidget());
+    QVERIFY(checkboxProxy.isNull());
 
     delete boxProxy;
 }
 
+#ifndef QT_NO_CONTEXTMENU
 class ContextMenuWidget : public QLabel
 {
     Q_OBJECT
@@ -3119,6 +3116,7 @@ private:
     bool m_embeddedPopupSet;
     QTimer *m_timer;
 };
+#endif // QT_NO_CONTEXTMENU
 
 void tst_QGraphicsProxyWidget::actionsContextMenu_data()
 {
@@ -3131,6 +3129,7 @@ void tst_QGraphicsProxyWidget::actionsContextMenu_data()
     QTest::newRow("with actionsContextMenu without focus") << true << false;
 }
 
+#ifndef QT_NO_CONTEXTMENU
 void tst_QGraphicsProxyWidget::actionsContextMenu()
 {
     QFETCH(bool, hasFocus);
@@ -3185,7 +3184,7 @@ void tst_QGraphicsProxyWidget::actionsContextMenu()
     }
 
 }
-
+#endif // QT_NO_CONTEXTMENU
 
 void tst_QGraphicsProxyWidget::deleteProxyForChildWidget()
 {
@@ -3654,7 +3653,7 @@ public slots:
 
 void tst_QGraphicsProxyWidget::QTBUG_6986_sendMouseEventToAlienWidget()
 {
-#if defined(Q_OS_MAC) || defined(Q_OS_WIN) || defined(QTEST_NO_CURSOR)
+#if defined(Q_OS_DARWIN) || defined(Q_OS_WIN) || defined(QT_NO_CURSOR)
     QSKIP("Test case unstable on this platform");
 #endif
     QGraphicsView view;
@@ -3681,15 +3680,19 @@ static QByteArray msgPointMismatch(const QPoint &actual, const QPoint &expected)
 void tst_QGraphicsProxyWidget::mapToGlobal() // QTBUG-41135
 {
     const QRect availableGeometry = QGuiApplication::primaryScreen()->availableGeometry();
-    const QSize size = availableGeometry.size() / 5;
+    const QSize size = availableGeometry.size() / 4;
     QGraphicsScene scene;
     QGraphicsView view(&scene);
+    view.setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view.setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view.setTransform(QTransform::fromScale(2, 2));  // QTBUG-50136, use transform.
     view.setWindowTitle(QTest::currentTestFunction());
     view.resize(size);
     view.move(availableGeometry.bottomRight() - QPoint(size.width(), size.height()) - QPoint(100, 100));
-    QWidget *embeddedWidget = new QWidget;
-    embeddedWidget->setFixedSize(size / 2);
-    QWidget *childWidget = new QWidget(embeddedWidget);
+    QWidget *embeddedWidget = new QGroupBox(QLatin1String("Embedded"));
+    embeddedWidget->setStyleSheet(QLatin1String("background-color: \"yellow\"; "));
+    embeddedWidget->setFixedSize((size - QSize(10, 10)) / 2);
+    QWidget *childWidget = new QGroupBox(QLatin1String("Child"), embeddedWidget);
     childWidget->setStyleSheet(QLatin1String("background-color: \"red\"; "));
     childWidget->resize(embeddedWidget->size() / 2);
     childWidget->move(embeddedWidget->width() / 4, embeddedWidget->height() / 4); // center in embeddedWidget
@@ -3703,10 +3706,13 @@ void tst_QGraphicsProxyWidget::mapToGlobal() // QTBUG-41135
     // This should be equivalent to the view center give or take rounding
     // errors due to odd window margins
     const QPoint viewCenter = view.geometry().center();
-    QVERIFY2((viewCenter - embeddedCenterGlobal).manhattanLength() <= 2,
+    QVERIFY2((viewCenter - embeddedCenterGlobal).manhattanLength() <= 3,
              msgPointMismatch(embeddedCenterGlobal, viewCenter).constData());
 
-    // Same test with child centered on embeddedWidget
+    // Same test with child centered on embeddedWidget. Also make sure
+    // the roundtrip maptoGlobal()/mapFromGlobal() returns the same
+    // point since that is important for mouse event handling (QTBUG-50030,
+    // QTBUG-50136).
     const QPoint childCenter = childWidget->rect().center();
     const QPoint childCenterGlobal = childWidget->mapToGlobal(childCenter);
     QCOMPARE(childWidget->mapFromGlobal(childCenterGlobal), childCenter);
@@ -3758,6 +3764,72 @@ void tst_QGraphicsProxyWidget::QTBUG_43780_visibility()
     label->show();
     QTRY_VERIFY(label->isVisible());
     QVERIFY(comboPopup->isVisible());
+}
+
+class TouchWidget : public QWidget
+{
+public:
+    TouchWidget(QWidget *parent = 0) : QWidget(parent) {}
+
+    bool event(QEvent *event)
+    {
+        switch (event->type()) {
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::TouchEnd:
+            event->accept();
+            return true;
+            break;
+        default:
+            break;
+        }
+
+        return QWidget::event(event);
+    }
+};
+
+// QTBUG_45737
+void tst_QGraphicsProxyWidget::forwardTouchEvent()
+{
+    QGraphicsScene *scene = new QGraphicsScene;
+
+    TouchWidget *widget = new TouchWidget;
+
+    widget->setAttribute(Qt::WA_AcceptTouchEvents);
+
+    QGraphicsProxyWidget *proxy = new QGraphicsProxyWidget;
+
+    proxy->setAcceptTouchEvents(true);
+    proxy->setWidget(widget);
+
+    scene->addItem(proxy);
+
+    QGraphicsView *view = new QGraphicsView(scene);
+
+    view->show();
+
+    EventSpy eventSpy(widget);
+
+    QTouchDevice *device = QTest::createTouchDevice();
+
+    QCOMPARE(eventSpy.counts[QEvent::TouchBegin], 0);
+    QCOMPARE(eventSpy.counts[QEvent::TouchUpdate], 0);
+    QCOMPARE(eventSpy.counts[QEvent::TouchEnd], 0);
+
+    QTest::touchEvent(view, device).press(0, QPoint(10, 10), view);
+    QTest::touchEvent(view, device).move(0, QPoint(15, 15), view);
+    QTest::touchEvent(view, device).move(0, QPoint(16, 16), view);
+    QTest::touchEvent(view, device).release(0, QPoint(15, 15), view);
+
+    QApplication::processEvents();
+
+    QCOMPARE(eventSpy.counts[QEvent::TouchBegin], 1);
+    QCOMPARE(eventSpy.counts[QEvent::TouchUpdate], 2);
+    QCOMPARE(eventSpy.counts[QEvent::TouchEnd], 1);
+
+    delete view;
+    delete proxy;
+    delete scene;
 }
 
 QTEST_MAIN(tst_QGraphicsProxyWidget)

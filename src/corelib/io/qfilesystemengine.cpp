@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -80,12 +86,10 @@ QString QFileSystemEngine::slowCanonicalized(const QString &path)
             fi.setFile(prefix);
             if (fi.isSymLink()) {
                 QString target = fi.symLinkTarget();
-                if(QFileInfo(target).isRelative())
-                    target = fi.absolutePath() + slash + target;
                 if (separatorPos != -1) {
                     if (fi.isDir() && !target.endsWith(slash))
                         target.append(slash);
-                    target.append(tmpPath.mid(separatorPos));
+                    target.append(tmpPath.midRef(separatorPos));
                 }
                 tmpPath = QDir::cleanPath(target);
                 separatorPos = 0;
@@ -152,7 +156,7 @@ static bool _q_resolveEntryAndCreateLegacyEngine_recursive(QFileSystemEntry &ent
 
             const QStringList &paths = QDir::searchPaths(filePath.left(prefixSeparator));
             for (int i = 0; i < paths.count(); i++) {
-                entry = QFileSystemEntry(QDir::cleanPath(paths.at(i) % QLatin1Char('/') % filePath.mid(prefixSeparator + 1)));
+                entry = QFileSystemEntry(QDir::cleanPath(paths.at(i) % QLatin1Char('/') % filePath.midRef(prefixSeparator + 1)));
                 // Recurse!
                 if (_q_resolveEntryAndCreateLegacyEngine_recursive(entry, data, engine, true))
                     return true;
@@ -198,195 +202,6 @@ QAbstractFileEngine *QFileSystemEngine::resolveEntryAndCreateLegacyEngine(
     return engine;
 }
 
-//these unix functions are in this file, because they are shared by symbian port
-//for open C file handles.
-#ifdef Q_OS_UNIX
-//static
-bool QFileSystemEngine::fillMetaData(int fd, QFileSystemMetaData &data)
-{
-    data.entryFlags &= ~QFileSystemMetaData::PosixStatFlags;
-    data.knownFlagsMask |= QFileSystemMetaData::PosixStatFlags;
-
-    QT_STATBUF statBuffer;
-    if (QT_FSTAT(fd, &statBuffer) == 0) {
-        data.fillFromStatBuf(statBuffer);
-        return true;
-    }
-
-    return false;
-}
-
-#if defined(QT_EXT_QNX_READDIR_R)
-static void fillStat64fromStat32(struct stat64 *statBuf64, const struct stat &statBuf32)
-{
-    statBuf64->st_mode = statBuf32.st_mode;
-    statBuf64->st_size = statBuf32.st_size;
-    statBuf64->st_ctime = statBuf32.st_ctime;
-    statBuf64->st_mtime = statBuf32.st_mtime;
-    statBuf64->st_atime = statBuf32.st_atime;
-    statBuf64->st_uid = statBuf32.st_uid;
-    statBuf64->st_gid = statBuf32.st_gid;
-}
-#endif
-
-void QFileSystemMetaData::fillFromStatBuf(const QT_STATBUF &statBuffer)
-{
-    // Permissions
-    if (statBuffer.st_mode & S_IRUSR)
-        entryFlags |= QFileSystemMetaData::OwnerReadPermission;
-    if (statBuffer.st_mode & S_IWUSR)
-        entryFlags |= QFileSystemMetaData::OwnerWritePermission;
-    if (statBuffer.st_mode & S_IXUSR)
-        entryFlags |= QFileSystemMetaData::OwnerExecutePermission;
-
-    if (statBuffer.st_mode & S_IRGRP)
-        entryFlags |= QFileSystemMetaData::GroupReadPermission;
-    if (statBuffer.st_mode & S_IWGRP)
-        entryFlags |= QFileSystemMetaData::GroupWritePermission;
-    if (statBuffer.st_mode & S_IXGRP)
-        entryFlags |= QFileSystemMetaData::GroupExecutePermission;
-
-    if (statBuffer.st_mode & S_IROTH)
-        entryFlags |= QFileSystemMetaData::OtherReadPermission;
-    if (statBuffer.st_mode & S_IWOTH)
-        entryFlags |= QFileSystemMetaData::OtherWritePermission;
-    if (statBuffer.st_mode & S_IXOTH)
-        entryFlags |= QFileSystemMetaData::OtherExecutePermission;
-
-    // Type
-    if ((statBuffer.st_mode & S_IFMT) == S_IFREG)
-        entryFlags |= QFileSystemMetaData::FileType;
-    else if ((statBuffer.st_mode & S_IFMT) == S_IFDIR)
-        entryFlags |= QFileSystemMetaData::DirectoryType;
-    else
-        entryFlags |= QFileSystemMetaData::SequentialType;
-
-    // Attributes
-    entryFlags |= QFileSystemMetaData::ExistsAttribute;
-    size_ = statBuffer.st_size;
-#if defined(Q_OS_MACX)
-    if (statBuffer.st_flags & UF_HIDDEN) {
-        entryFlags |= QFileSystemMetaData::HiddenAttribute;
-        knownFlagsMask |= QFileSystemMetaData::HiddenAttribute;
-    }
-#endif
-
-    // Times
-    creationTime_ = statBuffer.st_ctime ? statBuffer.st_ctime : statBuffer.st_mtime;
-    modificationTime_ = statBuffer.st_mtime;
-    accessTime_ = statBuffer.st_atime;
-    userId_ = statBuffer.st_uid;
-    groupId_ = statBuffer.st_gid;
-}
-
-void QFileSystemMetaData::fillFromDirEnt(const QT_DIRENT &entry)
-{
-#if defined(QT_EXT_QNX_READDIR_R)
-    knownFlagsMask = 0;
-    entryFlags = 0;
-    for (dirent_extra *extra = _DEXTRA_FIRST(&entry); _DEXTRA_VALID(extra, &entry);
-         extra = _DEXTRA_NEXT(extra)) {
-        if (extra->d_type == _DTYPE_STAT || extra->d_type == _DTYPE_LSTAT) {
-
-            const struct dirent_extra_stat * const extra_stat =
-                    reinterpret_cast<struct dirent_extra_stat *>(extra);
-
-            // Remember whether this was a link or not, this saves an lstat() call later.
-            if (extra->d_type == _DTYPE_LSTAT) {
-                knownFlagsMask |= QFileSystemMetaData::LinkType;
-                if (S_ISLNK(extra_stat->d_stat.st_mode))
-                    entryFlags |= QFileSystemMetaData::LinkType;
-            }
-
-            // For symlinks, the extra type _DTYPE_LSTAT doesn't work for filling out the meta data,
-            // as we need the stat() information there, not the lstat() information.
-            // In this case, don't use the extra information.
-            // Unfortunately, readdir() never seems to return extra info of type _DTYPE_STAT, so for
-            // symlinks, we always incur the cost of an extra stat() call later.
-            if (S_ISLNK(extra_stat->d_stat.st_mode) && extra->d_type == _DTYPE_LSTAT)
-                continue;
-
-#if defined(QT_USE_XOPEN_LFS_EXTENSIONS) && defined(QT_LARGEFILE_SUPPORT)
-            // Even with large file support, d_stat is always of type struct stat, not struct stat64,
-            // so it needs to be converted
-            struct stat64 statBuf;
-            fillStat64fromStat32(&statBuf, extra_stat->d_stat);
-            fillFromStatBuf(statBuf);
-#else
-            fillFromStatBuf(extra_stat->d_stat);
-#endif
-            knownFlagsMask |= QFileSystemMetaData::PosixStatFlags;
-            if (!S_ISLNK(extra_stat->d_stat.st_mode)) {
-                knownFlagsMask |= QFileSystemMetaData::ExistsAttribute;
-                entryFlags |= QFileSystemMetaData::ExistsAttribute;
-            }
-        }
-    }
-#elif defined(_DIRENT_HAVE_D_TYPE) || defined(Q_OS_BSD4)
-    // BSD4 includes OS X and iOS
-
-    // ### This will clear all entry flags and knownFlagsMask
-    switch (entry.d_type)
-    {
-    case DT_DIR:
-        knownFlagsMask = QFileSystemMetaData::LinkType
-            | QFileSystemMetaData::FileType
-            | QFileSystemMetaData::DirectoryType
-            | QFileSystemMetaData::SequentialType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        entryFlags = QFileSystemMetaData::DirectoryType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        break;
-
-    case DT_BLK:
-    case DT_CHR:
-    case DT_FIFO:
-    case DT_SOCK:
-        // ### System attribute
-        knownFlagsMask = QFileSystemMetaData::LinkType
-            | QFileSystemMetaData::FileType
-            | QFileSystemMetaData::DirectoryType
-            | QFileSystemMetaData::BundleType
-            | QFileSystemMetaData::AliasType
-            | QFileSystemMetaData::SequentialType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        entryFlags = QFileSystemMetaData::SequentialType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        break;
-
-    case DT_LNK:
-        knownFlagsMask = QFileSystemMetaData::LinkType;
-        entryFlags = QFileSystemMetaData::LinkType;
-        break;
-
-    case DT_REG:
-        knownFlagsMask = QFileSystemMetaData::LinkType
-            | QFileSystemMetaData::FileType
-            | QFileSystemMetaData::DirectoryType
-            | QFileSystemMetaData::BundleType
-            | QFileSystemMetaData::SequentialType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        entryFlags = QFileSystemMetaData::FileType
-            | QFileSystemMetaData::ExistsAttribute;
-
-        break;
-
-    case DT_UNKNOWN:
-    default:
-        clear();
-    }
-#else
-    Q_UNUSED(entry)
-#endif
-}
-
-#endif
-
 //static
 QString QFileSystemEngine::resolveUserName(const QFileSystemEntry &entry, QFileSystemMetaData &metaData)
 {
@@ -396,6 +211,8 @@ QString QFileSystemEngine::resolveUserName(const QFileSystemEntry &entry, QFileS
 #else //(Q_OS_UNIX)
     if (!metaData.hasFlags(QFileSystemMetaData::UserId))
         QFileSystemEngine::fillMetaData(entry, metaData, QFileSystemMetaData::UserId);
+    if (!metaData.exists())
+        return QString();
     return resolveUserName(metaData.userId());
 #endif
 }
@@ -409,6 +226,8 @@ QString QFileSystemEngine::resolveGroupName(const QFileSystemEntry &entry, QFile
 #else //(Q_OS_UNIX)
     if (!metaData.hasFlags(QFileSystemMetaData::GroupId))
         QFileSystemEngine::fillMetaData(entry, metaData, QFileSystemMetaData::GroupId);
+    if (!metaData.exists())
+        return QString();
     return resolveGroupName(metaData.groupId());
 #endif
 }

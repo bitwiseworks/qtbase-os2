@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,18 +51,18 @@
 // We mean it.
 //
 
+#include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include "QtCore/qpointer.h"
 #include <QtGui/qaccessible.h>
 #include <QtWidgets/qaccessiblewidget.h>
 #include <QtWidgets/qabstractitemview.h>
 #include <QtWidgets/qheaderview.h>
 
+QT_REQUIRE_CONFIG(itemviews);
 
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_ACCESSIBILITY
-
-#ifndef QT_NO_ITEMVIEWS
 
 class QAccessibleTableCell;
 class QAccessibleTableHeaderCell;
@@ -65,48 +71,48 @@ class QAccessibleTable :public QAccessibleTableInterface, public QAccessibleObje
 {
 public:
     explicit QAccessibleTable(QWidget *w);
-    bool isValid() const Q_DECL_OVERRIDE;
+    bool isValid() const override;
 
-    QAccessible::Role role() const Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
-    QRect rect() const Q_DECL_OVERRIDE;
+    QAccessible::Role role() const override;
+    QAccessible::State state() const override;
+    QString text(QAccessible::Text t) const override;
+    QRect rect() const override;
 
-    QAccessibleInterface *childAt(int x, int y) const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *childAt(int x, int y) const override;
+    int childCount() const override;
+    int indexOfChild(const QAccessibleInterface *) const override;
 
-    QAccessibleInterface *parent() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *parent() const override;
+    QAccessibleInterface *child(int index) const override;
 
-    void *interface_cast(QAccessible::InterfaceType t) Q_DECL_OVERRIDE;
+    void *interface_cast(QAccessible::InterfaceType t) override;
 
     // table interface
-    virtual QAccessibleInterface *cellAt(int row, int column) const Q_DECL_OVERRIDE;
-    virtual QAccessibleInterface *caption() const Q_DECL_OVERRIDE;
-    virtual QAccessibleInterface *summary() const Q_DECL_OVERRIDE;
-    virtual QString columnDescription(int column) const Q_DECL_OVERRIDE;
-    virtual QString rowDescription(int row) const Q_DECL_OVERRIDE;
-    virtual int columnCount() const Q_DECL_OVERRIDE;
-    virtual int rowCount() const Q_DECL_OVERRIDE;
+    virtual QAccessibleInterface *cellAt(int row, int column) const override;
+    virtual QAccessibleInterface *caption() const override;
+    virtual QAccessibleInterface *summary() const override;
+    virtual QString columnDescription(int column) const override;
+    virtual QString rowDescription(int row) const override;
+    virtual int columnCount() const override;
+    virtual int rowCount() const override;
 
     // selection
-    virtual int selectedCellCount() const Q_DECL_OVERRIDE;
-    virtual int selectedColumnCount() const Q_DECL_OVERRIDE;
-    virtual int selectedRowCount() const Q_DECL_OVERRIDE;
-    virtual QList<QAccessibleInterface*> selectedCells() const Q_DECL_OVERRIDE;
-    virtual QList<int> selectedColumns() const Q_DECL_OVERRIDE;
-    virtual QList<int> selectedRows() const Q_DECL_OVERRIDE;
-    virtual bool isColumnSelected(int column) const Q_DECL_OVERRIDE;
-    virtual bool isRowSelected(int row) const Q_DECL_OVERRIDE;
-    virtual bool selectRow(int row) Q_DECL_OVERRIDE;
-    virtual bool selectColumn(int column) Q_DECL_OVERRIDE;
-    virtual bool unselectRow(int row) Q_DECL_OVERRIDE;
-    virtual bool unselectColumn(int column) Q_DECL_OVERRIDE;
+    virtual int selectedCellCount() const override;
+    virtual int selectedColumnCount() const override;
+    virtual int selectedRowCount() const override;
+    virtual QList<QAccessibleInterface*> selectedCells() const override;
+    virtual QList<int> selectedColumns() const override;
+    virtual QList<int> selectedRows() const override;
+    virtual bool isColumnSelected(int column) const override;
+    virtual bool isRowSelected(int row) const override;
+    virtual bool selectRow(int row) override;
+    virtual bool selectColumn(int column) override;
+    virtual bool unselectRow(int row) override;
+    virtual bool unselectColumn(int column) override;
 
     QAbstractItemView *view() const;
 
-    void modelChange(QAccessibleTableModelChangeEvent *event) Q_DECL_OVERRIDE;
+    void modelChange(QAccessibleTableModelChangeEvent *event) override;
 
 protected:
     inline QAccessible::Role cellRole() const {
@@ -138,6 +144,7 @@ private:
     QAccessible::Role m_role;
 };
 
+#if QT_CONFIG(treeview)
 class QAccessibleTree :public QAccessibleTable
 {
 public:
@@ -146,75 +153,78 @@ public:
     {}
 
 
-    QAccessibleInterface *childAt(int x, int y) const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *childAt(int x, int y) const override;
+    int childCount() const override;
+    QAccessibleInterface *child(int index) const override;
 
-    int indexOfChild(const QAccessibleInterface *) const Q_DECL_OVERRIDE;
+    int indexOfChild(const QAccessibleInterface *) const override;
 
-    int rowCount() const Q_DECL_OVERRIDE;
+    int rowCount() const override;
 
     // table interface
-    QAccessibleInterface *cellAt(int row, int column) const Q_DECL_OVERRIDE;
-    QString rowDescription(int row) const Q_DECL_OVERRIDE;
-    bool isRowSelected(int row) const Q_DECL_OVERRIDE;
-    bool selectRow(int row) Q_DECL_OVERRIDE;
+    QAccessibleInterface *cellAt(int row, int column) const override;
+    QString rowDescription(int row) const override;
+    bool isRowSelected(int row) const override;
+    bool selectRow(int row) override;
 
 private:
     QModelIndex indexFromLogical(int row, int column = 0) const;
 
     inline int logicalIndex(const QModelIndex &index) const;
 };
+#endif
 
 class QAccessibleTableCell: public QAccessibleInterface, public QAccessibleTableCellInterface, public QAccessibleActionInterface
 {
 public:
     QAccessibleTableCell(QAbstractItemView *view, const QModelIndex &m_index, QAccessible::Role role);
 
-    void *interface_cast(QAccessible::InterfaceType t) Q_DECL_OVERRIDE;
-    QObject *object() const Q_DECL_OVERRIDE { return 0; }
-    QAccessible::Role role() const Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
-    QRect rect() const Q_DECL_OVERRIDE;
-    bool isValid() const Q_DECL_OVERRIDE;
+    void *interface_cast(QAccessible::InterfaceType t) override;
+    QObject *object() const override { return nullptr; }
+    QAccessible::Role role() const override;
+    QAccessible::State state() const override;
+    QRect rect() const override;
+    bool isValid() const override;
 
-    QAccessibleInterface *childAt(int, int) const Q_DECL_OVERRIDE { return 0; }
-    int childCount() const Q_DECL_OVERRIDE { return 0; }
-    int indexOfChild(const QAccessibleInterface *) const Q_DECL_OVERRIDE { return -1; }
+    QAccessibleInterface *childAt(int, int) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface *) const override { return -1; }
 
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
-    void setText(QAccessible::Text t, const QString &text) Q_DECL_OVERRIDE;
+    QString text(QAccessible::Text t) const override;
+    void setText(QAccessible::Text t, const QString &text) override;
 
-    QAccessibleInterface *parent() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *parent() const override;
+    QAccessibleInterface *child(int) const override;
 
     // cell interface
-    virtual int columnExtent() const Q_DECL_OVERRIDE;
-    virtual QList<QAccessibleInterface*> columnHeaderCells() const Q_DECL_OVERRIDE;
-    virtual int columnIndex() const Q_DECL_OVERRIDE;
-    virtual int rowExtent() const Q_DECL_OVERRIDE;
-    virtual QList<QAccessibleInterface*> rowHeaderCells() const Q_DECL_OVERRIDE;
-    virtual int rowIndex() const Q_DECL_OVERRIDE;
-    virtual bool isSelected() const Q_DECL_OVERRIDE;
-    virtual QAccessibleInterface* table() const Q_DECL_OVERRIDE;
+    virtual int columnExtent() const override;
+    virtual QList<QAccessibleInterface*> columnHeaderCells() const override;
+    virtual int columnIndex() const override;
+    virtual int rowExtent() const override;
+    virtual QList<QAccessibleInterface*> rowHeaderCells() const override;
+    virtual int rowIndex() const override;
+    virtual bool isSelected() const override;
+    virtual QAccessibleInterface* table() const override;
 
     //action interface
-    virtual QStringList actionNames() const Q_DECL_OVERRIDE;
-    virtual void doAction(const QString &actionName) Q_DECL_OVERRIDE;
-    virtual QStringList keyBindingsForAction(const QString &actionName) const Q_DECL_OVERRIDE;
+    virtual QStringList actionNames() const override;
+    virtual void doAction(const QString &actionName) override;
+    virtual QStringList keyBindingsForAction(const QString &actionName) const override;
 
 private:
     QHeaderView *verticalHeader() const;
     QHeaderView *horizontalHeader() const;
     QPointer<QAbstractItemView > view;
-    QModelIndex m_index;
+    QPersistentModelIndex m_index;
     QAccessible::Role m_role;
 
     void selectCell();
     void unselectCell();
 
 friend class QAccessibleTable;
+#if QT_CONFIG(treeview)
 friend class QAccessibleTree;
+#endif
 };
 
 
@@ -224,21 +234,21 @@ public:
     // For header cells, pass the header view in addition
     QAccessibleTableHeaderCell(QAbstractItemView *view, int index, Qt::Orientation orientation);
 
-    QObject *object() const Q_DECL_OVERRIDE { return 0; }
-    QAccessible::Role role() const Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
-    QRect rect() const Q_DECL_OVERRIDE;
-    bool isValid() const Q_DECL_OVERRIDE;
+    QObject *object() const override { return nullptr; }
+    QAccessible::Role role() const override;
+    QAccessible::State state() const override;
+    QRect rect() const override;
+    bool isValid() const override;
 
-    QAccessibleInterface *childAt(int, int) const Q_DECL_OVERRIDE { return 0; }
-    int childCount() const Q_DECL_OVERRIDE { return 0; }
-    int indexOfChild(const QAccessibleInterface *) const Q_DECL_OVERRIDE { return -1; }
+    QAccessibleInterface *childAt(int, int) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface *) const override { return -1; }
 
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
-    void setText(QAccessible::Text t, const QString &text) Q_DECL_OVERRIDE;
+    QString text(QAccessible::Text t) const override;
+    void setText(QAccessible::Text t, const QString &text) override;
 
-    QAccessibleInterface *parent() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *parent() const override;
+    QAccessibleInterface *child(int index) const override;
 
 private:
     QHeaderView *headerView() const;
@@ -248,7 +258,9 @@ private:
     Qt::Orientation orientation;
 
 friend class QAccessibleTable;
+#if QT_CONFIG(treeview)
 friend class QAccessibleTree;
+#endif
 };
 
 // This is the corner button on the top left of a table.
@@ -261,32 +273,30 @@ public:
         :view(view_)
     {}
 
-    QObject *object() const Q_DECL_OVERRIDE { return 0; }
-    QAccessible::Role role() const Q_DECL_OVERRIDE { return QAccessible::Pane; }
-    QAccessible::State state() const Q_DECL_OVERRIDE { return QAccessible::State(); }
-    QRect rect() const Q_DECL_OVERRIDE { return QRect(); }
-    bool isValid() const Q_DECL_OVERRIDE { return true; }
+    QObject *object() const override { return nullptr; }
+    QAccessible::Role role() const override { return QAccessible::Pane; }
+    QAccessible::State state() const override { return QAccessible::State(); }
+    QRect rect() const override { return QRect(); }
+    bool isValid() const override { return true; }
 
-    QAccessibleInterface *childAt(int, int) const Q_DECL_OVERRIDE { return 0; }
-    int childCount() const Q_DECL_OVERRIDE { return 0; }
-    int indexOfChild(const QAccessibleInterface *) const Q_DECL_OVERRIDE { return -1; }
+    QAccessibleInterface *childAt(int, int) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface *) const override { return -1; }
 
-    QString text(QAccessible::Text) const Q_DECL_OVERRIDE { return QString(); }
-    void setText(QAccessible::Text, const QString &) Q_DECL_OVERRIDE {}
+    QString text(QAccessible::Text) const override { return QString(); }
+    void setText(QAccessible::Text, const QString &) override {}
 
-    QAccessibleInterface *parent() const Q_DECL_OVERRIDE {
+    QAccessibleInterface *parent() const override {
         return QAccessible::queryAccessibleInterface(view);
     }
-    QAccessibleInterface *child(int) const Q_DECL_OVERRIDE {
-        return 0;
+    QAccessibleInterface *child(int) const override {
+        return nullptr;
     }
 
 private:
     QPointer<QAbstractItemView> view;
 };
 
-
-#endif
 
 #endif // QT_NO_ACCESSIBILITY
 

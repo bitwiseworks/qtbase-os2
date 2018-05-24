@@ -10,11 +10,8 @@
 #define TEXTFINDER_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -96,9 +93,9 @@ public:
 
     void retranslateUi(QWidget *Form)
     {
-        Form->setWindowTitle(QApplication::translate("Form", "Find Text", 0));
-        searchLabel->setText(QApplication::translate("Form", "&Keyword:", 0));
-        findButton->setText(QApplication::translate("Form", "&Find", 0));
+        Form->setWindowTitle(QApplication::translate("Form", "Find Text", nullptr));
+        searchLabel->setText(QApplication::translate("Form", "&Keyword:", nullptr));
+        findButton->setText(QApplication::translate("Form", "&Find", nullptr));
     } // retranslateUi
 
 };

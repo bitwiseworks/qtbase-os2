@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -116,10 +111,10 @@ void tst_QSqlRecord::createTestRecord()
 {
     delete rec;
     rec = new QSqlRecord();
-    fields[ 0 ] = new QSqlField( "string", QVariant::String );
-    fields[ 1 ] = new QSqlField( "int", QVariant::Int );
-    fields[ 2 ] = new QSqlField( "double", QVariant::Double );
-    fields[ 3 ] = new QSqlField( "bool", QVariant::Bool );
+    fields[0] = new QSqlField(QStringLiteral("string"), QVariant::String, QStringLiteral("stringtable"));
+    fields[1] = new QSqlField(QStringLiteral("int"), QVariant::Int, QStringLiteral("inttable"));
+    fields[2] = new QSqlField(QStringLiteral("double"), QVariant::Double, QStringLiteral("doubletable"));
+    fields[3] = new QSqlField(QStringLiteral("bool"), QVariant::Bool);
     for ( int i = 0; i < NUM_FIELDS; ++i )
         rec->append( *(fields[ i ] ) );
 }
@@ -129,12 +124,14 @@ void tst_QSqlRecord::append()
 {
     delete rec;
     rec = new QSqlRecord();
-    rec->append( QSqlField( "string", QVariant::String ) );
+    rec->append(QSqlField("string", QVariant::String, QStringLiteral("stringtable")));
     QCOMPARE( rec->field( 0 ).name(), (QString) "string" );
+    QCOMPARE(rec->field(0).tableName(), QStringLiteral("stringtable"));
     QVERIFY( !rec->isEmpty() );
     QCOMPARE( (int)rec->count(), 1 );
-    rec->append( QSqlField( "int", QVariant::Int ) );
+    rec->append(QSqlField("int", QVariant::Int, QStringLiteral("inttable")));
     QCOMPARE( rec->field( 1 ).name(), (QString) "int" );
+    QCOMPARE(rec->field(1).tableName(), QStringLiteral("inttable"));
     QCOMPARE( (int)rec->count(), 2 );
     rec->append( QSqlField( "double", QVariant::Double ) );
     QCOMPARE( rec->field( 2 ).name(), (QString) "double" );
@@ -386,7 +383,7 @@ void tst_QSqlRecord::operator_Assign()
     buf3.remove( NUM_FIELDS - 1 );
     QSqlRecord buf5 = buf3;
     for ( i = 0; i < NUM_FIELDS - 1; ++i ) {
-        QSqlField fi ( fields[ i ]->name(), fields[ i ]->type() );
+        QSqlField fi(fields[i]->name(), fields[i]->type(), fields[i]->tableName());
         fi.clear();
         QVERIFY( buf5.field( i ) == fi );
         QVERIFY( buf5.isGenerated( i ) );
@@ -399,6 +396,8 @@ void tst_QSqlRecord::position()
     int i;
     for ( i = 0; i < NUM_FIELDS; ++i ) {
         QCOMPARE( rec->indexOf( fields[ i ]->name() ), i );
+        if (!fields[i]->tableName().isEmpty())
+            QCOMPARE(rec->indexOf(fields[i]->tableName() + QChar('.') + fields[i]->name()), i);
     }
 }
 
@@ -484,7 +483,7 @@ void tst_QSqlRecord::setValue()
     QVERIFY( rec2.value( 3 ) == QVariant(bval) );
 
     rec2.setValue( "string", "__Harry__" );
-    QVERIFY( rec2.value( 0 ) == "__Harry__" );
+    QCOMPARE(rec2.value(0).toString(), QLatin1String("__Harry__"));
 
     for ( i = 0; i < 4; ++i )
         QVERIFY( !rec2.isNull( i ) );
@@ -501,7 +500,7 @@ void tst_QSqlRecord::value()
     QSqlRecord rec2;
     rec2.append( QSqlField( "string", QVariant::String ) );
     rec2.setValue( "string", "Harry" );
-    QVERIFY( rec2.value( "string" ) == "Harry" );
+    QCOMPARE(rec2.value("string").toString(), QLatin1String("Harry"));
 }
 
 QTEST_MAIN(tst_QSqlRecord)

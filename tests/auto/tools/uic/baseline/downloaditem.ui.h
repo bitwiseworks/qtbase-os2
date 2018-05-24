@@ -10,11 +10,8 @@
 #define DOWNLOADITEM_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
@@ -127,13 +124,13 @@ public:
 
     void retranslateUi(QWidget *DownloadItem)
     {
-        DownloadItem->setWindowTitle(QApplication::translate("DownloadItem", "Form", 0));
-        fileIcon->setText(QApplication::translate("DownloadItem", "Ico", 0));
-        fileNameLabel->setProperty("text", QVariant(QApplication::translate("DownloadItem", "Filename", 0)));
+        DownloadItem->setWindowTitle(QApplication::translate("DownloadItem", "Form", nullptr));
+        fileIcon->setText(QApplication::translate("DownloadItem", "Ico", nullptr));
+        fileNameLabel->setProperty("text", QVariant(QApplication::translate("DownloadItem", "Filename", nullptr)));
         downloadInfoLabel->setProperty("text", QVariant(QString()));
-        tryAgainButton->setText(QApplication::translate("DownloadItem", "Try Again", 0));
-        stopButton->setText(QApplication::translate("DownloadItem", "Stop", 0));
-        openButton->setText(QApplication::translate("DownloadItem", "Open", 0));
+        tryAgainButton->setText(QApplication::translate("DownloadItem", "Try Again", nullptr));
+        stopButton->setText(QApplication::translate("DownloadItem", "Stop", nullptr));
+        openButton->setText(QApplication::translate("DownloadItem", "Open", nullptr));
     } // retranslateUi
 
 };

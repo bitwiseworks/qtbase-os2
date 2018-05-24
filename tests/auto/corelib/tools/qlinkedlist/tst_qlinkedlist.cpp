@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -204,6 +199,7 @@ private slots:
     void removeOneInt() const;
     void removeOneMovable() const;
     void removeOneComplex() const;
+    void reverseIterators() const;
     void startsWithInt() const;
     void startsWithMovable() const;
     void startsWithComplex() const;
@@ -527,12 +523,12 @@ void tst_QLinkedList::contains() const
     QLinkedList<T> list;
     list << T_FOO << T_BAR << T_BAZ;
 
-    QVERIFY(list.contains(T_FOO) == true);
+    QVERIFY(list.contains(T_FOO));
     QVERIFY(list.contains(T_BLAH) != true);
 
     // add it and make sure it matches
     list.append(T_BLAH);
-    QVERIFY(list.contains(T_BLAH) == true);
+    QVERIFY(list.contains(T_BLAH));
 }
 
 void tst_QLinkedList::containsInt() const
@@ -752,6 +748,21 @@ void tst_QLinkedList::removeOneComplex() const
     const int liveCount = Complex::getLiveCount();
     removeOne<Complex>();
     QCOMPARE(liveCount, Complex::getLiveCount());
+}
+
+void tst_QLinkedList::reverseIterators() const
+{
+    QLinkedList<int> l;
+    l << 1 << 2 << 3 << 4;
+    QLinkedList<int> lr = l;
+    std::reverse(lr.begin(), lr.end());
+    const QLinkedList<int> &clr = lr;
+    QVERIFY(std::equal(l.begin(), l.end(), lr.rbegin()));
+    QVERIFY(std::equal(l.begin(), l.end(), lr.crbegin()));
+    QVERIFY(std::equal(l.begin(), l.end(), clr.rbegin()));
+    QVERIFY(std::equal(lr.rbegin(), lr.rend(), l.begin()));
+    QVERIFY(std::equal(lr.crbegin(), lr.crend(), l.begin()));
+    QVERIFY(std::equal(clr.rbegin(), clr.rend(), l.begin()));
 }
 
 template<typename T>
@@ -1011,7 +1022,7 @@ template<typename T>
 void tst_QLinkedList::constSharedNull() const
 {
     QLinkedList<T> list2;
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QLinkedList<T> list1;
     list1.setSharable(false);
     QVERIFY(list1.isDetached());
@@ -1043,7 +1054,7 @@ void tst_QLinkedList::constSharedNullComplex() const
 
 void tst_QLinkedList::setSharableInt() const
 {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QLinkedList<int> orglist;
     orglist << 0 << 1 << 2 << 3 << 4 << 5;
     int size = 6;

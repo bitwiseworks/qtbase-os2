@@ -54,14 +54,14 @@ struct CmapSubtableFormat0
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this));
+    return_trace (c->check_struct (this));
   }
 
   protected:
-  USHORT	format;		/* Format number is set to 0. */
-  USHORT	lengthZ;	/* Byte length of this subtable. */
-  USHORT	languageZ;	/* Ignore. */
-  BYTE		glyphIdArray[256];/* An array that maps character
+  UINT16	format;		/* Format number is set to 0. */
+  UINT16	lengthZ;	/* Byte length of this subtable. */
+  UINT16	languageZ;	/* Ignore. */
+  UINT8		glyphIdArray[256];/* An array that maps character
 				 * code to glyph index values. */
   public:
   DEFINE_SIZE_STATIC (6 + 256);
@@ -69,68 +69,85 @@ struct CmapSubtableFormat0
 
 struct CmapSubtableFormat4
 {
-  inline bool get_glyph (hb_codepoint_t codepoint, hb_codepoint_t *glyph) const
+  struct accelerator_t
   {
-    unsigned int segCount;
-    const USHORT *endCount;
-    const USHORT *startCount;
-    const USHORT *idDelta;
-    const USHORT *idRangeOffset;
-    const USHORT *glyphIdArray;
-    unsigned int glyphIdArrayLength;
-
-    segCount = this->segCountX2 / 2;
-    endCount = this->values;
-    startCount = endCount + segCount + 1;
-    idDelta = startCount + segCount;
-    idRangeOffset = idDelta + segCount;
-    glyphIdArray = idRangeOffset + segCount;
-    glyphIdArrayLength = (this->length - 16 - 8 * segCount) / 2;
-
-    /* Custom two-array bsearch. */
-    int min = 0, max = (int) segCount - 1;
-    unsigned int i;
-    while (min <= max)
+    inline void init (const CmapSubtableFormat4 *subtable)
     {
-      int mid = (min + max) / 2;
-      if (codepoint < startCount[mid])
-        max = mid - 1;
-      else if (codepoint > endCount[mid])
-        min = mid + 1;
+      segCount = subtable->segCountX2 / 2;
+      endCount = subtable->values;
+      startCount = endCount + segCount + 1;
+      idDelta = startCount + segCount;
+      idRangeOffset = idDelta + segCount;
+      glyphIdArray = idRangeOffset + segCount;
+      glyphIdArrayLength = (subtable->length - 16 - 8 * segCount) / 2;
+    }
+
+    static inline bool get_glyph_func (const void *obj, hb_codepoint_t codepoint, hb_codepoint_t *glyph)
+    {
+      const accelerator_t *thiz = (const accelerator_t *) obj;
+
+      /* Custom two-array bsearch. */
+      int min = 0, max = (int) thiz->segCount - 1;
+      const UINT16 *startCount = thiz->startCount;
+      const UINT16 *endCount = thiz->endCount;
+      unsigned int i;
+      while (min <= max)
+      {
+	int mid = (min + max) / 2;
+	if (codepoint < startCount[mid])
+	  max = mid - 1;
+	else if (codepoint > endCount[mid])
+	  min = mid + 1;
+	else
+	{
+	  i = mid;
+	  goto found;
+	}
+      }
+      return false;
+
+    found:
+      hb_codepoint_t gid;
+      unsigned int rangeOffset = thiz->idRangeOffset[i];
+      if (rangeOffset == 0)
+	gid = codepoint + thiz->idDelta[i];
       else
       {
-	i = mid;
-	goto found;
+	/* Somebody has been smoking... */
+	unsigned int index = rangeOffset / 2 + (codepoint - thiz->startCount[i]) + i - thiz->segCount;
+	if (unlikely (index >= thiz->glyphIdArrayLength))
+	  return false;
+	gid = thiz->glyphIdArray[index];
+	if (unlikely (!gid))
+	  return false;
+	gid += thiz->idDelta[i];
       }
-    }
-    return false;
 
-  found:
-    hb_codepoint_t gid;
-    unsigned int rangeOffset = idRangeOffset[i];
-    if (rangeOffset == 0)
-      gid = codepoint + idDelta[i];
-    else
-    {
-      /* Somebody has been smoking... */
-      unsigned int index = rangeOffset / 2 + (codepoint - startCount[i]) + i - segCount;
-      if (unlikely (index >= glyphIdArrayLength))
-	return false;
-      gid = glyphIdArray[index];
-      if (unlikely (!gid))
-	return false;
-      gid += idDelta[i];
+      *glyph = gid & 0xFFFFu;
+      return true;
     }
 
-    *glyph = gid & 0xFFFFu;
-    return true;
+    const UINT16 *endCount;
+    const UINT16 *startCount;
+    const UINT16 *idDelta;
+    const UINT16 *idRangeOffset;
+    const UINT16 *glyphIdArray;
+    unsigned int segCount;
+    unsigned int glyphIdArrayLength;
+  };
+
+  inline bool get_glyph (hb_codepoint_t codepoint, hb_codepoint_t *glyph) const
+  {
+    accelerator_t accel;
+    accel.init (this);
+    return accel.get_glyph_func (&accel, codepoint, glyph);
   }
 
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
     if (unlikely (!c->check_struct (this)))
-      return TRACE_RETURN (false);
+      return_trace (false);
 
     if (unlikely (!c->check_range (this, length)))
     {
@@ -141,31 +158,31 @@ struct CmapSubtableFormat4
 					    (uintptr_t) (c->end -
 							 (char *) this));
       if (!c->try_set (&length, new_length))
-	return TRACE_RETURN (false);
+	return_trace (false);
     }
 
-    return TRACE_RETURN (16 + 4 * (unsigned int) segCountX2 <= length);
+    return_trace (16 + 4 * (unsigned int) segCountX2 <= length);
   }
 
   protected:
-  USHORT	format;		/* Format number is set to 4. */
-  USHORT	length;		/* This is the length in bytes of the
+  UINT16	format;		/* Format number is set to 4. */
+  UINT16	length;		/* This is the length in bytes of the
 				 * subtable. */
-  USHORT	languageZ;	/* Ignore. */
-  USHORT	segCountX2;	/* 2 x segCount. */
-  USHORT	searchRangeZ;	/* 2 * (2**floor(log2(segCount))) */
-  USHORT	entrySelectorZ;	/* log2(searchRange/2) */
-  USHORT	rangeShiftZ;	/* 2 x segCount - searchRange */
+  UINT16	languageZ;	/* Ignore. */
+  UINT16	segCountX2;	/* 2 x segCount. */
+  UINT16	searchRangeZ;	/* 2 * (2**floor(log2(segCount))) */
+  UINT16	entrySelectorZ;	/* log2(searchRange/2) */
+  UINT16	rangeShiftZ;	/* 2 x segCount - searchRange */
 
-  USHORT	values[VAR];
+  UINT16	values[VAR];
 #if 0
-  USHORT	endCount[segCount];	/* End characterCode for each segment,
+  UINT16	endCount[segCount];	/* End characterCode for each segment,
 					 * last=0xFFFFu. */
-  USHORT	reservedPad;		/* Set to 0. */
-  USHORT	startCount[segCount];	/* Start character code for each segment. */
-  SHORT		idDelta[segCount];	/* Delta for all character codes in segment. */
-  USHORT	idRangeOffset[segCount];/* Offsets into glyphIdArray or 0 */
-  USHORT	glyphIdArray[VAR];	/* Glyph index array (arbitrary length) */
+  UINT16	reservedPad;		/* Set to 0. */
+  UINT16	startCount[segCount];	/* Start character code for each segment. */
+  INT16		idDelta[segCount];	/* Delta for all character codes in segment. */
+  UINT16	idRangeOffset[segCount];/* Offsets into glyphIdArray or 0 */
+  UINT16	glyphIdArray[VAR];	/* Glyph index array (arbitrary length) */
 #endif
 
   public:
@@ -187,13 +204,13 @@ struct CmapSubtableLongGroup
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this));
+    return_trace (c->check_struct (this));
   }
 
   private:
-  ULONG		startCharCode;	/* First character code in this group. */
-  ULONG		endCharCode;	/* Last character code in this group. */
-  ULONG		glyphID;	/* Glyph index; interpretation depends on
+  UINT32		startCharCode;	/* First character code in this group. */
+  UINT32		endCharCode;	/* Last character code in this group. */
+  UINT32		glyphID;	/* Glyph index; interpretation depends on
 				 * subtable format. */
   public:
   DEFINE_SIZE_STATIC (12);
@@ -215,7 +232,7 @@ struct CmapSubtableTrimmed
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) && glyphIdArray.sanitize (c));
+    return_trace (c->check_struct (this) && glyphIdArray.sanitize (c));
   }
 
   protected:
@@ -230,8 +247,8 @@ struct CmapSubtableTrimmed
   DEFINE_SIZE_ARRAY (5 * sizeof (UINT), glyphIdArray);
 };
 
-struct CmapSubtableFormat6  : CmapSubtableTrimmed<USHORT> {};
-struct CmapSubtableFormat10 : CmapSubtableTrimmed<ULONG > {};
+struct CmapSubtableFormat6  : CmapSubtableTrimmed<UINT16> {};
+struct CmapSubtableFormat10 : CmapSubtableTrimmed<UINT32 > {};
 
 template <typename T>
 struct CmapSubtableLongSegmented
@@ -248,15 +265,15 @@ struct CmapSubtableLongSegmented
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) && groups.sanitize (c));
+    return_trace (c->check_struct (this) && groups.sanitize (c));
   }
 
   protected:
-  USHORT	format;		/* Subtable format; set to 12. */
-  USHORT	reservedZ;	/* Reserved; set to 0. */
-  ULONG		lengthZ;	/* Byte length of this subtable. */
-  ULONG		languageZ;	/* Ignore. */
-  SortedArrayOf<CmapSubtableLongGroup, ULONG>
+  UINT16	format;		/* Subtable format; set to 12. */
+  UINT16	reservedZ;	/* Reserved; set to 0. */
+  UINT32		lengthZ;	/* Byte length of this subtable. */
+  UINT32		languageZ;	/* Ignore. */
+  SortedArrayOf<CmapSubtableLongGroup, UINT32>
 		groups;		/* Groupings. */
   public:
   DEFINE_SIZE_ARRAY (16, groups);
@@ -295,17 +312,17 @@ struct UnicodeValueRange
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this));
+    return_trace (c->check_struct (this));
   }
 
   UINT24	startUnicodeValue;	/* First value in this range. */
-  BYTE		additionalCount;	/* Number of additional values in this
+  UINT8		additionalCount;	/* Number of additional values in this
 					 * range. */
   public:
   DEFINE_SIZE_STATIC (4);
 };
 
-typedef SortedArrayOf<UnicodeValueRange, ULONG> DefaultUVS;
+typedef SortedArrayOf<UnicodeValueRange, UINT32> DefaultUVS;
 
 struct UVSMapping
 {
@@ -317,7 +334,7 @@ struct UVSMapping
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this));
+    return_trace (c->check_struct (this));
   }
 
   UINT24	unicodeValue;	/* Base Unicode value of the UVS */
@@ -326,7 +343,7 @@ struct UVSMapping
   DEFINE_SIZE_STATIC (5);
 };
 
-typedef SortedArrayOf<UVSMapping, ULONG> NonDefaultUVS;
+typedef SortedArrayOf<UVSMapping, UINT32> NonDefaultUVS;
 
 struct VariationSelectorRecord
 {
@@ -357,15 +374,15 @@ struct VariationSelectorRecord
   inline bool sanitize (hb_sanitize_context_t *c, const void *base) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) &&
-			 defaultUVS.sanitize (c, base) &&
-			 nonDefaultUVS.sanitize (c, base));
+    return_trace (c->check_struct (this) &&
+		  defaultUVS.sanitize (c, base) &&
+		  nonDefaultUVS.sanitize (c, base));
   }
 
   UINT24	varSelector;	/* Variation selector. */
-  OffsetTo<DefaultUVS, ULONG>
+  LOffsetTo<DefaultUVS>
 		defaultUVS;	/* Offset to Default UVS Table. May be 0. */
-  OffsetTo<NonDefaultUVS, ULONG>
+  LOffsetTo<NonDefaultUVS>
 		nonDefaultUVS;	/* Offset to Non-Default UVS Table. May be 0. */
   public:
   DEFINE_SIZE_STATIC (11);
@@ -383,14 +400,14 @@ struct CmapSubtableFormat14
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) &&
-			 record.sanitize (c, this));
+    return_trace (c->check_struct (this) &&
+		  record.sanitize (c, this));
   }
 
   protected:
-  USHORT	format;		/* Format number is set to 0. */
-  ULONG		lengthZ;	/* Byte length of this subtable. */
-  SortedArrayOf<VariationSelectorRecord, ULONG>
+  UINT16	format;		/* Format number is set to 14. */
+  UINT32		lengthZ;	/* Byte length of this subtable. */
+  SortedArrayOf<VariationSelectorRecord, UINT32>
 		record;		/* Variation selector records; sorted
 				 * in increasing order of `varSelector'. */
   public:
@@ -416,35 +433,25 @@ struct CmapSubtable
     }
   }
 
-  inline glyph_variant_t get_glyph_variant (hb_codepoint_t codepoint,
-					    hb_codepoint_t variation_selector,
-					    hb_codepoint_t *glyph) const
-  {
-    switch (u.format) {
-    case 14: return u.format14.get_glyph_variant(codepoint, variation_selector, glyph);
-    default: return GLYPH_VARIANT_NOT_FOUND;
-    }
-  }
-
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    if (!u.format.sanitize (c)) return TRACE_RETURN (false);
+    if (!u.format.sanitize (c)) return_trace (false);
     switch (u.format) {
-    case  0: return TRACE_RETURN (u.format0 .sanitize (c));
-    case  4: return TRACE_RETURN (u.format4 .sanitize (c));
-    case  6: return TRACE_RETURN (u.format6 .sanitize (c));
-    case 10: return TRACE_RETURN (u.format10.sanitize (c));
-    case 12: return TRACE_RETURN (u.format12.sanitize (c));
-    case 13: return TRACE_RETURN (u.format13.sanitize (c));
-    case 14: return TRACE_RETURN (u.format14.sanitize (c));
-    default:return TRACE_RETURN (true);
+    case  0: return_trace (u.format0 .sanitize (c));
+    case  4: return_trace (u.format4 .sanitize (c));
+    case  6: return_trace (u.format6 .sanitize (c));
+    case 10: return_trace (u.format10.sanitize (c));
+    case 12: return_trace (u.format12.sanitize (c));
+    case 13: return_trace (u.format13.sanitize (c));
+    case 14: return_trace (u.format14.sanitize (c));
+    default:return_trace (true);
     }
   }
 
-  protected:
+  public:
   union {
-  USHORT		format;		/* Format identifier */
+  UINT16		format;		/* Format identifier */
   CmapSubtableFormat0	format0;
   CmapSubtableFormat4	format4;
   CmapSubtableFormat6	format6;
@@ -473,13 +480,13 @@ struct EncodingRecord
   inline bool sanitize (hb_sanitize_context_t *c, const void *base) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) &&
-			 subtable.sanitize (c, base));
+    return_trace (c->check_struct (this) &&
+		  subtable.sanitize (c, base));
   }
 
-  USHORT	platformID;	/* Platform ID. */
-  USHORT	encodingID;	/* Platform-specific encoding ID. */
-  OffsetTo<CmapSubtable, ULONG>
+  UINT16	platformID;	/* Platform ID. */
+  UINT16	encodingID;	/* Platform-specific encoding ID. */
+  LOffsetTo<CmapSubtable>
 		subtable;	/* Byte offset from beginning of table to the subtable for this encoding. */
   public:
   DEFINE_SIZE_STATIC (8);
@@ -488,6 +495,146 @@ struct EncodingRecord
 struct cmap
 {
   static const hb_tag_t tableTag	= HB_OT_TAG_cmap;
+
+  inline bool sanitize (hb_sanitize_context_t *c) const
+  {
+    TRACE_SANITIZE (this);
+    return_trace (c->check_struct (this) &&
+		  likely (version == 0) &&
+		  encodingRecord.sanitize (c, this));
+  }
+
+  struct accelerator_t
+  {
+    inline void init (hb_face_t *face)
+    {
+      this->blob = OT::Sanitizer<OT::cmap>::sanitize (face->reference_table (HB_OT_TAG_cmap));
+      const OT::cmap *cmap = OT::Sanitizer<OT::cmap>::lock_instance (this->blob);
+      const OT::CmapSubtable *subtable = nullptr;
+      const OT::CmapSubtableFormat14 *subtable_uvs = nullptr;
+
+      bool symbol = false;
+      /* 32-bit subtables. */
+      if (!subtable) subtable = cmap->find_subtable (3, 10);
+      if (!subtable) subtable = cmap->find_subtable (0, 6);
+      if (!subtable) subtable = cmap->find_subtable (0, 4);
+      /* 16-bit subtables. */
+      if (!subtable) subtable = cmap->find_subtable (3, 1);
+      if (!subtable) subtable = cmap->find_subtable (0, 3);
+      if (!subtable) subtable = cmap->find_subtable (0, 2);
+      if (!subtable) subtable = cmap->find_subtable (0, 1);
+      if (!subtable) subtable = cmap->find_subtable (0, 0);
+      if (!subtable)
+      {
+	subtable = cmap->find_subtable (3, 0);
+	if (subtable) symbol = true;
+      }
+      /* Meh. */
+      if (!subtable) subtable = &OT::Null(OT::CmapSubtable);
+
+      /* UVS subtable. */
+      if (!subtable_uvs)
+      {
+	const OT::CmapSubtable *st = cmap->find_subtable (0, 5);
+	if (st && st->u.format == 14)
+	  subtable_uvs = &st->u.format14;
+      }
+      /* Meh. */
+      if (!subtable_uvs) subtable_uvs = &OT::Null(OT::CmapSubtableFormat14);
+
+      this->uvs_table = subtable_uvs;
+
+      this->get_glyph_data = subtable;
+      if (unlikely (symbol))
+	this->get_glyph_func = get_glyph_from_symbol<OT::CmapSubtable>;
+      else
+	switch (subtable->u.format) {
+	/* Accelerate format 4 and format 12. */
+	default: this->get_glyph_func = get_glyph_from<OT::CmapSubtable>;		break;
+	case 12: this->get_glyph_func = get_glyph_from<OT::CmapSubtableFormat12>;	break;
+	case  4:
+	  {
+	    this->format4_accel.init (&subtable->u.format4);
+	    this->get_glyph_data = &this->format4_accel;
+	    this->get_glyph_func = this->format4_accel.get_glyph_func;
+	  }
+	  break;
+	}
+    }
+
+    inline void fini (void)
+    {
+      hb_blob_destroy (this->blob);
+    }
+
+    inline bool get_nominal_glyph (hb_codepoint_t  unicode,
+				   hb_codepoint_t *glyph) const
+    {
+      return this->get_glyph_func (this->get_glyph_data, unicode, glyph);
+    }
+
+    inline bool get_variation_glyph (hb_codepoint_t  unicode,
+				     hb_codepoint_t  variation_selector,
+				     hb_codepoint_t *glyph) const
+    {
+      switch (this->uvs_table->get_glyph_variant (unicode,
+						  variation_selector,
+						  glyph))
+      {
+	case OT::GLYPH_VARIANT_NOT_FOUND:		return false;
+	case OT::GLYPH_VARIANT_FOUND:		return true;
+	case OT::GLYPH_VARIANT_USE_DEFAULT:	break;
+      }
+
+      return get_nominal_glyph (unicode, glyph);
+    }
+
+    protected:
+    typedef bool (*hb_cmap_get_glyph_func_t) (const void *obj,
+					      hb_codepoint_t codepoint,
+					      hb_codepoint_t *glyph);
+
+    template <typename Type>
+    static inline bool get_glyph_from (const void *obj,
+				       hb_codepoint_t codepoint,
+				       hb_codepoint_t *glyph)
+    {
+      const Type *typed_obj = (const Type *) obj;
+      return typed_obj->get_glyph (codepoint, glyph);
+    }
+
+    template <typename Type>
+    static inline bool get_glyph_from_symbol (const void *obj,
+					      hb_codepoint_t codepoint,
+					      hb_codepoint_t *glyph)
+    {
+      const Type *typed_obj = (const Type *) obj;
+      if (likely (typed_obj->get_glyph (codepoint, glyph)))
+	return true;
+
+      if (codepoint <= 0x00FFu)
+      {
+	/* For symbol-encoded OpenType fonts, we duplicate the
+	 * U+F000..F0FF range at U+0000..U+00FF.  That's what
+	 * Windows seems to do, and that's hinted about at:
+	 * http://www.microsoft.com/typography/otspec/recom.htm
+	 * under "Non-Standard (Symbol) Fonts". */
+	return typed_obj->get_glyph (0xF000u + codepoint, glyph);
+      }
+
+      return false;
+    }
+
+    private:
+    hb_cmap_get_glyph_func_t get_glyph_func;
+    const void *get_glyph_data;
+    OT::CmapSubtableFormat4::accelerator_t format4_accel;
+
+    const OT::CmapSubtableFormat14 *uvs_table;
+    hb_blob_t *blob;
+  };
+
+  protected:
 
   inline const CmapSubtable *find_subtable (unsigned int platform_id,
 					    unsigned int encoding_id) const
@@ -501,20 +648,13 @@ struct cmap
      * unsorted subtable list. */
     int result = encodingRecord./*bsearch*/lsearch (key);
     if (result == -1 || !encodingRecord[result].subtable)
-      return NULL;
+      return nullptr;
 
     return &(this+encodingRecord[result].subtable);
   }
 
-  inline bool sanitize (hb_sanitize_context_t *c) const
-  {
-    TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) &&
-			 likely (version == 0) &&
-			 encodingRecord.sanitize (c, this));
-  }
-
-  USHORT		version;	/* Table version number (0). */
+  protected:
+  UINT16		version;	/* Table version number (0). */
   SortedArrayOf<EncodingRecord>
 			encodingRecord;	/* Encoding tables. */
   public:

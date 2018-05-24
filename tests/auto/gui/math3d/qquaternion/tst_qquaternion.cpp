@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -446,7 +441,7 @@ void tst_QQuaternion::compare()
     QQuaternion v5(8, 1, 2, 3);
     QQuaternion v6(3, 1, 2, 4);
 
-    QVERIFY(v1 == v2);
+    QCOMPARE(v1, v2);
     QVERIFY(v1 != v3);
     QVERIFY(v1 != v4);
     QVERIFY(v1 != v5);
@@ -522,7 +517,7 @@ void tst_QQuaternion::add()
 
     QQuaternion v4(v1);
     v4 += v2;
-    QVERIFY(v4 == v3);
+    QCOMPARE(v4, v3);
 
     QCOMPARE(v4.x(), v1.x() + v2.x());
     QCOMPARE(v4.y(), v1.y() + v2.y());
@@ -560,7 +555,7 @@ void tst_QQuaternion::subtract()
 
     QQuaternion v4(v3);
     v4 -= v1;
-    QVERIFY(v4 == v2);
+    QCOMPARE(v4, v2);
 
     QCOMPARE(v4.x(), v3.x() - v1.x());
     QCOMPARE(v4.y(), v3.y() - v1.y());
@@ -569,7 +564,7 @@ void tst_QQuaternion::subtract()
 
     QQuaternion v5(v3);
     v5 -= v2;
-    QVERIFY(v5 == v1);
+    QCOMPARE(v5, v1);
 
     QCOMPARE(v5.x(), v3.x() - v2.x());
     QCOMPARE(v5.y(), v3.y() - v2.y());
@@ -704,7 +699,7 @@ void tst_QQuaternion::multiplyFactor()
 
     QQuaternion v3(v1);
     v3 *= factor;
-    QVERIFY(v3 == v2);
+    QCOMPARE(v3, v2);
 
     QCOMPARE(v3.x(), v1.x() * factor);
     QCOMPARE(v3.y(), v1.y() * factor);
@@ -740,7 +735,7 @@ void tst_QQuaternion::divide()
 
     QQuaternion v3(v2);
     v3 /= factor;
-    QVERIFY(v3 == v1);
+    QCOMPARE(v3, v1);
 
     QCOMPARE(v3.x(), v2.x() / factor);
     QCOMPARE(v3.y(), v2.y() / factor);
@@ -764,7 +759,7 @@ void tst_QQuaternion::negate()
     QQuaternion v1(w1, x1, y1, z1);
     QQuaternion v2(-w1, -x1, -y1, -z1);
 
-    QVERIFY(-v1 == v2);
+    QCOMPARE(-v1, v2);
 }
 
 // Test quaternion conjugate calculations.
@@ -783,7 +778,7 @@ void tst_QQuaternion::conjugate()
     QQuaternion v1(w1, x1, y1, z1);
     QQuaternion v2(w1, -x1, -y1, -z1);
 
-    QVERIFY(v1.conjugate() == v2);
+    QCOMPARE(v1.conjugate(), v2);
 }
 
 // Test quaternion creation from an axis and an angle.
@@ -820,7 +815,7 @@ void tst_QQuaternion::fromAxisAndAngle()
     // http://www.j3d.org/matrix_faq/matrfaq_latest.html#Q56
     // to calculate the answer we expect to get.
     QVector3D vector = QVector3D(x1, y1, z1).normalized();
-    const float a = (angle * M_PI / 180.0) / 2.0;
+    const float a = qDegreesToRadians(angle) / 2.0;
     const float sin_a = std::sin(a);
     const float cos_a = std::cos(a);
     QQuaternion result(cos_a,
@@ -999,16 +994,16 @@ static QByteArray testnameForAxis(const QVector3D &axis)
         testname = "null";
     } else {
         if (axis.x()) {
-            testname += axis.x() < 0 ? "-" : "+";
-            testname += "X";
+            testname += axis.x() < 0 ? '-' : '+';
+            testname += 'X';
         }
         if (axis.y()) {
-            testname += axis.y() < 0 ? "-" : "+";
-            testname += "Y";
+            testname += axis.y() < 0 ? '-' : '+';
+            testname += 'Y';
         }
         if (axis.z()) {
-            testname += axis.z() < 0 ? "-" : "+";
-            testname += "Z";
+            testname += axis.z() < 0 ? '-' : '+';
+            testname += 'Z';
         }
     }
     return testname;
@@ -1325,14 +1320,14 @@ void tst_QQuaternion::properties()
 
 void tst_QQuaternion::metaTypes()
 {
-    QVERIFY(QMetaType::type("QQuaternion") == QMetaType::QQuaternion);
+    QCOMPARE(QMetaType::type("QQuaternion"), int(QMetaType::QQuaternion));
 
     QCOMPARE(QByteArray(QMetaType::typeName(QMetaType::QQuaternion)),
              QByteArray("QQuaternion"));
 
     QVERIFY(QMetaType::isRegistered(QMetaType::QQuaternion));
 
-    QVERIFY(qMetaTypeId<QQuaternion>() == QMetaType::QQuaternion);
+    QCOMPARE(qMetaTypeId<QQuaternion>(), int(QMetaType::QQuaternion));
 }
 
 QTEST_APPLESS_MAIN(tst_QQuaternion)

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,6 +39,9 @@
 
 #include "qlibinputkeyboard_p.h"
 #include <QtCore/QTextCodec>
+#include <QtCore/QLoggingCategory>
+#include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/private/qinputdevicemanager_p.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <libinput.h>
 #ifndef QT_NO_XKBCOMMON_EVDEV
@@ -41,6 +50,8 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(qLcLibInput)
 
 const int REPEAT_DELAY = 500;
 const int REPEAT_RATE = 100;
@@ -128,12 +139,13 @@ QLibInputKeyboard::QLibInputKeyboard()
 #endif
 {
 #ifndef QT_NO_XKBCOMMON_EVDEV
+    qCDebug(qLcLibInput) << "Using xkbcommon for key mapping";
     m_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!m_ctx) {
         qWarning("Failed to create xkb context");
         return;
     }
-    m_keymap = xkb_keymap_new_from_names(m_ctx, Q_NULLPTR, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    m_keymap = xkb_keymap_new_from_names(m_ctx, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (!m_keymap) {
         qWarning("Failed to compile keymap");
         return;
@@ -150,6 +162,8 @@ QLibInputKeyboard::QLibInputKeyboard()
 
     m_repeatTimer.setSingleShot(true);
     connect(&m_repeatTimer, &QTimer::timeout, this, &QLibInputKeyboard::handleRepeat);
+#else
+    qCWarning(qLcLibInput) << "X-less xkbcommon not available, not performing key mapping";
 #endif
 }
 
@@ -174,13 +188,18 @@ void QLibInputKeyboard::processKey(libinput_event_keyboard *e)
     const uint32_t k = libinput_event_keyboard_get_key(e) + 8;
     const bool pressed = libinput_event_keyboard_get_key_state(e) == LIBINPUT_KEY_STATE_PRESSED;
 
-    QByteArray chars;
-    chars.resize(1 + xkb_state_key_get_utf8(m_state, k, Q_NULLPTR, 0));
-    xkb_state_key_get_utf8(m_state, k, chars.data(), chars.size());
-    const QString text = QString::fromUtf8(chars);
+    QVarLengthArray<char, 32> chars(32);
+    const int size = xkb_state_key_get_utf8(m_state, k, chars.data(), chars.size());
+    if (Q_UNLIKELY(size + 1 > chars.size())) { // +1 for NUL
+        chars.resize(size + 1);
+        xkb_state_key_get_utf8(m_state, k, chars.data(), chars.size());
+    }
+    const QString text = QString::fromUtf8(chars.constData(), size);
 
     const xkb_keysym_t sym = xkb_state_key_get_one_sym(m_state, k);
 
+    // mods here is the modifier state before the event, i.e. not
+    // including the current key in case it is a modifier.
     Qt::KeyboardModifiers mods = Qt::NoModifier;
     const int qtkey = keysymToQtKey(sym, &mods, text);
 
@@ -196,7 +215,8 @@ void QLibInputKeyboard::processKey(libinput_event_keyboard *e)
 
     xkb_state_update_key(m_state, k, pressed ? XKB_KEY_DOWN : XKB_KEY_UP);
 
-    QWindowSystemInterface::handleExtendedKeyEvent(Q_NULLPTR,
+    QGuiApplicationPrivate::inputDeviceManager()->setKeyboardModifiers(mods, qtkey);
+    QWindowSystemInterface::handleExtendedKeyEvent(nullptr,
                                                    pressed ? QEvent::KeyPress : QEvent::KeyRelease,
                                                    qtkey, mods, k, sym, mods, text);
 
@@ -222,7 +242,7 @@ void QLibInputKeyboard::processKey(libinput_event_keyboard *e)
 #ifndef QT_NO_XKBCOMMON_EVDEV
 void QLibInputKeyboard::handleRepeat()
 {
-    QWindowSystemInterface::handleExtendedKeyEvent(Q_NULLPTR, QEvent::KeyPress,
+    QWindowSystemInterface::handleExtendedKeyEvent(nullptr, QEvent::KeyPress,
                                                    m_repeatData.qtkey, m_repeatData.mods,
                                                    m_repeatData.nativeScanCode, m_repeatData.virtualKey, m_repeatData.nativeMods,
                                                    m_repeatData.unicodeText, true, m_repeatData.repeatCount);
@@ -266,7 +286,7 @@ int QLibInputKeyboard::keysymToQtKey(xkb_keysym_t keysym, Qt::KeyboardModifiers 
         *modifiers |= Qt::KeypadModifier;
     } else if (text.length() == 1 && text.unicode()->unicode() > 0x1f
                                   && text.unicode()->unicode() != 0x7f
-                                  && !(keysym >= XKB_KEY_dead_grave && keysym <= XKB_KEY_dead_currency)) {
+                                  && !(keysym >= XKB_KEY_dead_grave && keysym <= XKB_KEY_dead_longsolidusoverlay)) {
         code = text.unicode()->toUpper().unicode();
     } else {
         // any other keys

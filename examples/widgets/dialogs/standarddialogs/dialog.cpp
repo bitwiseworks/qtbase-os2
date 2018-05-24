@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -98,9 +108,18 @@ int DialogOptionsWidget::value() const
 Dialog::Dialog(QWidget *parent)
     : QWidget(parent)
 {
-    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    QVBoxLayout *verticalLayout;
+    if (QGuiApplication::styleHints()->showIsFullScreen() || QGuiApplication::styleHints()->showIsMaximized()) {
+        QHBoxLayout *horizontalLayout = new QHBoxLayout(this);
+        QGroupBox *groupBox = new QGroupBox(QGuiApplication::applicationDisplayName(), this);
+        horizontalLayout->addWidget(groupBox);
+        verticalLayout = new QVBoxLayout(groupBox);
+    } else {
+        verticalLayout = new QVBoxLayout(this);
+    }
+
     QToolBox *toolbox = new QToolBox;
-    mainLayout->addWidget(toolbox);
+    verticalLayout->addWidget(toolbox);
 
     errorMessageDialog = new QErrorMessage(this);
 
@@ -180,27 +199,27 @@ Dialog::Dialog(QWidget *parent)
     QPushButton *errorButton =
             new QPushButton(tr("QErrorMessage::showM&essage()"));
 
-    connect(integerButton, SIGNAL(clicked()), this, SLOT(setInteger()));
-    connect(doubleButton, SIGNAL(clicked()), this, SLOT(setDouble()));
-    connect(itemButton, SIGNAL(clicked()), this, SLOT(setItem()));
-    connect(textButton, SIGNAL(clicked()), this, SLOT(setText()));
-    connect(multiLineTextButton, SIGNAL(clicked()), this, SLOT(setMultiLineText()));
-    connect(colorButton, SIGNAL(clicked()), this, SLOT(setColor()));
-    connect(fontButton, SIGNAL(clicked()), this, SLOT(setFont()));
-    connect(directoryButton, SIGNAL(clicked()),
-            this, SLOT(setExistingDirectory()));
-    connect(openFileNameButton, SIGNAL(clicked()),
-            this, SLOT(setOpenFileName()));
-    connect(openFileNamesButton, SIGNAL(clicked()),
-            this, SLOT(setOpenFileNames()));
-    connect(saveFileNameButton, SIGNAL(clicked()),
-            this, SLOT(setSaveFileName()));
-    connect(criticalButton, SIGNAL(clicked()), this, SLOT(criticalMessage()));
-    connect(informationButton, SIGNAL(clicked()),
-            this, SLOT(informationMessage()));
-    connect(questionButton, SIGNAL(clicked()), this, SLOT(questionMessage()));
-    connect(warningButton, SIGNAL(clicked()), this, SLOT(warningMessage()));
-    connect(errorButton, SIGNAL(clicked()), this, SLOT(errorMessage()));
+    connect(integerButton, &QAbstractButton::clicked, this, &Dialog::setInteger);
+    connect(doubleButton, &QAbstractButton::clicked, this, &Dialog::setDouble);
+    connect(itemButton, &QAbstractButton::clicked, this, &Dialog::setItem);
+    connect(textButton, &QAbstractButton::clicked, this, &Dialog::setText);
+    connect(multiLineTextButton, &QAbstractButton::clicked, this, &Dialog::setMultiLineText);
+    connect(colorButton, &QAbstractButton::clicked, this, &Dialog::setColor);
+    connect(fontButton, &QAbstractButton::clicked, this, &Dialog::setFont);
+    connect(directoryButton, &QAbstractButton::clicked,
+            this, &Dialog::setExistingDirectory);
+    connect(openFileNameButton, &QAbstractButton::clicked,
+            this, &Dialog::setOpenFileName);
+    connect(openFileNamesButton, &QAbstractButton::clicked,
+            this, &Dialog::setOpenFileNames);
+    connect(saveFileNameButton, &QAbstractButton::clicked,
+            this, &Dialog::setSaveFileName);
+    connect(criticalButton, &QAbstractButton::clicked, this, &Dialog::criticalMessage);
+    connect(informationButton, &QAbstractButton::clicked,
+            this, &Dialog::informationMessage);
+    connect(questionButton, &QAbstractButton::clicked, this, &Dialog::questionMessage);
+    connect(warningButton, &QAbstractButton::clicked, this, &Dialog::warningMessage);
+    connect(errorButton, &QAbstractButton::clicked, this, &Dialog::errorMessage);
 
     QWidget *page = new QWidget;
     QGridLayout *layout = new QGridLayout(page);
@@ -242,6 +261,10 @@ Dialog::Dialog(QWidget *parent)
     layout->addWidget(fontLabel, 0, 1);
     fontDialogOptionsWidget = new DialogOptionsWidget;
     fontDialogOptionsWidget->addCheckBox(doNotUseNativeDialog, QFontDialog::DontUseNativeDialog);
+    fontDialogOptionsWidget->addCheckBox(tr("Show scalable fonts"), QFontDialog::ScalableFonts);
+    fontDialogOptionsWidget->addCheckBox(tr("Show non scalable fonts"), QFontDialog::NonScalableFonts);
+    fontDialogOptionsWidget->addCheckBox(tr("Show monospaced fonts"), QFontDialog::MonospacedFonts);
+    fontDialogOptionsWidget->addCheckBox(tr("Show proportional fonts"), QFontDialog::ProportionalFonts);
     fontDialogOptionsWidget->addCheckBox(tr("No buttons") , QFontDialog::NoButtons);
     layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding), 1, 0);
     layout->addWidget(fontDialogOptionsWidget, 2, 0, 1 ,2);
@@ -266,6 +289,7 @@ Dialog::Dialog(QWidget *parent)
     fileDialogOptionsWidget->addCheckBox(tr("Do not use sheet"), QFileDialog::DontUseSheet);
     fileDialogOptionsWidget->addCheckBox(tr("Readonly"), QFileDialog::ReadOnly);
     fileDialogOptionsWidget->addCheckBox(tr("Hide name filter details"), QFileDialog::HideNameFilterDetails);
+    fileDialogOptionsWidget->addCheckBox(tr("Do not use custom directory icons (Windows)"), QFileDialog::DontUseCustomDirectoryIcons);
     layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding), 4, 0);
     layout->addWidget(fileDialogOptionsWidget, 5, 0, 1 ,2);
     toolbox->addItem(page, tr("File Dialogs"));
@@ -286,7 +310,7 @@ Dialog::Dialog(QWidget *parent)
     layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding), 5, 0);
     toolbox->addItem(page, tr("Message Boxes"));
 
-    setWindowTitle(tr("Standard Dialogs"));
+    setWindowTitle(QGuiApplication::applicationDisplayName());
 }
 
 void Dialog::setInteger()

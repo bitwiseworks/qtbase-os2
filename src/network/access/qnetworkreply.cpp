@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -132,6 +138,16 @@ QNetworkReplyPrivate::QNetworkReplyPrivate()
     \value BackgroundRequestNotAllowedError the background request
     is not currently allowed due to platform policy.
 
+    \value TooManyRedirectsError       while following redirects, the maximum
+    limit was reached. The limit is by default set to 50 or as set by
+    QNetworkRequest::setMaxRedirectsAllowed().
+    (This value was introduced in 5.6.)
+
+    \value InsecureRedirectError       while following redirects, the network
+    access API detected a redirect from a encrypted protocol (https) to an
+    unencrypted one (http).
+    (This value was introduced in 5.6.)
+
     \value ProxyConnectionRefusedError the connection to the proxy
     server was refused (the proxy server is not accepting requests)
 
@@ -150,7 +166,7 @@ QNetworkReplyPrivate::QNetworkReplyPrivate()
     any credentials offered (if any)
 
     \value ContentAccessDenied          the access to the remote
-    content was denied (similar to HTTP error 401)
+    content was denied (similar to HTTP error 403)
 
     \value ContentOperationNotPermittedError the operation requested
     on the remote content is not permitted
@@ -273,6 +289,33 @@ QNetworkReplyPrivate::QNetworkReplyPrivate()
     deleted by the application.
 
     \sa QSslPreSharedKeyAuthenticator
+*/
+
+/*!
+    \fn void QNetworkReply::redirected(const QUrl &url)
+    \since 5.6
+
+    This signal is emitted if the QNetworkRequest::FollowRedirectsAttribute was
+    set in the request and the server responded with a 3xx status (specifically
+    301, 302, 303, 305, 307 or 308 status code) with a valid url in the location
+    header, indicating a HTTP redirect. The \a url parameter contains the new
+    redirect url as returned by the server in the location header.
+
+    \sa QNetworkRequest::FollowRedirectsAttribute
+*/
+
+/*!
+    \fn void QNetworkReply::redirectAllowed()
+    \since 5.9
+
+    When client code handling the redirected() signal has verified the new URL,
+    it emits this signal to allow the redirect to go ahead.  This protocol applies
+    to network requests whose redirects policy is set to
+    QNetworkRequest::UserVerifiedRedirectPolicy
+
+    \sa QNetworkRequest::UserVerifiedRedirectPolicy,
+    QNetworkAccessManager::setRedirectPolicy(),
+    QNetworkRequest::RedirectPolicyAttribute
 */
 
 /*!
@@ -498,7 +541,7 @@ QNetworkAccessManager *QNetworkReply::manager() const
 */
 QNetworkRequest QNetworkReply::request() const
 {
-    return d_func()->request;
+    return d_func()->originalRequest;
 }
 
 /*!
@@ -549,9 +592,12 @@ bool QNetworkReply::isRunning() const
 
 /*!
     Returns the URL of the content downloaded or uploaded. Note that
-    the URL may be different from that of the original request.
+    the URL may be different from that of the original request. If the
+    QNetworkRequest::FollowRedirectsAttribute was set in the request, then this
+    function returns the current url that the network API is accessing, i.e the
+    url emitted in the QNetworkReply::redirected signal.
 
-    \sa request(), setUrl(), QNetworkRequest::url()
+    \sa request(), setUrl(), QNetworkRequest::url(), redirected()
 */
 QUrl QNetworkReply::url() const
 {
@@ -686,7 +732,11 @@ void QNetworkReply::setSslConfiguration(const QSslConfiguration &config)
     You can clear the list of errors you want to ignore by calling this
     function with an empty list.
 
-    \sa sslConfiguration(), sslErrors(), QSslSocket::ignoreSslErrors()
+    \note If HTTP Strict Transport Security is enabled for QNetworkAccessManager,
+    this function has no effect.
+
+    \sa sslConfiguration(), sslErrors(), QSslSocket::ignoreSslErrors(),
+    QNetworkAccessManager::setStrictTransportSecurityEnabled()
 */
 void QNetworkReply::ignoreSslErrors(const QList<QSslError> &errors)
 {
@@ -753,6 +803,9 @@ void QNetworkReply::ignoreSslErrorsImplementation(const QList<QSslError> &)
     sslErrors() signal, which indicates which errors were
     found.
 
+    \note If HTTP Strict Transport Security is enabled for QNetworkAccessManager,
+    this function has no effect.
+
     \sa sslConfiguration(), sslErrors(), QSslSocket::ignoreSslErrors()
 */
 void QNetworkReply::ignoreSslErrors()
@@ -794,7 +847,7 @@ void QNetworkReply::setOperation(QNetworkAccessManager::Operation operation)
 void QNetworkReply::setRequest(const QNetworkRequest &request)
 {
     Q_D(QNetworkReply);
-    d->request = request;
+    d->originalRequest = request;
 }
 
 /*!

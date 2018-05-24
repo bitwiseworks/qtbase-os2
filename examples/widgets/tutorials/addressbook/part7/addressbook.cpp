@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -370,7 +380,6 @@ void AddressBook::loadFromFile()
 
         QDataStream in(&file);
         in.setVersion(QDataStream::Qt_4_3);
-        contacts.empty();   // empty existing contacts
         in >> contacts;
 
         QMap<QString, QString>::iterator i = contacts.begin();
@@ -393,7 +402,7 @@ void AddressBook::exportAsVCard()
     int index = name.indexOf(" ");
 
     if (index != -1) {
-        nameList = name.split(QRegExp("\\s+"), QString::SkipEmptyParts);
+        nameList = name.split(QRegularExpression("\\s+"), QString::SkipEmptyParts);
         firstName = nameList.first();
         lastName = nameList.last();
     } else {
@@ -422,23 +431,23 @@ void AddressBook::exportAsVCard()
 //! [export function part2]
 
 //! [export function part3]
-    out << "BEGIN:VCARD" << "\n";
-    out << "VERSION:2.1" << "\n";
-    out << "N:" << lastName << ";" << firstName << "\n";
+    out << "BEGIN:VCARD" << '\n';
+    out << "VERSION:2.1" << '\n';
+    out << "N:" << lastName << ';' << firstName << '\n';
 
     if (!nameList.isEmpty())
-       out << "FN:" << nameList.join(' ') << "\n";
+       out << "FN:" << nameList.join(' ') << '\n';
     else
-       out << "FN:" << firstName << "\n";
+       out << "FN:" << firstName << '\n';
 //! [export function part3]
 
 //! [export function part4]
     address.replace(";", "\\;", Qt::CaseInsensitive);
-    address.replace("\n", ";", Qt::CaseInsensitive);
+    address.replace('\n', ";", Qt::CaseInsensitive);
     address.replace(",", " ", Qt::CaseInsensitive);
 
-    out << "ADR;HOME:;" << address << "\n";
-    out << "END:VCARD" << "\n";
+    out << "ADR;HOME:;" << address << '\n';
+    out << "END:VCARD" << '\n';
 
     QMessageBox::information(this, tr("Export Successful"),
         tr("\"%1\" has been exported as a vCard.").arg(name));

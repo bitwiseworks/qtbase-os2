@@ -1,15 +1,14 @@
 TARGET = qwindows
 
-PLUGIN_TYPE = platforms
-PLUGIN_CLASS_NAME = QWindowsIntegrationPlugin
-!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
-load(qt_plugin)
+QT += \
+    core-private gui-private \
+    eventdispatcher_support-private \
+    fontdatabase_support-private theme_support-private
 
-QT *= core-private
-QT *= gui-private
-QT *= platformsupport-private
+qtConfig(accessibility): QT += accessibility_support-private
+qtConfig(vulkan): QT += vulkan_support-private
 
-!wince:LIBS *= -lgdi32
+LIBS += -lgdi32 -ldwmapi
 
 include(windows.pri)
 
@@ -25,3 +24,8 @@ HEADERS +=  \
     qwindowsgdinativeinterface.h
 
 OTHER_FILES += windows.json
+
+PLUGIN_TYPE = platforms
+PLUGIN_CLASS_NAME = QWindowsIntegrationPlugin
+!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
+load(qt_plugin)

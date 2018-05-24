@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -136,6 +131,93 @@ namespace MyNamespace {
         MyEnum m_enum;
         MyFlags m_flags;
     };
+
+    // Test inherits
+    class MyClassSubclass : public MyClass
+    {
+        Q_OBJECT
+    };
+
+    class MyClassSubclass2 : public MyClass2
+    {
+        Q_OBJECT
+    };
+
+    class MyClass2Subclass : public MyClass
+    {
+        Q_OBJECT
+    };
+
+    class ClassWithSetterGetterSignals : public QObject
+    {
+        Q_OBJECT
+
+        public:
+            int value1() const { return m_value1; }
+            void setValue1(int v) {
+                if (v != m_value1) {
+                    m_value1 = v;
+                    Q_EMIT value1Changed();
+                }
+            }
+
+            int value2() const { return m_value2; }
+            void setValue2(int v) {
+                if (v != m_value2) {
+                    m_value2 = v;
+                    Q_EMIT value2Changed();
+                }
+            }
+
+        Q_SIGNALS:
+            void value1Changed();
+            void value2Changed();
+
+        private:
+            int m_value1 = 0;
+            int m_value2 = 0;
+    };
+
+    class ClassWithSetterGetterSignalsAddsProperties : public ClassWithSetterGetterSignals
+    {
+        Q_OBJECT
+        Q_PROPERTY(int value1 READ value1 WRITE setValue1 NOTIFY value1Changed)
+        Q_PROPERTY(int value2 READ value2 WRITE setValue2 NOTIFY value2Changed)
+    };
+
+    class ClassWithChangedSignal : public QObject
+    {
+        Q_OBJECT
+
+        public:
+            int value1() const { return m_value1; }
+            void setValue1(int v) {
+                if (v != m_value1) {
+                    m_value1 = v;
+                    Q_EMIT propertiesChanged();
+                }
+            }
+
+            void thisIsNotASignal() { }
+
+        Q_SIGNALS:
+            void propertiesChanged();
+
+        private:
+            int m_value1 = 0;
+    };
+
+    class ClassWithChangedSignalNewValue : public ClassWithChangedSignal
+    {
+        Q_OBJECT
+
+        Q_PROPERTY(int value2 MEMBER m_value2 NOTIFY propertiesChanged)
+        Q_PROPERTY(int value3 MEMBER m_value3 NOTIFY thisIsNotASignal)
+
+        private:
+            int m_value2 = 0;
+            int m_value3 = 0;
+    };
 }
 
 
@@ -189,12 +271,16 @@ public:
 private slots:
     void connectSlotsByName();
     void invokeMetaMember();
+    void invokePointer();
     void invokeQueuedMetaMember();
+    void invokeQueuedPointer();
     void invokeBlockingQueuedMetaMember();
+    void invokeBlockingQueuedPointer();
     void invokeCustomTypes();
     void invokeMetaConstructor();
     void invokeTypedefTypes();
     void invokeException();
+    void invokeQueuedAutoRegister();
     void qtMetaObjectInheritance();
     void normalizedSignature_data();
     void normalizedSignature();
@@ -226,6 +312,11 @@ private slots:
     void signalIndex_data();
     void signalIndex();
     void enumDebugStream();
+
+    void inherits_data();
+    void inherits();
+
+    void notifySignalsInParentClass();
 
 signals:
     void value6Changed();
@@ -363,6 +454,7 @@ class QtTestObject: public QObject
 
 public:
     QtTestObject();
+    QtTestObject(const QString &s) : slotResult(s) {}
     Q_INVOKABLE QtTestObject(QObject *parent);
 
 public slots:
@@ -402,6 +494,19 @@ public slots:
         return s2;
     }
 
+    void slotWithRegistrableArgument(QtTestObject *o1, QPointer<QtTestObject> o2,
+                                     QSharedPointer<QtTestObject> o3, QWeakPointer<QtTestObject> o4,
+                                     QVector<QtTestObject *> o5, QList<QtTestObject *> o6)
+    {
+        slotResult = QLatin1String("slotWithRegistrableArgument:") + o1->slotResult + o2->slotResult
+            + o3->slotResult + o4.data()->slotResult + QString::number(o5.size())
+            + QString::number(o6.size());
+    }
+
+public:
+    static void staticFunction0();
+    static qint64 staticFunction1();
+
 signals:
     void sig0();
     QString sig1(QString s1);
@@ -415,7 +520,10 @@ private:
 
 public:
     QString slotResult;
+    static QString staticResult;
 };
+
+QString QtTestObject::staticResult;
 
 QtTestObject::QtTestObject()
 {
@@ -475,6 +583,13 @@ void QtTestObject::testSender()
 void QtTestObject::slotWithUnregisteredParameterType(MyUnregisteredType)
 { slotResult = "slotWithUnregisteredReturnType"; }
 
+void QtTestObject::staticFunction0()
+{
+    staticResult = "staticFunction0";
+}
+
+qint64 QtTestObject::staticFunction1()
+{ staticResult = "staticFunction1"; return Q_INT64_C(123456789)*123456789; }
 
 void tst_QMetaObject::invokeMetaMember()
 {
@@ -483,9 +598,18 @@ void tst_QMetaObject::invokeMetaMember()
     QString t1("1"); QString t2("2"); QString t3("3"); QString t4("4"); QString t5("5");
     QString t6("6"); QString t7("7"); QString t8("8"); QString t9("9"); QString t10("X");
 
-    QVERIFY(!QMetaObject::invokeMethod(0, 0));
-    QVERIFY(!QMetaObject::invokeMethod(0, "sl0"));
-    QVERIFY(!QMetaObject::invokeMethod(&obj, 0));
+    // Test nullptr
+    char *nullCharArray = nullptr;
+    const char *nullConstCharArray = nullptr;
+    QVERIFY(!QMetaObject::invokeMethod(nullptr, nullCharArray));
+    QVERIFY(!QMetaObject::invokeMethod(nullptr, nullConstCharArray));
+    QVERIFY(!QMetaObject::invokeMethod(nullptr, "sl0"));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullCharArray));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullConstCharArray));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullCharArray, Qt::AutoConnection));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullConstCharArray, Qt::AutoConnection));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullCharArray, Qt::AutoConnection, QGenericReturnArgument()));
+    QVERIFY(!QMetaObject::invokeMethod(&obj, nullConstCharArray, Qt::AutoConnection, QGenericReturnArgument()));
 
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl0"));
     QCOMPARE(obj.slotResult, QString("sl0"));
@@ -614,6 +738,65 @@ void tst_QMetaObject::invokeMetaMember()
     QCOMPARE(obj.slotResult, QString("sl1:hehe"));
 }
 
+void testFunction(){}
+
+
+void tst_QMetaObject::invokePointer()
+{
+    QtTestObject obj;
+    QtTestObject *const nullTestObject = nullptr;
+
+    QString t1("1");
+
+    // Test member functions
+    QVERIFY(!QMetaObject::invokeMethod(nullTestObject, &QtTestObject::sl0));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sl0));
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::testSender));
+    QCOMPARE(obj.slotResult, QString("0x0"));
+
+    qint64 return64 = 0;
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sl14, &return64));
+    QCOMPARE(return64, Q_INT64_C(123456789)*123456789);
+    QCOMPARE(obj.slotResult, QString("sl14"));
+
+    // signals
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sig0));
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    // Test function pointers
+    QVERIFY(!QMetaObject::invokeMethod(0, &testFunction));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &testFunction));
+
+    QVERIFY(!QMetaObject::invokeMethod(0, &QtTestObject::staticFunction0));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::staticFunction0));
+    QCOMPARE(QtTestObject::staticResult, QString("staticFunction0"));
+
+    return64 = 0;
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::staticFunction1, &return64));
+    QCOMPARE(return64, Q_INT64_C(123456789)*123456789);
+    QCOMPARE(QtTestObject::staticResult, QString("staticFunction1"));
+
+    // Test lambdas
+    QCOMPARE(countedStructObjectsCount, 0);
+    {
+        CountedStruct str;
+        QVERIFY(QMetaObject::invokeMethod(&obj, [str, &t1, &obj]() { obj.sl1(t1); }));
+        QCOMPARE(obj.slotResult, QString("sl1:1"));
+    }
+    QCOMPARE(countedStructObjectsCount, 0);
+    {
+        CountedStruct str;
+        QString exp;
+        QVERIFY(QMetaObject::invokeMethod(
+            &obj, [str, &obj]() -> QString { return obj.sl1("bubu"); }, &exp));
+        QCOMPARE(exp, QString("yessir"));
+        QCOMPARE(obj.slotResult, QString("sl1:bubu"));
+    }
+    QCOMPARE(countedStructObjectsCount, 0);
+}
+
 void tst_QMetaObject::invokeQueuedMetaMember()
 {
     QtTestObject obj;
@@ -673,6 +856,56 @@ void tst_QMetaObject::invokeQueuedMetaMember()
         QVERIFY(obj.slotResult.isEmpty());
     }
 }
+
+void tst_QMetaObject::invokeQueuedPointer()
+{
+    QtTestObject obj;
+
+    // Test member function
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sl0, Qt::QueuedConnection));
+    QVERIFY(obj.slotResult.isEmpty());
+    qApp->processEvents(QEventLoop::AllEvents);
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    // signals
+    obj.slotResult.clear();
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sig0, Qt::QueuedConnection));
+    QVERIFY(obj.slotResult.isEmpty());
+    qApp->processEvents(QEventLoop::AllEvents);
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    // Test function pointers
+    QtTestObject::staticResult.clear();
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::staticFunction0, Qt::QueuedConnection));
+    QVERIFY(QtTestObject::staticResult.isEmpty());
+    qApp->processEvents(QEventLoop::AllEvents);
+    QCOMPARE(QtTestObject::staticResult, QString("staticFunction0"));
+
+    // Test lambda
+    QCOMPARE(countedStructObjectsCount, 0);
+    {
+        CountedStruct str;
+        obj.slotResult.clear();
+        QVERIFY(
+            QMetaObject::invokeMethod(&obj, [str, &obj]() { obj.sl0(); }, Qt::QueuedConnection));
+        QVERIFY(obj.slotResult.isEmpty());
+        qApp->processEvents(QEventLoop::AllEvents);
+        QCOMPARE(obj.slotResult, QString("sl0"));
+    }
+    QCOMPARE(countedStructObjectsCount, 0);
+    {
+        CountedStruct str;
+        qint32 var = 0;
+        QTest::ignoreMessage(QtWarningMsg,
+                             "QMetaObject::invokeMethod: Unable to invoke methods with return "
+                             "values in queued connections");
+        QVERIFY(!QMetaObject::invokeMethod(&obj, [str]() -> qint32 { return 1; },
+                                           Qt::QueuedConnection, &var));
+        QCOMPARE(var, 0);
+    }
+    QCOMPARE(countedStructObjectsCount, 0);
+}
+
 
 void tst_QMetaObject::invokeBlockingQueuedMetaMember()
 {
@@ -807,11 +1040,76 @@ void tst_QMetaObject::invokeBlockingQueuedMetaMember()
 
 }
 
+void tst_QMetaObject::invokeBlockingQueuedPointer()
+{
+    QtTestObject *const nullTestObject = nullptr;
+
+    QThread t;
+    t.start();
+    QtTestObject obj;
+    obj.moveToThread(&t);
+
+    QString t1("1");
+
+    // Test member functions
+    QVERIFY(!QMetaObject::invokeMethod(nullTestObject, &QtTestObject::sl0, Qt::BlockingQueuedConnection));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sl0, Qt::BlockingQueuedConnection));
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::testSender, Qt::BlockingQueuedConnection));
+    QCOMPARE(obj.slotResult, QString("0x0"));
+
+    // return qint64
+    qint64 return64 = 0;
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sl14, Qt::BlockingQueuedConnection,
+                                      &return64));
+    QCOMPARE(return64, Q_INT64_C(123456789)*123456789);
+    QCOMPARE(obj.slotResult, QString("sl14"));
+
+    //test signals
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::sig0, Qt::BlockingQueuedConnection));
+    QCOMPARE(obj.slotResult, QString("sl0"));
+
+    // Test function pointers
+    QVERIFY(!QMetaObject::invokeMethod(0, &testFunction, Qt::BlockingQueuedConnection));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &testFunction, Qt::BlockingQueuedConnection));
+
+    QVERIFY(!QMetaObject::invokeMethod(0, &QtTestObject::staticFunction0, Qt::BlockingQueuedConnection));
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::staticFunction0, Qt::BlockingQueuedConnection));
+    QCOMPARE(QtTestObject::staticResult, QString("staticFunction0"));
+
+    return64 = 0;
+    QVERIFY(QMetaObject::invokeMethod(&obj, &QtTestObject::staticFunction1, Qt::BlockingQueuedConnection, &return64));
+    QCOMPARE(return64, Q_INT64_C(123456789)*123456789);
+    QCOMPARE(QtTestObject::staticResult, QString("staticFunction1"));
+
+    // Test lambdas
+    QCOMPARE(countedStructObjectsCount, 0);
+    {
+        CountedStruct str;
+        QVERIFY(QMetaObject::invokeMethod(&obj, [str, &obj, &t1]() { obj.sl1(t1); },
+                                          Qt::BlockingQueuedConnection));
+        QCOMPARE(obj.slotResult, QString("sl1:1"));
+    }
+    {
+        CountedStruct str;
+        QString exp;
+        QVERIFY(QMetaObject::invokeMethod(&obj,
+                                          [&obj, str]() -> QString { return obj.sl1("bubu"); },
+                                          Qt::BlockingQueuedConnection, &exp));
+        QCOMPARE(exp, QString("yessir"));
+        QCOMPARE(obj.slotResult, QString("sl1:bubu"));
+    }
+    QVERIFY(QMetaObject::invokeMethod(&obj, [&](){obj.moveToThread(QThread::currentThread());}, Qt::BlockingQueuedConnection));
+    t.quit();
+    QVERIFY(t.wait());
+    QCOMPARE(countedStructObjectsCount, 0);
+}
 
 
 void tst_QMetaObject::qtMetaObjectInheritance()
 {
-    QVERIFY(QObject::staticMetaObject.superClass() == 0);
+    QVERIFY(!QObject::staticMetaObject.superClass());
     QCOMPARE(QSortFilterProxyModel::staticMetaObject.indexOfEnumerator("Qt::CaseSensitivity"), -1);
     QCOMPARE(QSortFilterProxyModel::staticMetaObject.indexOfEnumerator("CaseSensitivity"), -1);
     int indexOfSortCaseSensitivity = QSortFilterProxyModel::staticMetaObject.indexOfProperty("sortCaseSensitivity");
@@ -878,7 +1176,7 @@ void tst_QMetaObject::invokeMetaConstructor()
     const QMetaObject *mo = &QtTestObject::staticMetaObject;
     {
         QObject *obj = mo->newInstance();
-        QVERIFY(obj == 0);
+        QVERIFY(!obj);
     }
     {
         QtTestObject obj;
@@ -928,6 +1226,24 @@ void tst_QMetaObject::invokeException()
 #else
     QSKIP("Needs exceptions");
 #endif
+}
+
+void tst_QMetaObject::invokeQueuedAutoRegister()
+{
+    QtTestObject obj;
+
+    auto shared = QSharedPointer<QtTestObject>::create(QStringLiteral("myShared-"));
+
+    QVERIFY(QMetaObject::invokeMethod(
+        &obj, "slotWithRegistrableArgument", Qt::QueuedConnection,
+        Q_ARG(QtTestObject *, shared.data()), Q_ARG(QPointer<QtTestObject>, shared.data()),
+        Q_ARG(QSharedPointer<QtTestObject>, shared), Q_ARG(QWeakPointer<QtTestObject>, shared),
+        Q_ARG(QVector<QtTestObject *>, QVector<QtTestObject *>()),
+        Q_ARG(QList<QtTestObject *>, QList<QtTestObject *>())));
+    QVERIFY(obj.slotResult.isEmpty());
+    qApp->processEvents(QEventLoop::AllEvents);
+    QCOMPARE(obj.slotResult,
+             QString("slotWithRegistrableArgument:myShared-myShared-myShared-myShared-00"));
 }
 
 void tst_QMetaObject::normalizedSignature_data()
@@ -1428,6 +1744,48 @@ void tst_QMetaObject::enumDebugStream()
     MyNamespace::MyClass::MyFlags f2 = MyNamespace::MyClass::MyFlag2 | MyNamespace::MyClass::MyFlag3;
     QTest::ignoreMessage(QtDebugMsg, "QFlags<MyNamespace::MyClass::MyFlags>(MyFlag1) QFlags<MyNamespace::MyClass::MyFlags>(MyFlag2|MyFlag3)");
     qDebug() << f1 << f2;
+}
+
+void tst_QMetaObject::inherits_data()
+{
+    QTest::addColumn<const QMetaObject *>("derivedMetaObject");
+    QTest::addColumn<const QMetaObject *>("baseMetaObject");
+    QTest::addColumn<bool>("inheritsResult");
+
+    QTest::newRow("MyClass inherits QObject")
+        << &MyNamespace::MyClass::staticMetaObject << &QObject::staticMetaObject << true;
+    QTest::newRow("QObject inherits MyClass")
+        << &QObject::staticMetaObject << &MyNamespace::MyClass::staticMetaObject << false;
+    QTest::newRow("MyClass inherits MyClass")
+        << &MyNamespace::MyClass::staticMetaObject << &MyNamespace::MyClass::staticMetaObject << true;
+    QTest::newRow("MyClassSubclass inherits QObject")
+        << &MyNamespace::MyClassSubclass::staticMetaObject << &QObject::staticMetaObject << true;
+    QTest::newRow("MyClassSubclass2 inherits QObject")
+        << &MyNamespace::MyClassSubclass2::staticMetaObject << &QObject::staticMetaObject << true;
+    QTest::newRow("MyClassSubclass2 inherits MyClass2")
+        << &MyNamespace::MyClassSubclass2::staticMetaObject << &MyNamespace::MyClass2Subclass::staticMetaObject << false;
+}
+
+void tst_QMetaObject::inherits()
+{
+    QFETCH(const QMetaObject *, derivedMetaObject);
+    QFETCH(const QMetaObject *, baseMetaObject);
+    QFETCH(bool, inheritsResult);
+
+    QCOMPARE(derivedMetaObject->inherits(baseMetaObject), inheritsResult);
+}
+
+void tst_QMetaObject::notifySignalsInParentClass()
+{
+    MyNamespace::ClassWithSetterGetterSignalsAddsProperties obj;
+    QCOMPARE(obj.metaObject()->property(obj.metaObject()->indexOfProperty("value1")).notifySignal().name(), QByteArray("value1Changed"));
+    QCOMPARE(obj.metaObject()->property(obj.metaObject()->indexOfProperty("value2")).notifySignal().name(), QByteArray("value2Changed"));
+
+    MyNamespace::ClassWithChangedSignalNewValue obj2;
+    QCOMPARE(obj2.metaObject()->property(obj2.metaObject()->indexOfProperty("value2")).notifySignal().name(), QByteArray("propertiesChanged"));
+
+    QTest::ignoreMessage(QtWarningMsg, "QMetaProperty::notifySignal: cannot find the NOTIFY signal thisIsNotASignal in class MyNamespace::ClassWithChangedSignalNewValue for property 'value3'");
+    obj2.metaObject()->property(obj2.metaObject()->indexOfProperty("value3")).notifySignal();
 }
 
 QTEST_MAIN(tst_QMetaObject)

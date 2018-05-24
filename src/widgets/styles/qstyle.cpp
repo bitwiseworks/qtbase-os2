@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -98,7 +104,7 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
     The style gets all the information it needs to render the
     graphical element from the QStyleOption class. The widget is
     passed as the last argument in case the style needs it to perform
-    special effects (such as animated default buttons on OS X),
+    special effects (such as animated default buttons on \macos),
     but it isn't mandatory. In fact, QStyle can be used to draw on any
     paint device (not just widgets), in which case the widget argument
     is a zero pointer.
@@ -151,10 +157,10 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
 
     Qt's built-in widgets use QStyle to perform nearly all of their
     drawing, ensuring that they look exactly like the equivalent
-    native widgets. The diagram below shows a QComboBox in eight
+    native widgets. The diagram below shows a QComboBox in nine
     different styles.
 
-    \image qstyle-comboboxes.png Eight combo boxes
+    \image qstyle-comboboxes.png Nine combo boxes
 
     Topics:
 
@@ -197,7 +203,7 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
     QStyle gets all the information it needs to render the graphical
     element from QStyleOption. The widget is passed as the last
     argument in case the style needs it to perform special effects
-    (such as animated default buttons on OS X), but it isn't
+    (such as animated default buttons on \macos), but it isn't
     mandatory. In fact, you can use QStyle to draw on any paint
     device, not just widgets, by setting the QPainter properly.
 
@@ -691,7 +697,9 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value PE_PanelToolBar  The panel for a toolbar.
     \value PE_PanelTipLabel The panel for a tip label.
     \value PE_FrameTabBarBase The frame that is drawn for a tab bar, ususally drawn for a tab bar that isn't part of a tab widget.
-    \value PE_IndicatorTabTear An indicator that a tab is partially scrolled out of the visible tab bar when there are many tabs.
+    \value PE_IndicatorTabTear Deprecated. Use \l{PE_IndicatorTabTearLeft} instead.
+    \value PE_IndicatorTabTearLeft An indicator that a tab is partially scrolled out on the left side of the visible tab bar when there are many tabs.
+    \value PE_IndicatorTabTearRight An indicator that a tab is partially scrolled out on the right side of the visible tab bar when there are many tabs.
     \value PE_IndicatorColumnViewArrow An arrow in a QColumnView.
 
     \value PE_Widget  A plain QWidget.
@@ -725,7 +733,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 
     \value State_None Indicates that the widget does not have a state.
     \value State_Active Indicates that the widget is active.
-    \value State_AutoRaise Used to indicate if auto-raise appearance should be usd on a tool button.
+    \value State_AutoRaise Used to indicate if auto-raise appearance should be used on a tool button.
     \value State_Children Used to indicate if an item view branch has children.
     \value State_DownArrow Used to indicate if a down arrow should be visible on the widget.
     \value State_Editing Used to indicate if an editor is opened on the widget.
@@ -757,8 +765,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 */
 
 /*!
-    \fn void QStyle::drawPrimitive(PrimitiveElement element, const QStyleOption *option, \
-                                   QPainter *painter, const QWidget *widget) const
+    \fn void QStyle::drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget) const
 
     Draws the given primitive \a element with the provided \a painter using the style
     options specified by \a option.
@@ -896,7 +903,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value CE_ToolBoxTabLabel  The toolbox's tab label.
     \value CE_HeaderEmptyArea  The area of a header view where there are no header sections.
 
-    \value CE_ShapedFrame The frame with the shape specified in the QStyleOptionFrameV3; see QFrame.
+    \value CE_ShapedFrame The frame with the shape specified in the QStyleOptionFrame; see QFrame.
 
     \omitvalue CE_ColumnViewGrip
 
@@ -1034,7 +1041,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \omitvalue SE_ViewItemCheckIndicator
 
     \value SE_FrameContents  Area for a frame's contents.
-    \value SE_ShapedFrameContents Area for a frame's contents using the shape in QStyleOptionFrameV3; see QFrame
+    \value SE_ShapedFrameContents Area for a frame's contents using the shape in QStyleOptionFrame; see QFrame
     \value SE_FrameLayoutItem  Area that counts for the parent layout.
 
     \value SE_HeaderArrow Area for the sort indicator for a header.
@@ -1057,7 +1064,12 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 
     \value SE_ItemViewItemCheckIndicator Area for a view item's check mark.
 
-    \value SE_TabBarTearIndicator Area for the tear indicator on a tab bar with scroll arrows.
+    \value SE_TabBarTearIndicator Deprecated. Use SE_TabBarTearIndicatorLeft instead.
+    \value SE_TabBarTearIndicatorLeft Area for the tear indicator on the left side of a tab bar with scroll arrows.
+    \value SE_TabBarTearIndicatorRight Area for the tear indicator on the right side of a tab bar with scroll arrows.
+
+    \value SE_TabBarScrollLeftButton Area for the scroll left button on a tab bar with scroll buttons.
+    \value SE_TabBarScrollRightButton Area for the scroll right button on a tab bar with scroll buttons.
 
     \value SE_TreeViewDisclosureItem Area for the actual disclosure item in a tree branch.
 
@@ -1481,6 +1493,11 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value PM_HeaderDefaultSectionSizeVertical The default size of sections
            in a vertical header. This enum value has been introduced in Qt 5.5.
 
+    \value PM_TitleBarButtonIconSize The size of button icons on a title bar.
+           This enum value has been introduced in Qt 5.8.
+    \value PM_TitleBarButtonSize The size of buttons on a title bar.
+           This enum value has been introduced in Qt 5.8.
+
     \value PM_CustomBase Base value for custom pixel metrics.  Custom
     values must be greater than this value.
 
@@ -1574,8 +1591,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 */
 
 /*!
-    \fn QSize QStyle::sizeFromContents(ContentsType type, const QStyleOption *option, \
-                                       const QSize &contentsSize, const QWidget *widget) const
+    \fn QSize QStyle::sizeFromContents(ContentsType type, const QStyleOption *option, const QSize &contentsSize, const QWidget *widget) const
 
     Returns the size of the element described by the specified
     \a option and \a type, based on the provided \a contentsSize.
@@ -1718,7 +1734,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
         desktop platforms.
 
     \value SH_Menu_SubMenuUniDirection Since Qt 5.5. If the cursor has
-        to move towards the submenu (like it is on OS X), or if the
+        to move towards the submenu (like it is on \macos), or if the
         cursor can move in any direction as long as it reaches the
         submenu before the sloppy timeout.
 
@@ -1822,9 +1838,8 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 
     \value SH_UnderlineShortcut  Whether shortcuts are underlined.
 
-    \value SH_SpellCheckUnderlineStyle  A
-        QTextCharFormat::UnderlineStyle value that specifies the way
-        misspelled words should be underlined.
+    \value SH_SpellCheckUnderlineStyle  Obsolete. Use SpellCheckUnderlineStyle
+    hint in QPlatformTheme instead.
 
     \value SH_SpinBox_AnimateButton  Animate a click when up or down is
     pressed in a spin box.
@@ -1954,9 +1969,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
            a tooltip is shown (notice: shown, not hidden). When a new wake isn't needed, a user-requested tooltip
            will be shown nearly instantly.
 
-    \value SH_Widget_Animate Determines if the widget should show animations or not, for example
-           a transition between checked and unchecked statuses in a checkbox.
-           This enum value has been introduced in Qt 5.2.
+    \value SH_Widget_Animate Deprecated. Use \l{SH_Widget_Animation_Duration} instead.
 
     \value SH_Splitter_OpaqueResize Determines if resizing is opaque
            This enum value has been introduced in Qt 5.2
@@ -1965,12 +1978,34 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
            tab is changed while dragging over the tabbar, in milliseconds. This
            enum value has been introduced in Qt 5.4
 
+    \value SH_ItemView_ScrollMode The default vertical and horizontal scroll mode as specified
+           by the style. Can be overridden with QAbstractItemView::setVerticalScrollMode() and
+           QAbstractItemView::setHorizontalScrollMode(). This enum value has been introduced in Qt 5.7.
+
+    \value SH_TitleBar_ShowToolTipsOnButtons
+           Determines if tool tips are shown on window title bar buttons.
+           The Mac style, for example, sets this to false.
+           This enum value has been introduced in Qt 5.10.
+
+    \value SH_Widget_Animation_Duration
+           Determines how much an animation should last (in ms).
+           A value equal to zero means that the animations will be disabled.
+           This enum value has been introduced in Qt 5.10.
+
+    \value SH_ComboBox_AllowWheelScrolling
+           Determines if the mouse wheel can be used to scroll inside a QComboBox.
+           This is on by default in all styles except the Mac style.
+           This enum value has been introduced in Qt 5.10.
+
+    \value SH_SpinBox_ButtonsInsideFrame
+           Determnines if the spin box buttons are inside the line edit frame.
+           This enum value has been introduced in Qt 5.11.
+
     \sa styleHint()
 */
 
 /*!
-    \fn int QStyle::styleHint(StyleHint hint, const QStyleOption *option, \
-                              const QWidget *widget, QStyleHintReturn *returnData) const
+    \fn int QStyle::styleHint(StyleHint hint, const QStyleOption *option, const QWidget *widget, QStyleHintReturn *returnData) const
 
     Returns an integer representing the specified style \a hint for
     the given \a widget described by the provided style \a option.
@@ -2082,8 +2117,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 */
 
 /*!
-    \fn QPixmap QStyle::standardPixmap(StandardPixmap standardPixmap, const QStyleOption *option, \
-                                       const QWidget *widget) const
+    \fn QPixmap QStyle::standardPixmap(StandardPixmap standardPixmap, const QStyleOption *option, const QWidget *widget) const
 
     \obsolete
     Returns a pixmap for the given \a standardPixmap.
@@ -2264,8 +2298,8 @@ int QStyle::sliderValueFromPosition(int min, int max, int pos, int span, bool up
      Returns the style's standard palette.
 
     Note that on systems that support system colors, the style's
-    standard palette is not used. In particular, the Windows XP,
-    Vista, and Mac styles do not use the standard palette, but make
+    standard palette is not used. In particular, the Windows
+    Vista and Mac styles do not use the standard palette, but make
     use of native theme engines. With these styles, you should not set
     the palette with QApplication::setPalette().
 
@@ -2407,3 +2441,5 @@ void QStyle::setProxy(QStyle *style)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qstyle.cpp"

@@ -10,14 +10,11 @@
 #define FILTERNAMEDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QSpacerItem>
@@ -79,8 +76,8 @@ public:
 
     void retranslateUi(QDialog *FilterNameDialogClass)
     {
-        FilterNameDialogClass->setWindowTitle(QApplication::translate("FilterNameDialogClass", "FilterNameDialog", 0));
-        label->setText(QApplication::translate("FilterNameDialogClass", "Filter Name:", 0));
+        FilterNameDialogClass->setWindowTitle(QApplication::translate("FilterNameDialogClass", "FilterNameDialog", nullptr));
+        label->setText(QApplication::translate("FilterNameDialogClass", "Filter Name:", nullptr));
     } // retranslateUi
 
 };

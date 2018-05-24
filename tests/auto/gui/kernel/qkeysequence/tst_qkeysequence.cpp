@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,19 +31,22 @@
 #include <qkeysequence.h>
 #include <qpa/qplatformtheme.h>
 #include <qpa/qplatformtheme_p.h>
-#include <private/qkeysequence_p.h>
 #include <private/qguiapplication_p.h>
 #include <QTranslator>
 #include <QLibraryInfo>
 
 #ifdef Q_OS_MAC
-#ifdef Q_OS_OSX
-#include <Carbon/Carbon.h>
-#endif
 struct MacSpecialKey {
     int key;
     ushort macSymbol;
 };
+
+// Unicode code points for the glyphs associated with these keys
+// Defined by Carbon headers but not anywhere in Cocoa
+static const int kShiftUnicode = 0x21E7;
+static const int kControlUnicode = 0x2303;
+static const int kOptionUnicode = 0x2325;
+static const int kCommandUnicode = 0x2318;
 
 static const int NumEntries = 21;
 static const MacSpecialKey entries[NumEntries] = {
@@ -67,12 +65,10 @@ static const MacSpecialKey entries[NumEntries] = {
     { Qt::Key_Down, 0x2193 },
     { Qt::Key_PageUp, 0x21DE },
     { Qt::Key_PageDown, 0x21DF },
-#ifdef Q_OS_OSX
     { Qt::Key_Shift, kShiftUnicode },
     { Qt::Key_Control, kCommandUnicode },
     { Qt::Key_Meta, kControlUnicode },
     { Qt::Key_Alt, kOptionUnicode },
-#endif
     { Qt::Key_CapsLock, 0x21EA },
 };
 
@@ -250,7 +246,7 @@ void tst_QKeySequence::operatorQString()
 
     seq = QKeySequence( modifiers | keycode );
 
-    QCOMPARE( (QString)seq, keystring );
+    QCOMPARE( seq.toString(QKeySequence::NativeText), keystring );
 }
 
 // this verifies that the constructors can handle the same strings in and out
@@ -260,7 +256,7 @@ void tst_QKeySequence::symetricConstructors()
     QFETCH( int, keycode );
 
     QKeySequence seq1( modifiers | keycode );
-    QKeySequence seq2( (QString)seq1 );
+    QKeySequence seq2( seq1.toString(QKeySequence::NativeText) );
 
     QVERIFY( seq1 == seq2 );
 }
@@ -731,7 +727,7 @@ void tst_QKeySequence::listFromString()
 
 void tst_QKeySequence::translated_data()
 {
-#if defined (Q_OS_MAC) || defined (Q_OS_WINCE)
+#if defined (Q_OS_DARWIN)
     QSKIP("Test not applicable");
 #endif
 
@@ -762,7 +758,7 @@ void tst_QKeySequence::translated_data()
 
 void tst_QKeySequence::translated()
 {
-#if !defined (Q_OS_MAC) && !defined (Q_OS_WINCE)
+#if !defined (Q_OS_DARWIN)
     QFETCH(QString, transKey);
     QFETCH(QString, compKey);
 

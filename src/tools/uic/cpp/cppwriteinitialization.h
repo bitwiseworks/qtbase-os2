@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -93,52 +88,46 @@ struct WriteInitialization : public TreeWalker
     typedef QList<DomProperty*> DomPropertyList;
     typedef QHash<QString, DomProperty*> DomPropertyMap;
 
-    WriteInitialization(Uic *uic, bool activateScripts);
+    WriteInitialization(Uic *uic);
 
 //
 // widgets
 //
-    void acceptUI(DomUI *node) Q_DECL_OVERRIDE;
-    void acceptWidget(DomWidget *node) Q_DECL_OVERRIDE;
-    void acceptWidgetScripts(const DomScripts &, DomWidget *node, const  DomWidgets &childWidgets) Q_DECL_OVERRIDE;
+    void acceptUI(DomUI *node) override;
+    void acceptWidget(DomWidget *node) override;
 
-    void acceptLayout(DomLayout *node) Q_DECL_OVERRIDE;
-    void acceptSpacer(DomSpacer *node) Q_DECL_OVERRIDE;
-    void acceptLayoutItem(DomLayoutItem *node) Q_DECL_OVERRIDE;
+    void acceptLayout(DomLayout *node) override;
+    void acceptSpacer(DomSpacer *node) override;
+    void acceptLayoutItem(DomLayoutItem *node) override;
 
 //
 // actions
 //
-    void acceptActionGroup(DomActionGroup *node) Q_DECL_OVERRIDE;
-    void acceptAction(DomAction *node) Q_DECL_OVERRIDE;
-    void acceptActionRef(DomActionRef *node) Q_DECL_OVERRIDE;
+    void acceptActionGroup(DomActionGroup *node) override;
+    void acceptAction(DomAction *node) override;
+    void acceptActionRef(DomActionRef *node) override;
 
 //
 // tab stops
 //
-    void acceptTabStops(DomTabStops *tabStops) Q_DECL_OVERRIDE;
+    void acceptTabStops(DomTabStops *tabStops) override;
 
 //
 // custom widgets
 //
-    void acceptCustomWidgets(DomCustomWidgets *node) Q_DECL_OVERRIDE;
-    void acceptCustomWidget(DomCustomWidget *node) Q_DECL_OVERRIDE;
+    void acceptCustomWidgets(DomCustomWidgets *node) override;
+    void acceptCustomWidget(DomCustomWidget *node) override;
 
 //
 // layout defaults/functions
 //
-    void acceptLayoutDefault(DomLayoutDefault *node) Q_DECL_OVERRIDE   { m_LayoutDefaultHandler.acceptLayoutDefault(node); }
-    void acceptLayoutFunction(DomLayoutFunction *node) Q_DECL_OVERRIDE { m_LayoutDefaultHandler.acceptLayoutFunction(node); }
+    void acceptLayoutDefault(DomLayoutDefault *node) override   { m_LayoutDefaultHandler.acceptLayoutDefault(node); }
+    void acceptLayoutFunction(DomLayoutFunction *node) override { m_LayoutDefaultHandler.acceptLayoutFunction(node); }
 
 //
 // signal/slot connections
 //
-    void acceptConnection(DomConnection *connection) Q_DECL_OVERRIDE;
-
-//
-// images
-//
-    void acceptImage(DomImage *image) Q_DECL_OVERRIDE;
+    void acceptConnection(DomConnection *connection) override;
 
     enum {
         Use43UiFile = 0,
@@ -150,10 +139,12 @@ struct WriteInitialization : public TreeWalker
 private:
     static QString domColor2QString(const DomColor *c);
 
+    QString writeString(const QString &s, const QString &indent) const;
+
     QString iconCall(const DomProperty *prop);
     QString pixCall(const DomProperty *prop) const;
     QString pixCall(const QString &type, const QString &text) const;
-    QString trCall(const QString &str, const QString &comment = QString()) const;
+    QString trCall(const QString &str, const QString &comment = QString(), const QString &id = QString()) const;
     QString trCall(DomString *str, const QString &defaultString = QString()) const;
     QString noTrCall(DomString *str, const QString &defaultString = QString()) const;
     QString autoTrCall(DomString *str, const QString &defaultString = QString()) const;
@@ -226,7 +217,7 @@ private:
     void initializeComboBox(DomWidget *w);
     void initializeListWidget(DomWidget *w);
     void initializeTreeWidget(DomWidget *w);
-    QList<Item *> initializeTreeWidgetItems(const QList<DomItem *> &domItems);
+    QList<Item *> initializeTreeWidgetItems(const QVector<DomItem *> &domItems);
     void initializeTableWidget(DomWidget *w);
 
     QString disableSorting(DomWidget *w, const QString &varName);
@@ -234,12 +225,12 @@ private:
 
     QString findDeclaration(const QString &name);
     DomWidget *findWidget(QLatin1String widgetClass);
-    DomImage *findImage(const QString &name) const;
 
     bool isValidObject(const QString &name) const;
 
 private:
     QString writeFontProperties(const DomFont *f);
+    void writeResourceIcon(QTextStream &output, const QString &iconName, const QString &indent, const DomResourceIcon *i) const;
     QString writeIconProperties(const DomResourceIcon *i);
     QString writeSizePolicy(const DomSizePolicy *sp);
     QString writeBrushInitialization(const DomBrush *brush);
@@ -256,20 +247,18 @@ private:
 
     struct Buddy
     {
-        Buddy(const QString &oN, const QString &b)
-            : objName(oN), buddy(b) {}
         QString objName;
         QString buddy;
     };
+    friend class QTypeInfo<Buddy>;
 
     QStack<DomWidget*> m_widgetChain;
     QStack<DomLayout*> m_layoutChain;
     QStack<DomActionGroup*> m_actionGroupChain;
-    QList<Buddy> m_buddies;
+    QVector<Buddy> m_buddies;
 
     QSet<QString> m_buttonGroups;
     QHash<QString, DomWidget*> m_registeredWidgets;
-    QHash<QString, DomImage*> m_registeredImages;
     QHash<QString, DomAction*> m_registeredActions;
     typedef QHash<uint, QString> ColorBrushHash;
     ColorBrushHash m_colorBrushHash;
@@ -320,13 +309,14 @@ private:
 
     QString m_delayedActionInitialization;
     QTextStream m_actionOut;
-    const bool m_activateScripts;
 
     bool m_layoutWidget;
     bool m_firstThemeIcon;
 };
 
 } // namespace CPP
+
+Q_DECLARE_TYPEINFO(CPP::WriteInitialization::Buddy, Q_MOVABLE_TYPE);
 
 QT_END_NAMESPACE
 

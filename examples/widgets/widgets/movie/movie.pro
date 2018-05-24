@@ -1,4 +1,5 @@
 QT += widgets
+requires(qtConfig(filedialog))
 
 HEADERS     = movieplayer.h
 SOURCES     = main.cpp \
@@ -9,10 +10,3 @@ EXAMPLE_FILES = animation.gif
 # install
 target.path = $$[QT_INSTALL_EXAMPLES]/widgets/widgets/movie
 INSTALLS += target
-
-
-wince {
-   addFiles.files += *.gif
-   addFiles.path = .
-   DEPLOYMENT += addFiles
-}

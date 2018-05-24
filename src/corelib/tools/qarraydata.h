@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -72,7 +78,7 @@ struct Q_CORE_EXPORT QArrayData
 
     enum AllocationOption {
         CapacityReserved    = 0x1,
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         Unsharable          = 0x2,
 #endif
         RawData             = 0x4,
@@ -106,9 +112,10 @@ struct Q_CORE_EXPORT QArrayData
         return result;
     }
 
-    static QArrayData *allocate(size_t objectSize, size_t alignment,
-            size_t capacity, AllocationOptions options = Default)
-        Q_DECL_NOTHROW Q_REQUIRED_RESULT;
+    Q_REQUIRED_RESULT static QArrayData *allocate(size_t objectSize, size_t alignment,
+            size_t capacity, AllocationOptions options = Default) Q_DECL_NOTHROW;
+    Q_REQUIRED_RESULT static QArrayData *reallocateUnaligned(QArrayData *data, size_t objectSize,
+            size_t newCapacity, AllocationOptions newOptions = Default) Q_DECL_NOTHROW;
     static void deallocate(QArrayData *data, size_t objectSize,
             size_t alignment) Q_DECL_NOTHROW;
 
@@ -132,7 +139,7 @@ struct QTypedArrayData
         typedef T *pointer;
         typedef T &reference;
 
-        inline iterator() : i(0) {}
+        inline iterator() : i(nullptr) {}
         inline iterator(T *n) : i(n) {}
         inline iterator(const iterator &o): i(o.i){} // #### Qt 6: remove, the implicit version is fine
         inline T &operator*() const { return *i; }
@@ -166,7 +173,7 @@ struct QTypedArrayData
         typedef const T *pointer;
         typedef const T &reference;
 
-        inline const_iterator() : i(0) {}
+        inline const_iterator() : i(nullptr) {}
         inline const_iterator(const T *n) : i(n) {}
         inline const_iterator(const const_iterator &o): i(o.i) {} // #### Qt 6: remove, the default version is fine
         inline explicit const_iterator(const iterator &o): i(o.i) {}
@@ -208,12 +215,20 @@ struct QTypedArrayData
 
     class AlignmentDummy { QArrayData header; T data; };
 
-    static QTypedArrayData *allocate(size_t capacity,
-            AllocationOptions options = Default) Q_REQUIRED_RESULT
+    Q_REQUIRED_RESULT static QTypedArrayData *allocate(size_t capacity,
+            AllocationOptions options = Default)
     {
         Q_STATIC_ASSERT(sizeof(QTypedArrayData) == sizeof(QArrayData));
         return static_cast<QTypedArrayData *>(QArrayData::allocate(sizeof(T),
                     Q_ALIGNOF(AlignmentDummy), capacity, options));
+    }
+
+    static QTypedArrayData *reallocateUnaligned(QTypedArrayData *data, size_t capacity,
+            AllocationOptions options = Default)
+    {
+        Q_STATIC_ASSERT(sizeof(QTypedArrayData) == sizeof(QArrayData));
+        return static_cast<QTypedArrayData *>(QArrayData::reallocateUnaligned(data, sizeof(T),
+                    capacity, options));
     }
 
     static void deallocate(QArrayData *data)
@@ -249,11 +264,13 @@ struct QTypedArrayData
         return allocate(/* capacity */ 0);
     }
 
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     static QTypedArrayData *unsharableEmpty()
     {
         Q_STATIC_ASSERT(sizeof(QTypedArrayData) == sizeof(QArrayData));
         return allocate(/* capacity */ 0, Unsharable);
     }
+#endif
 };
 
 template <class T, size_t N>

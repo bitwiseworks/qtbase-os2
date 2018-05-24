@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +42,7 @@
 #include <QtGui/QOpenGLFramebufferObject>
 #include <QtGui/QOpenGLPaintDevice>
 #include <QtGui/QOpenGLFunctions>
-#include <QtGui/private/qopengltextureblitter_p.h>
+#include <QtGui/QOpenGLTextureBlitter>
 #include <QtGui/private/qopenglextensions_p.h>
 #include <QtGui/private/qopenglcontext_p.h>
 #include <QtGui/QMatrix4x4>
@@ -157,7 +163,7 @@ class QOpenGLWindowPaintDevice : public QOpenGLPaintDevice
 {
 public:
     QOpenGLWindowPaintDevice(QOpenGLWindow *window) : m_window(window) { }
-    void ensureActiveTarget() Q_DECL_OVERRIDE;
+    void ensureActiveTarget() override;
 
     QOpenGLWindow *m_window;
 };
@@ -182,9 +188,9 @@ public:
     void bindFBO();
     void initialize();
 
-    void beginPaint(const QRegion &region) Q_DECL_OVERRIDE;
-    void endPaint() Q_DECL_OVERRIDE;
-    void flush(const QRegion &region) Q_DECL_OVERRIDE;
+    void beginPaint(const QRegion &region) override;
+    void endPaint() override;
+    void flush(const QRegion &region) override;
 
     QOpenGLWindow::UpdateBehavior updateBehavior;
     bool hasFboBlit;
@@ -216,6 +222,9 @@ void QOpenGLWindowPrivate::initialize()
     if (context)
         return;
 
+    if (!q->handle())
+        qWarning("Attempted to initialize QOpenGLWindow without a platform window");
+
     context.reset(new QOpenGLContext);
     context->setShareContext(shareContext);
     context->setFormat(q->requestedFormat());
@@ -246,9 +255,10 @@ void QOpenGLWindowPrivate::beginPaint(const QRegion &region)
         if (!fbo || fbo->size() != deviceSize) {
             QOpenGLFramebufferObjectFormat fboFormat;
             fboFormat.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
-            if (q->requestedFormat().samples() > 0) {
+            const int samples = q->requestedFormat().samples();
+            if (samples > 0) {
                 if (updateBehavior != QOpenGLWindow::PartialUpdateBlend)
-                    fboFormat.setSamples(q->requestedFormat().samples());
+                    fboFormat.setSamples(samples);
                 else
                     qWarning("QOpenGLWindow: PartialUpdateBlend does not support multisampling");
             }
@@ -337,7 +347,7 @@ void QOpenGLWindowPaintDevice::ensureActiveTarget()
   \sa QOpenGLWindow::UpdateBehavior
  */
 QOpenGLWindow::QOpenGLWindow(QOpenGLWindow::UpdateBehavior updateBehavior, QWindow *parent)
-    : QPaintDeviceWindow(*(new QOpenGLWindowPrivate(Q_NULLPTR, updateBehavior)), parent)
+    : QPaintDeviceWindow(*(new QOpenGLWindowPrivate(nullptr, updateBehavior)), parent)
 {
     setSurfaceType(QSurface::OpenGLSurface);
 }
@@ -521,7 +531,9 @@ QImage QOpenGLWindow::grabFramebuffer()
         return QImage();
 
     makeCurrent();
-    return qt_gl_read_framebuffer(size() * devicePixelRatio(), false, false);
+    QImage img = qt_gl_read_framebuffer(size() * devicePixelRatio(), false, false);
+    img.setDevicePixelRatio(devicePixelRatio());
+    return img;
 }
 
 /*!
@@ -664,15 +676,10 @@ int QOpenGLWindow::metric(PaintDeviceMetric metric) const
             if (d->paintDevice)
                 return d->paintDevice->depth();
             break;
-        case PdmDevicePixelRatio:
-            if (d->paintDevice)
-                return devicePixelRatio();
-            break;
         default:
             break;
     }
     return QPaintDeviceWindow::metric(metric);
-
 }
 
 /*!

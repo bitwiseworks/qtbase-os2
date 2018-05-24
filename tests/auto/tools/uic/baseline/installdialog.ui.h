@@ -10,13 +10,10 @@
 #define INSTALLDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QListWidget>
@@ -123,13 +120,13 @@ public:
 
     void retranslateUi(QDialog *InstallDialog)
     {
-        InstallDialog->setWindowTitle(QApplication::translate("InstallDialog", "Install Documentation", 0));
-        label->setText(QApplication::translate("InstallDialog", "Available Documentation:", 0));
-        installButton->setText(QApplication::translate("InstallDialog", "Install", 0));
-        cancelButton->setText(QApplication::translate("InstallDialog", "Cancel", 0));
-        closeButton->setText(QApplication::translate("InstallDialog", "Close", 0));
-        label_4->setText(QApplication::translate("InstallDialog", "Installation Path:", 0));
-        browseButton->setText(QApplication::translate("InstallDialog", "...", 0));
+        InstallDialog->setWindowTitle(QApplication::translate("InstallDialog", "Install Documentation", nullptr));
+        label->setText(QApplication::translate("InstallDialog", "Available Documentation:", nullptr));
+        installButton->setText(QApplication::translate("InstallDialog", "Install", nullptr));
+        cancelButton->setText(QApplication::translate("InstallDialog", "Cancel", nullptr));
+        closeButton->setText(QApplication::translate("InstallDialog", "Close", nullptr));
+        label_4->setText(QApplication::translate("InstallDialog", "Installation Path:", nullptr));
+        browseButton->setText(QApplication::translate("InstallDialog", "...", nullptr));
     } // retranslateUi
 
 };

@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -93,9 +89,13 @@ private slots:
     void waitForDone();
     void clear();
     void cancel();
+    void tryTake();
     void waitForDoneTimeout();
     void destroyingWaitsForTasksToFinish();
+    void stackSize();
     void stressTest();
+    void takeAllAndIncreaseMaxThreadCount();
+    void waitForDoneAfterTake();
 
 private:
     QMutex m_functionTestMutex;
@@ -821,7 +821,7 @@ void tst_QThreadPool::tryStartCount()
             ++count;
         QCOMPARE(count, QThread::idealThreadCount());
 
-        QTest::qWait(100);
+        QTRY_COMPARE(threadPool.activeThreadCount(), 0);
     }
 }
 
@@ -962,51 +962,149 @@ void tst_QThreadPool::clear()
 void tst_QThreadPool::cancel()
 {
     QSemaphore sem(0);
+    QSemaphore startedThreads(0);
+
     class BlockingRunnable : public QRunnable
     {
     public:
         QSemaphore & sem;
-        int & dtorCounter;
-        int & runCounter;
+        QSemaphore &startedThreads;
+        QAtomicInt &dtorCounter;
+        QAtomicInt &runCounter;
         int dummy;
-        BlockingRunnable(QSemaphore & s, int & c, int & r) : sem(s), dtorCounter(c), runCounter(r){}
-        ~BlockingRunnable(){dtorCounter++;}
+
+        explicit BlockingRunnable(QSemaphore &s, QSemaphore &started, QAtomicInt &c, QAtomicInt &r)
+            : sem(s), startedThreads(started), dtorCounter(c), runCounter(r){}
+
+        ~BlockingRunnable()
+        {
+            dtorCounter.fetchAndAddRelaxed(1);
+        }
+
         void run()
         {
-            runCounter++;
+            startedThreads.release();
+            runCounter.fetchAndAddRelaxed(1);
             sem.acquire();
             count.ref();
         }
     };
-    typedef BlockingRunnable* BlockingRunnablePtr;
+
+    enum {
+        MaxThreadCount = 3,
+        OverProvisioning = 2,
+        runs = MaxThreadCount * OverProvisioning
+    };
 
     QThreadPool threadPool;
-    threadPool.setMaxThreadCount(3);
-    int runs = 2 * threadPool.maxThreadCount();
-    BlockingRunnablePtr* runnables = new BlockingRunnablePtr[runs];
+    threadPool.setMaxThreadCount(MaxThreadCount);
+    BlockingRunnable *runnables[runs];
+
+    // ensure that the QThreadPool doesn't deadlock if any of the checks fail
+    // and cause an early return:
+    const QSemaphoreReleaser semReleaser(sem, runs);
+
     count.store(0);
-    int dtorCounter = 0;
-    int runCounter = 0;
+    QAtomicInt dtorCounter = 0;
+    QAtomicInt runCounter = 0;
     for (int i = 0; i < runs; i++) {
-        runnables[i] = new BlockingRunnable(sem, dtorCounter, runCounter);
+        runnables[i] = new BlockingRunnable(sem, startedThreads, dtorCounter, runCounter);
         runnables[i]->setAutoDelete(i != 0 && i != (runs-1)); //one which will run and one which will not
         threadPool.cancel(runnables[i]); //verify NOOP for jobs not in the queue
         threadPool.start(runnables[i]);
     }
+    // wait for all worker threads to have started up:
+    QVERIFY(startedThreads.tryAcquire(MaxThreadCount, 60*1000 /* 1min */));
+
     for (int i = 0; i < runs; i++) {
         threadPool.cancel(runnables[i]);
     }
     runnables[0]->dummy = 0; //valgrind will catch this if cancel() is crazy enough to delete currently running jobs
     runnables[runs-1]->dummy = 0;
-    QCOMPARE(dtorCounter, runs-threadPool.maxThreadCount()-1);
+    QCOMPARE(dtorCounter.load(), runs - threadPool.maxThreadCount() - 1);
     sem.release(threadPool.maxThreadCount());
     threadPool.waitForDone();
-    QCOMPARE(runCounter, threadPool.maxThreadCount());
+    QCOMPARE(runCounter.load(), threadPool.maxThreadCount());
     QCOMPARE(count.load(), threadPool.maxThreadCount());
-    QCOMPARE(dtorCounter, runs-2);
+    QCOMPARE(dtorCounter.load(), runs - 2);
     delete runnables[0]; //if the pool deletes them then we'll get double-free crash
     delete runnables[runs-1];
-    delete[] runnables;
+}
+
+void tst_QThreadPool::tryTake()
+{
+    QSemaphore sem(0);
+    QSemaphore startedThreads(0);
+
+    class BlockingRunnable : public QRunnable
+    {
+    public:
+        QSemaphore &sem;
+        QSemaphore &startedThreads;
+        QAtomicInt &dtorCounter;
+        QAtomicInt &runCounter;
+        int dummy;
+
+        explicit BlockingRunnable(QSemaphore &s, QSemaphore &started, QAtomicInt &c, QAtomicInt &r)
+            : sem(s), startedThreads(started), dtorCounter(c), runCounter(r) {}
+
+        ~BlockingRunnable()
+        {
+            dtorCounter.fetchAndAddRelaxed(1);
+        }
+
+        void run() override
+        {
+            startedThreads.release();
+            runCounter.fetchAndAddRelaxed(1);
+            sem.acquire();
+            count.ref();
+        }
+    };
+
+    enum {
+        MaxThreadCount = 3,
+        OverProvisioning = 2,
+        Runs = MaxThreadCount * OverProvisioning
+    };
+
+    QThreadPool threadPool;
+    threadPool.setMaxThreadCount(MaxThreadCount);
+    BlockingRunnable *runnables[Runs];
+
+    // ensure that the QThreadPool doesn't deadlock if any of the checks fail
+    // and cause an early return:
+    const QSemaphoreReleaser semReleaser(sem, Runs);
+
+    count.store(0);
+    QAtomicInt dtorCounter = 0;
+    QAtomicInt runCounter = 0;
+    for (int i = 0; i < Runs; i++) {
+        runnables[i] = new BlockingRunnable(sem, startedThreads, dtorCounter, runCounter);
+        runnables[i]->setAutoDelete(i != 0 && i != Runs - 1); // one which will run and one which will not
+        QVERIFY(!threadPool.tryTake(runnables[i])); // verify NOOP for jobs not in the queue
+        threadPool.start(runnables[i]);
+    }
+    // wait for all worker threads to have started up:
+    QVERIFY(startedThreads.tryAcquire(MaxThreadCount, 60*1000 /* 1min */));
+
+    for (int i = 0; i < MaxThreadCount; ++i) {
+        // check taking runnables doesn't work once they were started:
+        QVERIFY(!threadPool.tryTake(runnables[i]));
+    }
+    for (int i = MaxThreadCount; i < Runs ; ++i) {
+        QVERIFY(threadPool.tryTake(runnables[i]));
+        delete runnables[i];
+    }
+
+    runnables[0]->dummy = 0; // valgrind will catch this if tryTake() is crazy enough to delete currently running jobs
+    QCOMPARE(dtorCounter.load(), int(Runs - MaxThreadCount));
+    sem.release(MaxThreadCount);
+    threadPool.waitForDone();
+    QCOMPARE(runCounter.load(), int(MaxThreadCount));
+    QCOMPARE(count.load(), int(MaxThreadCount));
+    QCOMPARE(dtorCounter.load(), int(Runs - 1));
+    delete runnables[0]; // if the pool deletes them then we'll get double-free crash
 }
 
 void tst_QThreadPool::destroyingWaitsForTasksToFinish()
@@ -1041,6 +1139,39 @@ void tst_QThreadPool::destroyingWaitsForTasksToFinish()
     }
 }
 
+// Verify that QThreadPool::stackSize is used when creating
+// new threads. Note that this tests the Qt property only
+// since QThread::stackSize() does not reflect the actual
+// stack size used by the native thread.
+void tst_QThreadPool::stackSize()
+{
+    uint targetStackSize = 512 * 1024;
+    uint threadStackSize = 1; // impossible value
+
+    class StackSizeChecker : public QRunnable
+    {
+        public:
+        uint *stackSize;
+
+        StackSizeChecker(uint *stackSize)
+        :stackSize(stackSize)
+        {
+
+        }
+
+        void run()
+        {
+            *stackSize = QThread::currentThread()->stackSize();
+        }
+    };
+
+    QThreadPool threadPool;
+    threadPool.setStackSize(targetStackSize);
+    threadPool.start(new StackSizeChecker(&threadStackSize));
+    QVERIFY(threadPool.waitForDone(30000)); // 30s timeout
+    QCOMPARE(threadStackSize, targetStackSize);
+}
+
 void tst_QThreadPool::stressTest()
 {
     class Task : public QRunnable
@@ -1072,6 +1203,136 @@ void tst_QThreadPool::stressTest()
         t.start();
         t.wait();
     }
+}
+
+void tst_QThreadPool::takeAllAndIncreaseMaxThreadCount() {
+    class Task : public QRunnable
+    {
+    public:
+        Task(QSemaphore *mainBarrier, QSemaphore *threadBarrier)
+            : m_mainBarrier(mainBarrier)
+            , m_threadBarrier(threadBarrier)
+        {
+            setAutoDelete(false);
+        }
+
+        void run() {
+            m_mainBarrier->release();
+            m_threadBarrier->acquire();
+        }
+    private:
+        QSemaphore *m_mainBarrier;
+        QSemaphore *m_threadBarrier;
+    };
+
+    QSemaphore mainBarrier;
+    QSemaphore taskBarrier;
+
+    QThreadPool threadPool;
+    threadPool.setMaxThreadCount(1);
+
+    Task *task1 = new Task(&mainBarrier, &taskBarrier);
+    Task *task2 = new Task(&mainBarrier, &taskBarrier);
+    Task *task3 = new Task(&mainBarrier, &taskBarrier);
+
+    threadPool.start(task1);
+    threadPool.start(task2);
+    threadPool.start(task3);
+
+    mainBarrier.acquire(1);
+
+    QCOMPARE(threadPool.activeThreadCount(), 1);
+
+    QVERIFY(!threadPool.tryTake(task1));
+    QVERIFY(threadPool.tryTake(task2));
+    QVERIFY(threadPool.tryTake(task3));
+
+    // A bad queue implementation can segfault here because two consecutive items in the queue
+    // have been taken
+    threadPool.setMaxThreadCount(4);
+
+    // Even though we increase the max thread count, there should only be one job to run
+    QCOMPARE(threadPool.activeThreadCount(), 1);
+
+    // Make sure jobs 2 and 3 never started
+    QCOMPARE(mainBarrier.available(), 0);
+
+    taskBarrier.release(1);
+
+    threadPool.waitForDone();
+
+    QCOMPARE(threadPool.activeThreadCount(), 0);
+
+    delete task1;
+    delete task2;
+    delete task3;
+}
+
+void tst_QThreadPool::waitForDoneAfterTake()
+{
+    class Task : public QRunnable
+    {
+    public:
+        Task(QSemaphore *mainBarrier, QSemaphore *threadBarrier)
+            : m_mainBarrier(mainBarrier)
+            , m_threadBarrier(threadBarrier)
+        {}
+
+        void run()
+        {
+            m_mainBarrier->release();
+            m_threadBarrier->acquire();
+        }
+
+    private:
+        QSemaphore *m_mainBarrier = nullptr;
+        QSemaphore *m_threadBarrier = nullptr;
+    };
+
+    int threadCount = 4;
+
+    // Blocks the main thread from releasing the threadBarrier before all run() functions have started
+    QSemaphore mainBarrier;
+    // Blocks the tasks from completing their run function
+    QSemaphore threadBarrier;
+
+    QThreadPool manager;
+    manager.setMaxThreadCount(threadCount);
+
+    // Fill all the threads with runnables that wait for the threadBarrier
+    for (int i = 0; i < threadCount; i++) {
+        auto *task = new Task(&mainBarrier, &threadBarrier);
+        manager.start(task);
+    }
+
+    QVERIFY(manager.activeThreadCount() == manager.maxThreadCount());
+
+    // Add runnables that are immediately removed from the pool queue.
+    // This sets the queue elements to nullptr in QThreadPool and we want to test that
+    // the threads keep going through the queue after encountering a nullptr.
+    for (int i = 0; i < threadCount; i++) {
+        QRunnable *runnable = createTask(emptyFunct);
+        manager.start(runnable);
+        QVERIFY(manager.tryTake(runnable));
+    }
+
+    // Add another runnable that will not be removed
+    manager.start(createTask(emptyFunct));
+
+    // Wait for the first runnables to start
+    mainBarrier.acquire(threadCount);
+
+    QVERIFY(mainBarrier.available() == 0);
+    QVERIFY(threadBarrier.available() == 0);
+
+    // Release runnables that are waiting and expect all runnables to complete
+    threadBarrier.release(threadCount);
+
+    // Using qFatal instead of QVERIFY to force exit if threads are still running after timeout.
+    // Otherwise, QCoreApplication will still wait for the stale threads and never exit the test.
+    if (!manager.waitForDone(5 * 60 * 1000))
+        qFatal("waitForDone returned false. Aborting to stop background threads.");
+
 }
 
 QTEST_MAIN(tst_QThreadPool);

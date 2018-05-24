@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,9 +42,8 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QtEndian>
 
-#ifdef XCB_USE_XLIB
-#include <X11/extensions/XIproto.h>
-#endif //XCB_USE_XLIB
+#include <vector>
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 /* Implementation of http://standards.freedesktop.org/xsettings-spec/xsettings-0.5.html */
@@ -49,9 +54,8 @@ enum XSettingsType {
     XSettingsTypeColor = 2
 };
 
-class QXcbXSettingsCallback
+struct QXcbXSettingsCallback
 {
-public:
     QXcbXSettings::PropertyChangeFunc func;
     void *handle;
 };
@@ -69,23 +73,19 @@ public:
             return;
         this->value = value;
         this->last_change_serial = last_change_serial;
-        QLinkedList<QXcbXSettingsCallback>::const_iterator it = callback_links.begin();
-        for (;it != callback_links.end();++it) {
-            it->func(screen,name,value,it->handle);
-        }
+        for (const auto &callback : callback_links)
+            callback.func(screen, name, value, callback.handle);
     }
 
     void addCallback(QXcbXSettings::PropertyChangeFunc func, void *handle)
     {
-        QXcbXSettingsCallback callback;
-        callback.func = func;
-        callback.handle = handle;
-        callback_links.append(callback);
+        QXcbXSettingsCallback callback = { func, handle };
+        callback_links.push_back(callback);
     }
 
     QVariant value;
     int last_change_serial;
-    QLinkedList<QXcbXSettingsCallback> callback_links;
+    std::vector<QXcbXSettingsCallback> callback_links;
 
 };
 
@@ -106,24 +106,22 @@ public:
         QByteArray settings;
         xcb_atom_t _xsettings_atom = screen->connection()->atom(QXcbAtom::_XSETTINGS_SETTINGS);
         while (1) {
-            xcb_get_property_cookie_t get_prop_cookie =
-                    xcb_get_property_unchecked(screen->xcb_connection(),
+            auto reply = Q_XCB_REPLY_UNCHECKED(xcb_get_property,
+                                               screen->xcb_connection(),
                                                false,
                                                x_settings_window,
                                                _xsettings_atom,
                                                _xsettings_atom,
                                                offset/4,
                                                8192);
-            xcb_get_property_reply_t *reply = xcb_get_property_reply(screen->xcb_connection(), get_prop_cookie, NULL);
             bool more = false;
             if (!reply)
                 return settings;
 
-            settings += QByteArray((const char *)xcb_get_property_value(reply), xcb_get_property_value_length(reply));
-            offset += xcb_get_property_value_length(reply);
+            const auto property_value_length = xcb_get_property_value_length(reply.get());
+            settings.append(static_cast<const char *>(xcb_get_property_value(reply.get())), property_value_length);
+            offset += property_value_length;
             more = reply->bytes_after != 0;
-
-            free(reply);
 
             if (!more)
                 break;
@@ -140,24 +138,23 @@ public:
         return value + 4 - remainder;
     }
 
-#ifdef XCB_USE_XLIB
     void populateSettings(const QByteArray &xSettings)
     {
         if (xSettings.length() < 12)
             return;
         char byteOrder = xSettings.at(0);
-        if (byteOrder != LSBFirst && byteOrder != MSBFirst) {
-            qWarning("%s ByteOrder byte %d not 0 or 1", Q_FUNC_INFO , byteOrder);
+        if (byteOrder != XCB_IMAGE_ORDER_LSB_FIRST && byteOrder != XCB_IMAGE_ORDER_MSB_FIRST) {
+            qWarning("ByteOrder byte %d not 0 or 1", byteOrder);
             return;
         }
 
 #define ADJUST_BO(b, t, x) \
-        ((b == LSBFirst) ?                          \
-         qFromLittleEndian<t>((const uchar *)(x)) : \
-         qFromBigEndian<t>((const uchar *)(x)))
+        ((b == XCB_IMAGE_ORDER_LSB_FIRST) ?                          \
+         qFromLittleEndian<t>(x) : \
+         qFromBigEndian<t>(x))
 #define VALIDATE_LENGTH(x)    \
         if ((size_t)xSettings.length() < (offset + local_offset + 12 + x)) { \
-            qWarning("%s Length %d runs past end of data", Q_FUNC_INFO , x); \
+            qWarning("Length %d runs past end of data", x); \
             return;                                                     \
         }
 
@@ -215,7 +212,6 @@ public:
         }
 
     }
-#endif //XCB_USE_XLIB
 
     QXcbVirtualDesktop *screen;
     xcb_window_t x_settings_window;
@@ -229,43 +225,31 @@ QXcbXSettings::QXcbXSettings(QXcbVirtualDesktop *screen)
 {
     QByteArray settings_atom_for_screen("_XSETTINGS_S");
     settings_atom_for_screen.append(QByteArray::number(screen->number()));
-    xcb_intern_atom_cookie_t atom_cookie = xcb_intern_atom(screen->xcb_connection(),
-                                                           true,
-                                                           settings_atom_for_screen.length(),
-                                                           settings_atom_for_screen.constData());
-    xcb_generic_error_t *error = 0;
-    xcb_intern_atom_reply_t *atom_reply = xcb_intern_atom_reply(screen->xcb_connection(),atom_cookie,&error);
-    if (error) {
-        free(error);
+    auto atom_reply = Q_XCB_REPLY(xcb_intern_atom,
+                                  screen->xcb_connection(),
+                                  true,
+                                  settings_atom_for_screen.length(),
+                                  settings_atom_for_screen.constData());
+    if (!atom_reply)
         return;
-    }
+
     xcb_atom_t selection_owner_atom = atom_reply->atom;
-    free(atom_reply);
 
-    xcb_get_selection_owner_cookie_t selection_cookie =
-            xcb_get_selection_owner(screen->xcb_connection(), selection_owner_atom);
-
-    xcb_get_selection_owner_reply_t *selection_result =
-            xcb_get_selection_owner_reply(screen->xcb_connection(), selection_cookie, &error);
-    if (error) {
-        free(error);
+    auto selection_result = Q_XCB_REPLY(xcb_get_selection_owner,
+                                        screen->xcb_connection(), selection_owner_atom);
+    if (!selection_result)
         return;
-    }
 
     d_ptr->x_settings_window = selection_result->owner;
-    free(selection_result);
-    if (!d_ptr->x_settings_window) {
+    if (!d_ptr->x_settings_window)
         return;
-    }
 
     const uint32_t event = XCB_CW_EVENT_MASK;
     const uint32_t event_mask[] = { XCB_EVENT_MASK_STRUCTURE_NOTIFY|XCB_EVENT_MASK_PROPERTY_CHANGE };
     xcb_change_window_attributes(screen->xcb_connection(),d_ptr->x_settings_window,event,event_mask);
 
-#ifdef XCB_USE_XLIB
     d_ptr->populateSettings(d_ptr->getSettings());
     d_ptr->initialized = true;
-#endif //XCB_USE_XLIB
 }
 
 QXcbXSettings::~QXcbXSettings()
@@ -285,9 +269,8 @@ void QXcbXSettings::handlePropertyNotifyEvent(const xcb_property_notify_event_t 
     Q_D(QXcbXSettings);
     if (event->window != d->x_settings_window)
         return;
-#ifdef XCB_USE_XLIB
+
     d->populateSettings(d->getSettings());
-#endif //XCB_USE_XLIB
 }
 
 void QXcbXSettings::registerCallbackForProperty(const QByteArray &property, QXcbXSettings::PropertyChangeFunc func, void *handle)
@@ -299,14 +282,13 @@ void QXcbXSettings::registerCallbackForProperty(const QByteArray &property, QXcb
 void QXcbXSettings::removeCallbackForHandle(const QByteArray &property, void *handle)
 {
     Q_D(QXcbXSettings);
-    QXcbXSettingsPropertyValue &value = d->settings[property];
-    QLinkedList<QXcbXSettingsCallback>::iterator it = value.callback_links.begin();
-    while (it != value.callback_links.end()) {
-        if (it->handle == handle)
-            it = value.callback_links.erase(it);
-        else
-            ++it;
-    }
+    auto &callbacks = d->settings[property].callback_links;
+
+    auto isCallbackForHandle = [handle](const QXcbXSettingsCallback &cb) { return cb.handle == handle; };
+
+    callbacks.erase(std::remove_if(callbacks.begin(), callbacks.end(),
+                                   isCallbackForHandle),
+                    callbacks.end());
 }
 
 void QXcbXSettings::removeCallbackForHandle(void *handle)

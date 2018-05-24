@@ -1,31 +1,26 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 David Faure <faure@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -87,6 +82,11 @@ private slots:
     void transactionalWriteErrorRenaming();
     void symlink();
     void directory();
+
+#ifdef Q_OS_WIN
+    void alternateDataStream_data();
+    void alternateDataStream();
+#endif
 };
 
 static inline QByteArray msgCannotOpen(const QFileDevice &f)
@@ -99,7 +99,7 @@ static inline QByteArray msgCannotOpen(const QFileDevice &f)
 void tst_QSaveFile::transactionalWrite()
 {
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QFile::remove(targetFile);
     QSaveFile file(targetFile);
@@ -134,7 +134,7 @@ void tst_QSaveFile::saveTwice()
     // Check that we can reuse a QSaveFile object
     // (and test the case of an existing target file)
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QSaveFile file(targetFile);
     QVERIFY2(file.open(QIODevice::WriteOnly), msgCannotOpen(file).constData());
@@ -153,7 +153,7 @@ void tst_QSaveFile::saveTwice()
 void tst_QSaveFile::textStreamManualFlush()
 {
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QSaveFile file(targetFile);
     QVERIFY2(file.open(QIODevice::WriteOnly), msgCannotOpen(file).constData());
@@ -174,7 +174,7 @@ void tst_QSaveFile::textStreamManualFlush()
 void tst_QSaveFile::textStreamAutoFlush()
 {
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QSaveFile file(targetFile);
     QVERIFY2(file.open(QIODevice::WriteOnly), msgCannotOpen(file).constData());
@@ -206,7 +206,7 @@ void tst_QSaveFile::transactionalWriteNoPermissionsOnDir()
 #endif
     QFETCH(bool, directWriteFallback);
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     QVERIFY(QFile(dir.path()).setPermissions(QFile::ReadOwner | QFile::ExeOwner));
     PermissionRestorer permissionRestorer(dir.path());
 
@@ -264,7 +264,7 @@ void tst_QSaveFile::transactionalWriteNoPermissionsOnFile()
 #endif
     // Setup an existing but readonly file
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QFile file(targetFile);
     PermissionRestorer permissionRestorer(targetFile);
@@ -285,7 +285,7 @@ void tst_QSaveFile::transactionalWriteNoPermissionsOnFile()
 void tst_QSaveFile::transactionalWriteCanceled()
 {
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QFile::remove(targetFile);
     QSaveFile file(targetFile);
@@ -313,7 +313,7 @@ void tst_QSaveFile::transactionalWriteErrorRenaming()
         QSKIP("Test is not applicable with root privileges");
 #endif
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     const QString targetFile = dir.path() + QString::fromLatin1("/outfile");
     QSaveFile file(targetFile);
     QVERIFY2(file.open(QIODevice::WriteOnly), msgCannotOpen(file).constData());
@@ -347,7 +347,7 @@ void tst_QSaveFile::symlink()
 #ifdef Q_OS_UNIX
     QByteArray someData = "some data";
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
 
     const QString targetFile = dir.path() + QLatin1String("/outfile");
     const QString linkFile = dir.path() + QLatin1String("/linkfile");
@@ -400,7 +400,7 @@ void tst_QSaveFile::symlink()
 
     // link to a link in another directory
     QTemporaryDir dir2;
-    QVERIFY(dir2.isValid());
+    QVERIFY2(dir2.isValid(), qPrintable(dir2.errorString()));
 
     const QString linkFile2 = dir2.path() + QLatin1String("/linkfile");
     QVERIFY(QFile::link(linkFile, linkFile2));
@@ -458,7 +458,7 @@ void tst_QSaveFile::symlink()
 void tst_QSaveFile::directory()
 {
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
 
     const QString subdir = dir.path() + QLatin1String("/subdir");
     QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("subdir")));
@@ -478,6 +478,61 @@ void tst_QSaveFile::directory()
     }
 #endif
 }
+
+#ifdef Q_OS_WIN
+void tst_QSaveFile::alternateDataStream_data()
+{
+    QTest::addColumn<bool>("directWriteFallback");
+    QTest::addColumn<bool>("success");
+
+    QTest::newRow("default") << false << false;
+    QTest::newRow("directWriteFallback") << true << true;
+}
+
+void tst_QSaveFile::alternateDataStream()
+{
+    QFETCH(bool, directWriteFallback);
+    QFETCH(bool, success);
+    static const char newContent[] = "New content\r\n";
+
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+    QString baseName = dir.path() + QLatin1String("/base");
+    {
+        QFile baseFile(baseName);
+        QVERIFY2(baseFile.open(QIODevice::ReadWrite), qPrintable(baseFile.errorString()));
+    }
+
+    // First, create a file with old content
+    QString adsName = baseName + QLatin1String(":outfile");
+    {
+        QFile targetFile(adsName);
+        if (!targetFile.open(QIODevice::ReadWrite))
+            QSKIP("Failed to ceate ADS file (" + targetFile.errorString().toUtf8()
+                  + "). Temp dir is FAT?");
+        targetFile.write("Old content\r\n");
+    }
+
+    // And write to it again using QSaveFile; only works if directWriteFallback is enabled
+    QSaveFile file(adsName);
+    file.setDirectWriteFallback(directWriteFallback);
+    QCOMPARE(file.directWriteFallback(), directWriteFallback);
+
+    if (success) {
+        QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+        file.write(newContent);
+        QVERIFY2(file.commit(), qPrintable(file.errorString()));
+
+        // check the contents
+        QFile targetFile(adsName);
+        QVERIFY2(targetFile.open(QIODevice::ReadOnly), qPrintable(targetFile.errorString()));
+        QByteArray contents = targetFile.readAll();
+        QCOMPARE(contents, QByteArray(newContent));
+    } else {
+        QVERIFY(!file.open(QIODevice::WriteOnly));
+    }
+}
+#endif
 
 QTEST_MAIN(tst_QSaveFile)
 #include "tst_qsavefile.moc"

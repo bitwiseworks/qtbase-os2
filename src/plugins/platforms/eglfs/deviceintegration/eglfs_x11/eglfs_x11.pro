@@ -1,18 +1,14 @@
 TARGET = qeglfs-x11-integration
 
-PLUGIN_TYPE = egldeviceintegrations
-PLUGIN_CLASS_NAME = QEglFSX11IntegrationPlugin
-load(qt_plugin)
+QT += core-private gui-private eglfsdeviceintegration-private
 
-QT += core-private gui-private platformsupport-private eglfs_device_lib-private
+# Avoid X11 header collision, use generic EGL native types
+DEFINES += QT_EGL_NO_X11
 
-# Avoid X11 header collision
-DEFINES += MESA_EGL_NO_X11_HEADERS
-
-INCLUDEPATH += $$PWD/../..
+INCLUDEPATH += $$PWD/../../api
 
 CONFIG += egl
-LIBS += -lX11 -lX11-xcb -lxcb
+QMAKE_USE += xcb_xlib
 QMAKE_LFLAGS += $$QMAKE_LFLAGS_NOUNDEF
 
 SOURCES += $$PWD/qeglfsx11main.cpp \
@@ -21,3 +17,7 @@ SOURCES += $$PWD/qeglfsx11main.cpp \
 HEADERS += $$PWD/qeglfsx11integration.h
 
 OTHER_FILES += $$PWD/eglfs_x11.json
+
+PLUGIN_TYPE = egldeviceintegrations
+PLUGIN_CLASS_NAME = QEglFSX11IntegrationPlugin
+load(qt_plugin)

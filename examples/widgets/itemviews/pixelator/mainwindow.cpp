@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -43,9 +53,12 @@
 #include "pixeldelegate.h"
 
 #include <QtWidgets>
-#ifndef QT_NO_PRINTER
+#if defined(QT_PRINTSUPPORT_LIB)
+#include <QtPrintSupport/qtprintsupportglobal.h>
+#if QT_CONFIG(printdialog)
 #include <QPrinter>
 #include <QPrintDialog>
+#endif
 #endif
 
 //! [0]
@@ -98,15 +111,15 @@ MainWindow::MainWindow()
     menuBar()->addSeparator();
     menuBar()->addMenu(helpMenu);
 
-    connect(openAction, SIGNAL(triggered()), this, SLOT(chooseImage()));
-    connect(printAction, SIGNAL(triggered()), this, SLOT(printImage()));
-    connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
-    connect(aboutAction, SIGNAL(triggered()), this, SLOT(showAboutBox()));
+    connect(openAction, &QAction::triggered, this, &MainWindow::chooseImage);
+    connect(printAction, &QAction::triggered, this, &MainWindow::printImage);
+    connect(quitAction, &QAction::triggered, qApp, &QCoreApplication::quit);
+    connect(aboutAction, &QAction::triggered, this, &MainWindow::showAboutBox);
 //! [4]
-    connect(pixelSizeSpinBox, SIGNAL(valueChanged(int)),
-            delegate, SLOT(setPixelSize(int)));
-    connect(pixelSizeSpinBox, SIGNAL(valueChanged(int)),
-            this, SLOT(updateView()));
+    connect(pixelSizeSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            delegate, &PixelDelegate::setPixelSize);
+    connect(pixelSizeSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &MainWindow::updateView);
 //! [4]
 
     QHBoxLayout *controlsLayout = new QHBoxLayout;
@@ -154,7 +167,7 @@ void MainWindow::openImage(const QString &fileName)
 
 void MainWindow::printImage()
 {
-#if !defined(QT_NO_PRINTER) && !defined(QT_NO_PRINTDIALOG)
+#if QT_CONFIG(printdialog)
     if (model->rowCount(QModelIndex())*model->columnCount(QModelIndex()) > 90000) {
         QMessageBox::StandardButton answer;
         answer = QMessageBox::question(this, tr("Large Image Size"),

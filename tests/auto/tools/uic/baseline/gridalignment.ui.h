@@ -10,11 +10,8 @@
 #define GRIDALIGNMENT_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QWidget>
 
@@ -64,11 +61,11 @@ public:
 
     void retranslateUi(QWidget *Form)
     {
-        Form->setWindowTitle(QApplication::translate("Form", "Form", 0));
-        pushButton->setText(QApplication::translate("Form", "Left", 0));
-        pushButton_3->setText(QApplication::translate("Form", "Top", 0));
-        pushButton_2->setText(QApplication::translate("Form", "Right", 0));
-        pushButton_4->setText(QApplication::translate("Form", "Bottom", 0));
+        Form->setWindowTitle(QApplication::translate("Form", "Form", nullptr));
+        pushButton->setText(QApplication::translate("Form", "Left", nullptr));
+        pushButton_3->setText(QApplication::translate("Form", "Top", nullptr));
+        pushButton_2->setText(QApplication::translate("Form", "Right", nullptr));
+        pushButton_4->setText(QApplication::translate("Form", "Bottom", nullptr));
     } // retranslateUi
 
 };

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,7 +40,6 @@
 #include "qlineedit.h"
 #include "qlineedit_p.h"
 
-#ifndef QT_NO_LINEEDIT
 #include "qaction.h"
 #include "qapplication.h"
 #include "qclipboard.h"
@@ -43,7 +48,9 @@
 #include "qevent.h"
 #include "qfontmetrics.h"
 #include "qstylehints.h"
+#if QT_CONFIG(menu)
 #include "qmenu.h"
+#endif
 #include "qpainter.h"
 #include "qpixmap.h"
 #include "qpointer.h"
@@ -54,21 +61,28 @@
 #include "qvalidator.h"
 #include "qvariant.h"
 #include "qvector.h"
-#include "qwhatsthis.h"
 #include "qdebug.h"
+#if QT_CONFIG(textedit)
 #include "qtextedit.h"
 #include <private/qtextedit_p.h>
+#endif
+#include <private/qwidgettextcontrol_p.h>
+
 #ifndef QT_NO_ACCESSIBILITY
 #include "qaccessible.h"
 #endif
+#if QT_CONFIG(itemviews)
 #include "qabstractitemview.h"
+#endif
 #include "private/qstylesheetstyle_p.h"
 
 #ifndef QT_NO_SHORTCUT
 #include "private/qapplication_p.h"
 #include "private/qshortcutmap_p.h"
 #include "qkeysequence.h"
-#define ACCEL_KEY(k) (!qApp->d_func()->shortcutMap.hasShortcutForKeySequence(k) ? \
+#define ACCEL_KEY(k) ((!QCoreApplication::testAttribute(Qt::AA_DontShowIconsInMenus) \
+                        && QGuiApplication::styleHints()->showShortcutsInContextMenus()) \
+                      && !qApp->d_func()->shortcutMap.hasShortcutForKeySequence(k) ? \
                       QLatin1Char('\t') + QKeySequence(k).toString(QKeySequence::NativeText) : QString())
 #else
 #define ACCEL_KEY(k) QString()
@@ -80,10 +94,6 @@
 #endif
 
 QT_BEGIN_NAMESPACE
-
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
-extern void qt_mac_secure_keyboard(bool); //qapplication_mac.cpp
-#endif
 
 /*!
     Initialize \a option with the values from this QLineEdit. This method
@@ -120,6 +130,8 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
     \ingroup basicwidgets
     \inmodule QtWidgets
 
+    \image windows-lineedit.png
+
     A line edit allows the user to enter and edit a single line of
     plain text with a useful collection of editing functions,
     including undo and redo, cut and paste, and drag and drop (see
@@ -133,7 +145,6 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
     inputMask(), or both. When switching between a validator and an input mask
     on the same line edit, it is best to clear the validator or input mask to
     prevent undefined behavior.
-
 
     A related class is QTextEdit which allows multi-line, rich text
     editing.
@@ -194,15 +205,6 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
     Any other key sequence that represents a valid character, will
     cause the character to be inserted into the line edit.
 
-    \table 100%
-    \row \li \inlineimage macintosh-lineedit.png Screenshot of a Macintosh style line edit
-         \li A line edit shown in the \l{Macintosh Style Widget Gallery}{Macintosh widget style}.
-    \row \li \inlineimage windowsvista-lineedit.png Screenshot of a Windows Vista style line edit
-         \li A line edit shown in the \l{Windows Vista Style Widget Gallery}{Windows Vista widget style}.
-    \row \li \inlineimage fusion-lineedit.png Screenshot of a Fusion style line edit
-         \li A line edit shown in the \l{Fusion Style Widget Gallery}{Fusion widget style}.
-    \endtable
-
     \sa QTextEdit, QLabel, QComboBox, {fowler}{GUI Design Handbook: Field, Entry}, {Line Edits Example}
 */
 
@@ -228,10 +230,10 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
 */
 
 /*!
-    \fn void QLineEdit::cursorPositionChanged(int old, int new)
+    \fn void QLineEdit::cursorPositionChanged(int oldPos, int newPos)
 
     This signal is emitted whenever the cursor moves. The previous
-    position is given by \a old, and the new position by \a new.
+    position is given by \a oldPos, and the new position by \a newPos.
 
     \sa setCursorPosition(), cursorPosition()
 */
@@ -254,10 +256,8 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
     \sa setText(), setMaxLength()
 */
 QLineEdit::QLineEdit(QWidget* parent)
-    : QWidget(*new QLineEditPrivate, parent,0)
+    : QLineEdit(QString(), parent)
 {
-    Q_D(QLineEdit);
-    d->init(QString());
 }
 
 /*!
@@ -433,6 +433,7 @@ bool QLineEdit::hasFrame() const
     \since 5.2
 */
 
+#if QT_CONFIG(action)
 /*!
     \overload
 
@@ -462,7 +463,7 @@ QAction *QLineEdit::addAction(const QIcon &icon, ActionPosition position)
     addAction(result, position);
     return result;
 }
-
+#endif // QT_CONFIG(action)
 /*!
     \property QLineEdit::clearButtonEnabled
     \brief Whether the line edit displays a clear button when it is not empty.
@@ -479,6 +480,7 @@ static const char clearButtonActionNameC[] = "_q_qlineeditclearaction";
 
 void QLineEdit::setClearButtonEnabled(bool enable)
 {
+#if QT_CONFIG(action)
     Q_D(QLineEdit);
     if (enable == isClearButtonEnabled())
         return;
@@ -493,11 +495,16 @@ void QLineEdit::setClearButtonEnabled(bool enable)
         d->removeAction(clearAction);
         delete clearAction;
     }
+#endif // QT_CONFIG(action)
 }
 
 bool QLineEdit::isClearButtonEnabled() const
 {
+#if QT_CONFIG(action)
     return findChild<QAction *>(QLatin1String(clearButtonActionNameC));
+#else
+    return false;
+#endif
 }
 
 void QLineEdit::setFrame(bool enable)
@@ -562,23 +569,13 @@ void QLineEdit::setEchoMode(EchoMode mode)
     if (mode == (EchoMode)d->control->echoMode())
         return;
     Qt::InputMethodHints imHints = inputMethodHints();
-    if (mode == Password || mode == NoEcho) {
-        imHints |= Qt::ImhHiddenText;
-    } else {
-        imHints &= ~Qt::ImhHiddenText;
-    }
-    if (mode != Normal) {
-        imHints |= (Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText | Qt::ImhSensitiveData);
-    } else {
-        imHints &= ~(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText | Qt::ImhSensitiveData);
-    }
+    imHints.setFlag(Qt::ImhHiddenText, mode == Password || mode == NoEcho);
+    imHints.setFlag(Qt::ImhNoAutoUppercase, mode != Normal);
+    imHints.setFlag(Qt::ImhNoPredictiveText, mode != Normal);
+    imHints.setFlag(Qt::ImhSensitiveData, mode != Normal);
     setInputMethodHints(imHints);
     d->control->setEchoMode(mode);
     update();
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
-    if (hasFocus())
-        qt_mac_secure_keyboard(mode == Password || mode == NoEcho);
-#endif
 }
 
 
@@ -605,7 +602,7 @@ const QValidator * QLineEdit::validator() const
     The initial setting is to have no input validator (i.e. any input
     is accepted up to maxLength()).
 
-    \sa validator(), QIntValidator, QDoubleValidator, QRegExpValidator
+    \sa validator(), hasAcceptableInput(), QIntValidator, QDoubleValidator, QRegExpValidator
 */
 
 void QLineEdit::setValidator(const QValidator *v)
@@ -615,7 +612,7 @@ void QLineEdit::setValidator(const QValidator *v)
 }
 #endif // QT_NO_VALIDATOR
 
-#ifndef QT_NO_COMPLETER
+#if QT_CONFIG(completer)
 /*!
     \since 4.2
 
@@ -667,7 +664,7 @@ QCompleter *QLineEdit::completer() const
     return d->control->completer();
 }
 
-#endif // QT_NO_COMPLETER
+#endif // QT_CONFIG(completer)
 
 /*!
     Returns a recommended size for the widget.
@@ -684,7 +681,7 @@ QSize QLineEdit::sizeHint() const
     int h = qMax(fm.height(), 14) + 2*d->verticalMargin
             + d->topTextMargin + d->bottomTextMargin
             + d->topmargin + d->bottommargin;
-    int w = fm.width(QLatin1Char('x')) * 17 + 2*d->horizontalMargin
+    int w = fm.horizontalAdvance(QLatin1Char('x')) * 17 + 2*d->horizontalMargin
             + d->effectiveLeftTextMargin() + d->effectiveRightTextMargin()
             + d->leftmargin + d->rightmargin; // "some"
     QStyleOptionFrame opt;
@@ -739,10 +736,10 @@ void QLineEdit::setCursorPosition(int pos)
     d->control->setCursorPosition(pos);
 }
 
+// ### What should this do if the point is outside of contentsRect? Currently returns 0.
 /*!
     Returns the cursor position under the point \a pos.
 */
-// ### What should this do if the point is outside of contentsRect? Currently returns 0.
 int QLineEdit::cursorPositionAt(const QPoint &pos)
 {
     Q_D(QLineEdit);
@@ -957,10 +954,12 @@ QString QLineEdit::selectedText() const
 }
 
 /*!
-    selectionStart() returns the index of the first selected character in the
+    Returns the index of the first selected character in the
     line edit or -1 if no text is selected.
 
     \sa selectedText()
+    \sa selectionEnd()
+    \sa selectionLength()
 */
 
 int QLineEdit::selectionStart() const
@@ -969,8 +968,33 @@ int QLineEdit::selectionStart() const
     return d->control->selectionStart();
 }
 
+/*!
+    Returns the index of the character directly after the selection
+    in the line edit or -1 if no text is selected.
+    \since 5.10
 
+    \sa selectedText()
+    \sa selectionStart()
+    \sa selectionLength()
+*/
+int QLineEdit::selectionEnd() const
+{
+   Q_D(const QLineEdit);
+   return d->control->selectionEnd();
+}
 
+/*!
+    Returns the length of the selection.
+    \since 5.10
+
+    \sa selectedText()
+    \sa selectionStart()
+    \sa selectionEnd()
+*/
+int QLineEdit::selectionLength() const
+{
+   return selectionEnd() - selectionStart();
+}
 
 /*!
     Selects text from position \a start and for \a length characters.
@@ -982,7 +1006,7 @@ int QLineEdit::selectionStart() const
 void QLineEdit::setSelection(int start, int length)
 {
     Q_D(QLineEdit);
-    if (start < 0 || start > (int)d->control->end()) {
+    if (Q_UNLIKELY(start < 0 || start > (int)d->control->end())) {
         qWarning("QLineEdit::setSelection: Invalid start position (%d)", start);
         return;
     }
@@ -1188,6 +1212,7 @@ QMargins QLineEdit::textMargins() const
     \row \li \c > \li All following alphabetic characters are uppercased.
     \row \li \c < \li All following alphabetic characters are lowercased.
     \row \li \c ! \li Switch off case conversion.
+    \row \li \c {[ ] { }} \li Reserved.
     \row \li \tt{\\} \li Use \tt{\\} to escape the special
                            characters listed above to use them as
                            separators.
@@ -1423,31 +1448,35 @@ bool QLineEdit::event(QEvent * e)
         d->control->processShortcutOverrideEvent(ke);
 #endif
     } else if (e->type() == QEvent::KeyRelease) {
-        d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+        d->control->updateCursorBlinking();
     } else if (e->type() == QEvent::Show) {
         //In order to get the cursor blinking if QComboBox::setEditable is called when the combobox has focus
         if (hasFocus()) {
-            d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+            d->control->setBlinkingCursorEnabled(true);
             QStyleOptionFrame opt;
             initStyleOption(&opt);
             if ((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
                 || style()->styleHint(QStyle::SH_BlinkCursorWhenTextSelected, &opt, this))
                 d->setCursorVisible(true);
         }
+#if QT_CONFIG(action)
     } else if (e->type() == QEvent::ActionRemoved) {
         d->removeAction(static_cast<QActionEvent *>(e)->action());
+#endif
     } else if (e->type() == QEvent::Resize) {
         d->positionSideWidgets();
+    } else if (e->type() == QEvent::StyleChange) {
+        d->initMouseYThreshold();
     }
 #ifdef QT_KEYPAD_NAVIGATION
     if (QApplication::keypadNavigationEnabled()) {
         if (e->type() == QEvent::EnterEditFocus) {
             end(false);
             d->setCursorVisible(true);
-            d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+            d->control->setCursorBlinkEnabled(true);
         } else if (e->type() == QEvent::LeaveEditFocus) {
             d->setCursorVisible(false);
-            d->control->setCursorBlinkPeriod(0);
+            d->control->setCursorBlinkEnabled(false);
             if (d->control->hasAcceptableInput() || d->control->fixup())
                 emit editingFinished();
         }
@@ -1488,7 +1517,7 @@ void QLineEdit::mousePressEvent(QMouseEvent* e)
     int cursor = d->xToPos(e->pos().x());
 #ifndef QT_NO_DRAGANDDROP
     if (!mark && d->dragEnabled && d->control->echoMode() == Normal &&
-         e->button() == Qt::LeftButton && d->control->inSelection(e->pos().x())) {
+         e->button() == Qt::LeftButton && d->inSelection(e->pos().x())) {
         if (!d->dndTimer.isActive())
             d->dndTimer.start(QApplication::startDragTime(), this);
     } else
@@ -1518,7 +1547,17 @@ void QLineEdit::mouseMoveEvent(QMouseEvent * e)
             const bool select = (d->imHints & Qt::ImhNoPredictiveText);
 #endif
 #ifndef QT_NO_IM
-            if (d->control->composeMode() && select) {
+            if (d->mouseYThreshold > 0 && e->pos().y() > d->mousePressPos.y() + d->mouseYThreshold) {
+                if (layoutDirection() == Qt::RightToLeft)
+                    d->control->home(select);
+                else
+                    d->control->end(select);
+            } else if (d->mouseYThreshold > 0 && e->pos().y() + d->mouseYThreshold < d->mousePressPos.y()) {
+                if (layoutDirection() == Qt::RightToLeft)
+                    d->control->end(select);
+                else
+                    d->control->home(select);
+            } else if (d->control->composeMode() && select) {
                 int startPos = d->xToPos(d->mousePressPos.x());
                 int currentPos = d->xToPos(e->pos().x());
                 if (startPos != currentPos)
@@ -1557,7 +1596,7 @@ void QLineEdit::mouseReleaseEvent(QMouseEvent* e)
             d->control->copy(QClipboard::Selection);
         } else if (!d->control->isReadOnly() && e->button() == Qt::MidButton) {
             deselect();
-            insert(QApplication::clipboard()->text(QClipboard::Selection));
+            d->control->paste(QClipboard::Selection);
         }
     }
 #endif
@@ -1694,7 +1733,7 @@ void QLineEdit::keyPressEvent(QKeyEvent *event)
     if (event->isAccepted()) {
         if (layoutDirection() != d->control->layoutDirection())
             setLayoutDirection(d->control->layoutDirection());
-        d->control->setCursorBlinkPeriod(0);
+        d->control->updateCursorBlinking();
     }
 }
 
@@ -1739,7 +1778,7 @@ void QLineEdit::inputMethodEvent(QInputMethodEvent *e)
 
     d->control->processInputMethodEvent(e);
 
-#ifndef QT_NO_COMPLETER
+#if QT_CONFIG(completer)
     if (!e->commitString().isEmpty())
         d->control->complete(Qt::Key_unknown);
 #endif
@@ -1749,16 +1788,28 @@ void QLineEdit::inputMethodEvent(QInputMethodEvent *e)
 */
 QVariant QLineEdit::inputMethodQuery(Qt::InputMethodQuery property) const
 {
+    return inputMethodQuery(property, QVariant());
+}
+
+/*!\internal
+*/
+QVariant QLineEdit::inputMethodQuery(Qt::InputMethodQuery property, QVariant argument) const
+{
     Q_D(const QLineEdit);
     switch(property) {
     case Qt::ImCursorRectangle:
         return d->cursorRect();
+    case Qt::ImAnchorRectangle:
+        return d->adjustedControlRect(d->control->anchorRect());
     case Qt::ImFont:
         return font();
-    case Qt::ImCursorPosition:
-        return QVariant(d->control->cursor());
+    case Qt::ImCursorPosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(d->xToPos(pt.x(), QTextLine::CursorBetweenCharacters));
+        return QVariant(d->control->cursor()); }
     case Qt::ImSurroundingText:
-        return QVariant(d->control->text());
+        return QVariant(d->control->surroundingText());
     case Qt::ImCurrentSelection:
         return QVariant(selectedText());
     case Qt::ImMaximumTextLength:
@@ -1794,21 +1845,17 @@ void QLineEdit::focusInEvent(QFocusEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
     if (!QApplication::keypadNavigationEnabled() || (hasEditFocus() && ( e->reason() == Qt::PopupFocusReason))) {
 #endif
-    d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+    d->control->setBlinkingCursorEnabled(true);
     QStyleOptionFrame opt;
     initStyleOption(&opt);
     if((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
        || style()->styleHint(QStyle::SH_BlinkCursorWhenTextSelected, &opt, this))
         d->setCursorVisible(true);
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
-    if (d->control->echoMode() == Password || d->control->echoMode() == NoEcho)
-        qt_mac_secure_keyboard(true);
-#endif
 #ifdef QT_KEYPAD_NAVIGATION
         d->control->setCancelText(d->control->text());
     }
 #endif
-#ifndef QT_NO_COMPLETER
+#if QT_CONFIG(completer)
     if (d->control->completer()) {
         d->control->completer()->setWidget(this);
         QObject::connect(d->control->completer(), SIGNAL(activated(QString)),
@@ -1838,7 +1885,7 @@ void QLineEdit::focusOutEvent(QFocusEvent *e)
         deselect();
 
     d->setCursorVisible(false);
-    d->control->setCursorBlinkPeriod(0);
+    d->control->setBlinkingCursorEnabled(false);
 #ifdef QT_KEYPAD_NAVIGATION
     // editingFinished() is already emitted on LeaveEditFocus
     if (!QApplication::keypadNavigationEnabled())
@@ -1848,14 +1895,10 @@ void QLineEdit::focusOutEvent(QFocusEvent *e)
             if (hasAcceptableInput() || d->control->fixup())
                 emit editingFinished();
     }
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
-    if (d->control->echoMode() == Password || d->control->echoMode() == NoEcho)
-        qt_mac_secure_keyboard(false);
-#endif
 #ifdef QT_KEYPAD_NAVIGATION
     d->control->setCancelText(QString());
 #endif
-#ifndef QT_NO_COMPLETER
+#if QT_CONFIG(completer)
     if (d->control->completer()) {
         QObject::disconnect(d->control->completer(), 0, this, 0);
     }
@@ -1897,19 +1940,21 @@ void QLineEdit::paintEvent(QPaintEvent *)
     }
     QRect lineRect(r.x() + d->horizontalMargin, d->vscroll, r.width() - 2*d->horizontalMargin, fm.height());
 
-    int minLB = qMax(0, -fm.minLeftBearing());
-    int minRB = qMax(0, -fm.minRightBearing());
-
     if (d->shouldShowPlaceholderText()) {
         if (!d->placeholderText.isEmpty()) {
+            const Qt::LayoutDirection layoutDir = d->placeholderText.isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight;
+            const Qt::Alignment alignPhText = QStyle::visualAlignment(layoutDir, QFlag(d->alignment));
             QColor col = pal.text().color();
             col.setAlpha(128);
             QPen oldpen = p.pen();
             p.setPen(col);
-            QRect ph = lineRect.adjusted(minLB, 0, 0, 0);
-            QString elidedText = fm.elidedText(d->placeholderText, Qt::ElideRight, ph.width());
-            p.drawText(ph, va, elidedText);
+            Qt::LayoutDirection oldLayoutDir = p.layoutDirection();
+            p.setLayoutDirection(layoutDir);
+
+            const QString elidedText = fm.elidedText(d->placeholderText, Qt::ElideRight, lineRect.width());
+            p.drawText(lineRect, alignPhText, elidedText);
             p.setPen(oldpen);
+            p.setLayoutDirection(oldLayoutDir);
         }
     }
 
@@ -1918,11 +1963,10 @@ void QLineEdit::paintEvent(QPaintEvent *)
     // horizontal scrolling. d->hscroll is the left indent from the beginning
     // of the text line to the left edge of lineRect. we update this value
     // depending on the delta from the last paint event; in effect this means
-    // the below code handles all scrolling based on the textline (widthUsed,
-    // minLB, minRB), the line edit rect (lineRect) and the cursor position
-    // (cix).
-    int widthUsed = qRound(d->control->naturalTextWidth()) + 1 + minRB;
-    if ((minLB + widthUsed) <=  lineRect.width()) {
+    // the below code handles all scrolling based on the textline (widthUsed),
+    // the line edit rect (lineRect) and the cursor position (cix).
+    int widthUsed = qRound(d->control->naturalTextWidth()) + 1;
+    if (widthUsed <= lineRect.width()) {
         // text fits in lineRect; use hscroll for alignment
         switch (va & ~(Qt::AlignAbsolute|Qt::AlignVertical_Mask)) {
         case Qt::AlignRight:
@@ -1936,7 +1980,6 @@ void QLineEdit::paintEvent(QPaintEvent *)
             d->hscroll = 0;
             break;
         }
-        d->hscroll -= minLB;
     } else if (cix - d->hscroll >= lineRect.width()) {
         // text doesn't fit, cursor is to the right of lineRect (scroll right)
         d->hscroll = cix - lineRect.width() + 1;
@@ -2182,13 +2225,15 @@ void QLineEdit::changeEvent(QEvent *ev)
             d->control->setPasswordCharacter(style()->styleHint(QStyle::SH_LineEdit_PasswordCharacter, &opt, this));
             d->control->setPasswordMaskDelay(style()->styleHint(QStyle::SH_LineEdit_PasswordMaskDelay, &opt, this));
         }
-        d->m_iconSize = QSize();
         update();
         break;
     case QEvent::LayoutDirectionChange:
-        foreach (const QLineEditPrivate::SideWidgetEntry &e, d->trailingSideWidgets) // Refresh icon to show arrow in right direction.
+#if QT_CONFIG(toolbutton)
+        for (const auto &e : d->trailingSideWidgets) { // Refresh icon to show arrow in right direction.
             if (e.flags & QLineEditPrivate::SideWidgetClearButton)
                 static_cast<QLineEditIconButton *>(e.widget)->setIcon(d->clearButtonIcon());
+        }
+#endif
         d->positionSideWidgets();
         break;
     default:
@@ -2200,5 +2245,3 @@ void QLineEdit::changeEvent(QEvent *ev)
 QT_END_NAMESPACE
 
 #include "moc_qlineedit.cpp"
-
-#endif // QT_NO_LINEEDIT

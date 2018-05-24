@@ -10,16 +10,35 @@
     "QtTest" => "$basedir/src/testlib",
     "QtDBus" => "$basedir/src/dbus",
     "QtConcurrent" => "$basedir/src/concurrent",
-    "QtPlatformSupport" => "$basedir/src/platformsupport",
+    "QtAccessibilitySupport" => "$basedir/src/platformsupport/accessibility",
+    "QtWindowsUIAutomationSupport" => "$basedir/src/platformsupport/windowsuiautomation",
+    "QtLinuxAccessibilitySupport" => "$basedir/src/platformsupport/linuxaccessibility",
+    "QtClipboardSupport" => "$basedir/src/platformsupport/clipboard",
+    "QtDeviceDiscoverySupport" => "$basedir/src/platformsupport/devicediscovery",
+    "QtEventDispatcherSupport" => "$basedir/src/platformsupport/eventdispatchers",
+    "QtFontDatabaseSupport" => "$basedir/src/platformsupport/fontdatabases",
+    "QtInputSupport" => "$basedir/src/platformsupport/input",
+    "QtPlatformCompositorSupport" => "$basedir/src/platformsupport/platformcompositor",
+    "QtServiceSupport" => "$basedir/src/platformsupport/services",
+    "QtThemeSupport" => "$basedir/src/platformsupport/themes",
+    "QtGraphicsSupport" => "$basedir/src/platformsupport/graphics",
+    "QtEglSupport" => "$basedir/src/platformsupport/eglconvenience",
+    "QtFbSupport" => "$basedir/src/platformsupport/fbconvenience",
+    "QtGlxSupport" => "$basedir/src/platformsupport/glxconvenience",
+    "QtKmsSupport" => "$basedir/src/platformsupport/kmsconvenience",
+    "QtEdidSupport" => "$basedir/src/platformsupport/edid",
+    "QtVulkanSupport" => "$basedir/src/platformsupport/vkconvenience",
     "QtPlatformHeaders" => "$basedir/src/platformheaders",
     "QtANGLE/KHR" => "!$basedir/src/3rdparty/angle/include/KHR",
     "QtANGLE/GLES2" => "!$basedir/src/3rdparty/angle/include/GLES2",
     "QtANGLE/GLES3" => "!$basedir/src/3rdparty/angle/include/GLES3",
     "QtANGLE/EGL" => "!$basedir/src/3rdparty/angle/include/EGL",
-    "QtZlib" => "!$basedir/src/3rdparty/zlib",
+    "QtZlib" => "!>$basedir/src/corelib;$basedir/src/3rdparty/zlib",
     "QtOpenGLExtensions" => "$basedir/src/openglextensions",
+    "QtEglFSDeviceIntegration" => "$basedir/src/plugins/platforms/eglfs",
 );
 %moduleheaders = ( # restrict the module headers to those found in relative path
+    "QtEglFSDeviceIntegration" => "api",
 );
 @allmoduleheadersprivate = (
 );
@@ -35,8 +54,9 @@
     "qnamespace.h" => "Qt",
     "qnumeric.h" => "QtNumeric",
     "qvariant.h" => "QVariantHash,QVariantList,QVariantMap",
+    "qvulkanfunctions.h" => "QVulkanFunctions,QVulkanDeviceFunctions",
     "qgl.h" => "QGL",
-    "qsql.h" => "QSql",
+    "qtsqlglobal.h" => "QSql",
     "qssl.h" => "QSsl",
     "qtest.h" => "QTest",
     "qtconcurrentmap.h" => "QtConcurrentMap",
@@ -47,22 +67,26 @@
     "QtGui" =>  {
         "QGenericPlugin" => "QtGui/QGenericPlugin",
         "QGenericPluginFactory" => "QtGui/QGenericPluginFactory"
+    },
+    "QtSql" => {
+        "qsql.h" => "QtSql/qtsqlglobal.h"
+    },
+    "QtDBus" => {
+        "qdbusmacros.h" => "QtDbus/qtdbusglobal.h"
+    },
+    "QtTest" => {
+        "qtest_global.h" => "QtTest/qttestglobal.h"
     }
 );
 
-@qpa_headers = ( qr/^qplatform/, qr/^qwindowsystem/ );
+@qpa_headers = ( qr/^(?!qplatformheaderhelper)qplatform/, qr/^qwindowsystem/ );
 my @angle_headers = ('egl.h', 'eglext.h', 'eglplatform.h', 'gl2.h', 'gl2ext.h', 'gl2platform.h', 'ShaderLang.h', 'khrplatform.h');
 my @internal_zlib_headers = ( "crc32.h", "deflate.h", "gzguts.h", "inffast.h", "inffixed.h", "inflate.h", "inftrees.h", "trees.h", "zutil.h" );
 my @zlib_headers = ( "zconf.h", "zlib.h" );
 @ignore_headers = ( @internal_zlib_headers );
 @ignore_for_include_check = ( "qsystemdetection.h", "qcompilerdetection.h", "qprocessordetection.h", @zlib_headers, @angle_headers);
-@ignore_for_qt_begin_namespace_check = ( "qconfig.h", "qconfig-dist.h", "qconfig-large.h", "qconfig-medium.h", "qconfig-minimal.h", "qconfig-small.h", "qfeatures.h", "qatomic_arch.h", "qatomic_windowsce.h", "qt_windows.h", "qatomic_macosx.h", @zlib_headers, @angle_headers);
-%inject_headers = ( "$basedir/src/corelib/global" => [ "qconfig.h", "qfeatures.h" ] );
-# Module dependencies.
-# Every module that is required to build this module should have one entry.
-# Each of the module version specifiers can take one of the following values:
-#   - A specific Git revision.
-#   - any git symbolic ref resolvable from the module's repository (e.g. "refs/heads/master" to track master branch)
-#
-%dependencies = (
+@ignore_for_qt_begin_namespace_check = ( "qt_windows.h", @zlib_headers, @angle_headers);
+%inject_headers = (
+    "$basedir/src/corelib/global" => [ "qconfig.h", "qconfig_p.h" ],
+    "$basedir/src/gui/vulkan" => [ "^qvulkanfunctions.h", "^qvulkanfunctions_p.h" ]
 );

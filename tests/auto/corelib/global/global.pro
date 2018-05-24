@@ -5,7 +5,9 @@ SUBDIRS=\
     qgetputenv \
     qglobal \
     qnumeric \
+    qfloat16 \
     qrand \
+    qrandomgenerator \
     qlogging \
     qtendian \
     qglobalstatic \

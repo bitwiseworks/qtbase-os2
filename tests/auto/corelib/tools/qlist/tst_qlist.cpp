@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -74,6 +69,13 @@ struct Movable {
         check(state, Constructed);
         check(other.state, Constructed);
         return i == other.i;
+    }
+
+    bool operator<(const Movable &other) const
+    {
+        check(state, Constructed);
+        check(other.state, Constructed);
+        return i < other.i;
     }
 
     Movable &operator=(const Movable &other)
@@ -142,6 +144,13 @@ struct Optimal
         check(state, Constructed);
         check(other.state, Constructed);
         return i == other.i;
+    }
+
+    bool operator<(const Optimal &other) const
+    {
+        check(state, Constructed);
+        check(other.state, Constructed);
+        return i < other.i;
     }
 
     Optimal &operator=(const Optimal &other)
@@ -220,6 +229,12 @@ struct Complex
         return value == other.value;
     }
 
+    bool operator<(Complex const &other) const
+    {
+        check(); other.check();
+        return value < other.value;
+    }
+
     void check() const
     {
         QVERIFY(this == checkSum);
@@ -293,6 +308,8 @@ private slots:
     void lastOptimal() const;
     void lastMovable() const;
     void lastComplex() const;
+    void constFirst() const;
+    void constLast() const;
     void beginOptimal() const;
     void beginMovable() const;
     void beginComplex() const;
@@ -329,6 +346,9 @@ private slots:
     void replaceOptimal() const;
     void replaceMovable() const;
     void replaceComplex() const;
+    void reverseIteratorsOptimal() const;
+    void reverseIteratorsMovable() const;
+    void reverseIteratorsComplex() const;
     void startsWithOptimal() const;
     void startsWithMovable() const;
     void startsWithComplex() const;
@@ -376,6 +396,9 @@ private slots:
     void eraseValidIteratorsOnSharedList() const;
     void insertWithValidIteratorsOnSharedList() const;
 
+    void qhashOptimal() const { qhash<Optimal>(); }
+    void qhashMovable() const { qhash<Movable>(); }
+    void qhashComplex() const { qhash<Complex>(); }
     void reserve() const;
 private:
     template<typename T> void length() const;
@@ -392,10 +415,12 @@ private:
     template<typename T> void endsWith() const;
     template<typename T> void lastIndexOf() const;
     template<typename T> void move() const;
+    template<typename T> void qhash() const;
     template<typename T> void removeAll() const;
     template<typename T> void removeAt() const;
     template<typename T> void removeOne() const;
     template<typename T> void replace() const;
+    template<typename T> void reverseIterators() const;
     template<typename T> void startsWith() const;
     template<typename T> void swap() const;
     template<typename T> void takeAt() const;
@@ -701,6 +726,140 @@ void tst_QList::firstComplex() const
     QCOMPARE(liveCount, Complex::getLiveCount());
 }
 
+void tst_QList::constFirst() const
+{
+    // Based on tst_QVector::constFirst()
+    QList<int> list;
+    list << 69 << 42 << 3;
+
+    // test it starts ok
+    QCOMPARE(list.constFirst(), 69);
+    QVERIFY(list.isDetached());
+
+    QList<int> listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constFirst(), 69);
+    QCOMPARE(listCopy.constFirst(), 69);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    // test removal changes
+    list.removeAt(0);
+    QVERIFY(list.isDetached());
+    QVERIFY(!list.isSharedWith(listCopy));
+    QCOMPARE(list.constFirst(), 42);
+    QCOMPARE(listCopy.constFirst(), 69);
+
+    listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constFirst(), 42);
+    QCOMPARE(listCopy.constFirst(), 42);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    // test prepend changes
+    list.prepend(23);
+    QVERIFY(list.isDetached());
+    QVERIFY(!list.isSharedWith(listCopy));
+    QCOMPARE(list.constFirst(), 23);
+    QCOMPARE(listCopy.constFirst(), 42);
+
+    listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constFirst(), 23);
+    QCOMPARE(listCopy.constFirst(), 23);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+}
+
+void tst_QList::constLast() const
+{
+    // Based on tst_QVector::constLast()
+    QList<int> list;
+    list << 69 << 42 << 3;
+
+    // test it starts ok
+    QCOMPARE(list.constLast(), 3);
+    QVERIFY(list.isDetached());
+
+    QList<int> listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constLast(), 3);
+    QCOMPARE(listCopy.constLast(), 3);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    // test removal changes
+    list.removeLast();
+    QVERIFY(list.isDetached());
+    QVERIFY(!list.isSharedWith(listCopy));
+    QCOMPARE(list.constLast(), 42);
+    QCOMPARE(listCopy.constLast(), 3);
+
+    listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constLast(), 42);
+    QCOMPARE(listCopy.constLast(), 42);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    // test prepend changes
+    list.append(23);
+    QVERIFY(list.isDetached());
+    QVERIFY(!list.isSharedWith(listCopy));
+    QCOMPARE(list.constLast(), 23);
+    QCOMPARE(listCopy.constLast(), 42);
+
+    listCopy = list;
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+
+    QCOMPARE(list.constLast(), 23);
+    QCOMPARE(listCopy.constLast(), 23);
+
+    QVERIFY(!list.isDetached());
+    QVERIFY(!listCopy.isDetached());
+    QVERIFY(list.isSharedWith(listCopy));
+    QVERIFY(listCopy.isSharedWith(list));
+}
+
 template<typename T>
 void tst_QList::last() const
 {
@@ -812,12 +971,12 @@ void tst_QList::contains() const
     QList<T> list;
     list << T_FOO << T_BAR << T_BAZ;
 
-    QVERIFY(list.contains(T_FOO) == true);
+    QVERIFY(list.contains(T_FOO));
     QVERIFY(list.contains(T_BLAH) != true);
 
     // add it and make sure it matches
     list.append(T_BLAH);
-    QVERIFY(list.contains(T_BLAH) == true);
+    QVERIFY(list.contains(T_BLAH));
 }
 
 void tst_QList::containsOptimal() const
@@ -1220,6 +1379,43 @@ void tst_QList::replaceComplex() const
 }
 
 template<typename T>
+void tst_QList::reverseIterators() const
+{
+    QList<T> v;
+    v << T_CAT << T_DOG << T_BLAH << T_BAZ;
+    QList<T> vr = v;
+    std::reverse(vr.begin(), vr.end());
+    const QList<T> &cvr = vr;
+    QVERIFY(std::equal(v.begin(), v.end(), vr.rbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), vr.crbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), cvr.rbegin()));
+    QVERIFY(std::equal(vr.rbegin(), vr.rend(), v.begin()));
+    QVERIFY(std::equal(vr.crbegin(), vr.crend(), v.begin()));
+    QVERIFY(std::equal(cvr.rbegin(), cvr.rend(), v.begin()));
+}
+
+void tst_QList::reverseIteratorsOptimal() const
+{
+    const int liveCount = Optimal::getLiveCount();
+    reverseIterators<Optimal>();
+    QCOMPARE(liveCount, Optimal::getLiveCount());
+}
+
+void tst_QList::reverseIteratorsMovable() const
+{
+    const int liveCount = Movable::getLiveCount();
+    reverseIterators<Movable>();
+    QCOMPARE(liveCount, Movable::getLiveCount());
+}
+
+void tst_QList::reverseIteratorsComplex() const
+{
+    const int liveCount = Complex::getLiveCount();
+    reverseIterators<Complex>();
+    QCOMPARE(liveCount, Complex::getLiveCount());
+}
+
+template<typename T>
 void tst_QList::startsWith() const
 {
     QList<T> list;
@@ -1576,6 +1772,19 @@ void tst_QList::testOperators() const
     // []
     QCOMPARE(list[0], T_FOO);
     QCOMPARE(list[list.size() - 1], T_CAT);
+
+    // <, >, <=, >=
+    QVERIFY(!(list <  listtwo));
+    QVERIFY(!(list >  listtwo));
+    QVERIFY(  list <= listtwo);
+    QVERIFY(  list >= listtwo);
+    listtwo.push_back(T_CAT);
+    QVERIFY(  list <  listtwo);
+    QVERIFY(!(list >  listtwo));
+    QVERIFY(  list <= listtwo);
+    QVERIFY(!(list >= listtwo));
+    QVERIFY(listtwo >  list);
+    QVERIFY(listtwo >= list);
 }
 
 void tst_QList::testOperatorsOptimal() const
@@ -1678,7 +1887,7 @@ template<typename T>
 void tst_QList::constSharedNull() const
 {
     QList<T> list2;
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QList<T> list1;
     list1.setSharable(false);
     QVERIFY(list1.isDetached());
@@ -1712,7 +1921,7 @@ void tst_QList::constSharedNullComplex() const
 template <class T>
 void generateSetSharableData()
 {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QTest::addColumn<QList<T> >("list");
     QTest::addColumn<int>("size");
 
@@ -1724,7 +1933,7 @@ void generateSetSharableData()
 template <class T>
 void runSetSharableTest()
 {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QFETCH(QList<T>, list);
     QFETCH(int, size);
 
@@ -1832,6 +2041,16 @@ void tst_QList::insertWithValidIteratorsOnSharedList() const
     QCOMPARE(a.size(), b.size() + 1);
     QCOMPARE(b.at(1), 20);
     QCOMPARE(a.at(1), 15);
+}
+
+template <typename T>
+void tst_QList::qhash() const
+{
+    QList<T> l1, l2;
+    QCOMPARE(qHash(l1), qHash(l2));
+    l1 << T_BAR;
+    l2 << T_BAR;
+    QCOMPARE(qHash(l1), qHash(l2));
 }
 
 void tst_QList::reserve() const

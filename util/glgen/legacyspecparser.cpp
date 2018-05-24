@@ -1,31 +1,26 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 Klaralvdalens Datakonsult AB (KDAB)
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the utilities of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -80,7 +75,7 @@ bool LegacySpecParser::parseTypeMap()
     while (!stream.atEnd()) {
         QString line = stream.readLine();
 
-        if (line.startsWith(QStringLiteral("#")))
+        if (line.startsWith(QLatin1Char('#')))
             continue;
 
         if (typeMapRegExp.indexIn(line) != -1) {
@@ -88,7 +83,7 @@ bool LegacySpecParser::parseTypeMap()
             QString value = typeMapRegExp.cap(2).simplified();
 
             // Special case for void
-            if (value == QStringLiteral("*"))
+            if (value == QLatin1String("*"))
                 value = QStringLiteral("void");
 
             m_typeMap.insert(key, value);
@@ -144,7 +139,7 @@ void LegacySpecParser::parseFunctions(QTextStream &stream)
                 // extension. These functions should be added to the DSA extension rather
                 // than the core functionality. The core will already contain non-DSA
                 // versions of these functions.
-                if (acceptCurrentFunctionInCore && currentFunction.name.endsWith(QStringLiteral("EXT"))) {
+                if (acceptCurrentFunctionInCore && currentFunction.name.endsWith(QLatin1String("EXT"))) {
                     acceptCurrentFunctionInCore = false;
                     acceptCurrentFunctionInExtension = true;
                     currentCategory = QStringLiteral("EXT_direct_state_access");
@@ -191,9 +186,9 @@ void LegacySpecParser::parseFunctions(QTextStream &stream)
             arg.type = m_typeMap.value(type);
 
             QString direction = argumentRegExp.cap(3);
-            if (direction == QStringLiteral("in")) {
+            if (direction == QLatin1String("in")) {
                 arg.direction = Argument::In;
-            } else if (direction == QStringLiteral("out")) {
+            } else if (direction == QLatin1String("out")) {
                 arg.direction = Argument::Out;
             } else {
                 qWarning() << "Invalid argument direction found:" << direction;
@@ -201,11 +196,11 @@ void LegacySpecParser::parseFunctions(QTextStream &stream)
             }
 
             QString mode = argumentRegExp.cap(4);
-            if (mode == QStringLiteral("value")) {
+            if (mode == QLatin1String("value")) {
                 arg.mode = Argument::Value;
-            } else if (mode == QStringLiteral("array")) {
+            } else if (mode == QLatin1String("array")) {
                 arg.mode = Argument::Array;
-            } else if (mode == QStringLiteral("reference")) {
+            } else if (mode == QLatin1String("reference")) {
                 arg.mode = Argument::Reference;
             } else {
                 qWarning() << "Invalid argument mode found:" << mode;
@@ -246,7 +241,7 @@ void LegacySpecParser::parseFunctions(QTextStream &stream)
             // Extract the OpenGL version in which this function was deprecated.
             // If it is OpenGL 3.1 then it must be a compatibility profile function
             QString deprecatedVersion = deprecatedRegExp.cap(1).simplified();
-            if (deprecatedVersion == QStringLiteral("3.1") && !inDeprecationException(currentFunction.name))
+            if (deprecatedVersion == QLatin1String("3.1") && !inDeprecationException(currentFunction.name))
                 currentVersionProfile.profile = VersionProfile::CompatibilityProfile;
 
         } else if (categoryRegExp.indexIn(line) != -1) {
@@ -301,5 +296,5 @@ void LegacySpecParser::parseFunctions(QTextStream &stream)
 
 bool LegacySpecParser::inDeprecationException(const QString &functionName) const
 {
-    return (functionName == QStringLiteral("TexImage3D"));
+    return functionName == QLatin1String("TexImage3D");
 }

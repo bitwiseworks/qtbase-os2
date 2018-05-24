@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -119,6 +114,7 @@ private slots:
     void cloneDTD_QTBUG8398() const;
     void DTDNotationDecl();
     void DTDEntityDecl();
+    void QTBUG49113_dontCrashWithNegativeIndex() const;
 
     void cleanupTestCase() const;
 
@@ -1043,15 +1039,15 @@ void tst_QDom::browseElements()
     QVERIFY(!bar.isNull());
     QVERIFY(bar.previousSiblingElement("bar").isNull());
     QVERIFY(bar.previousSiblingElement().isNull());
-    QVERIFY(bar.nextSiblingElement("bar").tagName() == "bar");
+    QCOMPARE(bar.nextSiblingElement("bar").tagName(), QLatin1String("bar"));
     QVERIFY(bar.nextSiblingElement("bar").nextSiblingElement("bar").isNull());
 
     QDomElement bop = foo.firstChildElement("bop");
     QVERIFY(!bop.isNull());
-    QVERIFY(bar.nextSiblingElement() == bop);
-    QVERIFY(bop.nextSiblingElement("bop") == foo.lastChildElement("bop"));
-    QVERIFY(bop.previousSiblingElement("bar") == foo.firstChildElement("bar"));
-    QVERIFY(bop.previousSiblingElement("bar") == foo.firstChildElement());
+    QCOMPARE(bar.nextSiblingElement(), bop);
+    QCOMPARE(bop.nextSiblingElement("bop"), foo.lastChildElement("bop"));
+    QCOMPARE(bop.previousSiblingElement("bar"), foo.firstChildElement("bar"));
+    QCOMPARE(bop.previousSiblingElement("bar"), foo.firstChildElement());
 }
 
 void tst_QDom::domNodeMapAndList()
@@ -1722,14 +1718,14 @@ void tst_QDom::germanUmlautToFile() const
 
     QDomDocument d("test");
     d.appendChild(d.createElement(name));
-    QFile file("germanUmlautToFile.xml");
-    QVERIFY(file.open(QIODevice::WriteOnly));
+    QTemporaryFile file;
+    QVERIFY(file.open());
     QTextStream ts(&file);
     ts.setCodec("UTF-8");
     ts << d.toString();
     file.close();
 
-    QFile inFile("germanUmlautToFile.xml");
+    QFile inFile(file.fileName());
     QVERIFY(inFile.open(QIODevice::ReadOnly));
 
     QString baseline(QLatin1String("<!DOCTYPE test>\n<german"));
@@ -1977,6 +1973,14 @@ void tst_QDom::DTDEntityDecl()
     QVERIFY(doctype.namedItem(QString("logo")).isEntity());
     QCOMPARE(doctype.namedItem(QString("logo")).toEntity().systemId(), QString("http://www.w3c.org/logo.gif"));
     QCOMPARE(doctype.namedItem(QString("logo")).toEntity().notationName(), QString("gif"));
+}
+
+void tst_QDom::QTBUG49113_dontCrashWithNegativeIndex() const
+{
+    QDomDocument doc;
+    QDomElement elem = doc.appendChild(doc.createElement("root")).toElement();
+    QDomNode node = elem.attributes().item(-1);
+    QVERIFY(node.isNull());
 }
 
 QTEST_MAIN(tst_QDom)

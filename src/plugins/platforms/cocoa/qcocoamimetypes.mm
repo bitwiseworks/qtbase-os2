@@ -1,39 +1,46 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qcocoamimetypes.h"
-#include <QtPlatformSupport/private/qmacmime_p.h>
+#include <QtClipboardSupport/private/qmacmime_p.h>
 #include "qcocoahelpers.h"
+#include <QtGui/private/qcoregraphics_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -98,101 +105,9 @@ QList<QByteArray> QMacPasteboardMimeTraditionalMacPlainText::convertFromMime(con
     return ret;
 }
 
-class QMacPasteboardMimeTiff : public QMacInternalPasteboardMime {
-public:
-    QMacPasteboardMimeTiff() : QMacInternalPasteboardMime(MIME_ALL) { }
-    QString convertorName();
-
-    QString flavorFor(const QString &mime);
-    QString mimeFor(QString flav);
-    bool canConvert(const QString &mime, QString flav);
-    QVariant convertToMime(const QString &mime, QList<QByteArray> data, QString flav);
-    QList<QByteArray> convertFromMime(const QString &mime, QVariant data, QString flav);
-};
-
-QString QMacPasteboardMimeTiff::convertorName()
-{
-    return QLatin1String("Tiff");
-}
-
-QString QMacPasteboardMimeTiff::flavorFor(const QString &mime)
-{
-    if (mime.startsWith(QLatin1String("application/x-qt-image")))
-        return QLatin1String("public.tiff");
-    return QString();
-}
-
-QString QMacPasteboardMimeTiff::mimeFor(QString flav)
-{
-    if (flav == QLatin1String("public.tiff"))
-        return QLatin1String("application/x-qt-image");
-    return QString();
-}
-
-bool QMacPasteboardMimeTiff::canConvert(const QString &mime, QString flav)
-{
-    return flav == QLatin1String("public.tiff") && mime == QLatin1String("application/x-qt-image");
-}
-
-QVariant QMacPasteboardMimeTiff::convertToMime(const QString &mime, QList<QByteArray> data, QString flav)
-{
-    if (data.count() > 1)
-        qWarning("QMacPasteboardMimeTiff: Cannot handle multiple member data");
-    QVariant ret;
-    if (!canConvert(mime, flav))
-        return ret;
-    const QByteArray &a = data.first();
-    QCFType<CGImageRef> image;
-    QCFType<CFDataRef> tiffData = CFDataCreateWithBytesNoCopy(0,
-                                                reinterpret_cast<const UInt8 *>(a.constData()),
-                                                a.size(), kCFAllocatorNull);
-    QCFType<CGImageSourceRef> imageSource = CGImageSourceCreateWithData(tiffData, 0);
-    image = CGImageSourceCreateImageAtIndex(imageSource, 0, 0);
-    if (image != 0)
-        ret = QVariant(qt_mac_toQImage(image));
-    return ret;
-}
-
-QList<QByteArray> QMacPasteboardMimeTiff::convertFromMime(const QString &mime, QVariant variant, QString flav)
-{
-    QList<QByteArray> ret;
-    if (!canConvert(mime, flav))
-        return ret;
-
-    QImage img = qvariant_cast<QImage>(variant);
-    QCFType<CGImageRef> cgimage = qt_mac_toCGImage(img);
-
-    QCFType<CFMutableDataRef> data = CFDataCreateMutable(0, 0);
-    QCFType<CGImageDestinationRef> imageDestination = CGImageDestinationCreateWithData(data, kUTTypeTIFF, 1, 0);
-    if (imageDestination != 0) {
-        CFTypeRef keys[2];
-        QCFType<CFTypeRef> values[2];
-        QCFType<CFDictionaryRef> options;
-        keys[0] = kCGImagePropertyPixelWidth;
-        keys[1] = kCGImagePropertyPixelHeight;
-        int width = img.width();
-        int height = img.height();
-        values[0] = CFNumberCreate(0, kCFNumberIntType, &width);
-        values[1] = CFNumberCreate(0, kCFNumberIntType, &height);
-        options = CFDictionaryCreate(0, reinterpret_cast<const void **>(keys),
-                                     reinterpret_cast<const void **>(values), 2,
-                                     &kCFTypeDictionaryKeyCallBacks,
-                                     &kCFTypeDictionaryValueCallBacks);
-        CGImageDestinationAddImage(imageDestination, cgimage, options);
-        CGImageDestinationFinalize(imageDestination);
-    }
-    QByteArray ar(CFDataGetLength(data), 0);
-    CFDataGetBytes(data,
-            CFRangeMake(0, ar.size()),
-            reinterpret_cast<UInt8 *>(ar.data()));
-    ret.append(ar);
-    return ret;
-}
-
 void QCocoaMimeTypes::initializeMimeTypes()
 {
     new QMacPasteboardMimeTraditionalMacPlainText;
-    new QMacPasteboardMimeTiff;
 }
 
 QT_END_NAMESPACE

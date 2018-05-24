@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtPrintSupport module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,7 +40,9 @@
 #include "qplatformprintdevice.h"
 
 #include "qprintdevice_p.h"
+#if QT_CONFIG(printdialog)
 #include "qprintdialog.h"
+#endif
 
 #include <QtGui/qpagelayout.h>
 
@@ -53,6 +61,9 @@ QPlatformPrintDevice::QPlatformPrintDevice()
       m_haveOutputBins(false),
       m_haveDuplexModes(false),
       m_haveColorModes(false)
+#ifndef QT_NO_MIMETYPE
+    , m_haveMimeTypes(false)
+#endif
 {
 }
 
@@ -68,6 +79,9 @@ QPlatformPrintDevice::QPlatformPrintDevice(const QString &id)
       m_haveOutputBins(false),
       m_haveDuplexModes(false),
       m_haveColorModes(false)
+#ifndef QT_NO_MIMETYPE
+    , m_haveMimeTypes(false)
+#endif
 {
 }
 
@@ -153,7 +167,7 @@ QList<QPageSize> QPlatformPrintDevice::supportedPageSizes() const
 {
     if (!m_havePageSizes)
         loadPageSizes();
-    return m_pageSizes.toList();
+    return m_pageSizes;
 }
 
 QPageSize QPlatformPrintDevice::supportedPageSize(const QPageSize &pageSize) const
@@ -168,7 +182,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QPageSize &pageSize) con
     // e.g. Windows defines DMPAPER_11X17 and DMPAPER_TABLOID with names "11x17" and "Tabloid", but both
     // map to QPageSize::Tabloid / PPD Key "Tabloid" / ANSI B Tabloid
     if (pageSize.id() != QPageSize::Custom) {
-        foreach (const QPageSize &ps, m_pageSizes) {
+        for (const QPageSize &ps : m_pageSizes) {
             if (ps.id() == pageSize.id() && ps.name() == pageSize.name())
                 return ps;
         }
@@ -176,7 +190,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QPageSize &pageSize) con
 
     // Next try match on id only if not custom
     if (pageSize.id() != QPageSize::Custom) {
-        foreach (const QPageSize &ps, m_pageSizes) {
+        for (const QPageSize &ps : m_pageSizes) {
             if (ps.id() == pageSize.id())
                 return ps;
         }
@@ -191,7 +205,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(QPageSize::PageSizeId pageSize
     if (!m_havePageSizes)
         loadPageSizes();
 
-    foreach (const QPageSize &ps, m_pageSizes) {
+    for (const QPageSize &ps : m_pageSizes) {
         if (ps.id() == pageSizeId)
             return ps;
     }
@@ -205,7 +219,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QString &pageName) const
     if (!m_havePageSizes)
         loadPageSizes();
 
-    foreach (const QPageSize &ps, m_pageSizes) {
+    for (const QPageSize &ps : m_pageSizes) {
         if (ps.name() == pageName)
             return ps;
     }
@@ -234,7 +248,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QSizeF &size, QPageSize:
 QPageSize QPlatformPrintDevice::supportedPageSizeMatch(const QPageSize &pageSize) const
 {
     // Try to find a supported page size based on point size
-    foreach (const QPageSize &ps, m_pageSizes) {
+    for (const QPageSize &ps : m_pageSizes) {
         if (ps.sizePoints() == pageSize.sizePoints())
             return ps;
     }
@@ -279,7 +293,7 @@ QList<int> QPlatformPrintDevice::supportedResolutions() const
 {
     if (!m_haveResolutions)
         loadResolutions();
-    return m_resolutions.toList();
+    return m_resolutions;
 }
 
 void QPlatformPrintDevice::loadInputSlots() const
@@ -290,16 +304,20 @@ QPrint::InputSlot QPlatformPrintDevice::defaultInputSlot() const
 {
     QPrint::InputSlot input;
     input.key = QByteArrayLiteral("Auto");
+#if QT_CONFIG(printdialog)
     input.name = QPrintDialog::tr("Automatic");
+#else
+    input.name = QString::fromLatin1("Automatic");
+#endif
     input.id = QPrint::Auto;
     return input;
 }
 
-QList<QPrint::InputSlot> QPlatformPrintDevice::supportedInputSlots() const
+QVector<QPrint::InputSlot> QPlatformPrintDevice::supportedInputSlots() const
 {
     if (!m_haveInputSlots)
         loadInputSlots();
-    return m_inputSlots.toList();
+    return m_inputSlots;
 }
 
 void QPlatformPrintDevice::loadOutputBins() const
@@ -310,16 +328,20 @@ QPrint::OutputBin QPlatformPrintDevice::defaultOutputBin() const
 {
     QPrint::OutputBin output;
     output.key = QByteArrayLiteral("Auto");
+#if QT_CONFIG(printdialog)
     output.name = QPrintDialog::tr("Automatic");
+#else
+    output.name = QString::fromLatin1("Automatic");
+#endif
     output.id = QPrint::AutoOutputBin;
     return output;
 }
 
-QList<QPrint::OutputBin> QPlatformPrintDevice::supportedOutputBins() const
+QVector<QPrint::OutputBin> QPlatformPrintDevice::supportedOutputBins() const
 {
     if (!m_haveOutputBins)
         loadOutputBins();
-    return m_outputBins.toList();
+    return m_outputBins;
 }
 
 void QPlatformPrintDevice::loadDuplexModes() const
@@ -331,11 +353,11 @@ QPrint::DuplexMode QPlatformPrintDevice::defaultDuplexMode() const
     return QPrint::DuplexNone;
 }
 
-QList<QPrint::DuplexMode> QPlatformPrintDevice::supportedDuplexModes() const
+QVector<QPrint::DuplexMode> QPlatformPrintDevice::supportedDuplexModes() const
 {
     if (!m_haveDuplexModes)
         loadDuplexModes();
-    return m_duplexModes.toList();
+    return m_duplexModes;
 }
 
 void QPlatformPrintDevice::loadColorModes() const
@@ -347,11 +369,11 @@ QPrint::ColorMode QPlatformPrintDevice::defaultColorMode() const
     return QPrint::GrayScale;
 }
 
-QList<QPrint::ColorMode> QPlatformPrintDevice::supportedColorModes() const
+QVector<QPrint::ColorMode> QPlatformPrintDevice::supportedColorModes() const
 {
     if (!m_haveColorModes)
         loadColorModes();
-    return m_colorModes.toList();
+    return m_colorModes;
 }
 
 #ifndef QT_NO_MIMETYPE
@@ -359,11 +381,34 @@ void QPlatformPrintDevice::loadMimeTypes() const
 {
 }
 
+QVariant QPlatformPrintDevice::property(QPrintDevice::PrintDevicePropertyKey key) const
+{
+    Q_UNUSED(key)
+
+    return QVariant();
+}
+
+bool QPlatformPrintDevice::setProperty(QPrintDevice::PrintDevicePropertyKey key, const QVariant &value)
+{
+    Q_UNUSED(key)
+    Q_UNUSED(value)
+
+    return false;
+}
+
+bool QPlatformPrintDevice::isFeatureAvailable(QPrintDevice::PrintDevicePropertyKey key, const QVariant &params) const
+{
+    Q_UNUSED(key)
+    Q_UNUSED(params)
+
+    return false;
+}
+
 QList<QMimeType> QPlatformPrintDevice::supportedMimeTypes() const
 {
     if (!m_haveMimeTypes)
         loadMimeTypes();
-    return m_mimeTypes.toList();
+    return m_mimeTypes;
 }
 #endif // QT_NO_MIMETYPE
 

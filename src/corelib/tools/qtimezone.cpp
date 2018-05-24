@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,22 +54,22 @@ QT_BEGIN_NAMESPACE
 static QTimeZonePrivate *newBackendTimeZone()
 {
 #ifdef QT_NO_SYSTEMLOCALE
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     return new QIcuTimeZonePrivate();
 #else
     return new QUtcTimeZonePrivate();
-#endif // QT_USE_ICU
+#endif
 #else
 #if defined Q_OS_MAC
     return new QMacTimeZonePrivate();
-#elif defined Q_OS_ANDROID
+#elif defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     return new QAndroidTimeZonePrivate();
-#elif defined Q_OS_UNIX
+#elif defined(Q_OS_UNIX) || defined(Q_OS_ANDROID_EMBEDDED)
     return new QTzTimeZonePrivate();
     // Registry based timezone backend not available on WinRT
-#elif defined Q_OS_WIN && !defined Q_OS_WINRT
+#elif defined Q_OS_WIN
     return new QWinTimeZonePrivate();
-#elif defined QT_USE_ICU
+#elif QT_CONFIG(icu)
     return new QIcuTimeZonePrivate();
 #else
     return new QUtcTimeZonePrivate();
@@ -75,22 +81,22 @@ static QTimeZonePrivate *newBackendTimeZone()
 static QTimeZonePrivate *newBackendTimeZone(const QByteArray &ianaId)
 {
 #ifdef QT_NO_SYSTEMLOCALE
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     return new QIcuTimeZonePrivate(ianaId);
 #else
     return new QUtcTimeZonePrivate(ianaId);
-#endif // QT_USE_ICU
+#endif
 #else
 #if defined Q_OS_MAC
     return new QMacTimeZonePrivate(ianaId);
-#elif defined Q_OS_ANDROID
+#elif defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     return new QAndroidTimeZonePrivate(ianaId);
-#elif defined Q_OS_UNIX
+#elif defined(Q_OS_UNIX) || defined(Q_OS_ANDROID_EMBEDDED)
     return new QTzTimeZonePrivate(ianaId);
     // Registry based timezone backend not available on WinRT
-#elif defined Q_OS_WIN && !defined Q_OS_WINRT
+#elif defined Q_OS_WIN
     return new QWinTimeZonePrivate(ianaId);
-#elif defined QT_USE_ICU
+#elif QT_CONFIG(icu)
     return new QIcuTimeZonePrivate(ianaId);
 #else
     return new QUtcTimeZonePrivate(ianaId);
@@ -116,8 +122,9 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
     \class QTimeZone
     \inmodule QtCore
     \since 5.2
-    \brief The QTimeZone class converts between between UTC and local time in a
-           specific time zone.
+
+    \brief The QTimeZone class converts between UTC and local time in a specific
+           time zone.
 
     \threadsafe
 
@@ -132,7 +139,7 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
     \note For consistency with QDateTime, QTimeZone does not account for leap
     seconds.
 
-    \section1
+    \section1 Remarks
 
     \section2 IANA Time Zone IDs
 
@@ -198,63 +205,57 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
     The difference between UTC and the local time in a time zone is expressed
     as an offset in seconds from UTC, i.e. the number of seconds to add to UTC
     to obtain the local time.  The total offset is comprised of two component
-    parts, the standard time offset and the daylight time offset.  The standard
-    time offset is the number of seconds to add to UTC to obtain standard time
-    in the time zone.  The daylight time offset is the number of seconds to add
-    to the standard time offset to obtain daylight time in the time zone.
+    parts, the standard time offset and the daylight-saving time offset.  The
+    standard time offset is the number of seconds to add to UTC to obtain
+    standard time in the time zone.  The daylight-saving time offset is the
+    number of seconds to add to the standard time offset to obtain
+    daylight-saving time (abbreviated DST and sometimes called "daylight time"
+    or "summer time") in the time zone.
 
-    Note that the standard and daylight offsets for a time zone may change over
-    time as countries have changed daylight time laws or even their standard
-    time offset.
+    Note that the standard and DST offsets for a time zone may change over time
+    as countries have changed DST laws or even their standard time offset.
 
     \section2 License
 
     This class includes data obtained from the CLDR data files under the terms
-    of the Unicode license.
-
-    \legalese
-    COPYRIGHT AND PERMISSION NOTICE
-
-    Copyright © 1991-2012 Unicode, Inc. All rights reserved. Distributed under
-    the Terms of Use in http://www.unicode.org/copyright.html.
-
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of the Unicode data files and any associated documentation (the "Data
-    Files") or Unicode software and any associated documentation (the "Software")
-    to deal in the Data Files or Software without restriction, including without
-    limitation the rights to use, copy, modify, merge, publish, distribute, and/or
-    sell copies of the Data Files or Software, and to permit persons to whom the
-    Data Files or Software are furnished to do so, provided that (a) the above
-    copyright notice(s) and this permission notice appear with all copies of the
-    Data Files or Software, (b) both the above copyright notice(s) and this
-    permission notice appear in associated documentation, and (c) there is clear
-    notice in each modified Data File or in the Software as well as in the
-    documentation associated with the Data File(s) or Software that the data or
-    software has been modified.
-    \endlegalese
+    of the Unicode Data Files and Software License. See
+    \l{Unicode CLDR (Unicode Common Locale Data Repository)} for the details.
 
     \sa QDateTime
+*/
+
+/*!
+  \enum QTimeZone::anonymous
+
+  Sane UTC offsets range from -14 to +14 hours.
+  No known zone > 12 hrs West of Greenwich (Baker Island, USA).
+  No known zone > 14 hrs East of Greenwich (Kiritimati, Christmas Island, Kiribati).
+
+  \value MinUtcOffsetSecs
+          -14 * 3600,
+
+  \value MaxUtcOffsetSecs
+          +14 * 3600
 */
 
 /*!
     \enum QTimeZone::TimeType
 
     The type of time zone time, for example when requesting the name.  In time
-    zones that do not apply daylight time, all three values may return the
-    same result.
+    zones that do not apply DST, all three values may return the same result.
 
     \value StandardTime
-           The standard time in a time zone, i.e. when Daylight Savings is not
+           The standard time in a time zone, i.e. when Daylight-Saving is not
            in effect.
            For example when formatting a display name this will show something
            like "Pacific Standard Time".
     \value DaylightTime
-           A time when Daylight Savings is in effect.
+           A time when Daylight-Saving is in effect.
            For example when formatting a display name this will show something
-           like "Pacific daylight time".
+           like "Pacific daylight-saving time".
     \value GenericTime
-           A time which is not specifically Standard or Daylight time, either
-           an unknown time or a neutral form.
+           A time which is not specifically Standard or Daylight-Saving time,
+           either an unknown time or a neutral form.
            For example when formatting a display name this will show something
            like "Pacific Time".
 */
@@ -285,11 +286,11 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
     \li OffsetData::atUtc  The datetime of the offset data in UTC time.
     \li OffsetData::offsetFromUtc  The total offset from UTC in effect at the datetime.
     \li OffsetData::standardTimeOffset  The standard time offset component of the total offset.
-    \li OffsetData::daylightTimeOffset  The daylight time offset component of the total offset.
+    \li OffsetData::daylightTimeOffset  The DST offset component of the total offset.
     \li OffsetData::abbreviation  The abbreviation in effect at the datetime.
     \endlist
 
-    For example, for time zone "Europe/Berlin" the OffsetDate in standard and daylight time might be:
+    For example, for time zone "Europe/Berlin" the OffsetDate in standard and DST might be:
 
     \list
     \li atUtc = QDateTime(QDate(2013, 1, 1), QTime(0, 0, 0), Qt::UTC)
@@ -310,16 +311,15 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
 
 /*!
     \typedef QTimeZone::OffsetDataList
-    \relates QTimeZone
 
-    Synonym for QList<OffsetData>.
+    Synonym for QVector<OffsetData>.
 */
 
 /*!
     Create a null/invalid time zone instance.
 */
 
-QTimeZone::QTimeZone()
+QTimeZone::QTimeZone() Q_DECL_NOTHROW
     : d(0)
 {
 }
@@ -352,12 +352,9 @@ QTimeZone::QTimeZone(const QByteArray &ianaId)
 */
 
 QTimeZone::QTimeZone(int offsetSeconds)
+    : d((offsetSeconds >= MinUtcOffsetSecs && offsetSeconds <= MaxUtcOffsetSecs)
+        ? new QUtcTimeZonePrivate(offsetSeconds) : nullptr)
 {
-    // offsetSeconds must fall between -14:00 and +14:00 hours
-    if (offsetSeconds >= -50400 && offsetSeconds <= 50400)
-        d = new QUtcTimeZonePrivate(offsetSeconds);
-    else
-        d = 0;
 }
 
 /*!
@@ -531,8 +528,7 @@ QString QTimeZone::comment() const
     If the \a locale is not provided then the application default locale will
     be used.
 
-    The display name may change depending on daylight time or historical
-    events.
+    The display name may change depending on DST or historical events.
 
     \sa abbreviation()
 */
@@ -572,8 +568,7 @@ QString QTimeZone::displayName(TimeType timeType, NameType nameType,
 
 /*!
     Returns the time zone abbreviation at the given \a atDateTime.  The
-    abbreviation may change depending on daylight time or even
-    historical events.
+    abbreviation may change depending on DST or even historical events.
 
     Note that the abbreviation is not guaranteed to be unique to this time zone
     and should not be used in place of the ID or display name.
@@ -592,13 +587,13 @@ QString QTimeZone::abbreviation(const QDateTime &atDateTime) const
 /*!
     Returns the total effective offset at the given \a atDateTime, i.e. the
     number of seconds to add to UTC to obtain the local time.  This includes
-    any daylight time offset that may be in effect, i.e. it is the sum of
+    any DST offset that may be in effect, i.e. it is the sum of
     standardTimeOffset() and daylightTimeOffset() for the given datetime.
 
     For example, for the time zone "Europe/Berlin" the standard time offset is
-    +3600 seconds and the daylight time offset is +3600 seconds.  During standard
-    time offsetFromUtc() will return +3600 (UTC+01:00), and during daylight time
-    it will return +7200 (UTC+02:00).
+    +3600 seconds and the DST offset is +3600 seconds.  During standard time
+    offsetFromUtc() will return +3600 (UTC+01:00), and during DST it will
+    return +7200 (UTC+02:00).
 
     \sa standardTimeOffset(), daylightTimeOffset()
 */
@@ -614,11 +609,11 @@ int QTimeZone::offsetFromUtc(const QDateTime &atDateTime) const
 /*!
     Returns the standard time offset at the given \a atDateTime, i.e. the
     number of seconds to add to UTC to obtain the local Standard Time.  This
-    excludes any daylight time offset that may be in effect.
+    excludes any DST offset that may be in effect.
 
     For example, for the time zone "Europe/Berlin" the standard time offset is
-    +3600 seconds.  During both standard and daylight time offsetFromUtc() will
-    return +3600 (UTC+01:00).
+    +3600 seconds.  During both standard and DST offsetFromUtc() will return
+    +3600 (UTC+01:00).
 
     \sa offsetFromUtc(), daylightTimeOffset()
 */
@@ -632,13 +627,13 @@ int QTimeZone::standardTimeOffset(const QDateTime &atDateTime) const
 }
 
 /*!
-    Returns the daylight time offset at the given \a atDateTime, i.e. the
-    number of seconds to add to the standard time offset to obtain the local
-    daylight time.
+    Returns the daylight-saving time offset at the given \a atDateTime,
+    i.e. the number of seconds to add to the standard time offset to obtain the
+    local daylight-saving time.
 
-    For example, for the time zone "Europe/Berlin" the daylight time offset
-    is +3600 seconds.  During standard time daylightTimeOffset() will return
-    0, and during daylight time it will return +3600.
+    For example, for the time zone "Europe/Berlin" the DST offset is +3600
+    seconds.  During standard time daylightTimeOffset() will return 0, and when
+    daylight-saving is in effect it will return +3600.
 
     \sa offsetFromUtc(), standardTimeOffset()
 */
@@ -652,7 +647,7 @@ int QTimeZone::daylightTimeOffset(const QDateTime &atDateTime) const
 }
 
 /*!
-    Returns \c true if the time zone has observed daylight time at any time.
+    Returns \c true if the time zone has practiced daylight-saving at any time.
 
     \sa isDaylightTime(), daylightTimeOffset()
 */
@@ -666,7 +661,7 @@ bool QTimeZone::hasDaylightTime() const
 }
 
 /*!
-    Returns \c true if the given \a atDateTime is in daylight time.
+    Returns \c true if daylight-saving was in effect at the given \a atDateTime.
 
     \sa hasDaylightTime(), daylightTimeOffset()
 */
@@ -690,13 +685,18 @@ bool QTimeZone::isDaylightTime(const QDateTime &atDateTime) const
 QTimeZone::OffsetData QTimeZone::offsetData(const QDateTime &forDateTime) const
 {
     if (hasTransitions())
-        return d->toOffsetData(d->data(forDateTime.toMSecsSinceEpoch()));
+        return QTimeZonePrivate::toOffsetData(d->data(forDateTime.toMSecsSinceEpoch()));
     else
-        return d->invalidOffsetData();
+        return QTimeZonePrivate::invalidOffsetData();
 }
 
 /*!
     Returns \c true if the system backend supports obtaining transitions.
+
+    Transitions are changes in the time-zone: these happen when DST turns on or
+    off and when authorities alter the offsets for the time-zone.
+
+    \sa nextTransition(), previousTransition(), transitions()
 */
 
 bool QTimeZone::hasTransitions() const
@@ -723,9 +723,9 @@ bool QTimeZone::hasTransitions() const
 QTimeZone::OffsetData QTimeZone::nextTransition(const QDateTime &afterDateTime) const
 {
     if (hasTransitions())
-        return d->toOffsetData(d->nextTransition(afterDateTime.toMSecsSinceEpoch()));
+        return QTimeZonePrivate::toOffsetData(d->nextTransition(afterDateTime.toMSecsSinceEpoch()));
     else
-        return d->invalidOffsetData();
+        return QTimeZonePrivate::invalidOffsetData();
 }
 
 /*!
@@ -744,9 +744,9 @@ QTimeZone::OffsetData QTimeZone::nextTransition(const QDateTime &afterDateTime) 
 QTimeZone::OffsetData QTimeZone::previousTransition(const QDateTime &beforeDateTime) const
 {
     if (hasTransitions())
-        return d->toOffsetData(d->previousTransition(beforeDateTime.toMSecsSinceEpoch()));
+        return QTimeZonePrivate::toOffsetData(d->previousTransition(beforeDateTime.toMSecsSinceEpoch()));
     else
-        return d->invalidOffsetData();
+        return QTimeZonePrivate::invalidOffsetData();
 }
 
 /*!
@@ -762,10 +762,11 @@ QTimeZone::OffsetDataList QTimeZone::transitions(const QDateTime &fromDateTime,
 {
     OffsetDataList list;
     if (hasTransitions()) {
-        QTimeZonePrivate::DataList plist = d->transitions(fromDateTime.toMSecsSinceEpoch(),
-                                                          toDateTime.toMSecsSinceEpoch());
-        foreach (const QTimeZonePrivate::Data &pdata, plist)
-            list.append(d->toOffsetData(pdata));
+        const QTimeZonePrivate::DataList plist = d->transitions(fromDateTime.toMSecsSinceEpoch(),
+                                                                toDateTime.toMSecsSinceEpoch());
+        list.reserve(plist.count());
+        for (const QTimeZonePrivate::Data &pdata : plist)
+            list.append(QTimeZonePrivate::toOffsetData(pdata));
     }
     return list;
 }
@@ -971,7 +972,13 @@ QDataStream &operator>>(QDataStream &ds, QTimeZone &tz)
         int country;
         QString comment;
         ds >> ianaId >> utcOffset >> name >> abbreviation >> country >> comment;
-        tz = QTimeZone(ianaId.toUtf8(), utcOffset, name, abbreviation, (QLocale::Country) country, comment);
+        // Try creating as a system timezone, which succeeds (producing a valid
+        // zone) iff ianaId is valid; we can then ignore the other data.
+        tz = QTimeZone(ianaId.toUtf8());
+        // If not, then construct a custom timezone using all the saved values:
+        if (!tz.isValid())
+            tz = QTimeZone(ianaId.toUtf8(), utcOffset, name, abbreviation,
+                           QLocale::Country(country), comment);
     } else {
         tz = QTimeZone(ianaId.toUtf8());
     }

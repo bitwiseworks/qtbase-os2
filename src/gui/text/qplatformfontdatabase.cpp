@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,10 @@
 #include <qpa/qplatformscreen.h>
 #include <QtCore/QLibraryInfo>
 #include <QtCore/QDir>
+#include <QtCore/QMetaEnum>
+
+#include <algorithm>
+#include <iterator>
 
 QT_BEGIN_NAMESPACE
 
@@ -52,8 +62,6 @@ void qt_registerFontFamily(const QString &familyName);
 void qt_registerAliasToFontFamily(const QString &familyName, const QString &alias);
 
 /*!
-    \fn void QPlatformFontDatabase::registerQPF2Font(const QByteArray &dataArray, void *handle)
-
     Registers the pre-rendered QPF2 font contained in the given \a dataArray.
 
     \sa registerFont()
@@ -91,7 +99,7 @@ void QPlatformFontDatabase::registerQPF2Font(const QByteArray &dataArray, void *
             registerFont(fontName,QString(),QString(),fontWeight,fontStyle,stretch,true,false,pixelSize,false,writingSystems,handle);
         }
     } else {
-        qDebug() << "header verification of QPF2 font failed. maybe it is corrupt?";
+        qDebug("header verification of QPF2 font failed. maybe it is corrupt?");
     }
 }
 
@@ -191,6 +199,26 @@ QSupportedWritingSystems &QSupportedWritingSystems::operator=(const QSupportedWr
     }
     return *this;
 }
+
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QSupportedWritingSystems &sws)
+{
+    QMetaObject mo = QFontDatabase::staticMetaObject;
+    QMetaEnum me = mo.enumerator(mo.indexOfEnumerator("WritingSystem"));
+
+    QDebugStateSaver saver(debug);
+    debug.nospace() << "QSupportedWritingSystems(";
+    int i = sws.d->vector.indexOf(true);
+    while (i > 0) {
+        debug << me.valueToKey(i);
+        i = sws.d->vector.indexOf(true, i + 1);
+        if (i > 0)
+            debug << ", ";
+    }
+    debug << ")";
+    return debug;
+}
+#endif
 
 /*!
     Destroys the supported writing systems object.
@@ -343,17 +371,6 @@ QFontEngine *QPlatformFontDatabase::fontEngine(const QByteArray &fontData, qreal
 }
 
 /*!
-    \fn QStringList QPlatformFontDatabase::fallbacksForFamily(const QString &family, QFont::Style style, QFont::StyleHint styleHint, QChar::Script script) const
-
-    Returns a list of alternative fonts for the specified \a family and
-    \a style and \a script using the \a styleHint given.
-
-    Default implementation returns a list of fonts for which \a style and \a script support
-    has been reported during the font database population.
-*/
-// implemented in qfontdatabase.cpp
-
-/*!
     Adds an application font described by the font contained supplied \a fontData
     or using the font contained in the file referenced by \a fileName. Returns
     a list of family names, or an empty list if the font could not be added.
@@ -386,10 +403,8 @@ void QPlatformFontDatabase::releaseHandle(void *handle)
 QString QPlatformFontDatabase::fontDir() const
 {
     QString fontpath = QString::fromLocal8Bit(qgetenv("QT_QPA_FONTDIR"));
-    if (fontpath.isEmpty()) {
-        fontpath = QLibraryInfo::location(QLibraryInfo::LibrariesPath);
-        fontpath += QLatin1String("/fonts");
-    }
+    if (fontpath.isEmpty())
+        fontpath = QLibraryInfo::location(QLibraryInfo::LibrariesPath) + QLatin1String("/fonts");
 
     return fontpath;
 }
@@ -416,14 +431,14 @@ QFont QPlatformFontDatabase::defaultFont() const
     return QFont(QLatin1String("Helvetica"));
 }
 
+
+QString qt_resolveFontFamilyAlias(const QString &alias);
+
 /*!
     Resolve alias to actual font family names.
 
     \since 5.0
  */
-
-QString qt_resolveFontFamilyAlias(const QString &alias);
-
 QString QPlatformFontDatabase::resolveFontFamilyAlias(const QString &family) const
 {
     return qt_resolveFontFamilyAlias(family);
@@ -450,28 +465,18 @@ bool QPlatformFontDatabase::fontsAlwaysScalable() const
  QList<int> QPlatformFontDatabase::standardSizes() const
 {
     QList<int> ret;
-    static const unsigned short standard[] =
-        { 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72, 0 };
-    ret.reserve(int(sizeof(standard) / sizeof(standard[0])));
-    const unsigned short *sizes = standard;
-    while (*sizes) ret << *sizes++;
+    static const quint8 standard[] =
+        { 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72 };
+    static const int num_standards = int(sizeof standard / sizeof *standard);
+    ret.reserve(num_standards);
+    std::copy(standard, standard + num_standards, std::back_inserter(ret));
     return ret;
-}
-
-QFontEngine::SubpixelAntialiasingType QPlatformFontDatabase::subpixelAntialiasingTypeHint() const
-{
-    static int type = -1;
-    if (type == -1) {
-        if (QScreen *screen = QGuiApplication::primaryScreen())
-            type = screen->handle()->subpixelAntialiasingTypeHint();
-    }
-    return static_cast<QFontEngine::SubpixelAntialiasingType>(type);
 }
 
 // ### copied to tools/makeqpf/qpf2.cpp
 
 // see the Unicode subset bitfields in the MSDN docs
-static const ushort requiredUnicodeBits[QFontDatabase::WritingSystemsCount][2] = {
+static const quint8 requiredUnicodeBits[QFontDatabase::WritingSystemsCount][2] = {
     { 127, 127 }, // Any
     { 0, 127 },   // Latin
     { 7, 127 },   // Greek
@@ -508,7 +513,7 @@ static const ushort requiredUnicodeBits[QFontDatabase::WritingSystemsCount][2] =
     { 14, 127 },  // Nko
 };
 
-enum {
+enum CsbBits {
     Latin1CsbBit = 0,
     CentralEuropeCsbBit = 1,
     TurkishCsbBit = 4,
@@ -621,12 +626,13 @@ QSupportedWritingSystems QPlatformFontDatabase::writingSystemsFromTrueTypeBits(q
 }
 
 /*!
-    Helper function that returns the Qt font weight matching a given opentype integer value.
+    Helper function that returns the Qt font weight matching
+    a given opentype integer value. Converts the integer
+    \a weight (0 ~ 1000) to QFont::Weight and returns it.
 
     \since 5.5
 */
 
-// convert 0 ~ 1000 integer to QFont::Weight
 QFont::Weight QPlatformFontDatabase::weightFromInteger(int weight)
 {
     if (weight < 150)

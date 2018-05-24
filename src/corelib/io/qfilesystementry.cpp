@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -53,8 +59,7 @@ static bool isUncRoot(const QString &server)
     if (idx == -1 || idx + 1 == localPath.length())
         return true;
 
-    localPath = localPath.right(localPath.length() - idx - 1).trimmed();
-    return localPath.isEmpty();
+    return localPath.rightRef(localPath.length() - idx - 1).trimmed().isEmpty();
 }
 
 static inline QString fixIfRelativeUncPath(const QString &path)
@@ -167,6 +172,10 @@ void QFileSystemEntry::resolveNativeFilePath() const
             m_nativeFilePath.remove(0,1);
         if (m_nativeFilePath.isEmpty())
             m_nativeFilePath.append(QLatin1Char('.'));
+        // WinRT/MSVC2015 allows a maximum of 256 characters for a filepath
+        // unless //?/ is prepended which extends the rule to have a maximum
+        // of 256 characters in the filename plus the preprending path
+        m_nativeFilePath.prepend("\\\\?\\");
 #endif
     }
 }
@@ -255,17 +264,21 @@ QString QFileSystemEntry::completeSuffix() const
 bool QFileSystemEntry::isRelative() const
 {
     resolveFilePath();
-    return (m_filePath.isEmpty() || (!m_filePath.isEmpty() && (m_filePath.at(0).unicode() != '/')
-        && (!(m_filePath.length() >= 2 && m_filePath.at(1).unicode() == ':'))));
+    return (m_filePath.isEmpty()
+            || (m_filePath.at(0).unicode() != '/'
+                && !(m_filePath.length() >= 2 && m_filePath.at(1).unicode() == ':')));
 }
 
 bool QFileSystemEntry::isAbsolute() const
 {
     resolveFilePath();
-    return (!m_filePath.isEmpty() && ((m_filePath.length() >= 3
-                                       && (m_filePath.at(0).isLetter() && m_filePath.at(1).unicode() == ':' && m_filePath.at(2).unicode() == '/'))
-                                      || (m_filePath.length() >= 2 && (m_filePath.at(0) == QLatin1Char('/') && m_filePath.at(1) == QLatin1Char('/')))
-                                      ));
+    return ((m_filePath.length() >= 3
+             && m_filePath.at(0).isLetter()
+             && m_filePath.at(1).unicode() == ':'
+             && m_filePath.at(2).unicode() == '/')
+         || (m_filePath.length() >= 2
+             && m_filePath.at(0) == QLatin1Char('/')
+             && m_filePath.at(1) == QLatin1Char('/')));
 }
 #else
 bool QFileSystemEntry::isRelative() const
@@ -284,19 +297,27 @@ bool QFileSystemEntry::isAbsolute() const
 bool QFileSystemEntry::isDriveRoot() const
 {
     resolveFilePath();
-    return (m_filePath.length() == 3
-           && m_filePath.at(0).isLetter() && m_filePath.at(1) == QLatin1Char(':')
-           && m_filePath.at(2) == QLatin1Char('/'));
+    return QFileSystemEntry::isDriveRootPath(m_filePath);
 }
-#endif
 
-bool QFileSystemEntry::isRoot() const
+bool QFileSystemEntry::isDriveRootPath(const QString &path)
 {
-    resolveFilePath();
-    if (m_filePath == QLatin1String("/")
+#ifndef Q_OS_WINRT
+    return (path.length() == 3
+           && path.at(0).isLetter() && path.at(1) == QLatin1Char(':')
+           && path.at(2) == QLatin1Char('/'));
+#else // !Q_OS_WINRT
+    return path == QDir::rootPath();
+#endif // !Q_OS_WINRT
+}
+#endif // Q_OS_WIN
+
+bool QFileSystemEntry::isRootPath(const QString &path)
+{
+    if (path == QLatin1String("/")
 #if defined(Q_OS_WIN)
-            || isDriveRoot()
-            || isUncRoot(m_filePath)
+            || isDriveRootPath(path)
+            || isUncRoot(path)
 #endif
             )
         return true;
@@ -304,9 +325,10 @@ bool QFileSystemEntry::isRoot() const
     return false;
 }
 
-bool QFileSystemEntry::isEmpty() const
+bool QFileSystemEntry::isRoot() const
 {
-    return m_filePath.isEmpty() && m_nativeFilePath.isEmpty();
+    resolveFilePath();
+    return isRootPath(m_filePath);
 }
 
 // private methods
@@ -373,7 +395,7 @@ bool QFileSystemEntry::isClean() const
     int dots = 0;
     bool dotok = true; // checking for ".." or "." starts to relative paths
     bool slashok = true;
-    for (QString::const_iterator iter = m_filePath.constBegin(); iter != m_filePath.constEnd(); iter++) {
+    for (QString::const_iterator iter = m_filePath.constBegin(); iter != m_filePath.constEnd(); ++iter) {
         if (*iter == QLatin1Char('/')) {
             if (dots == 1 || dots == 2)
                 return false; // path contains "./" or "../"

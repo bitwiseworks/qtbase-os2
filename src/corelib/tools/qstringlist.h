@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -66,6 +73,7 @@ public:
     inline int removeDuplicates();
 
     inline QString join(const QString &sep) const;
+    inline QString join(QLatin1String sep) const;
     inline QString join(QChar sep) const;
 
     inline QStringList filter(const QString &str, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
@@ -76,12 +84,10 @@ public:
     inline QStringList &replaceInStrings(const QRegExp &rx, const QString &after);
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     inline QStringList filter(const QRegularExpression &re) const;
     inline QStringList &replaceInStrings(const QRegularExpression &re, const QString &after);
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
 
 #ifndef Q_QDOC
 private:
@@ -112,6 +118,7 @@ public:
 #endif
 
     inline bool contains(const QString &str, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
+    inline bool contains(QLatin1String str, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
 
     inline QStringList operator+(const QStringList &other) const
     { QStringList n = *this; n += other; return n; }
@@ -129,12 +136,10 @@ public:
     inline int lastIndexOf(QRegExp &rx, int from = -1) const;
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     inline int indexOf(const QRegularExpression &re, int from = 0) const;
     inline int lastIndexOf(const QRegularExpression &re, int from = -1) const;
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
 
     using QList<QString>::indexOf;
     using QList<QString>::lastIndexOf;
@@ -142,6 +147,7 @@ public:
 
 Q_DECLARE_TYPEINFO(QStringList, Q_MOVABLE_TYPE);
 
+#ifndef Q_QDOC
 inline QStringList *QListSpecialMethods<QString>::self()
 { return static_cast<QStringList *>(this); }
 inline const QStringList *QListSpecialMethods<QString>::self() const
@@ -151,10 +157,12 @@ namespace QtPrivate {
     void Q_CORE_EXPORT QStringList_sort(QStringList *that, Qt::CaseSensitivity cs);
     int Q_CORE_EXPORT QStringList_removeDuplicates(QStringList *that);
     QString Q_CORE_EXPORT QStringList_join(const QStringList *that, const QChar *sep, int seplen);
+    Q_CORE_EXPORT QString QStringList_join(const QStringList &list, QLatin1String sep);
     QStringList Q_CORE_EXPORT QStringList_filter(const QStringList *that, const QString &str,
                                                Qt::CaseSensitivity cs);
 
     bool Q_CORE_EXPORT QStringList_contains(const QStringList *that, const QString &str, Qt::CaseSensitivity cs);
+    bool Q_CORE_EXPORT QStringList_contains(const QStringList *that, QLatin1String str, Qt::CaseSensitivity cs);
     void Q_CORE_EXPORT QStringList_replaceInStrings(QStringList *that, const QString &before, const QString &after,
                                       Qt::CaseSensitivity cs);
 
@@ -167,14 +175,12 @@ namespace QtPrivate {
     int Q_CORE_EXPORT QStringList_lastIndexOf(const QStringList *that, QRegExp &rx, int from);
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     void Q_CORE_EXPORT QStringList_replaceInStrings(QStringList *that, const QRegularExpression &rx, const QString &after);
     QStringList Q_CORE_EXPORT QStringList_filter(const QStringList *that, const QRegularExpression &re);
     int Q_CORE_EXPORT QStringList_indexOf(const QStringList *that, const QRegularExpression &re, int from);
     int Q_CORE_EXPORT QStringList_lastIndexOf(const QStringList *that, const QRegularExpression &re, int from);
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
 }
 
 inline void QListSpecialMethods<QString>::sort(Qt::CaseSensitivity cs)
@@ -192,6 +198,11 @@ inline QString QListSpecialMethods<QString>::join(const QString &sep) const
     return QtPrivate::QStringList_join(self(), sep.constData(), sep.length());
 }
 
+QString QListSpecialMethods<QString>::join(QLatin1String sep) const
+{
+    return QtPrivate::QStringList_join(*self(), sep);
+}
+
 inline QString QListSpecialMethods<QString>::join(QChar sep) const
 {
     return QtPrivate::QStringList_join(self(), &sep, 1);
@@ -203,6 +214,11 @@ inline QStringList QListSpecialMethods<QString>::filter(const QString &str, Qt::
 }
 
 inline bool QStringList::contains(const QString &str, Qt::CaseSensitivity cs) const
+{
+    return QtPrivate::QStringList_contains(this, str, cs);
+}
+
+inline bool QStringList::contains(QLatin1String str, Qt::CaseSensitivity cs) const
 {
     return QtPrivate::QStringList_contains(this, str, cs);
 }
@@ -253,8 +269,7 @@ inline int QStringList::lastIndexOf(QRegExp &rx, int from) const
 }
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 inline QStringList &QListSpecialMethods<QString>::replaceInStrings(const QRegularExpression &rx, const QString &after)
 {
     QtPrivate::QStringList_replaceInStrings(self(), rx, after);
@@ -275,8 +290,8 @@ inline int QStringList::lastIndexOf(const QRegularExpression &rx, int from) cons
 {
     return QtPrivate::QStringList_lastIndexOf(this, rx, from);
 }
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
+#endif // Q_QDOC
 
 QT_END_NAMESPACE
 

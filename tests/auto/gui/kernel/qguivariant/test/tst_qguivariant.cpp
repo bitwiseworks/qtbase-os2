@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -56,8 +51,6 @@
 #include <qfont.h>
 
 #include "tst_qvariant_common.h"
-
-#include "../../../../qtest-config.h"
 
 class tst_QGuiVariant : public QObject
 {
@@ -140,13 +133,13 @@ void tst_QGuiVariant::constructor_invalid()
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression("^Trying to construct an instance of an invalid type, type id:"));
         QVariant variant(static_cast<QVariant::Type>(typeId));
         QVERIFY(!variant.isValid());
-        QVERIFY(variant.userType() == QMetaType::UnknownType);
+        QCOMPARE(variant.userType(), int(QMetaType::UnknownType));
     }
     {
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression("^Trying to construct an instance of an invalid type, type id:"));
         QVariant variant(typeId, /* copy */ 0);
         QVERIFY(!variant.isValid());
-        QVERIFY(variant.userType() == QMetaType::UnknownType);
+        QCOMPARE(variant.userType(), int(QMetaType::UnknownType));
     }
 }
 
@@ -177,7 +170,7 @@ void tst_QGuiVariant::canConvert_data()
     var = QVariant::fromValue(QColor());
     QTest::newRow("Color")
         << var << N << N << N << Y << Y << Y << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << Y << N << N << N << N;
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     var = QVariant::fromValue(QCursor());
     QTest::newRow("Cursor")
         << var << N << N << N << N << N << N << Y << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N << N;
@@ -250,6 +243,14 @@ void tst_QGuiVariant::toColor_data()
     QColor c("red");
     QTest::newRow( "string" ) << QVariant( QString( "red" ) ) << c;
     QTest::newRow( "solid brush" ) << QVariant( QBrush(c) ) << c;
+    QTest::newRow("qbytearray") << QVariant(QByteArray("red")) << c;
+    QTest::newRow("same color") << QVariant(c) << c;
+    QTest::newRow("qstring(#ff0000)") << QVariant(QString::fromUtf8("#ff0000")) << c;
+    QTest::newRow("qbytearray(#ff0000)") << QVariant(QByteArray("#ff0000")) << c;
+
+    c.setNamedColor("#88112233");
+    QTest::newRow("qstring(#88112233)") << QVariant(QString::fromUtf8("#88112233")) << c;
+    QTest::newRow("qbytearray(#88112233)") << QVariant(QByteArray("#88112233")) << c;
 }
 
 void tst_QGuiVariant::toColor()
@@ -260,6 +261,8 @@ void tst_QGuiVariant::toColor()
     QVERIFY( value.canConvert( QVariant::Color ) );
     QColor d = qvariant_cast<QColor>(value);
     QCOMPARE( d, result );
+    QVERIFY(value.convert(QMetaType::QColor));
+    QCOMPARE(d, QColor(value.toString()));
 }
 
 void tst_QGuiVariant::toPixmap_data()
@@ -380,7 +383,7 @@ void tst_QGuiVariant::toString_data()
 #ifndef Q_OS_MAC
         << QString( "Ctrl+A" );
 #else
-        << QString(QChar(0x2318)) + "A";
+        << QString(QChar(0x2318)) + QLatin1Char('A');
 #endif
 
     QFont font( "times", 12 );
@@ -503,7 +506,7 @@ void tst_QGuiVariant::writeToReadFromDataStream_data()
     QTest::newRow( "bitmap_valid" ) << QVariant::fromValue( bitmap ) << false;
     QTest::newRow( "brush_valid" ) << QVariant::fromValue( QBrush( Qt::red ) ) << false;
     QTest::newRow( "color_valid" ) << QVariant::fromValue( QColor( Qt::red ) ) << false;
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     QTest::newRow( "cursor_valid" ) << QVariant::fromValue( QCursor( Qt::PointingHandCursor ) ) << false;
 #endif
     QTest::newRow( "font_valid" ) << QVariant::fromValue( QFont( "times", 12 ) ) << false;
@@ -611,9 +614,9 @@ void tst_QGuiVariant::writeToReadFromDataStream()
                 // the uninitialized float can be NaN (observed on Windows Mobile 5 ARMv4i)
                 float readFloat = qvariant_cast<float>(readVariant);
                 float writtenFloat = qvariant_cast<float>(writeVariant);
-                QVERIFY(qIsNaN(readFloat) == qIsNaN(writtenFloat));
+                QCOMPARE(qIsNaN(readFloat), qIsNaN(writtenFloat));
                 if (!qIsNaN(readFloat))
-                    QVERIFY(readFloat == writtenFloat);
+                    QCOMPARE(readFloat, writtenFloat);
             }
             break;
         }
@@ -632,7 +635,7 @@ void tst_QGuiVariant::writeToReadFromOldDataStream()
         dataFileStream.setVersion(QDataStream::Qt_4_9);
         QVariant readVariant;
         dataFileStream >> readVariant;
-        QVERIFY(readVariant.userType() == QMetaType::QPolygonF);
+        QCOMPARE(readVariant.userType(), int(QMetaType::QPolygonF));
         QCOMPARE(testVariant, readVariant);
         file.close();
     }
@@ -656,7 +659,7 @@ void tst_QGuiVariant::writeToReadFromOldDataStream()
         QDataStream readVarData(variantData);
         readVarData >> dummy;
         readVarData >> polyData50;
-        QVERIFY(polyData49 == polyData50);
+        QCOMPARE(polyData49, polyData50);
     }
 }
 
@@ -711,14 +714,14 @@ void tst_QGuiVariant::implicitConstruction()
     F(Quaternion) \
     F(PolygonF)
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 #  define FOR_EACH_GUI_CLASS(F) \
     FOR_EACH_GUI_CLASS_BASE(F) \
     F(Cursor)
-#else // !QTEST_NO_CURSOR
+#else // !QT_NO_CURSOR
 #  define FOR_EACH_GUI_CLASS(F) \
     FOR_EACH_GUI_CLASS_BASE(F)
-#endif // QTEST_NO_CURSOR
+#endif // QT_NO_CURSOR
 
 #define CONSTRUCT(TYPE) \
     { \
@@ -736,14 +739,14 @@ void tst_QGuiVariant::implicitConstruction()
 void tst_QGuiVariant::guiVariantAtExit()
 {
     // crash test, it should not crash at QGuiApplication exit
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     static QVariant cursor = QCursor();
 #endif
     static QVariant point = QPoint();
     static QVariant icon = QIcon();
     static QVariant image = QImage();
     static QVariant palette = QPalette();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     Q_UNUSED(cursor);
 #endif
     Q_UNUSED(point);

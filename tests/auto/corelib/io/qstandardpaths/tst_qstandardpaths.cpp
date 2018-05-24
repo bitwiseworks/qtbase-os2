@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,15 +33,20 @@
 #include <qfileinfo.h>
 #include <qsysinfo.h>
 #include <qregexp.h>
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !defined(Q_OS_WINCE)
+#  include <qt_windows.h>
+#endif
 
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #include <sys/types.h>
 #endif
 
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_BLACKBERRY) && !defined(Q_OS_ANDROID)
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_ANDROID)
 #define Q_XDG_PLATFORM
 #endif
+
+#include "emulationdetector.h"
 
 // Update this when adding new enum values; update enumNames too
 static const int MaxStandardLocation = QStandardPaths::AppConfigLocation;
@@ -56,6 +56,7 @@ class tst_qstandardpaths : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void dump();
     void testDefaultLocations();
     void testCustomLocations();
@@ -127,6 +128,24 @@ static const char * const enumNames[MaxStandardLocation + 1 - int(QStandardPaths
     "AppDataLocation",
     "AppConfigLocation"
 };
+
+void tst_qstandardpaths::initTestCase()
+{
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !defined(Q_OS_WINCE)
+    // Disable WOW64 redirection, see testFindExecutable()
+    if (QSysInfo::buildCpuArchitecture() != QSysInfo::currentCpuArchitecture()) {
+        void *oldMode;
+        const bool disabledDisableWow64FsRedirection = Wow64DisableWow64FsRedirection(&oldMode) == TRUE;
+        if (!disabledDisableWow64FsRedirection)
+            qErrnoWarning("Wow64DisableWow64FsRedirection() failed");
+        QVERIFY(disabledDisableWow64FsRedirection);
+    }
+#endif // Q_OS_WIN && !Q_OS_WINRT && !Q_OS_WINCE
+    QVERIFY2(m_localConfigTempDir.isValid(), qPrintable(m_localConfigTempDir.errorString()));
+    QVERIFY2(m_globalConfigTempDir.isValid(), qPrintable(m_globalConfigTempDir.errorString()));
+    QVERIFY2(m_localAppTempDir.isValid(), qPrintable(m_localAppTempDir.errorString()));
+    QVERIFY2(m_globalAppTempDir.isValid(), qPrintable(m_globalAppTempDir.errorString()));
+}
 
 void tst_qstandardpaths::dump()
 {
@@ -287,9 +306,9 @@ void tst_qstandardpaths::testDataLocation()
 {
     // On all platforms, DataLocation should be GenericDataLocation / organization name / app name
     // This allows one app to access the data of another app.
-    // Blackberry OS, Android and WinRT are an exception to this case, owing to the fact that
+    // Android and WinRT are an exception to this case, owing to the fact that
     // applications are sandboxed.
-#if !defined(Q_OS_BLACKBERRY) && !defined(Q_OS_ANDROID) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WINRT)
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation), base + "/tst_qstandardpaths");
     QCoreApplication::instance()->setOrganizationName("Qt");
@@ -318,7 +337,7 @@ void tst_qstandardpaths::testAppConfigLocation()
 {
     // On all platforms where applications are not sandboxed,
     // AppConfigLocation should be GenericConfigLocation / organization name / app name
-#if !defined(Q_OS_BLACKBERRY) && !defined(Q_OS_ANDROID) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WINRT)
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation), base + "/tst_qstandardpaths");
     QCoreApplication::setOrganizationName("Qt");
@@ -368,9 +387,10 @@ void tst_qstandardpaths::testFindExecutable_data()
     QTest::newRow("win-cmd-nosuffix")
         << QString() << QString::fromLatin1("cmd") << cmdPath;
 
-    if (QSysInfo::windowsVersion() >= QSysInfo::WV_WINDOWS8) {
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8) {
         // The logo executable on Windows 8 is perfectly suited for testing that the
         // suffix mechanism is not thrown off by dots in the name.
+        // Note: Requires disabling WOW64 redirection, see initTestCase()
         const QString logo = QLatin1String("microsoft.windows.softwarelogo.showdesktop");
         const QString logoPath = cmdFi.absolutePath() + QLatin1Char('/') + logo + QLatin1String(".exe");
         QTest::newRow("win8-logo")
@@ -420,6 +440,8 @@ void tst_qstandardpaths::testFindExecutable()
 
 void tst_qstandardpaths::testFindExecutableLinkToDirectory()
 {
+    // WinRT has no link support
+#ifndef Q_OS_WINRT
     // link to directory
     const QString target = QDir::tempPath() + QDir::separator() + QLatin1String("link.lnk");
     QFile::remove(target);
@@ -427,15 +449,16 @@ void tst_qstandardpaths::testFindExecutableLinkToDirectory()
     QVERIFY(appFile.link(target));
     QVERIFY(QStandardPaths::findExecutable(target).isEmpty());
     QFile::remove(target);
+#endif
 }
 
 void tst_qstandardpaths::testRuntimeDirectory()
 {
+#ifdef Q_XDG_PLATFORM
     const QString runtimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     QVERIFY(!runtimeDir.isEmpty());
 
     // Check that it can automatically fix permissions
-#ifdef Q_XDG_PLATFORM
     QFile file(runtimeDir);
     const QFile::Permissions wantedPerms = QFile::ReadUser | QFile::WriteUser | QFile::ExeUser;
     const QFile::Permissions additionalPerms = QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner;
@@ -455,16 +478,49 @@ void tst_qstandardpaths::testCustomRuntimeDirectory()
 #endif
 
 #ifdef Q_XDG_PLATFORM
-    qputenv("XDG_RUNTIME_DIR", QFile::encodeName("/tmp"));
+    struct EnvVarRestorer
+    {
+        EnvVarRestorer() : origRuntimeDir(qgetenv("XDG_RUNTIME_DIR")) {}
+        ~EnvVarRestorer() { qputenv("XDG_RUNTIME_DIR", origRuntimeDir.constData()); }
+        const QByteArray origRuntimeDir;
+    };
+    EnvVarRestorer restorer;
+
+    // When $XDG_RUNTIME_DIR points to a directory with wrong ownership, QStandardPaths should warn
+    QByteArray rootOwnedFileName = "/tmp";
+    if (EmulationDetector::isRunningArmOnX86()) {
+        // Directory "tmp" under toolchain sysroot is detected by qemu and has same uid as current user.
+        // Try /opt instead, it might not be located in the sysroot.
+        QFileInfo rootOwnedFile = QFileInfo(QString::fromLatin1(rootOwnedFileName));
+        if (rootOwnedFile.ownerId() == ::geteuid()) {
+            rootOwnedFileName = "/opt";
+        }
+    }
+    qputenv("XDG_RUNTIME_DIR", QFile::encodeName(rootOwnedFileName));
+
     // It's very unlikely that /tmp is 0600 or that we can chmod it
     // The call below outputs
     //   "QStandardPaths: wrong ownership on runtime directory /tmp, 0 instead of $UID"
     // but we can't reliably expect that it's owned by uid 0, I think.
     const uid_t uid = geteuid();
     QTest::ignoreMessage(QtWarningMsg,
-            qPrintable(QString::fromLatin1("QStandardPaths: wrong ownership on runtime directory /tmp, 0 instead of %1").arg(uid)));
+            qPrintable(QString::fromLatin1("QStandardPaths: wrong ownership on runtime directory " + rootOwnedFileName + ", 0 instead of %1").arg(uid)));
     const QString runtimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     QVERIFY2(runtimeDir.isEmpty(), qPrintable(runtimeDir));
+
+    // When $XDG_RUNTIME_DIR points to a non-existing directory, QStandardPaths should warn (QTBUG-48771)
+    qputenv("XDG_RUNTIME_DIR", "does_not_exist");
+    QTest::ignoreMessage(QtWarningMsg, "QStandardPaths: XDG_RUNTIME_DIR points to non-existing path 'does_not_exist', please create it with 0700 permissions.");
+    const QString nonExistingRuntimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    QVERIFY2(nonExistingRuntimeDir.isEmpty(), qPrintable(nonExistingRuntimeDir));
+
+    // When $XDG_RUNTIME_DIR points to a file, QStandardPaths should warn
+    const QString file = QFINDTESTDATA("tst_qstandardpaths.cpp");
+    QVERIFY(!file.isEmpty());
+    qputenv("XDG_RUNTIME_DIR", QFile::encodeName(file));
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(QString::fromLatin1("QStandardPaths: XDG_RUNTIME_DIR points to '%1' which is not a directory").arg(file)));
+    const QString noRuntimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    QVERIFY2(noRuntimeDir.isEmpty(), qPrintable(file));
 #endif
 }
 

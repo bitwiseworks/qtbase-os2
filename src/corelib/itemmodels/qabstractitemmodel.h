@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,8 @@
 #include <QtCore/qhash.h>
 #include <QtCore/qvector.h>
 
+QT_REQUIRE_CONFIG(itemmodel);
+
 QT_BEGIN_NAMESPACE
 
 
@@ -49,7 +57,7 @@ class Q_CORE_EXPORT QModelIndex
 {
     friend class QAbstractItemModel;
 public:
-    Q_DECL_CONSTEXPR inline QModelIndex() Q_DECL_NOTHROW : r(-1), c(-1), i(0), m(0) {}
+    Q_DECL_CONSTEXPR inline QModelIndex() Q_DECL_NOTHROW : r(-1), c(-1), i(0), m(nullptr) {}
     // compiler-generated copy/move ctors/assignment operators are fine!
     Q_DECL_CONSTEXPR inline int row() const Q_DECL_NOTHROW { return r; }
     Q_DECL_CONSTEXPR inline int column() const Q_DECL_NOTHROW { return c; }
@@ -57,11 +65,15 @@ public:
     inline void *internalPointer() const Q_DECL_NOTHROW { return reinterpret_cast<void*>(i); }
     inline QModelIndex parent() const;
     inline QModelIndex sibling(int row, int column) const;
-    inline QModelIndex child(int row, int column) const;
+    inline QModelIndex siblingAtColumn(int column) const;
+    inline QModelIndex siblingAtRow(int row) const;
+#if QT_DEPRECATED_SINCE(5, 8)
+    QT_DEPRECATED_X("Use QAbstractItemModel::index") inline QModelIndex child(int row, int column) const;
+#endif
     inline QVariant data(int role = Qt::DisplayRole) const;
     inline Qt::ItemFlags flags() const;
     Q_DECL_CONSTEXPR inline const QAbstractItemModel *model() const Q_DECL_NOTHROW { return m; }
-    Q_DECL_CONSTEXPR inline bool isValid() const Q_DECL_NOTHROW { return (r >= 0) && (c >= 0) && (m != 0); }
+    Q_DECL_CONSTEXPR inline bool isValid() const Q_DECL_NOTHROW { return (r >= 0) && (c >= 0) && (m != nullptr); }
     Q_DECL_CONSTEXPR inline bool operator==(const QModelIndex &other) const Q_DECL_NOTHROW
         { return (other.r == r) && (other.i == i) && (other.c == c) && (other.m == m); }
     Q_DECL_CONSTEXPR inline bool operator!=(const QModelIndex &other) const Q_DECL_NOTHROW
@@ -71,7 +83,7 @@ public:
             return  r <  other.r
                 || (r == other.r && (c <  other.c
                                  || (c == other.c && (i <  other.i
-                                                  || (i == other.i && m < other.m )))));
+                                                  || (i == other.i && std::less<const QAbstractItemModel *>()(m, other.m))))));
         }
 private:
     inline QModelIndex(int arow, int acolumn, void *ptr, const QAbstractItemModel *amodel) Q_DECL_NOTHROW
@@ -107,7 +119,7 @@ public:
     QPersistentModelIndex &operator=(const QPersistentModelIndex &other);
 #ifdef Q_COMPILER_RVALUE_REFS
     inline QPersistentModelIndex(QPersistentModelIndex &&other) Q_DECL_NOTHROW
-        : d(other.d) { other.d = Q_NULLPTR; }
+        : d(other.d) { other.d = nullptr; }
     inline QPersistentModelIndex &operator=(QPersistentModelIndex &&other) Q_DECL_NOTHROW
     { qSwap(d, other.d); return *this; }
 #endif
@@ -122,7 +134,9 @@ public:
     quintptr internalId() const;
     QModelIndex parent() const;
     QModelIndex sibling(int row, int column) const;
-    QModelIndex child(int row, int column) const;
+#if QT_DEPRECATED_SINCE(5, 8)
+    QT_DEPRECATED_X("Use QAbstractItemModel::index") QModelIndex child(int row, int column) const;
+#endif
     QVariant data(int role = Qt::DisplayRole) const;
     Qt::ItemFlags flags() const;
     const QAbstractItemModel *model() const;
@@ -161,7 +175,7 @@ class Q_CORE_EXPORT QAbstractItemModel : public QObject
     friend class QIdentityProxyModel;
 public:
 
-    explicit QAbstractItemModel(QObject *parent = 0);
+    explicit QAbstractItemModel(QObject *parent = nullptr);
     virtual ~QAbstractItemModel();
 
     Q_INVOKABLE bool hasIndex(int row, int column, const QModelIndex &parent = QModelIndex()) const;
@@ -240,6 +254,17 @@ public:
     };
     Q_ENUM(LayoutChangeHint)
 
+    enum class CheckIndexOption {
+        NoOption         = 0x0000,
+        IndexIsValid     = 0x0001,
+        DoNotUseParent   = 0x0002,
+        ParentIsInvalid  = 0x0004,
+    };
+    Q_ENUM(CheckIndexOption)
+    Q_DECLARE_FLAGS(CheckIndexOptions, CheckIndexOption)
+
+    Q_REQUIRED_RESULT bool checkIndex(const QModelIndex &index, CheckIndexOptions options = CheckIndexOption::NoOption) const;
+
 Q_SIGNALS:
     void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>());
     void headerDataChanged(Qt::Orientation orientation, int first, int last);
@@ -276,9 +301,9 @@ protected Q_SLOTS:
     void resetInternalData();
 
 protected:
-    QAbstractItemModel(QAbstractItemModelPrivate &dd, QObject *parent = 0);
+    QAbstractItemModel(QAbstractItemModelPrivate &dd, QObject *parent = nullptr);
 
-    inline QModelIndex createIndex(int row, int column, void *data = 0) const;
+    inline QModelIndex createIndex(int row, int column, void *data = nullptr) const;
     inline QModelIndex createIndex(int row, int column, quintptr id) const;
 
     void encodeData(const QModelIndexList &indexes, QDataStream &stream) const;
@@ -333,6 +358,8 @@ private:
     Q_DISABLE_COPY(QAbstractItemModel)
 };
 
+Q_DECLARE_OPERATORS_FOR_FLAGS(QAbstractItemModel::CheckIndexOptions)
+
 inline bool QAbstractItemModel::insertRow(int arow, const QModelIndex &aparent)
 { return insertRows(arow, 1, aparent); }
 inline bool QAbstractItemModel::insertColumn(int acolumn, const QModelIndex &aparent)
@@ -357,15 +384,15 @@ class Q_CORE_EXPORT QAbstractTableModel : public QAbstractItemModel
     Q_OBJECT
 
 public:
-    explicit QAbstractTableModel(QObject *parent = 0);
+    explicit QAbstractTableModel(QObject *parent = nullptr);
     ~QAbstractTableModel();
 
-    QModelIndex index(int row, int column, const QModelIndex &parent = QModelIndex()) const Q_DECL_OVERRIDE;
-    QModelIndex sibling(int row, int column, const QModelIndex &idx) const Q_DECL_OVERRIDE;
+    QModelIndex index(int row, int column, const QModelIndex &parent = QModelIndex()) const override;
+    QModelIndex sibling(int row, int column, const QModelIndex &idx) const override;
     bool dropMimeData(const QMimeData *data, Qt::DropAction action,
-                      int row, int column, const QModelIndex &parent) Q_DECL_OVERRIDE;
+                      int row, int column, const QModelIndex &parent) override;
 
-    Qt::ItemFlags flags(const QModelIndex &index) const Q_DECL_OVERRIDE;
+    Qt::ItemFlags flags(const QModelIndex &index) const override;
 
     using QObject::parent;
 
@@ -374,8 +401,8 @@ protected:
 
 private:
     Q_DISABLE_COPY(QAbstractTableModel)
-    QModelIndex parent(const QModelIndex &child) const Q_DECL_OVERRIDE;
-    bool hasChildren(const QModelIndex &parent) const Q_DECL_OVERRIDE;
+    QModelIndex parent(const QModelIndex &child) const override;
+    bool hasChildren(const QModelIndex &parent) const override;
 };
 
 class Q_CORE_EXPORT QAbstractListModel : public QAbstractItemModel
@@ -383,15 +410,15 @@ class Q_CORE_EXPORT QAbstractListModel : public QAbstractItemModel
     Q_OBJECT
 
 public:
-    explicit QAbstractListModel(QObject *parent = 0);
+    explicit QAbstractListModel(QObject *parent = nullptr);
     ~QAbstractListModel();
 
-    QModelIndex index(int row, int column = 0, const QModelIndex &parent = QModelIndex()) const Q_DECL_OVERRIDE;
-    QModelIndex sibling(int row, int column, const QModelIndex &idx) const Q_DECL_OVERRIDE;
+    QModelIndex index(int row, int column = 0, const QModelIndex &parent = QModelIndex()) const override;
+    QModelIndex sibling(int row, int column, const QModelIndex &idx) const override;
     bool dropMimeData(const QMimeData *data, Qt::DropAction action,
-                      int row, int column, const QModelIndex &parent) Q_DECL_OVERRIDE;
+                      int row, int column, const QModelIndex &parent) override;
 
-    Qt::ItemFlags flags(const QModelIndex &index) const Q_DECL_OVERRIDE;
+    Qt::ItemFlags flags(const QModelIndex &index) const override;
 
     using QObject::parent;
 
@@ -400,9 +427,9 @@ protected:
 
 private:
     Q_DISABLE_COPY(QAbstractListModel)
-    QModelIndex parent(const QModelIndex &child) const Q_DECL_OVERRIDE;
-    int columnCount(const QModelIndex &parent) const Q_DECL_OVERRIDE;
-    bool hasChildren(const QModelIndex &parent) const Q_DECL_OVERRIDE;
+    QModelIndex parent(const QModelIndex &child) const override;
+    int columnCount(const QModelIndex &parent) const override;
+    bool hasChildren(const QModelIndex &parent) const override;
 };
 
 // inline implementations
@@ -413,17 +440,25 @@ inline QModelIndex QModelIndex::parent() const
 inline QModelIndex QModelIndex::sibling(int arow, int acolumn) const
 { return m ? (r == arow && c == acolumn) ? *this : m->sibling(arow, acolumn, *this) : QModelIndex(); }
 
+inline QModelIndex QModelIndex::siblingAtColumn(int acolumn) const
+{ return m ? (c == acolumn) ? *this : m->sibling(r, acolumn, *this) : QModelIndex(); }
+
+inline QModelIndex QModelIndex::siblingAtRow(int arow) const
+{ return m ? (r == arow) ? *this : m->sibling(arow, c, *this) : QModelIndex(); }
+
+#if QT_DEPRECATED_SINCE(5, 8)
 inline QModelIndex QModelIndex::child(int arow, int acolumn) const
 { return m ? m->index(arow, acolumn, *this) : QModelIndex(); }
+#endif
 
 inline QVariant QModelIndex::data(int arole) const
 { return m ? m->data(*this, arole) : QVariant(); }
 
 inline Qt::ItemFlags QModelIndex::flags() const
-{ return m ? m->flags(*this) : Qt::ItemFlags(0); }
+{ return m ? m->flags(*this) : Qt::ItemFlags(); }
 
 inline uint qHash(const QModelIndex &index) Q_DECL_NOTHROW
-{ return uint((index.row() << 4) + index.column() + index.internalId()); }
+{ return uint((uint(index.row()) << 4) + index.column() + index.internalId()); }
 
 QT_END_NAMESPACE
 

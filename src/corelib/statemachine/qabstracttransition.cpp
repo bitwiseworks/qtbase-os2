@@ -1,42 +1,46 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qabstracttransition.h"
-
-#ifndef QT_NO_STATEMACHINE
-
 #include "qabstracttransition_p.h"
 #include "qabstractstate.h"
+#include "qhistorystate.h"
 #include "qstate.h"
 #include "qstatemachine.h"
 
@@ -133,17 +137,14 @@ QAbstractTransitionPrivate::QAbstractTransitionPrivate()
 {
 }
 
-QAbstractTransitionPrivate *QAbstractTransitionPrivate::get(QAbstractTransition *q)
-{
-    return q->d_func();
-}
-
 QStateMachine *QAbstractTransitionPrivate::machine() const
 {
-    QState *source = sourceState();
-    if (!source)
-        return 0;
-    return source->machine();
+    if (QState *source = sourceState())
+        return source->machine();
+    Q_Q(const QAbstractTransition);
+    if (QHistoryState *parent = qobject_cast<QHistoryState *>(q->parent()))
+        return parent->machine();
+    return 0;
 }
 
 bool QAbstractTransitionPrivate::callEventTest(QEvent *e)
@@ -254,26 +255,55 @@ QList<QAbstractState*> QAbstractTransition::targetStates() const
 void QAbstractTransition::setTargetStates(const QList<QAbstractState*> &targets)
 {
     Q_D(QAbstractTransition);
-    QList<QPointer<QAbstractState> > copy(d->targetStates);
-    bool sameList = true;
+
+    // Verify if any of the new target states is a null-pointer:
     for (int i = 0; i < targets.size(); ++i) {
-        QAbstractState *target = targets.at(i);
-        if (!target) {
+        if (targets.at(i) == nullptr) {
             qWarning("QAbstractTransition::setTargetStates: target state(s) cannot be null");
             return;
-        } else {
-            sameList &= copy.removeOne(target);
         }
     }
 
-    sameList &= copy.isEmpty();
+    // First clean out any target states that got destroyed, but for which we still have a QPointer
+    // around.
+    for (int i = 0; i < d->targetStates.size(); ) {
+        if (d->targetStates.at(i).isNull()) {
+            d->targetStates.remove(i);
+        } else {
+            ++i;
+        }
+    }
 
-    d->targetStates.clear();
-    for (int i = 0; i < targets.size(); ++i)
-        d->targetStates.append(targets.at(i));
+    // Easy check: if both lists are empty, we're done.
+    if (targets.isEmpty() && d->targetStates.isEmpty())
+        return;
 
-    if (!sameList)
-        emit targetStatesChanged(QPrivateSignal());
+    bool sameList = true;
+
+    if (targets.size() != d->targetStates.size()) {
+        // If the sizes of the lists are different, we don't need to be smart: they're different. So
+        // we can just set the new list as the targetStates.
+        sameList = false;
+    } else {
+        QVector<QPointer<QAbstractState> > copy(d->targetStates);
+        for (int i = 0; i < targets.size(); ++i) {
+            sameList &= copy.removeOne(targets.at(i));
+            if (!sameList)
+                break; // ok, we now know the lists are not the same, so stop the loop.
+        }
+
+        sameList &= copy.isEmpty();
+    }
+
+    if (sameList)
+        return;
+
+    d->targetStates.resize(targets.size());
+    for (int i = 0; i < targets.size(); ++i) {
+        d->targetStates[i] = targets.at(i);
+    }
+
+    emit targetStatesChanged(QPrivateSignal());
 }
 
 /*!
@@ -402,4 +432,4 @@ bool QAbstractTransition::event(QEvent *e)
 
 QT_END_NAMESPACE
 
-#endif //QT_NO_STATEMACHINE
+#include "moc_qabstracttransition.cpp"

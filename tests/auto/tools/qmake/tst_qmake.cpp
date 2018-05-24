@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,20 +34,21 @@
 #include <QStandardPaths>
 #include <QDir>
 
+#if defined(DEBUG_BUILD)
+#  define DIR_INFIX "debug/"
+#elif defined(RELEASE_BUILD)
+#  define DIR_INFIX "release/"
+#else
+#  define DIR_INFIX ""
+#endif
+
 class tst_qmake : public QObject
 {
     Q_OBJECT
 
-public:
-    tst_qmake();
-    virtual ~tst_qmake();
-
-public slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void cleanup();
-
 private slots:
+    void initTestCase();
+    void cleanup();
     void simple_app();
     void simple_app_shadowbuild();
     void simple_app_shadowbuild2();
@@ -71,26 +67,19 @@ private slots:
     void one_space();
     void findMocs();
     void findDeps();
+    void rawString();
 #if defined(Q_OS_MAC)
     void bundle_spaces();
 #endif
     void substitutes();
     void project();
     void proFileCache();
+    void resources();
 
 private:
     TestCompiler test_compiler;
     QString base_path;
 };
-
-tst_qmake::tst_qmake()
-{
-}
-
-tst_qmake::~tst_qmake()
-{
-
-}
 
 void tst_qmake::initTestCase()
 {
@@ -117,10 +106,6 @@ void tst_qmake::initTestCase()
         base_path = base_path.left(base_path.lastIndexOf(subProgram));
     else
         base_path = QCoreApplication::applicationDirPath();
-}
-
-void tst_qmake::cleanupTestCase()
-{
 }
 
 void tst_qmake::cleanup()
@@ -301,6 +286,7 @@ void tst_qmake::install_files()
     QVERIFY( test_compiler.make( workDir, "install" ));
     QVERIFY( test_compiler.exists( workDir + "/dist", "foo", Exe, "1.0.0" ));
     QVERIFY( test_compiler.exists( workDir + "/dist", "test.txt", Plain, "1.0.0" ));
+    QCOMPARE(QFileInfo(workDir + "/test.txt").lastModified(), QFileInfo(workDir + "/dist/test.txt").lastModified());
     QVERIFY( test_compiler.make( workDir, "uninstall" ));
     QVERIFY( test_compiler.makeDistClean( workDir ));
 
@@ -397,6 +383,24 @@ void tst_qmake::findDeps()
     QVERIFY( test_compiler.removeMakefile(workDir) );
 }
 
+void tst_qmake::rawString()
+{
+#ifdef Q_COMPILER_RAW_STRINGS
+    QString workDir = base_path + "/testdata/rawString";
+
+    QVERIFY( test_compiler.qmake(workDir, "rawString") );
+    QVERIFY( test_compiler.make(workDir) );
+    QVERIFY( test_compiler.exists(workDir, "rawString", Exe, "1.0.0" ) );
+    QVERIFY( test_compiler.makeClean(workDir) );
+    QVERIFY( test_compiler.exists(workDir, "rawString", Exe, "1.0.0" ) );
+    QVERIFY( test_compiler.makeDistClean(workDir ) );
+    QVERIFY( !test_compiler.exists(workDir, "rawString", Exe, "1.0.0" ) );
+    QVERIFY( test_compiler.removeMakefile(workDir) );
+#else
+    QSKIP("Test for C++11 raw strings depends on compiler support for them");
+#endif
+}
+
 struct TempFile
     : QFile
 {
@@ -488,6 +492,39 @@ void tst_qmake::proFileCache()
 {
     QString workDir = base_path + "/testdata/pro_file_cache";
     QVERIFY( test_compiler.qmake( workDir, "pro_file_cache" ));
+}
+
+void tst_qmake::resources()
+{
+    QString workDir = base_path + "/testdata/resources";
+    QVERIFY(test_compiler.qmake(workDir, "resources"));
+
+    {
+        QFile qrcFile(workDir + "/.rcc/" DIR_INFIX "qmake_pro_file.qrc");
+        QVERIFY(qrcFile.exists());
+        QVERIFY(qrcFile.open(QFile::ReadOnly));
+        QByteArray qrcXml = qrcFile.readAll();
+        QVERIFY(qrcXml.contains("alias=\"resources.pro\""));
+        QVERIFY(qrcXml.contains("prefix=\"/prefix\""));
+    }
+
+    {
+        QFile qrcFile(workDir + "/.rcc/" DIR_INFIX "qmake_subdir.qrc");
+        QVERIFY(qrcFile.exists());
+        QVERIFY(qrcFile.open(QFile::ReadOnly));
+        QByteArray qrcXml = qrcFile.readAll();
+        QVERIFY(qrcXml.contains("alias=\"file.txt\""));
+    }
+
+    {
+        QFile qrcFile(workDir + "/.rcc/" DIR_INFIX "qmake_qmake_immediate.qrc");
+        QVERIFY(qrcFile.exists());
+        QVERIFY(qrcFile.open(QFile::ReadOnly));
+        QByteArray qrcXml = qrcFile.readAll();
+        QVERIFY(qrcXml.contains("alias=\"main.cpp\""));
+    }
+
+    QVERIFY(test_compiler.make(workDir));
 }
 
 QTEST_MAIN(tst_qmake)

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,15 +34,15 @@
 #include <qdebug.h>
 #include <qnetworkproxy.h>
 
-#include <QNetworkConfiguration>
-#include <QNetworkConfigurationManager>
-#include <QNetworkSession>
 #include <QNetworkAccessManager>
+#include <QNetworkInterface>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QList>
-
+#include <QSysInfo>
 #include <QThread>
+
+#include <private/qtnetworkglobal_p.h>
 
 class tst_QNetworkProxyFactory : public QObject {
     Q_OBJECT
@@ -74,11 +69,6 @@ private slots:
     void systemProxyForQuery_data();
     void systemProxyForQuery() const;
     void systemProxyForQuery_local();
-#ifndef QT_NO_BEARERMANAGEMENT
-    void fromConfigurations();
-    void inNetworkAccessManager_data();
-    void inNetworkAccessManager();
-#endif
     void genericSystemProxy();
     void genericSystemProxy_data();
 
@@ -256,111 +246,6 @@ void tst_QNetworkProxyFactory::systemProxyForQuery_local()
     QVERIFY(list.isEmpty() || (list[0].type() == QNetworkProxy::NoProxy));
 }
 
-#ifndef QT_NO_BEARERMANAGEMENT
-
-//Purpose of this test is just to check systemProxyForQuery doesn't hang or crash
-//with any given configuration including no configuration.
-//We can't test it returns the right proxies without implementing the native proxy code
-//again here, which would be testing our implementation against itself.
-//Therefore it's just testing that something valid is returned (at least a NoProxy entry)
-void tst_QNetworkProxyFactory::fromConfigurations()
-{
-    QNetworkConfigurationManager manager;
-    QList<QNetworkProxy> proxies;
-    QUrl url(QLatin1String("http://qt-project.org"));
-    //get from known configurations
-    foreach (QNetworkConfiguration config, manager.allConfigurations()) {
-        QNetworkProxyQuery query(config, url, QNetworkProxyQuery::UrlRequest);
-        proxies = QNetworkProxyFactory::systemProxyForQuery(query);
-        QVERIFY(!proxies.isEmpty());
-        foreach (QNetworkProxy proxy, proxies) {
-            qDebug() << config.name() << " - " << config.identifier() << " - " << formatProxyName(proxy);
-        }
-    }
-
-    //get from default configuration
-    QNetworkProxyQuery defaultquery(url, QNetworkProxyQuery::UrlRequest);
-    proxies = QNetworkProxyFactory::systemProxyForQuery(defaultquery);
-    QVERIFY(!proxies.isEmpty());
-    foreach (QNetworkProxy proxy, proxies) {
-        qDebug() << "default - " << formatProxyName(proxy);
-    }
-
-    //get from active configuration
-    QNetworkSession session(manager.defaultConfiguration());
-    session.open();
-    QVERIFY(session.waitForOpened(30000));
-    proxies = QNetworkProxyFactory::systemProxyForQuery(defaultquery);
-    QVERIFY(!proxies.isEmpty());
-    foreach (QNetworkProxy proxy, proxies) {
-        qDebug() << "active - " << formatProxyName(proxy);
-    }
-
-    //get from known configurations while there is one active
-    foreach (QNetworkConfiguration config, manager.allConfigurations()) {
-        QNetworkProxyQuery query(config, url, QNetworkProxyQuery::UrlRequest);
-        proxies = QNetworkProxyFactory::systemProxyForQuery(query);
-        QVERIFY(!proxies.isEmpty());
-        foreach (QNetworkProxy proxy, proxies) {
-            qDebug() << config.name() << " - " << config.identifier() << " - " << formatProxyName(proxy);
-        }
-    }
-}
-
-void tst_QNetworkProxyFactory::inNetworkAccessManager_data()
-{
-    QTest::addColumn<QNetworkConfiguration>("config");
-    QTest::addColumn<QList<QNetworkProxy> >("proxies");
-    QNetworkConfigurationManager manager;
-    //get from known configurations
-    foreach (QNetworkConfiguration config, manager.allConfigurations()) {
-        QNetworkProxyQuery query(config, QUrl(QString("http://qt-project.org")), QNetworkProxyQuery::UrlRequest);
-        QList<QNetworkProxy> proxies = QNetworkProxyFactory::systemProxyForQuery(query);
-        QTest::newRow(config.name().toUtf8()) << config << proxies;
-    }
-}
-
-//Purpose of this test is to check that QNetworkAccessManager uses the proxy from the configuration it
-//has been given. Needs two or more working configurations to be a good test.
-void tst_QNetworkProxyFactory::inNetworkAccessManager()
-{
-    QFETCH(QNetworkConfiguration, config);
-    QFETCH(QList<QNetworkProxy>, proxies);
-
-    int count = QDebugProxyFactory::requestCounter;
-
-    QNetworkAccessManager manager;
-    manager.setConfiguration(config);
-
-    //using an internet server, because cellular APs won't have a route to the test server.
-    QNetworkRequest req(QUrl(QString("http://qt-project.org")));
-    QNetworkReply *reply = manager.get(req);
-    connect(reply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
-    QTestEventLoop::instance().enterLoop(30);
-    delete reply;
-
-    if (count == QDebugProxyFactory::requestCounter) {
-        //RND phones are preconfigured with several test access points which won't work without a matching SIM
-        //If the network fails to start, QNAM won't ask the factory for proxies so we can't test.
-        QSKIP("network configuration didn't start");
-    }
-    QVERIFY(factory);
-
-    qDebug() << "testing network configuration for" << config.name();
-    foreach (QNetworkProxy proxy, factory->returnedList) {
-        qDebug() << formatProxyName(proxy);
-    }
-    qDebug() << " <vs> ";
-    foreach (QNetworkProxy proxy, proxies) {
-        qDebug() << formatProxyName(proxy);
-    }
-    if (config.type() != QNetworkConfiguration::InternetAccessPoint)
-        QEXPECT_FAIL("","QNetworkProxyFactory::systemProxyForQuery doesn't work for service networks yet", Continue);
-    QCOMPARE(factory->returnedList, proxies);
-}
-
-#endif //QT_NO_BEARERMANAGEMENT
-
 Q_DECLARE_METATYPE(QNetworkProxy::ProxyType)
 
 void tst_QNetworkProxyFactory::genericSystemProxy()
@@ -371,8 +256,8 @@ void tst_QNetworkProxyFactory::genericSystemProxy()
     QFETCH(QString, hostName);
     QFETCH(int, port);
 
-// The generic system proxy is only available on the following platforms
-#if (!defined Q_OS_BLACKBERRY) && (!defined Q_OS_WIN) && (!defined Q_OS_OSX)
+// We can only use the generic system proxy where available:
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS) && !QT_CONFIG(libproxy)
     qputenv(envVar, url);
     const QList<QNetworkProxy> systemProxy = QNetworkProxyFactory::systemProxyForQuery();
     QCOMPARE(systemProxy.size(), 1);
@@ -421,6 +306,9 @@ public:
 //regression test for QTBUG-18799
 void tst_QNetworkProxyFactory::systemProxyForQueryCalledFromThread()
 {
+    if (QSysInfo::productType() == QLatin1String("windows") && QSysInfo::productVersion() == QLatin1String("7sp1")) {
+        QSKIP("This test fails by the systemProxyForQuery() call hanging - QTQAINFRA-1200");
+    }
     QUrl url(QLatin1String("http://qt-project.org"));
     QNetworkProxyQuery query(url);
     QSPFQThread thread;

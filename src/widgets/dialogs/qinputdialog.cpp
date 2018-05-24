@@ -1,39 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qinputdialog.h"
-
-#ifndef QT_NO_INPUTDIALOG
 
 #include "qapplication.h"
 #include "qcombobox.h"
@@ -42,7 +46,7 @@
 #include "qlayout.h"
 #include "qlineedit.h"
 #include "qplaintextedit.h"
-#include "qlistwidget.h"
+#include "qlistview.h"
 #include "qpushbutton.h"
 #include "qspinbox.h"
 #include "qstackedlayout.h"
@@ -67,10 +71,11 @@ static const char *candidateSignal(int which)
     case IntValueSelectedSignal:    return SIGNAL(intValueSelected(int));
     case DoubleValueSelectedSignal: return SIGNAL(doubleValueSelected(double));
 
-    case NumCandidateSignals:       ; // fall through
+    case NumCandidateSignals:
+        break;
     };
     Q_UNREACHABLE();
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 static const char *signalForMember(const char *member)
@@ -111,7 +116,7 @@ private slots:
     void notifyTextChanged() { emit textChanged(hasAcceptableInput()); }
 
 private:
-    void keyPressEvent(QKeyEvent *event) Q_DECL_OVERRIDE {
+    void keyPressEvent(QKeyEvent *event) override {
         if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !hasAcceptableInput()) {
 #ifndef QT_NO_PROPERTIES
             setProperty("value", property("value"));
@@ -122,7 +127,7 @@ private:
         notifyTextChanged();
     }
 
-    void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE {
+    void mousePressEvent(QMouseEvent *event) override {
         QSpinBox::mousePressEvent(event);
         notifyTextChanged();
     }
@@ -146,7 +151,7 @@ private slots:
     void notifyTextChanged() { emit textChanged(hasAcceptableInput()); }
 
 private:
-    void keyPressEvent(QKeyEvent *event) Q_DECL_OVERRIDE {
+    void keyPressEvent(QKeyEvent *event) override {
         if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !hasAcceptableInput()) {
 #ifndef QT_NO_PROPERTIES
             setProperty("value", property("value"));
@@ -157,7 +162,7 @@ private:
         notifyTextChanged();
     }
 
-    void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE {
+    void mousePressEvent(QMouseEvent *event) override {
         QDoubleSpinBox::mousePressEvent(event);
         notifyTextChanged();
     }
@@ -235,7 +240,6 @@ void QInputDialogPrivate::ensureLayout()
     QObject::connect(buttonBox, SIGNAL(rejected()), q, SLOT(reject()));
 
     mainLayout = new QVBoxLayout(q);
-    //we want to let the input dialog grow to available size on Symbian.
     mainLayout->setSizeConstraint(QLayout::SetMinAndMaxSize);
     mainLayout->addWidget(label);
     mainLayout->addWidget(inputWidget);
@@ -791,6 +795,7 @@ QStringList QInputDialog::comboBoxItems() const
     QStringList result;
     if (d->comboBox) {
         const int count = d->comboBox->count();
+        result.reserve(count);
         for (int i = 0; i < count; ++i)
             result.append(d->comboBox->itemText(i));
     }
@@ -1187,10 +1192,6 @@ void QInputDialog::done(int result)
 
     \snippet dialogs/standarddialogs/dialog.cpp 3
 
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
-
     \sa getInt(), getDouble(), getItem(), getMultiLineText()
 */
 
@@ -1198,18 +1199,18 @@ QString QInputDialog::getText(QWidget *parent, const QString &title, const QStri
                               QLineEdit::EchoMode mode, const QString &text, bool *ok,
                               Qt::WindowFlags flags, Qt::InputMethodHints inputMethodHints)
 {
-    QInputDialog dialog(parent, flags);
-    dialog.setWindowTitle(title);
-    dialog.setLabelText(label);
-    dialog.setTextValue(text);
-    dialog.setTextEchoMode(mode);
-    dialog.setInputMethodHints(inputMethodHints);
+    QAutoPointer<QInputDialog> dialog(new QInputDialog(parent, flags));
+    dialog->setWindowTitle(title);
+    dialog->setLabelText(label);
+    dialog->setTextValue(text);
+    dialog->setTextEchoMode(mode);
+    dialog->setInputMethodHints(inputMethodHints);
 
-    int ret = dialog.exec();
+    const int ret = dialog->exec();
     if (ok)
         *ok = !!ret;
     if (ret) {
-        return dialog.textValue();
+        return dialog->textValue();
     } else {
         return QString();
     }
@@ -1239,10 +1240,6 @@ QString QInputDialog::getText(QWidget *parent, const QString &title, const QStri
 
     \snippet dialogs/standarddialogs/dialog.cpp 4
 
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
-
     \sa getInt(), getDouble(), getItem(), getText()
 */
 
@@ -1250,18 +1247,18 @@ QString QInputDialog::getMultiLineText(QWidget *parent, const QString &title, co
                                        const QString &text, bool *ok, Qt::WindowFlags flags,
                                        Qt::InputMethodHints inputMethodHints)
 {
-    QInputDialog dialog(parent, flags);
-    dialog.setOptions(QInputDialog::UsePlainTextEditForTextInput);
-    dialog.setWindowTitle(title);
-    dialog.setLabelText(label);
-    dialog.setTextValue(text);
-    dialog.setInputMethodHints(inputMethodHints);
+    QAutoPointer<QInputDialog> dialog(new QInputDialog(parent, flags));
+    dialog->setOptions(QInputDialog::UsePlainTextEditForTextInput);
+    dialog->setWindowTitle(title);
+    dialog->setLabelText(label);
+    dialog->setTextValue(text);
+    dialog->setInputMethodHints(inputMethodHints);
 
-    int ret = dialog.exec();
+    const int ret = dialog->exec();
     if (ok)
         *ok = !!ret;
     if (ret) {
-        return dialog.textValue();
+        return dialog->textValue();
     } else {
         return QString();
     }
@@ -1291,35 +1288,31 @@ QString QInputDialog::getMultiLineText(QWidget *parent, const QString &title, co
 
     \snippet dialogs/standarddialogs/dialog.cpp 0
 
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
-
     \sa getText(), getDouble(), getItem(), getMultiLineText()
 */
 
 int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &label, int value,
                          int min, int max, int step, bool *ok, Qt::WindowFlags flags)
 {
-    QInputDialog dialog(parent, flags);
-    dialog.setWindowTitle(title);
-    dialog.setLabelText(label);
-    dialog.setIntRange(min, max);
-    dialog.setIntValue(value);
-    dialog.setIntStep(step);
+    QAutoPointer<QInputDialog> dialog(new QInputDialog(parent, flags));
+    dialog->setWindowTitle(title);
+    dialog->setLabelText(label);
+    dialog->setIntRange(min, max);
+    dialog->setIntValue(value);
+    dialog->setIntStep(step);
 
-    int ret = dialog.exec();
+    const int ret = dialog->exec();
     if (ok)
         *ok = !!ret;
     if (ret) {
-        return dialog.intValue();
+        return dialog->intValue();
     } else {
         return value;
     }
 }
 
 /*!
-    \fn QInputDialog::getInteger(QWidget *parent, const QString &title, const QString &label, int value, int min, int max, int step, bool *ok, Qt::WindowFlags flags)
+    \fn int QInputDialog::getInteger(QWidget *parent, const QString &title, const QString &label, int value, int min, int max, int step, bool *ok, Qt::WindowFlags flags)
     \deprecated use getInt()
 
     Static convenience function to get an integer input from the user.
@@ -1342,10 +1335,6 @@ int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &l
     Use this static function like this:
 
     \snippet dialogs/standarddialogs/dialog.cpp 0
-
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
 
     \sa getText(), getDouble(), getItem(), getMultiLineText()
 */
@@ -1372,10 +1361,6 @@ int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &l
 
     \snippet dialogs/standarddialogs/dialog.cpp 1
 
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
-
     \sa getText(), getInt(), getItem(), getMultiLineText()
 */
 
@@ -1383,18 +1368,54 @@ double QInputDialog::getDouble(QWidget *parent, const QString &title, const QStr
                                double value, double min, double max, int decimals, bool *ok,
                                Qt::WindowFlags flags)
 {
-    QInputDialog dialog(parent, flags);
-    dialog.setWindowTitle(title);
-    dialog.setLabelText(label);
-    dialog.setDoubleDecimals(decimals);
-    dialog.setDoubleRange(min, max);
-    dialog.setDoubleValue(value);
+    return QInputDialog::getDouble(parent, title, label, value, min, max, decimals, ok, flags, 1.0);
+}
 
-    int ret = dialog.exec();
+/*!
+    \overload
+    Static convenience function to get a floating point number from the user.
+
+    \a title is the text which is displayed in the title bar of the dialog.
+    \a label is the text which is shown to the user (it should say what should
+    be entered).
+    \a value is the default floating point number that the line edit will be
+    set to.
+    \a min and \a max are the minimum and maximum values the user may choose.
+    \a decimals is the maximum number of decimal places the number may have.
+    \a step is the amount by which the values change as the user presses the
+    arrow buttons to increment or decrement the value.
+
+    If \a ok is nonnull, *\a ok will be set to true if the user pressed \uicontrol OK
+    and to false if the user pressed \uicontrol Cancel. The dialog's parent is
+    \a parent. The dialog will be modal and uses the widget \a flags.
+
+    This function returns the floating point number which has been entered by
+    the user.
+
+    Use this static function like this:
+
+    \snippet dialogs/standarddialogs/dialog.cpp 1
+
+    \sa getText(), getInt(), getItem(), getMultiLineText()
+*/
+
+double QInputDialog::getDouble(QWidget *parent, const QString &title, const QString &label,
+                               double value, double min, double max, int decimals, bool *ok,
+                               Qt::WindowFlags flags, double step)
+{
+    QAutoPointer<QInputDialog> dialog(new QInputDialog(parent, flags));
+    dialog->setWindowTitle(title);
+    dialog->setLabelText(label);
+    dialog->setDoubleDecimals(decimals);
+    dialog->setDoubleRange(min, max);
+    dialog->setDoubleValue(value);
+    dialog->setDoubleStep(step);
+
+    const int ret = dialog->exec();
     if (ok)
         *ok = !!ret;
     if (ret) {
-        return dialog.doubleValue();
+        return dialog->doubleValue();
     } else {
         return value;
     }
@@ -1426,10 +1447,6 @@ double QInputDialog::getDouble(QWidget *parent, const QString &title, const QStr
 
     \snippet dialogs/standarddialogs/dialog.cpp 2
 
-    \warning Do not delete \a parent during the execution of the dialog. If you
-    want to do this, you should create the dialog yourself using one of the
-    QInputDialog constructors.
-
     \sa getText(), getInt(), getDouble(), getMultiLineText()
 */
 
@@ -1439,22 +1456,47 @@ QString QInputDialog::getItem(QWidget *parent, const QString &title, const QStri
 {
     QString text(items.value(current));
 
-    QInputDialog dialog(parent, flags);
-    dialog.setWindowTitle(title);
-    dialog.setLabelText(label);
-    dialog.setComboBoxItems(items);
-    dialog.setTextValue(text);
-    dialog.setComboBoxEditable(editable);
-    dialog.setInputMethodHints(inputMethodHints);
+    QAutoPointer<QInputDialog> dialog(new QInputDialog(parent, flags));
+    dialog->setWindowTitle(title);
+    dialog->setLabelText(label);
+    dialog->setComboBoxItems(items);
+    dialog->setTextValue(text);
+    dialog->setComboBoxEditable(editable);
+    dialog->setInputMethodHints(inputMethodHints);
 
-    int ret = dialog.exec();
+    const int ret = dialog->exec();
     if (ok)
         *ok = !!ret;
     if (ret) {
-        return dialog.textValue();
+        return dialog->textValue();
     } else {
         return text;
     }
+}
+
+/*!
+    \property QInputDialog::doubleStep
+    \since 5.10
+    \brief the step by which the double value is increased and decreased
+
+    This property is only relevant when the input dialog is used in
+    DoubleInput mode.
+*/
+
+void QInputDialog::setDoubleStep(double step)
+{
+    Q_D(QInputDialog);
+    d->ensureDoubleSpinBox();
+    d->doubleSpinBox->setSingleStep(step);
+}
+
+double QInputDialog::doubleStep() const
+{
+    Q_D(const QInputDialog);
+    if (d->doubleSpinBox)
+        return d->doubleSpinBox->singleStep();
+    else
+        return 1.0;
 }
 
 /*!
@@ -1524,5 +1566,3 @@ QT_END_NAMESPACE
 
 #include "qinputdialog.moc"
 #include "moc_qinputdialog.cpp"
-
-#endif // QT_NO_INPUTDIALOG

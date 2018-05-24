@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtOpenGL module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -60,7 +66,7 @@
        an OpenGL texture.} The texture is then updated automatically
        when the pbuffer contents change, eliminating the need for
        additional copy operations. This is supported only on Windows
-       and OS X systems that provide the \c render_texture
+       and \macos systems that provide the \c render_texture
        extension. Note that under Windows, a multi-sampled pbuffer
        can't be used in conjunction with the \c render_texture
        extension. If a multi-sampled pbuffer is requested under
@@ -287,7 +293,7 @@ QGLContext *QGLPixelBuffer::context() const
     pbuffer contents to a texture using updateDynamicTexture().
 
     \warning For the bindToDynamicTexture() call to succeed on the
-    OS X, the pbuffer needs a shared context, i.e. the
+    \macos, the pbuffer needs a shared context, i.e. the
     QGLPixelBuffer must be created with a share widget.
 
     \sa generateDynamicTexture(), releaseFromDynamicTexture()
@@ -316,7 +322,7 @@ QGLContext *QGLPixelBuffer::context() const
 
     \snippet code/src_opengl_qglpixelbuffer.cpp 1
 
-    An alternative on Windows and OS X systems that support the
+    An alternative on Windows and \macos systems that support the
     \c render_texture extension is to use bindToDynamicTexture() to
     get dynamic updates of the texture.
 
@@ -457,6 +463,9 @@ int QGLPixelBuffer::metric(PaintDeviceMetric metric) const
 
     case QPaintDevice::PdmDevicePixelRatio:
         return 1;
+
+    case QPaintDevice::PdmDevicePixelRatioScaled:
+        return QPaintDevice::devicePixelRatioFScale();
 
     default:
         qWarning("QGLPixelBuffer::metric(), Unhandled metric type: %d\n", metric);

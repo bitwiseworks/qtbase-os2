@@ -1,32 +1,38 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Samuel Gaist <samuel.gaist@edeltech.ch>
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,24 +51,117 @@
 #include <ctype.h>
 #include <qt_windows.h>
 
+#ifdef Q_OS_WINRT
+#include <qfunctions_winrt.h>
+#include <wrl.h>
+#include <Windows.ApplicationModel.core.h>
+#include <windows.foundation.h>
+using namespace ABI::Windows::ApplicationModel;
+using namespace Microsoft::WRL;
+using namespace Microsoft::WRL::Wrappers;
+#endif
+
 QT_BEGIN_NAMESPACE
 
 int appCmdShow = 0;
 
-#if defined(Q_OS_WINRT)
-
-Q_CORE_EXPORT QString qAppFileName()
+Q_CORE_EXPORT QString qAppFileName()                // get application file name
 {
-    return QFileInfo(QCoreApplication::arguments().first()).filePath();
+    /*
+      GetModuleFileName() returns the length of the module name, when it has
+      space to store it and 0-terminate; this return is necessarily smaller than
+      the buffer size, as it doesn't include the terminator. When it lacks
+      space, the function returns the full size of the buffer and fills the
+      buffer, truncating the full path to make it fit. We have reports that
+      GetModuleFileName sometimes doesn't set the error number to
+      ERROR_INSUFFICIENT_BUFFER, as claimed by the MSDN documentation; so we
+      only trust the answer when the return is actually less than the buffer
+      size we pass in. (When truncating, except on XP, it does so by enough to
+      still have space to 0-terminate; in either case, it fills the claimed
+      space and returns the size of the space. While XP might thus give us the
+      full name, without a 0 terminator, and return its actual length, we can
+      never be sure that's what's happened until a later call with bigger buffer
+      confirms it by returning less than its buffer size.)
+    */
+    // Full path may be longer than MAX_PATH - expand until we have enough space:
+    QVarLengthArray<wchar_t, MAX_PATH + 1> space;
+    DWORD v;
+    size_t size = 1;
+    do {
+        size += MAX_PATH;
+        space.resize(int(size));
+        v = GetModuleFileName(NULL, space.data(), DWORD(space.size()));
+    } while (Q_UNLIKELY(v >= size));
+
+    return QString::fromWCharArray(space.data(), v);
 }
 
 QString QCoreApplicationPrivate::appName() const
 {
-    return QFileInfo(QCoreApplication::arguments().first()).baseName();
+    return QFileInfo(qAppFileName()).baseName();
 }
 
-#else
+QString QCoreApplicationPrivate::appVersion() const
+{
+    QString applicationVersion;
+#ifndef QT_BOOTSTRAPPED
+#  ifdef Q_OS_WINRT
+    HRESULT hr;
 
+    ComPtr<IPackageStatics> packageFactory;
+    hr = RoGetActivationFactory(
+        HString::MakeReference(RuntimeClass_Windows_ApplicationModel_Package).Get(),
+        IID_PPV_ARGS(&packageFactory));
+    RETURN_IF_FAILED("Failed to create package instance", return QString());
+
+    ComPtr<IPackage> package;
+    packageFactory->get_Current(&package);
+    RETURN_IF_FAILED("Failed to get current application package", return QString());
+
+    ComPtr<IPackageId> packageId;
+    package->get_Id(&packageId);
+    RETURN_IF_FAILED("Failed to get current application package ID", return QString());
+
+    PackageVersion version;
+    packageId->get_Version(&version);
+    RETURN_IF_FAILED("Failed to get current application package version", return QString());
+
+    applicationVersion = QStringLiteral("%1.%2.%3.%4")
+            .arg(version.Major)
+            .arg(version.Minor)
+            .arg(version.Build)
+            .arg(version.Revision);
+#  else
+    const QString appFileName = qAppFileName();
+    QVarLengthArray<wchar_t> buffer(appFileName.size() + 1);
+    buffer[appFileName.toWCharArray(buffer.data())] = 0;
+
+    DWORD versionInfoSize = GetFileVersionInfoSize(buffer.data(), nullptr);
+    if (versionInfoSize) {
+        QVarLengthArray<BYTE> info(static_cast<int>(versionInfoSize));
+        if (GetFileVersionInfo(buffer.data(), 0, versionInfoSize, info.data())) {
+            UINT size;
+            DWORD *fi;
+
+            if (VerQueryValue(info.data(), __TEXT("\\"),
+                              reinterpret_cast<void **>(&fi), &size) && size) {
+                const VS_FIXEDFILEINFO *verInfo = reinterpret_cast<const VS_FIXEDFILEINFO *>(fi);
+                applicationVersion = QStringLiteral("%1.%2.%3.%4")
+                        .arg(HIWORD(verInfo->dwProductVersionMS))
+                        .arg(LOWORD(verInfo->dwProductVersionMS))
+                        .arg(HIWORD(verInfo->dwProductVersionLS))
+                        .arg(LOWORD(verInfo->dwProductVersionLS));
+            }
+        }
+    }
+#  endif
+#endif
+    return applicationVersion;
+}
+
+#ifndef Q_OS_WINRT
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 Q_CORE_EXPORT HINSTANCE qWinAppInst()                // get Windows app handle
 {
     return GetModuleHandle(0);
@@ -86,101 +185,7 @@ Q_CORE_EXPORT int qWinAppCmdShow()                        // get main window sho
         : SW_SHOWDEFAULT;
 #endif
 }
-
-Q_CORE_EXPORT QString qAppFileName()                // get application file name
-{
-    // We do MAX_PATH + 2 here, and request with MAX_PATH + 1, so we can handle all paths
-    // up to, and including MAX_PATH size perfectly fine with string termination, as well
-    // as easily detect if the file path is indeed larger than MAX_PATH, in which case we
-    // need to use the heap instead. This is a work-around, since contrary to what the
-    // MSDN documentation states, GetModuleFileName sometimes doesn't set the
-    // ERROR_INSUFFICIENT_BUFFER error number, and we thus cannot rely on this value if
-    // GetModuleFileName(0, buffer, MAX_PATH) == MAX_PATH.
-    // GetModuleFileName(0, buffer, MAX_PATH + 1) == MAX_PATH just means we hit the normal
-    // file path limit, and we handle it normally, if the result is MAX_PATH + 1, we use
-    // heap (even if the result _might_ be exactly MAX_PATH + 1, but that's ok).
-    wchar_t buffer[MAX_PATH + 2];
-    DWORD v = GetModuleFileName(0, buffer, MAX_PATH + 1);
-    buffer[MAX_PATH + 1] = 0;
-
-    if (v == 0)
-        return QString();
-    else if (v <= MAX_PATH)
-        return QString::fromWCharArray(buffer);
-
-    // MAX_PATH sized buffer wasn't large enough to contain the full path, use heap
-    wchar_t *b = 0;
-    int i = 1;
-    size_t size;
-    do {
-        ++i;
-        size = MAX_PATH * i;
-        b = reinterpret_cast<wchar_t *>(realloc(b, (size + 1) * sizeof(wchar_t)));
-        if (b)
-            v = GetModuleFileName(NULL, b, DWORD(size));
-    } while (b && v == size);
-
-    if (b)
-        *(b + size) = 0;
-    QString res = QString::fromWCharArray(b);
-    free(b);
-
-    return res;
-}
-
-QString QCoreApplicationPrivate::appName() const
-{
-    return QFileInfo(qAppFileName()).baseName();
-}
-
-/*****************************************************************************
-  qWinMain() - Initializes Windows. Called from WinMain() in qtmain_win.cpp
- *****************************************************************************/
-
-#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
-
-// ### Qt6: FIXME: Remove this function. It is only there since for binary
-// compatibility for applications built with Qt 5.3 using qtmain.lib which calls it.
-// In Qt 5.4, qtmain.lib was changed to use CommandLineToArgvW() without calling into Qt5Core.
-Q_CORE_EXPORT
-void qWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdParam,
-              int cmdShow, int &argc, QVector<char *> &argv)
-{
-    Q_UNUSED(instance)
-    Q_UNUSED(prevInstance)
-    Q_UNUSED(cmdShow)
-
-    const QStringList wArgv = qWinCmdArgs(QString::fromLocal8Bit(cmdParam));
-    argv.clear();
-    argc = wArgv.size();
-    foreach (const QString &wArg, wArgv)
-        argv.append(_strdup(wArg.toLocal8Bit().constData()));
-}
-
-#elif defined(Q_OS_WINCE)
-
-Q_CORE_EXPORT void __cdecl qWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdParam,
-               int cmdShow, int &argc, QVector<char *> &argv)
-{
-    static bool already_called = false;
-
-    if (already_called) {
-        qWarning("Qt: Internal error: qWinMain should be called only once");
-        return;
-    }
-    already_called = true;
-
-    // Create command line
-    argv = qWinCmdLine<char>(cmdParam, int(strlen(cmdParam)), argc);
-
-    appCmdShow = cmdShow;
-
-    // Ignore Windows parameters
-    Q_UNUSED(instance);
-    Q_UNUSED(prevInstance);
-}
-
-#endif // Q_OS_WINCE
+#endif
 
 #ifndef QT_NO_QOBJECT
 
@@ -197,11 +202,6 @@ QT_END_INCLUDE_NAMESPACE
 #if !defined(GET_X_LPARAM)
 #  define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
 #  define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
-#endif
-#ifdef _WIN32_WCE
-#  ifndef WM_NCACTIVATE
-#    define WM_NCACTIVATE 0x86
-#  endif
 #endif
 
 // The values below should never change. Note that none of the usual

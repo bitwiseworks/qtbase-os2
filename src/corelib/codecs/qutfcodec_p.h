@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2013 Intel Corporation
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -217,8 +223,6 @@ namespace QUtf8Functions
                 return Traits::Error;
             if (bytesAvailable > 1 && !isContinuationByte(Traits::peekByte(src, 1)))
                 return Traits::Error;
-            if (bytesAvailable > 2 && !isContinuationByte(Traits::peekByte(src, 2)))
-                return Traits::Error;
             return Traits::EndOfString;
         }
 
@@ -281,10 +285,18 @@ enum DataEndianness
 
 struct QUtf8
 {
+    static QChar *convertToUnicode(QChar *, const char *, int) Q_DECL_NOTHROW;
     static QString convertToUnicode(const char *, int);
     static QString convertToUnicode(const char *, int, QTextCodec::ConverterState *);
     static QByteArray convertFromUnicode(const QChar *, int);
     static QByteArray convertFromUnicode(const QChar *, int, QTextCodec::ConverterState *);
+    struct ValidUtf8Result {
+        bool isValidUtf8;
+        bool isValidAscii;
+    };
+    static ValidUtf8Result isValidUtf8(const char *, qsizetype);
+    static int compareUtf8(const char *, qsizetype, const QChar *, int);
+    static int compareUtf8(const char *, qsizetype, QLatin1String s);
 };
 
 struct QUtf16
@@ -305,11 +317,11 @@ class QUtf8Codec : public QTextCodec {
 public:
     ~QUtf8Codec();
 
-    QByteArray name() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    int mibEnum() const override;
 
-    QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE;
-    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE;
+    QString convertToUnicode(const char *, int, ConverterState *) const override;
+    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const override;
     void convertToUnicode(QString *target, const char *, int, ConverterState *) const;
 };
 
@@ -319,12 +331,12 @@ public:
     QUtf16Codec() { e = DetectEndianness; }
     ~QUtf16Codec();
 
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 
-    QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE;
-    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE;
+    QString convertToUnicode(const char *, int, ConverterState *) const override;
+    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const override;
 
 protected:
     DataEndianness e;
@@ -333,17 +345,17 @@ protected:
 class QUtf16BECodec : public QUtf16Codec {
 public:
     QUtf16BECodec() : QUtf16Codec() { e = BigEndianness; }
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 };
 
 class QUtf16LECodec : public QUtf16Codec {
 public:
     QUtf16LECodec() : QUtf16Codec() { e = LittleEndianness; }
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 };
 
 class QUtf32Codec : public QTextCodec {
@@ -351,12 +363,12 @@ public:
     QUtf32Codec() { e = DetectEndianness; }
     ~QUtf32Codec();
 
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 
-    QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE;
-    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE;
+    QString convertToUnicode(const char *, int, ConverterState *) const override;
+    QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const override;
 
 protected:
     DataEndianness e;
@@ -365,17 +377,17 @@ protected:
 class QUtf32BECodec : public QUtf32Codec {
 public:
     QUtf32BECodec() : QUtf32Codec() { e = BigEndianness; }
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 };
 
 class QUtf32LECodec : public QUtf32Codec {
 public:
     QUtf32LECodec() : QUtf32Codec() { e = LittleEndianness; }
-    QByteArray name() const Q_DECL_OVERRIDE;
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE;
-    int mibEnum() const Q_DECL_OVERRIDE;
+    QByteArray name() const override;
+    QList<QByteArray> aliases() const override;
+    int mibEnum() const override;
 };
 
 

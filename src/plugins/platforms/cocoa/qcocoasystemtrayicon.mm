@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2012 Klaralvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Christoph Schleifenbaum <christoph.schleifenbaum@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -66,9 +72,10 @@
 **
 ****************************************************************************/
 
-#define QT_MAC_SYSTEMTRAY_USE_GROWL
-
 #include "qcocoasystemtrayicon.h"
+
+#ifndef QT_NO_SYSTEMTRAYICON
+
 #include <qtemporaryfile.h>
 #include <qimagewriter.h>
 #include <qdebug.h>
@@ -77,19 +84,18 @@
 
 #include "qt_mac_p.h"
 #include "qcocoahelpers.h"
+#include "qcocoaintegration.h"
+#include "qcocoascreen.h"
+#include <QtGui/private/qcoregraphics_p.h>
 
 #import <AppKit/AppKit.h>
 
 QT_USE_NAMESPACE
 
-@class QT_MANGLE_NAMESPACE(QNSMenu);
 @class QT_MANGLE_NAMESPACE(QNSImageView);
 
-@interface QT_MANGLE_NAMESPACE(QNSStatusItem) : NSObject
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
-    <NSUserNotificationCenterDelegate>
-#endif
-    {
+@interface QT_MANGLE_NAMESPACE(QNSStatusItem) : NSObject <NSUserNotificationCenterDelegate>
+{
 @public
     QCocoaSystemTrayIcon *systray;
     NSStatusItem *item;
@@ -103,11 +109,8 @@ QT_USE_NAMESPACE
 -(QRectF)geometry;
 - (void)triggerSelector:(id)sender button:(Qt::MouseButton)mouseButton;
 - (void)doubleClickSelector:(id)sender;
-
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification;
 - (void)userNotificationCenter:(NSUserNotificationCenter *)center didActivateNotification:(NSUserNotification *)notification;
-#endif
 @end
 
 @interface QT_MANGLE_NAMESPACE(QNSImageView) : NSImageView {
@@ -119,16 +122,8 @@ QT_USE_NAMESPACE
 -(void)mousePressed:(NSEvent *)mouseEvent button:(Qt::MouseButton)mouseButton;
 @end
 
-@interface QT_MANGLE_NAMESPACE(QNSMenu) : NSMenu <NSMenuDelegate> {
-    QPlatformMenu *qmenu;
-}
--(QPlatformMenu*)menu;
--(id)initWithQMenu:(QPlatformMenu*)qmenu;
-@end
-
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSStatusItem);
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSImageView);
-QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSMenu);
 
 QT_BEGIN_NAMESPACE
 class QSystemTrayIconSys
@@ -136,19 +131,11 @@ class QSystemTrayIconSys
 public:
     QSystemTrayIconSys(QCocoaSystemTrayIcon *sys) {
         item = [[QNSStatusItem alloc] initWithSysTray:sys];
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
-        if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_8) {
-            [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:item];
-        }
-#endif
+        [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:item];
     }
     ~QSystemTrayIconSys() {
         [[[item item] view] setHidden: YES];
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
-        if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_8) {
-            [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:nil];
-        }
-#endif
+        [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:nil];
         [item release];
     }
     QNSStatusItem *item;
@@ -198,7 +185,7 @@ void QCocoaSystemTrayIcon::updateIcon(const QIcon &icon)
     // current OS X versions is 22 points. Provide some future-proofing
     // by deriving the icon height from the menu height.
     const int padding = 4;
-    const int menuHeight = [[[NSApplication sharedApplication] mainMenu] menuBarHeight];
+    const int menuHeight = [[NSStatusBar systemStatusBar] thickness];
     const int maxImageHeight = menuHeight - padding;
 
     // Select pixmap based on the device pixel height. Ideally we would use
@@ -252,6 +239,7 @@ void QCocoaSystemTrayIcon::updateIcon(const QIcon &icon)
     }
 
     NSImage *nsimage = static_cast<NSImage *>(qt_mac_create_nsimage(fullHeightPixmap));
+    [nsimage setTemplate:icon.isMask()];
     [(NSImageView*)[[m_sys->item item] view] setImage: nsimage];
     [nsimage release];
 }
@@ -273,7 +261,7 @@ void QCocoaSystemTrayIcon::updateToolTip(const QString &toolTip)
 {
     if (!m_sys)
         return;
-    [[[m_sys->item item] view] setToolTip:QCFString::toNSString(toolTip)];
+    [[[m_sys->item item] view] setToolTip:toolTip.toNSString()];
 }
 
 bool QCocoaSystemTrayIcon::isSystemTrayAvailable() const
@@ -289,76 +277,17 @@ bool QCocoaSystemTrayIcon::supportsMessages() const
 void QCocoaSystemTrayIcon::showMessage(const QString &title, const QString &message,
                                        const QIcon& icon, MessageIcon, int)
 {
+    Q_UNUSED(icon);
     if (!m_sys)
         return;
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
-    if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_8) {
-        NSUserNotification *notification = [[NSUserNotification alloc] init];
-        notification.title = [NSString stringWithUTF8String:title.toUtf8().data()];
-        notification.informativeText = [NSString stringWithUTF8String:message.toUtf8().data()];
+    NSUserNotification *notification = [[NSUserNotification alloc] init];
+    notification.title = [NSString stringWithUTF8String:title.toUtf8().data()];
+    notification.informativeText = [NSString stringWithUTF8String:message.toUtf8().data()];
 
-        [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
-
-        return;
-    }
-#endif
-
-#ifdef QT_MAC_SYSTEMTRAY_USE_GROWL
-    // Make sure that we have Growl installed on the machine we are running on.
-    QCFType<CFURLRef> cfurl;
-    OSStatus status = LSGetApplicationForInfo(kLSUnknownType, kLSUnknownCreator,
-                                              CFSTR("growlTicket"), kLSRolesAll, 0, &cfurl);
-    if (status == kLSApplicationNotFoundErr)
-        return;
-    QCFType<CFBundleRef> bundle = CFBundleCreate(0, cfurl);
-
-    if (CFStringCompare(CFBundleGetIdentifier(bundle), CFSTR("com.Growl.GrowlHelperApp"),
-                kCFCompareCaseInsensitive |  kCFCompareBackwards) != kCFCompareEqualTo)
-        return;
-    QPixmap notificationIconPixmap = icon.pixmap(32, 32);
-    QTemporaryFile notificationIconFile;
-    QString notificationType(QLatin1String("Notification")), notificationIcon, notificationApp(qt_mac_applicationName());
-    if (notificationApp.isEmpty())
-        notificationApp = QLatin1String("Application");
-    if (!notificationIconPixmap.isNull() && notificationIconFile.open()) {
-        QImageWriter writer(&notificationIconFile, "PNG");
-        if (writer.write(notificationIconPixmap.toImage()))
-            notificationIcon = QLatin1String("image from location \"file://") + notificationIconFile.fileName() + QLatin1String("\"");
-    }
-    const QString script(QLatin1String(
-        "tell application \"System Events\"\n"
-        "set isRunning to (count of (every process whose bundle identifier is \"com.Growl.GrowlHelperApp\")) > 0\n"
-        "end tell\n"
-        "if isRunning\n"
-        "tell application id \"com.Growl.GrowlHelperApp\"\n"
-        "-- Make a list of all the notification types (all)\n"
-        "set the allNotificationsList to {\"") + notificationType + QLatin1String("\"}\n"
-
-        "-- Make a list of the notifications (enabled)\n"
-        "set the enabledNotificationsList to {\"") + notificationType + QLatin1String("\"}\n"
-
-        "-- Register our script with growl.\n"
-        "register as application \"") + notificationApp + QLatin1String("\" all notifications allNotificationsList default notifications enabledNotificationsList\n"
-
-        "-- Send a Notification...\n") +
-        QLatin1String("notify with name \"") + notificationType +
-        QLatin1String("\" title \"") + title +
-        QLatin1String("\" description \"") + message +
-        QLatin1String("\" application name \"") + notificationApp +
-        QLatin1String("\" ")  + notificationIcon +
-        QLatin1String("\nend tell\nend if"));
-    qt_mac_execute_apple_script(script, 0);
-#else
-    Q_UNUSED(icon);
-    Q_UNUSED(title);
-    Q_UNUSED(message);
-#endif
+    [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
 }
 QT_END_NAMESPACE
-
-@implementation NSStatusItem (Qt)
-@end
 
 @implementation QNSImageView
 -(id)initWithParent:(QNSStatusItem*)myParent {
@@ -458,9 +387,8 @@ QT_END_NAMESPACE
 }
 -(QRectF)geometry {
     if (NSWindow *window = [[item view] window]) {
-        NSRect screenRect = [[window screen] frame];
-        NSRect windowRect = [window frame];
-        return QRectF(windowRect.origin.x, screenRect.size.height-windowRect.origin.y-windowRect.size.height, windowRect.size.width, windowRect.size.height);
+        if (QCocoaScreen *screen = QCocoaIntegration::instance()->screenForNSScreen([window screen]))
+            return screen->mapFromNative([window frame]);
     }
     return QRectF();
 }
@@ -492,7 +420,6 @@ QT_END_NAMESPACE
     emit systray->activated(QPlatformSystemTrayIcon::DoubleClick);
 }
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification {
     Q_UNUSED(center);
     Q_UNUSED(notification);
@@ -504,28 +431,7 @@ QT_END_NAMESPACE
     Q_UNUSED(notification);
     emit systray->messageClicked();
 }
-#endif
 
 @end
 
-class QSystemTrayIconQMenu : public QPlatformMenu
-{
-public:
-    void doAboutToShow() { emit aboutToShow(); }
-private:
-    QSystemTrayIconQMenu();
-};
-
-@implementation QNSMenu
--(id)initWithQMenu:(QPlatformMenu*)qm {
-    self = [super init];
-    if (self) {
-        self->qmenu = qm;
-        [self setDelegate:self];
-    }
-    return self;
-}
--(QPlatformMenu*)menu {
-    return qmenu;
-}
-@end
+#endif // QT_NO_SYSTEMTRAYICON

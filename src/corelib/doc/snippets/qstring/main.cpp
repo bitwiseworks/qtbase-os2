@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -252,6 +262,17 @@ void Widget::argFunction()
                     .arg(i).arg(total).arg(fileName);
     //! [11]
 
+    {
+    //! [11-qstringview]
+    int i;                // current file's number
+    int total;            // number of files to process
+    QStringView fileName; // current file's name
+
+    QString status = QString("Processing file %1 of %2: %3")
+                    .arg(i).arg(total).arg(fileName);
+    //! [11-qstringview]
+    }
+
     //! [12] //! [13]
     QString str;
     //! [12]
@@ -311,6 +332,12 @@ void Widget::compareSensitiveFunction()
     int y = QString::compare("auto", "Car", Qt::CaseSensitive);     // y > 0
     int z = QString::compare("auto", "Car", Qt::CaseInsensitive);   // z < 0
     //! [16]
+
+    //! [QtPrivate::compareStrings-QSV-QSV]
+    int x = QtPrivate::compareStrings(u"aUtO", u"AuTo", Qt::CaseInsensitive);  // x == 0
+    int y = QtPrivate::compareStrings(u"auto", u"Car", Qt::CaseSensitive);     // y > 0
+    int z = QtPrivate::compareStrings(u"auto", u"Car", Qt::CaseInsensitive);   // z < 0
+    //! [QtPrivate::compareStrings-QSV-QSV]
 }
 
 void Widget::containsFunction()
@@ -370,14 +397,14 @@ void Widget::fillFunction()
 void Widget::fromRawDataFunction()
 {
     //! [22]
-    QRegExp pattern;
+    QRegularExpression pattern("\u00A4");
     static const QChar unicode[] = {
             0x005A, 0x007F, 0x00A4, 0x0060,
             0x1009, 0x0020, 0x0020};
     int size = sizeof(unicode) / sizeof(QChar);
 
     QString str = QString::fromRawData(unicode, size);
-    if (str.contains(QRegExp(pattern))) {
+    if (str.contains(pattern) {
         // ...
     //! [22] //! [23]
     }
@@ -408,12 +435,12 @@ void Widget::firstIndexOfFunction()
     str.indexOf(QRegularExpression("m[aeiou]"), 0);       // returns 4
     //! [93]
 
-    //! [97]
+    //! [99]
     QString str = "the minimum";
     QRegularExpressionMatch match;
     str.indexOf(QRegularExpression("m[aeiou]"), 0, &match);       // returns 4
     // match.captured() == mi
-    //! [97]
+    //! [99]
 }
 
 void Widget::insertFunction()
@@ -465,12 +492,12 @@ void Widget::lastIndexOfFunction()
     str.lastIndexOf(QRegularExpression("m[aeiou]"));      // returns 8
     //! [94]
 
-    //! [98]
+    //! [100]
     QString str = "the minimum";
     QRegularExpressionMatch match;
     str.lastIndexOf(QRegularExpression("m[aeiou]"), -1, &match);      // returns 8
     // match.captured() == mu
-    //! [98]
+    //! [100]
 }
 
 void Widget::leftFunction()
@@ -625,7 +652,7 @@ void Widget::resizeFunction()
 
     //! [46]
     QString t = "Hello";
-    t += QString(10, 'X');
+    r.resize(t.size() + 10, 'X');
     // t == "HelloXXXXXXXXXX"
     //! [46]
 
@@ -723,7 +750,6 @@ void Widget::sizeFunction()
     int n = str.size();         // n == 5
     str.data()[0];              // returns 'W'
     str.data()[4];              // returns 'd'
-    str.data()[5];              // returns '\0'
     //! [58]
 }
 
@@ -777,12 +803,24 @@ void Widget::splitCaseSensitiveFunction()
     //! [62]
     QString str = "a,,b,c";
 
-    QStringList list1 = str.split(",");
+    QStringList list1 = str.split(',');
     // list1: [ "a", "", "b", "c" ]
 
-    QStringList list2 = str.split(",", QString::SkipEmptyParts);
+    QStringList list2 = str.split(',', QString::SkipEmptyParts);
     // list2: [ "a", "b", "c" ]
     //! [62]
+
+    //! [62-empty]
+    QString str = "abc";
+    auto parts = str.split("");
+    // parts: {"", "a", "b", "c", ""}
+    //! [62-empty]
+
+    //! [62-slashes]
+    QString str = "/a/b/c/";
+    auto parts = str.split('/');
+    // parts: {"", "a", "b", "c", ""}
+    //! [62-slashes]
 }
 
 void Widget::sprintfFunction()

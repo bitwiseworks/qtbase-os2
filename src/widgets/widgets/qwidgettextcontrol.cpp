@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,17 +48,23 @@
 #include <qdebug.h>
 #include <qdrag.h>
 #include <qclipboard.h>
+#if QT_CONFIG(menu)
 #include <qmenu.h>
+#endif
 #include <qstyle.h>
 #include <qtimer.h>
 #include "private/qtextdocumentlayout_p.h"
 #include "private/qabstracttextdocumentlayout_p.h"
+#if QT_CONFIG(textedit)
 #include "private/qtextedit_p.h"
+#endif
 #include "qtextdocument.h"
 #include "private/qtextdocument_p.h"
 #include "qtextlist.h"
 #include "private/qwidgettextcontrol_p.h"
+#if QT_CONFIG(graphicsview)
 #include "qgraphicssceneevent.h"
+#endif
 #include "qpagedpaintdevice.h"
 #include "private/qpagedpaintdevice_p.h"
 #include "qtextdocumentwriter.h"
@@ -71,7 +83,9 @@
 #include <qinputmethod.h>
 #include <qtooltip.h>
 #include <qstyleoption.h>
+#if QT_CONFIG(lineedit)
 #include <QtWidgets/qlineedit.h>
+#endif
 #include <QtGui/qaccessible.h>
 #include <QtCore/qmetaobject.h>
 
@@ -79,7 +93,9 @@
 #include "private/qapplication_p.h"
 #include "private/qshortcutmap_p.h"
 #include <qkeysequence.h>
-#define ACCEL_KEY(k) (!qApp->d_func()->shortcutMap.hasShortcutForKeySequence(k) ? \
+#define ACCEL_KEY(k) ((!QCoreApplication::testAttribute(Qt::AA_DontShowShortcutsInContextMenus) \
+                       && QGuiApplication::styleHints()->showShortcutsInContextMenus()) \
+                      && !qApp->d_func()->shortcutMap.hasShortcutForKeySequence(k) ? \
                       QLatin1Char('\t') + QKeySequence(k).toString(QKeySequence::NativeText) : QString())
 
 #else
@@ -106,7 +122,7 @@ static QTextLine currentTextLine(const QTextCursor &cursor)
 }
 
 QWidgetTextControlPrivate::QWidgetTextControlPrivate()
-    : doc(0), cursorOn(false), cursorIsFocusIndicator(false),
+    : doc(0), cursorOn(false), cursorVisible(false), cursorIsFocusIndicator(false),
 #ifndef Q_OS_ANDROID
       interactionFlags(Qt::TextEditorInteraction),
 #else
@@ -679,17 +695,30 @@ void QWidgetTextControlPrivate::_q_documentLayoutChanged()
 
 }
 
-void QWidgetTextControlPrivate::setBlinkingCursorEnabled(bool enable)
+void QWidgetTextControlPrivate::setCursorVisible(bool visible)
 {
-    Q_Q(QWidgetTextControl);
+    if (cursorVisible == visible)
+        return;
 
-    if (enable && QApplication::cursorFlashTime() > 0)
-        cursorBlinkTimer.start(QApplication::cursorFlashTime() / 2, q);
+    cursorVisible = visible;
+    updateCursorBlinking();
+
+    if (cursorVisible)
+        connect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetTextControlPrivate::updateCursorBlinking);
     else
-        cursorBlinkTimer.stop();
+        disconnect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetTextControlPrivate::updateCursorBlinking);
+}
 
-    cursorOn = enable;
+void QWidgetTextControlPrivate::updateCursorBlinking()
+{
+    cursorBlinkTimer.stop();
+    if (cursorVisible) {
+        int flashTime = QGuiApplication::styleHints()->cursorFlashTime();
+        if (flashTime >= 2)
+            cursorBlinkTimer.start(flashTime / 2, q_func());
+    }
 
+    cursorOn = cursorVisible;
     repaintCursor();
 }
 
@@ -829,21 +858,21 @@ void QWidgetTextControl::redo()
 }
 
 QWidgetTextControl::QWidgetTextControl(QObject *parent)
-    : QObject(*new QWidgetTextControlPrivate, parent)
+    : QInputControl(QInputControl::TextEdit, *new QWidgetTextControlPrivate, parent)
 {
     Q_D(QWidgetTextControl);
     d->init();
 }
 
 QWidgetTextControl::QWidgetTextControl(const QString &text, QObject *parent)
-    : QObject(*new QWidgetTextControlPrivate, parent)
+    : QInputControl(QInputControl::TextEdit, *new QWidgetTextControlPrivate, parent)
 {
     Q_D(QWidgetTextControl);
     d->init(Qt::RichText, text);
 }
 
 QWidgetTextControl::QWidgetTextControl(QTextDocument *doc, QObject *parent)
-    : QObject(*new QWidgetTextControlPrivate, parent)
+    : QInputControl(QInputControl::TextEdit, *new QWidgetTextControlPrivate, parent)
 {
     Q_D(QWidgetTextControl);
     d->init(Qt::RichText, QString(), doc);
@@ -883,7 +912,8 @@ void QWidgetTextControl::setTextCursor(const QTextCursor &cursor)
     const bool posChanged = cursor.position() != d->cursor.position();
     const QTextCursor oldSelection = d->cursor;
     d->cursor = cursor;
-    d->cursorOn = d->hasFocus && (d->interactionFlags & Qt::TextEditable);
+    d->cursorOn = d->hasFocus
+            && (d->interactionFlags & (Qt::TextSelectableByKeyboard | Qt::TextEditable));
     d->_q_updateCurrentCharFormatAndSelection();
     ensureCursorVisible();
     d->repaintOldAndNewSelection(oldSelection);
@@ -963,7 +993,7 @@ void QWidgetTextControl::processEvent(QEvent *e, const QMatrix &matrix, QWidget 
 
     if (!d->contextWidget) {
         switch (e->type()) {
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
             case QEvent::GraphicsSceneMouseMove:
             case QEvent::GraphicsSceneMousePress:
             case QEvent::GraphicsSceneMouseRelease:
@@ -981,7 +1011,7 @@ void QWidgetTextControl::processEvent(QEvent *e, const QMatrix &matrix, QWidget 
                 d->contextWidget = ev->widget();
                 break;
             }
-#endif // QT_NO_GRAPHICSVIEW
+#endif // QT_CONFIG(graphicsview)
             default: break;
         };
     }
@@ -1060,7 +1090,7 @@ void QWidgetTextControl::processEvent(QEvent *e, const QMatrix &matrix, QWidget 
         }
 #endif
 
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
         case QEvent::GraphicsSceneMousePress: {
             QGraphicsSceneMouseEvent *ev = static_cast<QGraphicsSceneMouseEvent *>(e);
             d->mousePressEvent(ev, ev->button(), matrix.map(ev->pos()), ev->modifiers(), ev->buttons(),
@@ -1110,7 +1140,7 @@ void QWidgetTextControl::processEvent(QEvent *e, const QMatrix &matrix, QWidget 
             if (d->dropEvent(ev->mimeData(), matrix.map(ev->pos()), ev->dropAction(), ev->source()))
                 ev->accept();
             break; }
-#endif // QT_NO_GRAPHICSVIEW
+#endif // QT_CONFIG(graphicsview)
 #ifdef QT_KEYPAD_NAVIGATION
         case QEvent::EnterEditFocus:
         case QEvent::LeaveEditFocus:
@@ -1121,52 +1151,8 @@ void QWidgetTextControl::processEvent(QEvent *e, const QMatrix &matrix, QWidget 
         case QEvent::ShortcutOverride:
             if (d->interactionFlags & Qt::TextEditable) {
                 QKeyEvent* ke = static_cast<QKeyEvent *>(e);
-                if (ke->modifiers() == Qt::NoModifier
-                    || ke->modifiers() == Qt::ShiftModifier
-                    || ke->modifiers() == Qt::KeypadModifier) {
-                    if (ke->key() < Qt::Key_Escape) {
-                        ke->accept();
-                    } else {
-                        switch (ke->key()) {
-                            case Qt::Key_Return:
-                            case Qt::Key_Enter:
-                            case Qt::Key_Delete:
-                            case Qt::Key_Home:
-                            case Qt::Key_End:
-                            case Qt::Key_Backspace:
-                            case Qt::Key_Left:
-                            case Qt::Key_Right:
-                            case Qt::Key_Up:
-                            case Qt::Key_Down:
-                            case Qt::Key_Tab:
-                            ke->accept();
-                        default:
-                            break;
-                        }
-                    }
-#ifndef QT_NO_SHORTCUT
-                } else if (ke == QKeySequence::Copy
-                           || ke == QKeySequence::Paste
-                           || ke == QKeySequence::Cut
-                           || ke == QKeySequence::Redo
-                           || ke == QKeySequence::Undo
-                           || ke == QKeySequence::MoveToNextWord
-                           || ke == QKeySequence::MoveToPreviousWord
-                           || ke == QKeySequence::MoveToStartOfDocument
-                           || ke == QKeySequence::MoveToEndOfDocument
-                           || ke == QKeySequence::SelectNextWord
-                           || ke == QKeySequence::SelectPreviousWord
-                           || ke == QKeySequence::SelectStartOfLine
-                           || ke == QKeySequence::SelectEndOfLine
-                           || ke == QKeySequence::SelectStartOfBlock
-                           || ke == QKeySequence::SelectEndOfBlock
-                           || ke == QKeySequence::SelectStartOfDocument
-                           || ke == QKeySequence::SelectEndOfDocument
-                           || ke == QKeySequence::SelectAll
-                          ) {
+                if (isCommonTextEditShortcut(ke))
                     ke->accept();
-#endif
-                }
             }
             break;
         default:
@@ -1341,14 +1327,7 @@ void QWidgetTextControlPrivate::keyPressEvent(QKeyEvent *e)
 
 process:
     {
-        // QTBUG-35734: ignore Ctrl/Ctrl+Shift; accept only AltGr (Alt+Ctrl) on German keyboards
-        if (e->modifiers() == Qt::ControlModifier
-            || e->modifiers() == (Qt::ShiftModifier | Qt::ControlModifier)) {
-            e->ignore();
-            return;
-        }
-        QString text = e->text();
-        if (!text.isEmpty() && (text.at(0).isPrint() || text.at(0) == QLatin1Char('\t'))) {
+        if (q->isAcceptableInput(e)) {
             if (overwriteMode
                 // no need to call deleteChar() if we have a selection, insertText
                 // does it already
@@ -1356,7 +1335,7 @@ process:
                 && !cursor.atBlockEnd())
                 cursor.deleteChar();
 
-            cursor.insertText(text);
+            cursor.insertText(e->text());
             selectionChanged();
         } else {
             e->ignore();
@@ -1376,7 +1355,7 @@ process:
 
 QVariant QWidgetTextControl::loadResource(int type, const QUrl &name)
 {
-#ifdef QT_NO_TEXTEDIT
+#if !QT_CONFIG(textedit)
     Q_UNUSED(type);
     Q_UNUSED(name);
 #else
@@ -1434,7 +1413,7 @@ QRectF QWidgetTextControlPrivate::rectForPosition(int position) const
             if (relativePos < line.textLength() - line.textStart())
                 w = line.cursorToX(relativePos + 1) - x;
             else
-                w = QFontMetrics(block.layout()->font()).width(QLatin1Char(' ')); // in sync with QTextLine::draw()
+                w = QFontMetrics(block.layout()->font()).horizontalAdvance(QLatin1Char(' ')); // in sync with QTextLine::draw()
         }
         r = QRectF(layoutPos.x() + x, layoutPos.y() + line.y(),
                    cursorWidth + w, line.height());
@@ -1447,10 +1426,6 @@ QRectF QWidgetTextControlPrivate::rectForPosition(int position) const
 
 namespace {
 struct QTextFrameComparator {
-#if defined(Q_CC_MSVC) && _MSC_VER < 1600
-//The STL implementation of MSVC 2008 requires the definition
-    bool operator()(QTextFrame *frame1, QTextFrame *frame2) { return frame1->firstPosition() < frame2->firstPosition(); }
-#endif
     bool operator()(QTextFrame *frame, int position) { return frame->firstPosition() < position; }
     bool operator()(int position, QTextFrame *frame) { return position < frame->firstPosition(); }
 };
@@ -1907,8 +1882,6 @@ void QWidgetTextControlPrivate::contextMenuEvent(const QPoint &screenPos, const 
     Q_UNUSED(contextWidget);
 #else
     Q_Q(QWidgetTextControl);
-    if (!hasFocus)
-        return;
     QMenu *menu = q->createStandardContextMenu(docPos, contextWidget);
     if (!menu)
         return;
@@ -2028,7 +2001,8 @@ void QWidgetTextControlPrivate::inputMethodEvent(QInputMethodEvent *e)
     QTextLayout *layout = block.layout();
     if (isGettingInput)
         layout->setPreeditArea(cursor.position() - block.position(), e->preeditString());
-    QList<QTextLayout::FormatRange> overrides;
+    QVector<QTextLayout::FormatRange> overrides;
+    overrides.reserve(e->attributes().size());
     const int oldPreeditCursor = preeditCursor;
     preeditCursor = e->preeditString().length();
     hideCursor = false;
@@ -2038,17 +2012,60 @@ void QWidgetTextControlPrivate::inputMethodEvent(QInputMethodEvent *e)
             preeditCursor = a.start;
             hideCursor = !a.length;
         } else if (a.type == QInputMethodEvent::TextFormat) {
-            QTextCharFormat f = qvariant_cast<QTextFormat>(a.value).toCharFormat();
+            QTextCharFormat f = cursor.charFormat();
+            f.merge(qvariant_cast<QTextFormat>(a.value).toCharFormat());
             if (f.isValid()) {
                 QTextLayout::FormatRange o;
                 o.start = a.start + cursor.position() - block.position();
                 o.length = a.length;
                 o.format = f;
-                overrides.append(o);
+
+                // Make sure list is sorted by start index
+                QVector<QTextLayout::FormatRange>::iterator it = overrides.end();
+                while (it != overrides.begin()) {
+                    QVector<QTextLayout::FormatRange>::iterator previous = it - 1;
+                    if (o.start >= previous->start) {
+                        overrides.insert(it, o);
+                        break;
+                    }
+                    it = previous;
+                }
+
+                if (it == overrides.begin())
+                    overrides.prepend(o);
             }
         }
     }
-    layout->setAdditionalFormats(overrides);
+
+    if (cursor.charFormat().isValid()) {
+        int start = cursor.position() - block.position();
+        int end = start + e->preeditString().length();
+
+        QVector<QTextLayout::FormatRange>::iterator it = overrides.begin();
+        while (it != overrides.end()) {
+            QTextLayout::FormatRange range = *it;
+            int rangeStart = range.start;
+            if (rangeStart > start) {
+                QTextLayout::FormatRange o;
+                o.start = start;
+                o.length = rangeStart - start;
+                o.format = cursor.charFormat();
+                it = overrides.insert(it, o) + 1;
+            }
+
+            ++it;
+            start = range.start + range.length;
+        }
+
+        if (start < end) {
+            QTextLayout::FormatRange o;
+            o.start = start;
+            o.length = end - start;
+            o.format = cursor.charFormat();
+            overrides.append(o);
+        }
+    }
+    layout->setFormats(overrides);
 
     cursor.endEditBlock();
 
@@ -2065,10 +2082,15 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
     switch(property) {
     case Qt::ImCursorRectangle:
         return cursorRect();
+    case Qt::ImAnchorRectangle:
+        return d->rectForPosition(d->cursor.anchor());
     case Qt::ImFont:
         return QVariant(d->cursor.charFormat().font());
-    case Qt::ImCursorPosition:
-        return QVariant(d->cursor.position() - block.position());
+    case Qt::ImCursorPosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(cursorForPosition(pt).position() - block.position());
+        return QVariant(d->cursor.position() - block.position()); }
     case Qt::ImSurroundingText:
         return QVariant(block.text());
     case Qt::ImCurrentSelection:
@@ -2077,8 +2099,11 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
         return QVariant(); // No limit.
     case Qt::ImAnchorPosition:
         return QVariant(d->cursor.anchor() - block.position());
-    case Qt::ImAbsolutePosition:
-        return QVariant(d->cursor.position());
+    case Qt::ImAbsolutePosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(cursorForPosition(pt).position());
+        return QVariant(d->cursor.position()); }
     case Qt::ImTextAfterCursor:
     {
         int maxLength = argument.isValid() ? argument.toInt() : 1024;
@@ -2115,7 +2140,7 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
             tmpCursor.movePosition(QTextCursor::NextBlock);
             --numBlocks;
         }
-        result += block.text().mid(0,localPos);
+        result += block.text().midRef(0, localPos);
         return QVariant(result);
     }
     default:
@@ -2138,15 +2163,15 @@ void QWidgetTextControlPrivate::focusEvent(QFocusEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
         if (!QApplication::keypadNavigationEnabled() || (hasEditFocus && (e->reason() == Qt::PopupFocusReason))) {
 #endif
-        cursorOn = (interactionFlags & Qt::TextSelectableByKeyboard);
+        cursorOn = (interactionFlags & (Qt::TextSelectableByKeyboard | Qt::TextEditable));
         if (interactionFlags & Qt::TextEditable) {
-            setBlinkingCursorEnabled(true);
+            setCursorVisible(true);
         }
 #ifdef QT_KEYPAD_NAVIGATION
         }
 #endif
     } else {
-        setBlinkingCursorEnabled(false);
+        setCursorVisible(false);
 
         if (cursorIsFocusIndicator
             && e->reason() != Qt::ActiveWindowFocusReason
@@ -2385,7 +2410,7 @@ void QWidgetTextControl::setAcceptRichText(bool accept)
     d->acceptRichText = accept;
 }
 
-#ifndef QT_NO_TEXTEDIT
+#if QT_CONFIG(textedit)
 
 void QWidgetTextControl::setExtraSelections(const QList<QTextEdit::ExtraSelection> &selections)
 {
@@ -2399,8 +2424,8 @@ void QWidgetTextControl::setExtraSelections(const QList<QTextEdit::ExtraSelectio
 
     for (int i = 0; i < selections.count(); ++i) {
         const QTextEdit::ExtraSelection &sel = selections.at(i);
-        QHash<int, int>::iterator it = hash.find(sel.cursor.anchor());
-        if (it != hash.end()) {
+        const auto it = hash.constFind(sel.cursor.anchor());
+        if (it != hash.cend()) {
             const QAbstractTextDocumentLayout::Selection &esel = d->extraSelections.at(it.value());
             if (esel.cursor.position() == sel.cursor.position()
                 && esel.format == sel.format) {
@@ -2437,16 +2462,19 @@ QList<QTextEdit::ExtraSelection> QWidgetTextControl::extraSelections() const
 {
     Q_D(const QWidgetTextControl);
     QList<QTextEdit::ExtraSelection> selections;
-    for (int i = 0; i < d->extraSelections.count(); ++i) {
+    const int numExtraSelections = d->extraSelections.count();
+    selections.reserve(numExtraSelections);
+    for (int i = 0; i < numExtraSelections; ++i) {
         QTextEdit::ExtraSelection sel;
-        sel.cursor = d->extraSelections.at(i).cursor;
-        sel.format = d->extraSelections.at(i).format;
+        const QAbstractTextDocumentLayout::Selection &sel2 = d->extraSelections.at(i);
+        sel.cursor = sel2.cursor;
+        sel.format = sel2.format;
         selections.append(sel);
     }
     return selections;
 }
 
-#endif // QT_NO_TEXTEDIT
+#endif // QT_CONFIG(textedit)
 
 void QWidgetTextControl::setTextWidth(qreal width)
 {
@@ -2552,6 +2580,11 @@ bool QWidgetTextControl::isWordSelectionEnabled() const
     return d->wordSelectionEnabled;
 }
 
+bool QWidgetTextControl::isPreediting()
+{
+    return d_func()->isPreediting();
+}
+
 #ifndef QT_NO_PRINTER
 void QWidgetTextControl::print(QPagedPaintDevice *printer) const
 {
@@ -2609,8 +2642,8 @@ void QWidgetTextControl::insertFromMimeData(const QMimeData *source)
 #ifndef QT_NO_TEXTHTMLPARSER
     if (source->hasFormat(QLatin1String("application/x-qrichtext")) && d->acceptRichText) {
         // x-qrichtext is always UTF-8 (taken from Qt3 since we don't use it anymore).
-        QString richtext = QString::fromUtf8(source->data(QLatin1String("application/x-qrichtext")));
-        richtext.prepend(QLatin1String("<meta name=\"qrichtext\" content=\"1\" />"));
+        const QString richtext = QLatin1String("<meta name=\"qrichtext\" content=\"1\" />")
+                + QString::fromUtf8(source->data(QLatin1String("application/x-qrichtext")));
         fragment = QTextDocumentFragment::fromHtml(richtext, d->doc);
         hasData = true;
     } else if (source->hasHtml() && d->acceptRichText) {
@@ -2877,7 +2910,7 @@ void QWidgetTextControlPrivate::commitPreedit()
     QTextBlock block = cursor.block();
     QTextLayout *layout = block.layout();
     layout->setPreeditArea(-1, QString());
-    layout->clearAdditionalFormats();
+    layout->clearFormats();
     cursor.endEditBlock();
 }
 
@@ -2952,7 +2985,7 @@ void QWidgetTextControl::setTextInteractionFlags(Qt::TextInteractionFlags flags)
     d->interactionFlags = flags;
 
     if (d->hasFocus)
-        d->setBlinkingCursorEnabled(flags & Qt::TextEditable);
+        d->setCursorVisible(flags & Qt::TextEditable);
 }
 
 Qt::TextInteractionFlags QWidgetTextControl::textInteractionFlags() const
@@ -3087,6 +3120,7 @@ void QWidgetTextControlPrivate::append(const QString &text, Qt::TextFormat forma
         tmp.insertText(text);
     }
 #else
+    Q_UNUSED(format);
     tmp.insertText(text);
 #endif // QT_NO_TEXTHTMLPARSER
     if (!cursor.hasSelection())
@@ -3261,7 +3295,7 @@ void QUnicodeControlCharacterMenu::menuActionTriggered()
     QChar c(qt_controlCharacters[idx].character);
     QString str(c);
 
-#ifndef QT_NO_TEXTEDIT
+#if QT_CONFIG(textedit)
     if (QTextEdit *edit = qobject_cast<QTextEdit *>(editWidget)) {
         edit->insertPlainText(str);
         return;
@@ -3270,7 +3304,7 @@ void QUnicodeControlCharacterMenu::menuActionTriggered()
     if (QWidgetTextControl *control = qobject_cast<QWidgetTextControl *>(editWidget)) {
         control->insertPlainText(str);
     }
-#ifndef QT_NO_LINEEDIT
+#if QT_CONFIG(lineedit)
     if (QLineEdit *edit = qobject_cast<QLineEdit *>(editWidget)) {
         edit->insert(str);
         return;

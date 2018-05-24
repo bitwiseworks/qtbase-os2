@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSql module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -157,7 +163,8 @@ QSqlDriver::~QSqlDriver()
 
 bool QSqlDriver::isOpen() const
 {
-    return d_func()->isOpen;
+    Q_D(const QSqlDriver);
+    return d->isOpen;
 }
 
 /*!
@@ -167,7 +174,8 @@ bool QSqlDriver::isOpen() const
 
 bool QSqlDriver::isOpenError() const
 {
-    return d_func()->isOpenError;
+    Q_D(const QSqlDriver);
+    return d->isOpenError;
 }
 
 /*!
@@ -238,6 +246,7 @@ bool QSqlDriver::isOpenError() const
 
 /*!
     \enum QSqlDriver::DbmsType
+    \internal
 
     This enum contains DBMS types.
 
@@ -274,7 +283,8 @@ bool QSqlDriver::isOpenError() const
 
 void QSqlDriver::setOpen(bool open)
 {
-    d_func()->isOpen = open;
+    Q_D(QSqlDriver);
+    d->isOpen = open;
 }
 
 /*!
@@ -288,9 +298,10 @@ void QSqlDriver::setOpen(bool open)
 
 void QSqlDriver::setOpenError(bool error)
 {
-    d_func()->isOpenError = error;
+    Q_D(QSqlDriver);
+    d->isOpenError = error;
     if (error)
-        d_func()->isOpen = false;
+        d->isOpen = false;
 }
 
 /*!
@@ -341,7 +352,8 @@ bool QSqlDriver::rollbackTransaction()
 
 void QSqlDriver::setLastError(const QSqlError &error)
 {
-    d_func()->error = error;
+    Q_D(QSqlDriver);
+    d->error = error;
 }
 
 /*!
@@ -351,7 +363,8 @@ void QSqlDriver::setLastError(const QSqlError &error)
 
 QSqlError QSqlDriver::lastError() const
 {
-    return d_func()->error;
+    Q_D(const QSqlDriver);
+    return d->error;
 }
 
 /*!
@@ -454,9 +467,23 @@ QString QSqlDriver::stripDelimiters(const QString &identifier, IdentifierType ty
     with the values from \a rec. If \a preparedStatement is true, the
     string will contain placeholders instead of values.
 
+    The generated flag in each field of \a rec determines whether the
+    field is included in the generated statement.
+
     This method can be used to manipulate tables without having to worry
     about database-dependent SQL dialects. For non-prepared statements,
     the values will be properly escaped.
+
+    In the WHERE statement, each non-null field of \a rec specifies a
+    filter condition of equality to the field value, or if prepared, a
+    placeholder. However, prepared or not, a null field specifies the
+    condition IS NULL and never introduces a placeholder. The
+    application must not attempt to bind data for the null field during
+    execution. The field must be set to some non-null value if a
+    placeholder is desired. Furthermore, since non-null fields specify
+    equality conditions and SQL NULL is not equal to anything, even
+    itself, it is generally not useful to bind a null to a placeholder.
+
 */
 QString QSqlDriver::sqlStatement(StatementType type, const QString &tableName,
                                  const QSqlRecord &rec, bool preparedStatement) const
@@ -476,31 +503,25 @@ QString QSqlDriver::sqlStatement(StatementType type, const QString &tableName,
         s.prepend(QLatin1String("SELECT ")).append(QLatin1String(" FROM ")).append(tableName);
         break;
     case WhereStatement:
-        if (preparedStatement) {
-            for (int i = 0; i < rec.count(); ++i) {
-                s.append(prepareIdentifier(rec.fieldName(i), FieldName,this));
-                if (rec.isNull(i))
-                    s.append(QLatin1String(" IS NULL"));
-                else
-                    s.append(QLatin1String(" = ?"));
-                s.append(QLatin1String(" AND "));
-            }
-        } else {
-            for (i = 0; i < rec.count(); ++i) {
-                s.append(prepareIdentifier(rec.fieldName(i), QSqlDriver::FieldName, this));
-                QString val = formatValue(rec.field(i));
-                if (val == QLatin1String("NULL"))
-                    s.append(QLatin1String(" IS NULL"));
-                else
-                    s.append(QLatin1String(" = ")).append(val);
-                s.append(QLatin1String(" AND "));
-            }
-        }
-        if (!s.isEmpty()) {
-            s.prepend(QLatin1String("WHERE "));
-            s.chop(5); // remove tailing AND
+    {
+        const QString tableNamePrefix = tableName.isEmpty()
+            ? QString()
+            : prepareIdentifier(tableName, QSqlDriver::TableName, this) + QLatin1Char('.');
+        for (int i = 0; i < rec.count(); ++i) {
+            if (!rec.isGenerated(i))
+                continue;
+            s.append(s.isEmpty() ? QLatin1String("WHERE ") : QLatin1String(" AND "));
+            s.append(tableNamePrefix);
+            s.append(prepareIdentifier(rec.fieldName(i), QSqlDriver::FieldName, this));
+            if (rec.isNull(i))
+                s.append(QLatin1String(" IS NULL"));
+            else if (preparedStatement)
+                s.append(QLatin1String(" = ?"));
+            else
+                s.append(QLatin1String(" = ")).append(formatValue(rec.field(i)));
         }
         break;
+    }
     case UpdateStatement:
         s.append(QLatin1String("UPDATE ")).append(tableName).append(
                  QLatin1String(" SET "));
@@ -651,6 +672,7 @@ QString QSqlDriver::formatValue(const QSqlField &field, bool trimStrings) const
                 break;
             }
         }
+            Q_FALLTHROUGH();
         default:
             r = field.value().toString();
             break;
@@ -766,7 +788,8 @@ QStringList QSqlDriver::subscribedToNotifications() const
 */
 void QSqlDriver::setNumericalPrecisionPolicy(QSql::NumericalPrecisionPolicy precisionPolicy)
 {
-    d_func()->precisionPolicy = precisionPolicy;
+    Q_D(QSqlDriver);
+    d->precisionPolicy = precisionPolicy;
 }
 
 /*!
@@ -779,17 +802,20 @@ void QSqlDriver::setNumericalPrecisionPolicy(QSql::NumericalPrecisionPolicy prec
 */
 QSql::NumericalPrecisionPolicy QSqlDriver::numericalPrecisionPolicy() const
 {
-    return d_func()->precisionPolicy;
+    Q_D(const QSqlDriver);
+    return d->precisionPolicy;
 }
 
 /*!
     \since 5.4
+    \internal
 
     Returns the current DBMS type for the database connection.
 */
 QSqlDriver::DbmsType QSqlDriver::dbmsType() const
 {
-    return d_func()->dbmsType;
+    Q_D(const QSqlDriver);
+    return d->dbmsType;
 }
 
 /*!

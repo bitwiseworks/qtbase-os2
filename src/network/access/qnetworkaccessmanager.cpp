@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,20 +45,20 @@
 #include "qnetworkcookie.h"
 #include "qnetworkcookiejar.h"
 #include "qabstractnetworkcache.h"
+#include "qhstspolicy.h"
+#include "qhsts_p.h"
 
 #include "QtNetwork/qnetworksession.h"
 #include "QtNetwork/private/qsharednetworksession_p.h"
 
+#if QT_CONFIG(ftp)
 #include "qnetworkaccessftpbackend_p.h"
+#endif
 #include "qnetworkaccessfilebackend_p.h"
 #include "qnetworkaccessdebugpipebackend_p.h"
 #include "qnetworkaccesscachebackend_p.h"
 #include "qnetworkreplydataimpl_p.h"
 #include "qnetworkreplyfileimpl_p.h"
-
-#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
-#include "qnetworkreplynsurlconnectionimpl_p.h"
-#endif
 
 #include "QtCore/qbuffer.h"
 #include "QtCore/qurl.h"
@@ -60,30 +66,35 @@
 #include "QtNetwork/private/qauthenticator_p.h"
 #include "QtNetwork/qsslconfiguration.h"
 #include "QtNetwork/qnetworkconfigmanager.h"
-#include "QtNetwork/qhttpmultipart.h"
-#include "qhttpmultipart_p.h"
 
+#if QT_CONFIG(http)
+#include "qhttpmultipart.h"
+#include "qhttpmultipart_p.h"
 #include "qnetworkreplyhttpimpl_p.h"
+#endif
 
 #include "qthread.h"
+
+#include <QHostInfo>
+
+#if defined(Q_OS_MACOS)
+#include <CoreServices/CoreServices.h>
+#include <SystemConfiguration/SystemConfiguration.h>
+#include <Security/SecKeychain.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
 Q_GLOBAL_STATIC(QNetworkAccessFileBackendFactory, fileBackend)
-#ifndef QT_NO_FTP
+#if QT_CONFIG(ftp)
 Q_GLOBAL_STATIC(QNetworkAccessFtpBackendFactory, ftpBackend)
-#endif // QT_NO_FTP
+#endif // QT_CONFIG(ftp)
 
 #ifdef QT_BUILD_INTERNAL
 Q_GLOBAL_STATIC(QNetworkAccessDebugPipeBackendFactory, debugpipeBackend)
 #endif
 
 #if defined(Q_OS_MACX)
-
-#include <CoreServices/CoreServices.h>
-#include <SystemConfiguration/SystemConfiguration.h>
-#include <Security/SecKeychain.h>
-
 bool getProxyAuth(const QString& proxyHostname, const QString &scheme, QString& username, QString& password)
 {
     OSStatus err;
@@ -140,7 +151,7 @@ bool getProxyAuth(const QString& proxyHostname, const QString &scheme, QString& 
 
 static void ensureInitialized()
 {
-#ifndef QT_NO_FTP
+#if QT_CONFIG(ftp)
     (void) ftpBackend();
 #endif
 
@@ -278,7 +289,8 @@ static void ensureInitialized()
 
     \snippet code/src_network_access_qnetworkaccessmanager.cpp 4
 
-    Network requests can be reenabled again by calling
+    Network requests can be re-enabled again, and this property will resume to
+    reflect the actual device state by calling
 
     \snippet code/src_network_access_qnetworkaccessmanager.cpp 5
 
@@ -447,7 +459,6 @@ static void ensureInitialized()
 QNetworkAccessManager::QNetworkAccessManager(QObject *parent)
     : QObject(*new QNetworkAccessManagerPrivate, parent)
 {
-    Q_D(QNetworkAccessManager);
     ensureInitialized();
 
     qRegisterMetaType<QNetworkReply::NetworkError>();
@@ -460,23 +471,23 @@ QNetworkAccessManager::QNetworkAccessManager(QObject *parent)
     qRegisterMetaType<QSslPreSharedKeyAuthenticator *>();
 #endif
     qRegisterMetaType<QList<QPair<QByteArray,QByteArray> > >();
-#ifndef QT_NO_HTTP
+#if QT_CONFIG(http)
     qRegisterMetaType<QHttpNetworkRequest>();
 #endif
     qRegisterMetaType<QNetworkReply::NetworkError>();
     qRegisterMetaType<QSharedPointer<char> >();
 
 #ifndef QT_NO_BEARERMANAGEMENT
-    if (!d->networkSessionRequired) {
-        // if a session is required, we track online state through
-        // the QNetworkSession's signals
-        connect(&d->networkConfigurationManager, SIGNAL(onlineStateChanged(bool)),
-                SLOT(_q_onlineStateChanged(bool)));
-    }
-    // we would need all active configurations to check for
-    // d->networkConfigurationManager.isOnline(), which is asynchronous
-    // and potentially expensive. We can just check the configuration here
-    d->online = (d->networkConfiguration.state() & QNetworkConfiguration::Active);
+    Q_D(QNetworkAccessManager);
+    // if a session is required, we track online state through
+    // the QNetworkSession's signals if a request is already made.
+    // we need to track current accessibility state by default
+    //
+    connect(&d->networkConfigurationManager, SIGNAL(onlineStateChanged(bool)),
+            SLOT(_q_onlineStateChanged(bool)));
+    connect(&d->networkConfigurationManager, SIGNAL(configurationChanged(const QNetworkConfiguration &)),
+            SLOT(_q_configurationChanged(const QNetworkConfiguration &)));
+
 #endif
 }
 
@@ -685,9 +696,127 @@ void QNetworkAccessManager::setCookieJar(QNetworkCookieJar *cookieJar)
         if (d->cookieJar && d->cookieJar->parent() == this)
             delete d->cookieJar;
         d->cookieJar = cookieJar;
-        if (thread() == cookieJar->thread())
+        if (cookieJar && thread() == cookieJar->thread())
             d->cookieJar->setParent(this);
     }
+}
+
+/*!
+    \since 5.9
+
+    If \a enabled is \c true, QNetworkAccessManager follows the HTTP Strict Transport
+    Security policy (HSTS, RFC6797). When processing a request, QNetworkAccessManager
+    automatically replaces the "http" scheme with "https" and uses a secure transport
+    for HSTS hosts. If it's set explicitly, port 80 is replaced by port 443.
+
+    When HSTS is enabled, for each HTTP response containing HSTS header and
+    received over a secure transport, QNetworkAccessManager will update its HSTS
+    cache, either remembering a host with a valid policy or removing a host with
+    an expired or disabled HSTS policy.
+
+    \sa isStrictTransportSecurityEnabled()
+*/
+void QNetworkAccessManager::setStrictTransportSecurityEnabled(bool enabled)
+{
+    Q_D(QNetworkAccessManager);
+    d->stsEnabled = enabled;
+}
+
+/*!
+    \since 5.9
+
+    Returns true if HTTP Strict Transport Security (HSTS) was enabled. By default
+    HSTS is disabled.
+
+    \sa setStrictTransportSecurityEnabled()
+*/
+bool QNetworkAccessManager::isStrictTransportSecurityEnabled() const
+{
+    Q_D(const QNetworkAccessManager);
+    return d->stsEnabled;
+}
+
+/*!
+    \since 5.10
+
+    If \a enabled is \c true, the internal HSTS cache will use a persistent store
+    to read and write HSTS policies. \a storeDir defines where this store will be
+    located. The default location is defined by QStandardPaths::CacheLocation.
+    If there is no writable QStandartPaths::CacheLocation and \a storeDir is an
+    empty string, the store will be located in the program's working directory.
+
+    \note If HSTS cache already contains HSTS policies by the time persistent
+    store is enabled, these policies will be preserved in the store. In case both
+    cache and store contain the same known hosts, policies from cache are considered
+    to be more up-to-date (and thus will overwrite the previous values in the store).
+    If this behavior is undesired, enable HSTS store before enabling Strict Tranport
+    Security. By default, the persistent store of HSTS policies is disabled.
+
+    \sa isStrictTransportSecurityStoreEnabled(), setStrictTransportSecurityEnabled(),
+    QStandardPaths::standardLocations()
+*/
+
+void QNetworkAccessManager::enableStrictTransportSecurityStore(bool enabled, const QString &storeDir)
+{
+    Q_D(QNetworkAccessManager);
+    d->stsStore.reset(enabled ? new QHstsStore(storeDir) : nullptr);
+    d->stsCache.setStore(d->stsStore.data());
+}
+
+/*!
+    \since 5.10
+
+    Returns true if HSTS cache uses a permanent store to load and store HSTS
+    policies.
+
+    \sa enableStrictTransportSecurityStore()
+*/
+
+bool QNetworkAccessManager::isStrictTransportSecurityStoreEnabled() const
+{
+    Q_D(const QNetworkAccessManager);
+    return bool(d->stsStore.data());
+}
+
+/*!
+    \since 5.9
+
+    Adds HTTP Strict Transport Security policies into HSTS cache.
+    \a knownHosts contains the known hosts that have QHstsPolicy
+    information.
+
+    \note An expired policy will remove a known host from the cache, if previously
+    present.
+
+    \note While processing HTTP responses, QNetworkAccessManager can also update
+    the HSTS cache, removing or updating exitsting policies or introducing new
+    \a knownHosts. The current implementation thus is server-driven, client code
+    can provide QNetworkAccessManager with previously known or discovered
+    policies, but this information can be overridden by "Strict-Transport-Security"
+    response headers.
+
+    \sa addStrictTransportSecurityHosts(), enableStrictTransportSecurityStore(), QHstsPolicy
+*/
+
+void QNetworkAccessManager::addStrictTransportSecurityHosts(const QVector<QHstsPolicy> &knownHosts)
+{
+    Q_D(QNetworkAccessManager);
+    d->stsCache.updateFromPolicies(knownHosts);
+}
+
+/*!
+    \since 5.9
+
+    Returns the list of HTTP Strict Transport Security policies. This list can
+    differ from what was initially set via addStrictTransportSecurityHosts() if
+    HSTS cache was updated from a "Strict-Transport-Security" response header.
+
+    \sa addStrictTransportSecurityHosts(), QHstsPolicy
+*/
+QVector<QHstsPolicy> QNetworkAccessManager::strictTransportSecurityHosts() const
+{
+    Q_D(const QNetworkAccessManager);
+    return d->stsCache.policies();
 }
 
 /*!
@@ -752,6 +881,7 @@ QNetworkReply *QNetworkAccessManager::post(const QNetworkRequest &request, const
     return reply;
 }
 
+#if QT_CONFIG(http)
 /*!
     \since 4.8
 
@@ -791,6 +921,7 @@ QNetworkReply *QNetworkAccessManager::put(const QNetworkRequest &request, QHttpM
     QNetworkReply *reply = put(newRequest, device);
     return reply;
 }
+#endif // QT_CONFIG(http)
 
 /*!
     Uploads the contents of \a data to the destination \a request and
@@ -902,8 +1033,7 @@ QNetworkConfiguration QNetworkAccessManager::configuration() const
     if (session) {
         return session->configuration();
     } else {
-        QNetworkConfigurationManager manager;
-        return manager.defaultConfiguration();
+        return d->networkConfigurationManager.defaultConfiguration();
     }
 }
 
@@ -927,12 +1057,11 @@ QNetworkConfiguration QNetworkAccessManager::activeConfiguration() const
     Q_D(const QNetworkAccessManager);
 
     QSharedPointer<QNetworkSession> networkSession(d->getNetworkSession());
-    QNetworkConfigurationManager manager;
     if (networkSession) {
-        return manager.configurationFromIdentifier(
+        return d->networkConfigurationManager.configurationFromIdentifier(
             networkSession->sessionProperty(QLatin1String("ActiveConfiguration")).toString());
     } else {
-        return manager.defaultConfiguration();
+        return d->networkConfigurationManager.defaultConfiguration();
     }
 }
 
@@ -946,7 +1075,8 @@ QNetworkConfiguration QNetworkAccessManager::activeConfiguration() const
 void QNetworkAccessManager::setNetworkAccessible(QNetworkAccessManager::NetworkAccessibility accessible)
 {
     Q_D(QNetworkAccessManager);
-    d->defaultAccessControl = false;
+
+    d->defaultAccessControl = accessible == NotAccessible ? false : true;
 
     if (d->networkAccessible != accessible) {
         NetworkAccessibility previous = networkAccessible();
@@ -965,6 +1095,10 @@ void QNetworkAccessManager::setNetworkAccessible(QNetworkAccessManager::NetworkA
 QNetworkAccessManager::NetworkAccessibility QNetworkAccessManager::networkAccessible() const
 {
     Q_D(const QNetworkAccessManager);
+
+    if (d->customNetworkConfiguration && d->networkConfiguration.state().testFlag(QNetworkConfiguration::Undefined))
+        return UnknownAccessibility;
+
     if (d->networkSessionRequired) {
         QSharedPointer<QNetworkSession> networkSession(d->getNetworkSession());
         if (networkSession) {
@@ -974,7 +1108,6 @@ QNetworkAccessManager::NetworkAccessibility QNetworkAccessManager::networkAccess
             else
                 return NotAccessible;
         } else {
-            // Network accessibility is either disabled or unknown.
             if (d->defaultAccessControl) {
                 if (d->online)
                     return d->networkAccessible;
@@ -1073,6 +1206,45 @@ void QNetworkAccessManager::connectToHost(const QString &hostName, quint16 port)
 }
 
 /*!
+    \since 5.9
+
+    Sets the manager's redirect policy to be the \a policy specified. This policy
+    will affect all subsequent requests created by the manager.
+
+    Use this function to enable or disable HTTP redirects on the manager's level.
+
+    \note When creating a request QNetworkRequest::RedirectAttributePolicy has
+    the highest priority, next by priority is QNetworkRequest::FollowRedirectsAttribute.
+    Finally, the manager's policy has the lowest priority.
+
+    For backwards compatibility the default value is QNetworkRequest::ManualRedirectPolicy.
+    This may change in the future and some type of auto-redirect policy will become
+    the default; clients relying on manual redirect handling are encouraged to set
+    this policy explicitly in their code.
+
+    \sa redirectPolicy(), QNetworkRequest::RedirectPolicy,
+    QNetworkRequest::FollowRedirectsAttribute
+*/
+void QNetworkAccessManager::setRedirectPolicy(QNetworkRequest::RedirectPolicy policy)
+{
+    Q_D(QNetworkAccessManager);
+    d->redirectPolicy = policy;
+}
+
+/*!
+    \since 5.9
+
+    Returns the redirect policy that is used when creating new requests.
+
+    \sa setRedirectPolicy(), QNetworkRequest::RedirectPolicy
+*/
+QNetworkRequest::RedirectPolicy QNetworkAccessManager::redirectPolicy() const
+{
+    Q_D(const QNetworkAccessManager);
+    return d->redirectPolicy;
+}
+
+/*!
     \since 4.7
 
     Sends a custom request to the server identified by the URL of \a request.
@@ -1099,10 +1271,53 @@ QNetworkReply *QNetworkAccessManager::sendCustomRequest(const QNetworkRequest &r
 }
 
 /*!
+    \since 5.8
+
+    \overload
+
+    Sends the contents of the \a data byte array to the destination
+    specified by \a request.
+*/
+QNetworkReply *QNetworkAccessManager::sendCustomRequest(const QNetworkRequest &request, const QByteArray &verb, const QByteArray &data)
+{
+    QBuffer *buffer = new QBuffer;
+    buffer->setData(data);
+    buffer->open(QIODevice::ReadOnly);
+
+    QNetworkReply *reply = sendCustomRequest(request, verb, buffer);
+    buffer->setParent(reply);
+    return reply;
+}
+
+#if QT_CONFIG(http)
+/*!
+    \since 5.8
+
+    \overload
+
+    Sends a custom request to the server identified by the URL of \a request.
+
+    Sends the contents of the \a multiPart message to the destination
+    specified by \a request.
+
+    This can be used for sending MIME multipart messages for custom verbs.
+
+    \sa QHttpMultiPart, QHttpPart, put()
+*/
+QNetworkReply *QNetworkAccessManager::sendCustomRequest(const QNetworkRequest &request, const QByteArray &verb, QHttpMultiPart *multiPart)
+{
+    QNetworkRequest newRequest = d_func()->prepareMultipart(request, multiPart);
+    QIODevice *device = multiPart->d_func()->device;
+    QNetworkReply *reply = sendCustomRequest(newRequest, verb, device);
+    return reply;
+}
+#endif // QT_CONFIG(http)
+
+/*!
     Returns a new QNetworkReply object to handle the operation \a op
-    and request \a req. The device \a outgoingData is always 0 for Get and
-    Head requests, but is the value passed to post() and put() in
-    those operations (the QByteArray variants will pass a QBuffer
+    and request \a originalReq. The device \a outgoingData is always 0
+    for Get and Head requests, but is the value passed to post() and
+    put() in those operations (the QByteArray variants will pass a QBuffer
     object).
 
     The default implementation calls QNetworkCookieJar::cookiesForUrl()
@@ -1112,69 +1327,79 @@ QNetworkReply *QNetworkAccessManager::sendCustomRequest(const QNetworkRequest &r
     The returned object must be in an open state.
 */
 QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Operation op,
-                                                    const QNetworkRequest &req,
+                                                    const QNetworkRequest &originalReq,
                                                     QIODevice *outgoingData)
 {
     Q_D(QNetworkAccessManager);
 
+    QNetworkRequest req(originalReq);
+    if (redirectPolicy() != QNetworkRequest::ManualRedirectPolicy
+        && req.attribute(QNetworkRequest::RedirectPolicyAttribute).isNull()
+        && req.attribute(QNetworkRequest::FollowRedirectsAttribute).isNull()) {
+        req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, redirectPolicy());
+    }
+
     bool isLocalFile = req.url().isLocalFile();
-    QString scheme = req.url().scheme().toLower();
+    QString scheme = req.url().scheme();
 
     // fast path for GET on file:// URLs
     // The QNetworkAccessFileBackend will right now only be used for PUT
-    if ((op == QNetworkAccessManager::GetOperation || op == QNetworkAccessManager::HeadOperation)
-        && (isLocalFile || scheme == QLatin1String("qrc")
-#if defined(Q_OS_ANDROID)
+    if (op == QNetworkAccessManager::GetOperation
+     || op == QNetworkAccessManager::HeadOperation) {
+        if (isLocalFile
+#ifdef Q_OS_ANDROID
             || scheme == QLatin1String("assets")
 #endif
-            )) {
-        return new QNetworkReplyFileImpl(this, req, op);
-    }
+            || scheme == QLatin1String("qrc")) {
+            return new QNetworkReplyFileImpl(this, req, op);
+        }
 
-    if ((op == QNetworkAccessManager::GetOperation || op == QNetworkAccessManager::HeadOperation)
-            && scheme == QLatin1String("data")) {
-        return new QNetworkReplyDataImpl(this, req, op);
-    }
+        if (scheme == QLatin1String("data"))
+            return new QNetworkReplyDataImpl(this, req, op);
 
-    // A request with QNetworkRequest::AlwaysCache does not need any bearer management
-    QNetworkRequest::CacheLoadControl mode =
-        static_cast<QNetworkRequest::CacheLoadControl>(
-            req.attribute(QNetworkRequest::CacheLoadControlAttribute,
+        // A request with QNetworkRequest::AlwaysCache does not need any bearer management
+        QNetworkRequest::CacheLoadControl mode =
+            static_cast<QNetworkRequest::CacheLoadControl>(
+                req.attribute(QNetworkRequest::CacheLoadControlAttribute,
                               QNetworkRequest::PreferNetwork).toInt());
-    if (mode == QNetworkRequest::AlwaysCache
-        && (op == QNetworkAccessManager::GetOperation
-        || op == QNetworkAccessManager::HeadOperation)) {
-        // FIXME Implement a QNetworkReplyCacheImpl instead, see QTBUG-15106
-        QNetworkReplyImpl *reply = new QNetworkReplyImpl(this);
-        QNetworkReplyImplPrivate *priv = reply->d_func();
-        priv->manager = this;
-        priv->backend = new QNetworkAccessCacheBackend();
-        priv->backend->manager = this->d_func();
-        priv->backend->setParent(reply);
-        priv->backend->reply = priv;
-        priv->setup(op, req, outgoingData);
-        return reply;
+        if (mode == QNetworkRequest::AlwaysCache) {
+            // FIXME Implement a QNetworkReplyCacheImpl instead, see QTBUG-15106
+            QNetworkReplyImpl *reply = new QNetworkReplyImpl(this);
+            QNetworkReplyImplPrivate *priv = reply->d_func();
+            priv->manager = this;
+            priv->backend = new QNetworkAccessCacheBackend();
+            priv->backend->manager = this->d_func();
+            priv->backend->setParent(reply);
+            priv->backend->reply = priv;
+            priv->setup(op, req, outgoingData);
+            return reply;
+        }
     }
 
 #ifndef QT_NO_BEARERMANAGEMENT
+
     // Return a disabled network reply if network access is disabled.
-    // Except if the scheme is empty or file://.
-    if (!d->networkAccessible && !isLocalFile) {
-        return new QDisabledNetworkReply(this, req, op);
+    // Except if the scheme is empty or file:// or if the host resolves to a loopback address.
+    if (d->networkAccessible == NotAccessible && !isLocalFile) {
+        QHostAddress dest;
+        QString host = req.url().host().toLower();
+        if (!(dest.setAddress(host) && dest.isLoopback()) && host != QLatin1String("localhost")
+                && host != QHostInfo::localHostName().toLower()) {
+            return new QDisabledNetworkReply(this, req, op);
+        }
     }
 
     if (!d->networkSessionStrongRef && (d->initializeSession || !d->networkConfiguration.identifier().isEmpty())) {
-        QNetworkConfigurationManager manager;
         if (!d->networkConfiguration.identifier().isEmpty()) {
             if ((d->networkConfiguration.state() & QNetworkConfiguration::Defined)
-                    && d->networkConfiguration != manager.defaultConfiguration())
-                d->createSession(manager.defaultConfiguration());
+                    && d->networkConfiguration != d->networkConfigurationManager.defaultConfiguration())
+                d->createSession(d->networkConfigurationManager.defaultConfiguration());
             else
                 d->createSession(d->networkConfiguration);
 
         } else {
-            if (manager.capabilities() & QNetworkConfigurationManager::NetworkSessionRequired)
-                d->createSession(manager.defaultConfiguration());
+            if (d->networkSessionRequired)
+                d->createSession(d->networkConfigurationManager.defaultConfiguration());
             else
                 d->initializeSession = false;
         }
@@ -1199,19 +1424,31 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
         }
     }
 
-// Use NSURLConnection for https on iOS when OpenSSL is disabled.
-#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
-    if (scheme == QLatin1String("https"))
-        return new QNetworkReplyNSURLConnectionImpl(this, request, op, outgoingData);
-#endif
-
-#ifndef QT_NO_HTTP
+#if QT_CONFIG(http)
     // Since Qt 5 we use the new QNetworkReplyHttpImpl
     if (scheme == QLatin1String("http") || scheme == QLatin1String("preconnect-http")
 #ifndef QT_NO_SSL
         || scheme == QLatin1String("https") || scheme == QLatin1String("preconnect-https")
 #endif
         ) {
+#ifndef QT_NO_SSL
+        if (isStrictTransportSecurityEnabled() && d->stsCache.isKnownHost(request.url())) {
+            QUrl stsUrl(request.url());
+            // RFC6797, 8.3:
+            // The UA MUST replace the URI scheme with "https" [RFC2818],
+            // and if the URI contains an explicit port component of "80",
+            // then the UA MUST convert the port component to be "443", or
+            // if the URI contains an explicit port component that is not
+            // equal to "80", the port component value MUST be preserved;
+            // otherwise,
+            // if the URI does not contain an explicit port component, the UA
+            // MUST NOT add one.
+            if (stsUrl.port() == 80)
+                stsUrl.setPort(443);
+            stsUrl.setScheme(QLatin1String("https"));
+            request.setUrl(stsUrl);
+        }
+#endif
         QNetworkReplyHttpImpl *reply = new QNetworkReplyHttpImpl(this, request, op, outgoingData);
 #ifndef QT_NO_BEARERMANAGEMENT
         connect(this, SIGNAL(networkSessionConnected()),
@@ -1219,7 +1456,7 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
 #endif
         return reply;
     }
-#endif // QT_NO_HTTP
+#endif // QT_CONFIG(http)
 
     // first step: create the reply
     QNetworkReplyImpl *reply = new QNetworkReplyImpl(this);
@@ -1295,7 +1532,7 @@ QStringList QNetworkAccessManager::supportedSchemesImplementation() const
 
     QStringList schemes = d->backendSupportedSchemes();
     // Those ones don't exist in backends
-#ifndef QT_NO_HTTP
+#if QT_CONFIG(http)
     schemes << QStringLiteral("http");
 #ifndef QT_NO_SSL
     if (QSslSocket::supportsSsl())
@@ -1313,10 +1550,26 @@ QStringList QNetworkAccessManager::supportedSchemesImplementation() const
 
     This function is useful for doing auto tests.
 
+    \sa clearConnectionCache()
 */
 void QNetworkAccessManager::clearAccessCache()
 {
-    QNetworkAccessManagerPrivate::clearCache(this);
+    QNetworkAccessManagerPrivate::clearAuthenticationCache(this);
+    QNetworkAccessManagerPrivate::clearConnectionCache(this);
+}
+
+/*!
+    \since 5.9
+
+    Flushes the internal cache of network connections.
+    In contrast to clearAccessCache() the authentication data
+    is preserved.
+
+    \sa clearAccessCache()
+*/
+void QNetworkAccessManager::clearConnectionCache()
+{
+    QNetworkAccessManagerPrivate::clearConnectionCache(this);
 }
 
 void QNetworkAccessManagerPrivate::_q_replyFinished()
@@ -1513,32 +1766,43 @@ QList<QNetworkProxy> QNetworkAccessManagerPrivate::queryProxy(const QNetworkProx
 }
 #endif
 
-void QNetworkAccessManagerPrivate::clearCache(QNetworkAccessManager *manager)
+void QNetworkAccessManagerPrivate::clearAuthenticationCache(QNetworkAccessManager *manager)
+{
+    manager->d_func()->authenticationManager->clearCache();
+}
+
+void QNetworkAccessManagerPrivate::clearConnectionCache(QNetworkAccessManager *manager)
 {
     manager->d_func()->objectCache.clear();
-    manager->d_func()->authenticationManager->clearCache();
-
-    if (manager->d_func()->httpThread) {
-        manager->d_func()->httpThread->quit();
-        manager->d_func()->httpThread->wait(5000);
-        if (manager->d_func()->httpThread->isFinished())
-            delete manager->d_func()->httpThread;
-        else
-            QObject::connect(manager->d_func()->httpThread, SIGNAL(finished()), manager->d_func()->httpThread, SLOT(deleteLater()));
-        manager->d_func()->httpThread = 0;
-    }
+    manager->d_func()->destroyThread();
 }
 
 QNetworkAccessManagerPrivate::~QNetworkAccessManagerPrivate()
 {
-    if (httpThread) {
-        httpThread->quit();
-        httpThread->wait(5000);
-        if (httpThread->isFinished())
-            delete httpThread;
+    destroyThread();
+}
+
+QThread * QNetworkAccessManagerPrivate::createThread()
+{
+    if (!thread) {
+        thread = new QThread;
+        thread->setObjectName(QStringLiteral("QNetworkAccessManager thread"));
+        thread->start();
+    }
+    Q_ASSERT(thread);
+    return thread;
+}
+
+void QNetworkAccessManagerPrivate::destroyThread()
+{
+    if (thread) {
+        thread->quit();
+        thread->wait(5000);
+        if (thread->isFinished())
+            delete thread;
         else
-            QObject::connect(httpThread, SIGNAL(finished()), httpThread, SLOT(deleteLater()));
-        httpThread = 0;
+            QObject::connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+        thread = 0;
     }
 }
 
@@ -1565,6 +1829,8 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
         QObject::disconnect(networkSessionStrongRef.data(), SIGNAL(closed()), q, SLOT(_q_networkSessionClosed()));
         QObject::disconnect(networkSessionStrongRef.data(), SIGNAL(stateChanged(QNetworkSession::State)),
             q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)));
+        QObject::disconnect(networkSessionStrongRef.data(), SIGNAL(error(QNetworkSession::SessionError)),
+                            q, SLOT(_q_networkSessionFailed(QNetworkSession::SessionError)));
     }
 
     //switch to new session (null if config was invalid)
@@ -1572,7 +1838,6 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
     networkSessionWeakRef = networkSessionStrongRef.toWeakRef();
 
     if (!networkSessionStrongRef) {
-        online = false;
 
         if (networkAccessible == QNetworkAccessManager::NotAccessible || !online)
             emit q->networkAccessibleChanged(QNetworkAccessManager::NotAccessible);
@@ -1588,6 +1853,8 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
     QObject::connect(networkSessionStrongRef.data(), SIGNAL(closed()), q, SLOT(_q_networkSessionClosed()), Qt::QueuedConnection);
     QObject::connect(networkSessionStrongRef.data(), SIGNAL(stateChanged(QNetworkSession::State)),
                      q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)), Qt::QueuedConnection);
+    QObject::connect(networkSessionStrongRef.data(), SIGNAL(error(QNetworkSession::SessionError)),
+                        q, SLOT(_q_networkSessionFailed(QNetworkSession::SessionError)));
 
     _q_networkSessionStateChanged(networkSessionStrongRef->state());
 }
@@ -1604,6 +1871,9 @@ void QNetworkAccessManagerPrivate::_q_networkSessionClosed()
         QObject::disconnect(networkSession.data(), SIGNAL(closed()), q, SLOT(_q_networkSessionClosed()));
         QObject::disconnect(networkSession.data(), SIGNAL(stateChanged(QNetworkSession::State)),
             q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)));
+        QObject::disconnect(networkSession.data(), SIGNAL(error(QNetworkSession::SessionError)),
+                            q, SLOT(_q_networkSessionFailed(QNetworkSession::SessionError)));
+
         networkSessionStrongRef.clear();
         networkSessionWeakRef.clear();
     }
@@ -1612,47 +1882,124 @@ void QNetworkAccessManagerPrivate::_q_networkSessionClosed()
 void QNetworkAccessManagerPrivate::_q_networkSessionStateChanged(QNetworkSession::State state)
 {
     Q_Q(QNetworkAccessManager);
-
+    bool reallyOnline = false;
     //Do not emit the networkSessionConnected signal here, except for roaming -> connected
     //transition, otherwise it is emitted twice in a row when opening a connection.
-    if (state == QNetworkSession::Connected && lastSessionState == QNetworkSession::Roaming)
+    if (state == QNetworkSession::Connected && lastSessionState != QNetworkSession::Roaming)
         emit q->networkSessionConnected();
     lastSessionState = state;
 
-    if (online) {
+    if (online && (state == QNetworkSession::Disconnected
+                   || state == QNetworkSession::NotAvailable)) {
+        const auto cfgs = networkConfigurationManager.allConfigurations();
+        for (const QNetworkConfiguration &cfg : cfgs) {
+            if (cfg.state().testFlag(QNetworkConfiguration::Active)) {
+                reallyOnline = true;
+            }
+        }
+    } else if (state == QNetworkSession::Connected || state == QNetworkSession::Roaming) {
+        reallyOnline = true;
+    }
+    online = reallyOnline;
+
+    if (!reallyOnline) {
         if (state != QNetworkSession::Connected && state != QNetworkSession::Roaming) {
-            online = false;
-            networkAccessible = QNetworkAccessManager::NotAccessible;
-            emit q->networkAccessibleChanged(networkAccessible);
+            if (networkAccessible != QNetworkAccessManager::NotAccessible) {
+                networkAccessible = QNetworkAccessManager::NotAccessible;
+                emit q->networkAccessibleChanged(networkAccessible);
+            }
         }
     } else {
-        if (state == QNetworkSession::Connected || state == QNetworkSession::Roaming) {
-            online = true;
-            if (defaultAccessControl)
+        if (defaultAccessControl)
+            if (networkAccessible != QNetworkAccessManager::Accessible) {
                 networkAccessible = QNetworkAccessManager::Accessible;
-            emit q->networkAccessibleChanged(networkAccessible);
-        }
+                emit q->networkAccessibleChanged(networkAccessible);
+            }
+    }
+    if (online && (state != QNetworkSession::Connected && state != QNetworkSession::Roaming)) {
+        _q_networkSessionClosed();
+        createSession(q->configuration());
     }
 }
 
 void QNetworkAccessManagerPrivate::_q_onlineStateChanged(bool isOnline)
 {
-    // if the user set a config, we only care whether this one is active.
+   Q_Q(QNetworkAccessManager);
+
+   // if the user set a config, we only care whether this one is active.
     // Otherwise, this QNAM is online if there is an online config.
     if (customNetworkConfiguration) {
         online = (networkConfiguration.state() & QNetworkConfiguration::Active);
     } else {
-        if (isOnline && online != isOnline) {
-            networkSessionStrongRef.clear();
-            networkSessionWeakRef.clear();
+        if (online != isOnline) {
+            online = isOnline;
+            _q_networkSessionClosed();
+            createSession(q->configuration());
+        }
+    }
+    if (online) {
+        if (defaultAccessControl) {
+            if (networkAccessible != QNetworkAccessManager::Accessible) {
+                networkAccessible = QNetworkAccessManager::Accessible;
+                emit q->networkAccessibleChanged(networkAccessible);
+            }
+        }
+    } else {
+        if (networkAccessible != QNetworkAccessManager::NotAccessible) {
+            networkAccessible = QNetworkAccessManager::NotAccessible;
+            emit q->networkAccessibleChanged(networkAccessible);
+        }
+    }
+}
+
+void QNetworkAccessManagerPrivate::_q_configurationChanged(const QNetworkConfiguration &configuration)
+{
+    const QString id = configuration.identifier();
+    if (configuration.state().testFlag(QNetworkConfiguration::Active)) {
+        if (!onlineConfigurations.contains(id)) {
+            QSharedPointer<QNetworkSession> session(getNetworkSession());
+            if (session) {
+                if (online && session->configuration().identifier()
+                        != networkConfigurationManager.defaultConfiguration().identifier()) {
+
+                    onlineConfigurations.insert(id);
+                    // CHECK: If it's having Active flag - why would it be disconnected ???
+                    //this one disconnected but another one is online,
+                    // close and create new session
+                    _q_networkSessionClosed();
+                    createSession(networkConfigurationManager.defaultConfiguration());
+                }
+            }
         }
 
-        online = isOnline;
+    } else if (onlineConfigurations.contains(id)) {
+        //this one is disconnecting
+        // CHECK: If it disconnected while we create a session over a down configuration ???
+        onlineConfigurations.remove(id);
+        if (!onlineConfigurations.isEmpty()) {
+            _q_networkSessionClosed();
+            createSession(configuration);
+        }
+    }
+}
+
+
+void QNetworkAccessManagerPrivate::_q_networkSessionFailed(QNetworkSession::SessionError)
+{
+    const auto cfgs = networkConfigurationManager.allConfigurations();
+    for (const QNetworkConfiguration &cfg : cfgs) {
+        if (cfg.state().testFlag(QNetworkConfiguration::Active)) {
+            online = true;
+            _q_networkSessionClosed();
+            createSession(networkConfigurationManager.defaultConfiguration());
+            return;
+        }
     }
 }
 
 #endif // QT_NO_BEARERMANAGEMENT
 
+#if QT_CONFIG(http)
 QNetworkRequest QNetworkAccessManagerPrivate::prepareMultipart(const QNetworkRequest &request, QHttpMultiPart *multiPart)
 {
     // copy the request, we probably need to add some headers
@@ -1678,7 +2025,7 @@ QNetworkRequest QNetworkAccessManagerPrivate::prepareMultipart(const QNetworkReq
             break;
         }
         // putting the boundary into quotes, recommended in RFC 2046 section 5.1.1
-        contentType += "; boundary=\"" + multiPart->d_func()->boundary + "\"";
+        contentType += "; boundary=\"" + multiPart->d_func()->boundary + '"';
         newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QVariant(contentType));
     }
 
@@ -1700,6 +2047,7 @@ QNetworkRequest QNetworkAccessManagerPrivate::prepareMultipart(const QNetworkReq
 
     return newRequest;
 }
+#endif // QT_CONFIG(http)
 
 QT_END_NAMESPACE
 

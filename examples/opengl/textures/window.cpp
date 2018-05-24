@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -59,8 +69,8 @@ Window::Window()
             glWidgets[i][j]->rotateBy(+42 * 16, +42 * 16, -21 * 16);
             mainLayout->addWidget(glWidgets[i][j], i, j);
 
-            connect(glWidgets[i][j], SIGNAL(clicked()),
-                    this, SLOT(setCurrentGlWidget()));
+            connect(glWidgets[i][j], &GLWidget::clicked,
+                    this, &Window::setCurrentGlWidget);
         }
     }
     setLayout(mainLayout);
@@ -68,7 +78,7 @@ Window::Window()
     currentGlWidget = glWidgets[0][0];
 
     QTimer *timer = new QTimer(this);
-    connect(timer, SIGNAL(timeout()), this, SLOT(rotateOneStep()));
+    connect(timer, &QTimer::timeout, this, &Window::rotateOneStep);
     timer->start(20);
 
     setWindowTitle(tr("Textures"));

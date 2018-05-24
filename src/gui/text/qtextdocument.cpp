@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,6 +39,7 @@
 
 #include "qtextdocument.h"
 #include <qtextformat.h>
+#include "qtextcursor_p.h"
 #include "qtextdocumentlayout_p.h"
 #include "qtextdocumentfragment.h"
 #include "qtextdocumentfragment_p.h"
@@ -40,7 +47,9 @@
 #include "qtextlist.h"
 #include <qdebug.h>
 #include <qregexp.h>
+#if QT_CONFIG(regularexpression)
 #include <qregularexpression.h>
+#endif
 #include <qvarlengtharray.h>
 #include <qtextcodec.h>
 #include <qthread.h>
@@ -64,19 +73,8 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_CORE_EXPORT unsigned int qt_int_sqrt(unsigned int n);
+Q_CORE_EXPORT Q_DECL_CONST_FUNCTION unsigned int qt_int_sqrt(unsigned int n);
 
-/*!
-    Returns \c true if the string \a text is likely to be rich text;
-    otherwise returns \c false.
-
-    This function uses a fast and therefore simple heuristic. It
-    mainly checks whether there is something that looks like a tag
-    before the first line break. Although the result may be correct
-    for common cases, there is no guarantee.
-
-    This function is defined in the \c <QTextDocument> header file.
-*/
 bool Qt::mightBeRichText(const QString& text)
 {
     if (text.isEmpty())
@@ -87,7 +85,7 @@ bool Qt::mightBeRichText(const QString& text)
         ++start;
 
     // skip a leading <?xml ... ?> as for example with xhtml
-    if (text.mid(start, 5) == QLatin1String("<?xml")) {
+    if (text.midRef(start, 5).compare(QLatin1String("<?xml")) == 0) {
         while (start < text.length()) {
             if (text.at(start) == QLatin1Char('?')
                 && start + 2 < text.length()
@@ -102,12 +100,12 @@ bool Qt::mightBeRichText(const QString& text)
             ++start;
     }
 
-    if (text.mid(start, 5).toLower() == QLatin1String("<!doc"))
+    if (text.midRef(start, 5).compare(QLatin1String("<!doc"), Qt::CaseInsensitive) == 0)
         return true;
     int open = start;
     while (open < text.length() && text.at(open) != QLatin1Char('<')
             && text.at(open) != QLatin1Char('\n')) {
-        if (text.at(open) == QLatin1Char('&') &&  text.mid(open+1,3) == QLatin1String("lt;"))
+        if (text.at(open) == QLatin1Char('&') &&  text.midRef(open + 1, 3) == QLatin1String("lt;"))
             return true; // support desperate attempt of user to see <...>
         ++open;
     }
@@ -126,7 +124,7 @@ bool Qt::mightBeRichText(const QString& text)
                     return false; // that's not a tag
             }
 #ifndef QT_NO_TEXTHTMLPARSER
-            return QTextHtmlParser::lookupElement(tag.toLower()) != -1;
+            return QTextHtmlParser::lookupElement(std::move(tag).toLower()) != -1;
 #else
             return false;
 #endif // QT_NO_TEXTHTMLPARSER
@@ -135,17 +133,6 @@ bool Qt::mightBeRichText(const QString& text)
     return false;
 }
 
-
-/*!
-    Converts the plain text string \a plain to an HTML-formatted
-    paragraph while preserving most of its look.
-
-    \a mode defines how whitespace is handled.
-
-    This function is defined in the \c <QTextDocument> header file.
-
-    \sa escape(), mightBeRichText()
-*/
 QString Qt::convertFromPlainText(const QString &plain, Qt::WhiteSpaceMode mode)
 {
     int col = 0;
@@ -195,11 +182,6 @@ QString Qt::convertFromPlainText(const QString &plain, Qt::WhiteSpaceMode mode)
 }
 
 #ifndef QT_NO_TEXTCODEC
-/*!
-    \internal
-
-    This function is defined in the \c <QTextDocument> header file.
-*/
 QTextCodec *Qt::codecForHtml(const QByteArray &ba)
 {
     return QTextCodec::codecForHtml(ba);
@@ -532,7 +514,7 @@ QTextOption QTextDocument::defaultTextOption() const
 /*!
     \since 4.3
 
-    Sets the default text option.
+    Sets the default text option to \a option.
 */
 void QTextDocument::setDefaultTextOption(const QTextOption &option)
 {
@@ -798,7 +780,7 @@ void QTextDocument::adjustSize()
     // Pull this private function in from qglobal.cpp
     QFont f = defaultFont();
     QFontMetrics fm(f);
-    int mw =  fm.width(QLatin1Char('x')) * 80;
+    int mw =  fm.horizontalAdvance(QLatin1Char('x')) * 80;
     int w = mw;
     setTextWidth(w);
     QSizeF size = documentLayout()->documentSize();
@@ -963,7 +945,7 @@ QString QTextDocument::defaultStyleSheet() const
 
 
 /*!
-    \fn QTextDocument::undoAvailable(bool available);
+    \fn void QTextDocument::undoAvailable(bool available);
 
     This signal is emitted whenever undo operations become available
     (\a available is true) or unavailable (\a available is false).
@@ -975,14 +957,14 @@ QString QTextDocument::defaultStyleSheet() const
 */
 
 /*!
-    \fn QTextDocument::redoAvailable(bool available);
+    \fn void QTextDocument::redoAvailable(bool available);
 
     This signal is emitted whenever redo operations become available
     (\a available is true) or unavailable (\a available is false).
 */
 
 /*!
-    \fn QTextDocument::cursorPositionChanged(const QTextCursor &cursor);
+    \fn void QTextDocument::cursorPositionChanged(const QTextCursor &cursor);
 
     This signal is emitted whenever the position of a cursor changed
     due to an editing operation. The cursor that changed is passed in
@@ -992,7 +974,7 @@ QString QTextDocument::defaultStyleSheet() const
 */
 
 /*!
-    \fn QTextDocument::blockCountChanged(int newBlockCount);
+    \fn void QTextDocument::blockCountChanged(int newBlockCount);
     \since 4.3
 
     This signal is emitted when the total number of text blocks in the
@@ -1001,7 +983,7 @@ QString QTextDocument::defaultStyleSheet() const
 */
 
 /*!
-    \fn QTextDocument::documentLayoutChanged();
+    \fn void QTextDocument::documentLayoutChanged();
     \since 4.4
 
     This signal is emitted when a new document layout is set.
@@ -1138,8 +1120,30 @@ void QTextDocument::setMetaInformation(MetaInformation info, const QString &stri
 }
 
 /*!
+    Returns the raw text contained in the document without any
+    formatting information. If you want formatting information
+    use a QTextCursor instead.
+
+    \since 5.9
+    \sa toPlainText()
+*/
+QString QTextDocument::toRawText() const
+{
+    Q_D(const QTextDocument);
+    return d->plainText();
+}
+
+/*!
     Returns the plain text contained in the document. If you want
     formatting information use a QTextCursor instead.
+
+    This function returns the same as toRawText(), but will replace
+    some unicode characters with ASCII alternatives.
+    In particular, no-break space (U+00A0) is replaced by a regular
+    space (U+0020), and both paragraph (U+2029) and line (U+2028)
+    separators are replaced by line feed (U+000A).
+    If you need the precise contents of the document, use toRawText()
+    instead.
 
     \note Embedded objects, such as images, are represented by a
     Unicode value U+FFFC (OBJECT REPLACEMENT CHARACTER).
@@ -1273,7 +1277,7 @@ static bool findInBlock(const QTextBlock &block, const QString &expression, int 
             }
         }
         //we have a hit, return the cursor for that.
-        *cursor = QTextCursor(block.docHandle(), block.position() + idx);
+        *cursor = QTextCursorPrivate::fromPosition(block.docHandle(), block.position() + idx);
         cursor->setPosition(cursor->position() + expression.length(), QTextCursor::KeepAnchor);
         return true;
     }
@@ -1308,7 +1312,7 @@ QTextCursor QTextDocument::find(const QString &subString, int from, FindFlags op
     //do not include the character given in the position.
     if (options & FindBackward) {
         --pos ;
-        if (pos < subString.size())
+        if (pos < 0)
             return QTextCursor();
     }
 
@@ -1347,7 +1351,7 @@ QTextCursor QTextDocument::find(const QString &subString, int from, FindFlags op
     If the given \a cursor has a selection, the search begins after the
     selection; otherwise it begins at the cursor's position.
 
-    By default the search is case-sensitive, and can match text anywhere in the
+    By default the search is case insensitive, and can match text anywhere in the
     document.
 */
 QTextCursor QTextDocument::find(const QString &subString, const QTextCursor &cursor, FindFlags options) const
@@ -1391,7 +1395,7 @@ static bool findInBlock(const QTextBlock &block, const QRegExp &expression, int 
             }
         }
         //we have a hit, return the cursor for that.
-        *cursor = QTextCursor(block.docHandle(), block.position() + idx);
+        *cursor = QTextCursorPrivate::fromPosition(block.docHandle(), block.position() + idx);
         cursor->setPosition(cursor->position() + expr.matchedLength(), QTextCursor::KeepAnchor);
         return true;
     }
@@ -1401,7 +1405,9 @@ static bool findInBlock(const QTextBlock &block, const QRegExp &expression, int 
 /*!
     \overload
 
-    Finds the next occurrence, matching the regular expression, \a expr, in the document.
+    Finds the next occurrence that matches the given regular expression,
+    \a expr, within the same paragraph in the document.
+
     The search starts at the given \a from position, and proceeds forwards
     through the document unless specified otherwise in the search options.
     The \a options control the type of search performed. The FindCaseSensitively
@@ -1454,7 +1460,9 @@ QTextCursor QTextDocument::find(const QRegExp & expr, int from, FindFlags option
 /*!
     \overload
 
-    Finds the next occurrence, matching the regular expression, \a expr, in the document.
+    Finds the next occurrence that matches the given regular expression,
+    \a expr, within the same paragraph in the document.
+
     The search starts at the position of the given from \a cursor, and proceeds
     forwards through the document unless specified otherwise in the search
     options. The \a options control the type of search performed. The FindCaseSensitively
@@ -1463,10 +1471,10 @@ QTextCursor QTextDocument::find(const QRegExp & expr, int from, FindFlags option
     Returns a cursor with the match selected if a match was found; otherwise
     returns a null cursor.
 
-    If the given \a from cursor has a selection, the search begins after the
+    If the given \a cursor has a selection, the search begins after the
     selection; otherwise it begins at the cursor's position.
 
-    By default the search is case-sensitive, and can match text anywhere in the
+    By default the search is case insensitive, and can match text anywhere in the
     document.
 */
 QTextCursor QTextDocument::find(const QRegExp &expr, const QTextCursor &cursor, FindFlags options) const
@@ -1482,7 +1490,7 @@ QTextCursor QTextDocument::find(const QRegExp &expr, const QTextCursor &cursor, 
 }
 #endif // QT_REGEXP
 
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 static bool findInBlock(const QTextBlock &block, const QRegularExpression &expression, int offset,
                         QTextDocument::FindFlags options, QTextCursor *cursor)
 {
@@ -1515,7 +1523,7 @@ static bool findInBlock(const QTextBlock &block, const QRegularExpression &expre
             }
         }
         //we have a hit, return the cursor for that.
-        *cursor = QTextCursor(block.docHandle(), block.position() + idx);
+        *cursor = QTextCursorPrivate::fromPosition(block.docHandle(), block.position() + idx);
         cursor->setPosition(cursor->position() + match.capturedLength(), QTextCursor::KeepAnchor);
         return true;
     }
@@ -1525,7 +1533,9 @@ static bool findInBlock(const QTextBlock &block, const QRegularExpression &expre
 /*!
     \since 5.5
 
-    Finds the next occurrence, matching the regular expression, \a expr, in the document.
+    Finds the next occurrence that matches the given regular expression,
+    \a expr, within the same paragraph in the document.
+
     The search starts at the given \a from position, and proceeds forwards
     through the document unless specified otherwise in the search options.
     The \a options control the type of search performed.
@@ -1578,7 +1588,9 @@ QTextCursor QTextDocument::find(const QRegularExpression &expr, int from, FindFl
 /*!
     \since 5.5
 
-    Finds the next occurrence, matching the regular expression, \a expr, in the document.
+    Finds the next occurrence that matches the given regular expression,
+    \a expr, within the same paragraph in the document.
+
     The search starts at the position of the given \a cursor, and proceeds
     forwards through the document unless specified otherwise in the search
     options. The \a options control the type of search performed.
@@ -1589,7 +1601,7 @@ QTextCursor QTextDocument::find(const QRegularExpression &expr, int from, FindFl
     If the given \a cursor has a selection, the search begins after the
     selection; otherwise it begins at the cursor's position.
 
-    By default the search is case-sensitive, and can match text anywhere in the
+    By default the search is case insensitive, and can match text anywhere in the
     document.
 */
 QTextCursor QTextDocument::find(const QRegularExpression &expr, const QTextCursor &cursor, FindFlags options) const
@@ -1603,7 +1615,7 @@ QTextCursor QTextDocument::find(const QRegularExpression &expr, const QTextCurso
     }
     return find(expr, pos, options);
 }
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
 
 /*!
     \fn QTextObject *QTextDocument::createObject(const QTextFormat &format)
@@ -1751,6 +1763,10 @@ QTextBlock QTextDocument::lastBlock() const
     \property QTextDocument::pageSize
     \brief the page size that should be used for laying out the document
 
+    The units are determined by the underlying paint device. The size is
+    measured in logical pixels when painting to the screen, and in points
+    (1/72 inch) when painting to a printer.
+
     By default, for a newly-created, empty document, this property contains
     an undefined size.
 
@@ -1800,7 +1816,7 @@ QFont QTextDocument::defaultFont() const
 }
 
 /*!
-    \fn QTextDocument::modificationChanged(bool changed)
+    \fn void QTextDocument::modificationChanged(bool changed)
 
     This signal is emitted whenever the content of the document
     changes in a way that affects the modification state. If \a
@@ -1857,7 +1873,7 @@ static void printPage(int index, QPainter *painter, const QTextDocument *doc, co
         painter->setFont(QFont(doc->defaultFont()));
         const QString pageString = QString::number(index);
 
-        painter->drawText(qRound(pageNumberPos.x() - painter->fontMetrics().width(pageString)),
+        painter->drawText(qRound(pageNumberPos.x() - painter->fontMetrics().horizontalAdvance(pageString)),
                           qRound(pageNumberPos.y() + view.top()),
                           pageString);
     }
@@ -1948,7 +1964,7 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
         for (QTextBlock srcBlock = firstBlock(), dstBlock = clonedDoc->firstBlock();
              srcBlock.isValid() && dstBlock.isValid();
              srcBlock = srcBlock.next(), dstBlock = dstBlock.next()) {
-            dstBlock.layout()->setAdditionalFormats(srcBlock.layout()->additionalFormats());
+            dstBlock.layout()->setFormats(srcBlock.layout()->formats());
         }
 
         QAbstractTextDocumentLayout *layout = doc->documentLayout();
@@ -2415,7 +2431,7 @@ bool QTextHtmlExporter::emitCharFormatStyle(const QTextCharFormat &format)
         html += QLatin1Char(';');
         attributesEmitted = true;
     } else {
-        html.chop(qstrlen(decorationTag.latin1()));
+        html.chop(decorationTag.size());
     }
 
     if (format.foreground() != defaultCharFormat.foreground()
@@ -2650,7 +2666,7 @@ void QTextHtmlExporter::emitFragment(const QTextFragment &fragment)
     if (attributesEmitted)
         html += QLatin1String("\">");
     else
-        html.chop(qstrlen(styleTag.latin1()));
+        html.chop(styleTag.size());
 
     if (isObject) {
         for (int i = 0; isImage && i < txt.length(); ++i) {
@@ -2685,13 +2701,8 @@ void QTextHtmlExporter::emitFragment(const QTextFragment &fragment)
         // split for [\n{LineSeparator}]
         QString forcedLineBreakRegExp = QString::fromLatin1("[\\na]");
         forcedLineBreakRegExp[3] = QChar::LineSeparator;
-
-        const QStringList lines = txt.split(QRegExp(forcedLineBreakRegExp));
-        for (int i = 0; i < lines.count(); ++i) {
-            if (i > 0)
-                html += QLatin1String("<br />"); // space on purpose for compatibility with Netscape, Lynx & Co.
-            html += lines.at(i);
-        }
+        // space in BR on purpose for compatibility with old-fashioned browsers
+        html += txt.replace(QRegExp(forcedLineBreakRegExp), QLatin1String("<br />"));
     }
 
     if (attributesEmitted)
@@ -2748,26 +2759,25 @@ void QTextHtmlExporter::emitBlockAttributes(const QTextBlock &block)
     }
 
     if (format.lineHeightType() != QTextBlockFormat::SingleHeight) {
+        html += QLatin1String(" line-height:")
+             + QString::number(format.lineHeight());
         switch (format.lineHeightType()) {
             case QTextBlockFormat::ProportionalHeight:
+                html += QLatin1String("%;");
+                break;
             case QTextBlockFormat::FixedHeight:
-                html += QLatin1String(" line-height:");
+                html += QLatin1String("; -qt-line-height-type: fixed;");
                 break;
             case QTextBlockFormat::MinimumHeight:
-                html += QLatin1String(" min-height:");
+                html += QLatin1String("px;");
                 break;
             case QTextBlockFormat::LineDistanceHeight:
-                html += QLatin1String(" line-spacing:");
+                html += QLatin1String("; -qt-line-height-type: line-distance;");
                 break;
-            case QTextBlockFormat::SingleHeight:
             default:
+                html += QLatin1String(";");
                 break; // Should never reach here
         }
-        html += QString::number(format.lineHeight());
-        if (format.lineHeightType() == QTextBlockFormat::ProportionalHeight)
-            html += QLatin1String("%;");
-        else
-            html += QLatin1String("px;");
     }
 
     emitPageBreakPolicy(format.pageBreakPolicy());
@@ -3126,7 +3136,7 @@ void QTextHtmlExporter::emitTable(const QTextTable *table)
     html += QLatin1String("</table>");
 }
 
-void QTextHtmlExporter::emitFrame(QTextFrame::Iterator frameIt)
+void QTextHtmlExporter::emitFrame(const QTextFrame::Iterator &frameIt)
 {
     if (!frameIt.atEnd()) {
         QTextFrame::Iterator next = frameIt;
@@ -3213,7 +3223,7 @@ void QTextHtmlExporter::emitFrameStyle(const QTextFrameFormat &format, FrameType
                     QString::number(format.rightMargin()));
 
     if (html.length() == originalHtmlLength) // nothing emitted?
-        html.chop(qstrlen(styleAttribute.latin1()));
+        html.chop(styleAttribute.size());
     else
         html += QLatin1Char('\"');
 }

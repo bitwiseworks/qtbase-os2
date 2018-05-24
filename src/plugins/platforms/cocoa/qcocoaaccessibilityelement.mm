@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,19 +40,22 @@
 #include "qcocoaaccessibility.h"
 #include "qcocoahelpers.h"
 #include "qcocoawindow.h"
+#include "qcocoascreen.h"
 #include "private/qaccessiblecache_p.h"
-#include <QtPlatformSupport/private/qaccessiblebridgeutils_p.h>
+#include <QtAccessibilitySupport/private/qaccessiblebridgeutils_p.h>
 #include <QtGui/qaccessible.h>
 
 #import <AppKit/NSAccessibility.h>
 
 QT_USE_NAMESPACE
 
-static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &offset, NSUInteger *start = 0, NSUInteger *end = 0)
+#ifndef QT_NO_ACCESSIBILITY
+
+static void convertLineOffset(QAccessibleTextInterface *text, int *line, int *offset, NSUInteger *start = 0, NSUInteger *end = 0)
 {
-    Q_ASSERT(line == -1 || offset == -1);
-    Q_ASSERT(line != -1 || offset != -1);
-    Q_ASSERT(offset <= text->characterCount());
+    Q_ASSERT(*line == -1 || *offset == -1);
+    Q_ASSERT(*line != -1 || *offset != -1);
+    Q_ASSERT(*offset <= text->characterCount());
 
     int curLine = -1;
     int curStart = 0, curEnd = 0;
@@ -54,6 +63,14 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
     do {
         curStart = curEnd;
         text->textAtOffset(curStart, QAccessible::LineBoundary, &curStart, &curEnd);
+        // If the text is empty then we just return
+        if (curStart == -1 || curEnd == -1) {
+            if (start)
+                *start = 0;
+            if (end)
+                *end = 0;
+            return;
+        }
         ++curLine;
         {
             // check for a case where a single word longer than the text edit's width and gets wrapped
@@ -65,14 +82,14 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
             if (nextEnd == curEnd)
                 ++curEnd;
         }
-    } while ((line == -1 || curLine < line) && (offset == -1 || (curEnd <= offset)) && curEnd <= text->characterCount());
+    } while ((*line == -1 || curLine < *line) && (*offset == -1 || (curEnd <= *offset)) && curEnd <= text->characterCount());
 
     curEnd = qMin(curEnd, text->characterCount());
 
-    if (line == -1)
-        line = curLine;
-    if (offset == -1)
-        offset = curStart;
+    if (*line == -1)
+        *line = curLine;
+    if (*offset == -1)
+        *offset = curStart;
 
     Q_ASSERT(curStart >= 0);
     Q_ASSERT(curEnd >= 0);
@@ -110,7 +127,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
     if (!element) {
         QAccessibleInterface *iface = QAccessible::accessibleInterface(anId);
         Q_ASSERT(iface);
-        if (!iface)
+        if (!iface || !iface->isValid())
             return nil;
         element = [[self alloc] initWithId:anId];
         cache->insertElement(anId, element);
@@ -162,7 +179,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
     static NSArray *defaultAttributes = nil;
 
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return defaultAttributes;
 
     if (defaultAttributes == nil) {
@@ -216,22 +233,29 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (id)parentElement {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return nil;
+
+    // macOS expects that the hierarchy is:
+    // App -> Window -> Children
+    // We don't actually have the window reflected properly in QAccessibility.
+    // Check if the parent is the application and then instead return the native window.
+
+    if (QAccessibleInterface *parent = iface->parent()) {
+        if (parent->role() != QAccessible::Application) {
+            QAccessible::Id parentId = QAccessible::uniqueId(parent);
+            return [QMacAccessibilityElement elementWithId: parentId];
+        }
+    }
 
     if (QWindow *window = iface->window()) {
-        QCocoaWindow *win = static_cast<QCocoaWindow*>(window->handle());
-        return win->qtView();
+        QPlatformWindow *platformWindow = window->handle();
+        if (platformWindow) {
+            QCocoaWindow *win = static_cast<QCocoaWindow*>(platformWindow);
+            return qnsview_cast(win->view());
+        }
     }
-
-    QAccessibleInterface *parent = iface->parent();
-    if (!parent) {
-        qWarning() << "INVALID PARENT FOR INTERFACE: " << iface;
-        return nil;
-    }
-
-    QAccessible::Id parentId = QAccessible::uniqueId(parent);
-    return [QMacAccessibilityElement elementWithId: parentId];
+    return nil;
 }
 
 
@@ -249,7 +273,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (id)accessibilityAttributeValue:(NSString *)attribute {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface) {
+    if (!iface || !iface->isValid()) {
         qWarning() << "Called attribute on invalid object: " << axid;
         return nil;
     }
@@ -275,16 +299,18 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
         // We're in the same top level element as our parent.
         return [[self parentElement] accessibilityAttributeValue:NSAccessibilityTopLevelUIElementAttribute];
     } else if ([attribute isEqualToString:NSAccessibilityPositionAttribute]) {
-        QPoint qtPosition = iface->rect().topLeft();
-        QSize qtSize = iface->rect().size();
-        return [NSValue valueWithPoint: NSMakePoint(qtPosition.x(), qt_mac_flipYCoordinate(qtPosition.y() + qtSize.height()))];
+        // The position in points of the element's lower-left corner in screen-relative coordinates
+        QPointF qtPosition = QRectF(iface->rect()).bottomLeft();
+        return [NSValue valueWithPoint:QCocoaScreen::mapToNative(qtPosition)];
     } else if ([attribute isEqualToString:NSAccessibilitySizeAttribute]) {
         QSize qtSize = iface->rect().size();
         return [NSValue valueWithSize: NSMakeSize(qtSize.width(), qtSize.height())];
     } else if ([attribute isEqualToString:NSAccessibilityTitleAttribute]) {
-        return QCFString::toNSString(iface->text(QAccessible::Name));
+        if (iface->role() == QAccessible::StaticText)
+            return nil;
+        return iface->text(QAccessible::Name).toNSString();
     } else if ([attribute isEqualToString:NSAccessibilityDescriptionAttribute]) {
-        return QCFString::toNSString(iface->text(QAccessible::Description));
+        return iface->text(QAccessible::Description).toNSString();
     } else if ([attribute isEqualToString:NSAccessibilityEnabledAttribute]) {
         return [NSNumber numberWithBool:!iface->state().disabled];
     } else if ([attribute isEqualToString:NSAccessibilityValueAttribute]) {
@@ -326,9 +352,11 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
     } else if ([attribute isEqualToString:NSAccessibilityInsertionPointLineNumberAttribute]) {
         if (QAccessibleTextInterface *text = iface->textInterface()) {
-            int line = -1;
-            int position = text->cursorPosition();
-            convertLineOffset(text, line, position);
+            int line = 0; // true for all single line edits
+            if (iface->state().multiLine) {
+                int position = text->cursorPosition();
+                convertLineOffset(text, &line, &position);
+            }
             return [NSNumber numberWithInt: line];
         }
         return nil;
@@ -344,7 +372,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 - (NSArray *)accessibilityParameterizedAttributeNames {
 
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface) {
+    if (!iface || !iface->isValid()) {
         qWarning() << "Called attribute on invalid object: " << axid;
         return nil;
     }
@@ -369,7 +397,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (id)accessibilityAttributeValue:(NSString *)attribute forParameter:(id)parameter {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface) {
+    if (!iface || !iface->isValid()) {
         qWarning() << "Called attribute on invalid object: " << axid;
         return nil;
     }
@@ -387,7 +415,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
         if (index < 0 || index > iface->textInterface()->characterCount())
             return nil;
         int line = -1;
-        convertLineOffset(iface->textInterface(), line, index);
+        convertLineOffset(iface->textInterface(), &line, &index);
         return [NSNumber numberWithInt:line];
     }
     if ([attribute isEqualToString: NSAccessibilityRangeForLineParameterizedAttribute]) {
@@ -397,13 +425,13 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
         int lineOffset = -1;
         NSUInteger startOffset = 0;
         NSUInteger endOffset = 0;
-        convertLineOffset(iface->textInterface(), line, lineOffset, &startOffset, &endOffset);
+        convertLineOffset(iface->textInterface(), &line, &lineOffset, &startOffset, &endOffset);
         return [NSValue valueWithRange:NSMakeRange(startOffset, endOffset - startOffset)];
     }
     if ([attribute isEqualToString: NSAccessibilityBoundsForRangeParameterizedAttribute]) {
         NSRange range = [parameter rangeValue];
         QRect firstRect = iface->textInterface()->characterRect(range.location);
-        QRect rect;
+        QRectF rect;
         if (range.length > 0) {
             NSUInteger position = range.location + range.length - 1;
             if (position > range.location && iface->textInterface()->text(position, position + 1) == QStringLiteral("\n"))
@@ -414,15 +442,14 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
             rect = firstRect;
             rect.setWidth(1);
         }
-        return [NSValue valueWithRect: NSMakeRect((CGFloat) rect.x(),(CGFloat) qt_mac_flipYCoordinate(rect.y() + rect.height()), rect.width(), rect.height())];
+        return [NSValue valueWithRect:QCocoaScreen::mapToNative(rect)];
     }
     if ([attribute isEqualToString: NSAccessibilityAttributedStringForRangeParameterizedAttribute]) {
         NSRange range = [parameter rangeValue];
         QString text = iface->textInterface()->text(range.location, range.location + range.length);
-        return [[NSAttributedString alloc] initWithString: text.toNSString()];
+        return [[NSAttributedString alloc] initWithString:text.toNSString()];
     } else if ([attribute isEqualToString: NSAccessibilityRangeForPositionParameterizedAttribute]) {
-        NSPoint nsPoint = [parameter pointValue];
-        QPoint point(static_cast<int>(nsPoint.x), static_cast<int>(qt_mac_flipYCoordinate(nsPoint.y)));
+        QPoint point = QCocoaScreen::mapFromNative([parameter pointValue]).toPoint();
         int offset = iface->textInterface()->offsetAtPoint(point);
         return [NSValue valueWithRange:NSMakeRange(static_cast<NSUInteger>(offset), 1)];
     } else if ([attribute isEqualToString: NSAccessibilityStyleRangeForIndexParameterizedAttribute]) {
@@ -436,7 +463,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (BOOL)accessibilityIsAttributeSettable:(NSString *)attribute {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return NO;
 
     if ([attribute isEqualToString:NSAccessibilityFocusedAttribute]) {
@@ -455,7 +482,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (void)accessibilitySetValue:(id)value forAttribute:(NSString *)attribute {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return;
     if ([attribute isEqualToString:NSAccessibilityFocusedAttribute]) {
         if (QAccessibleActionInterface *action = iface->actionInterface())
@@ -482,9 +509,9 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 // actions
 
 - (NSArray *)accessibilityActionNames {
-    NSMutableArray * nsActions = [NSMutableArray new];
+    NSMutableArray *nsActions = [[NSMutableArray new] autorelease];
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return nsActions;
 
     const QStringList &supportedActionNames = QAccessibleBridgeUtils::effectiveActionNames(iface);
@@ -499,7 +526,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 
 - (NSString *)accessibilityActionDescription:(NSString *)action {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (!iface)
+    if (!iface || !iface->isValid())
         return nil; // FIXME is that the right return type??
     QString qtAction = QCocoaAccessible::translateAction(action, iface);
     QString description;
@@ -512,12 +539,12 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
     } else {
         description = qAccessibleLocalizedActionDescription(qtAction);
     }
-    return QCFString::toNSString(description);
+    return description.toNSString();
 }
 
 - (void)accessibilityPerformAction:(NSString *)action {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
-    if (iface) {
+    if (iface && iface->isValid()) {
         const QString qtAction = QCocoaAccessible::translateAction(action, iface);
         QAccessibleBridgeUtils::performEffectiveAction(iface, qtAction);
     }
@@ -535,23 +562,23 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 - (id)accessibilityHitTest:(NSPoint)point {
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
     if (!iface || !iface->isValid()) {
-//        qDebug() << "Hit test: INVALID";
+//        qDebug("Hit test: INVALID");
         return NSAccessibilityUnignoredAncestor(self);
     }
 
-    int y = qt_mac_flipYCoordinate(point.y);
-    QAccessibleInterface *childInterface = iface->childAt(point.x, y);
+    QPointF screenPoint = QCocoaScreen::mapFromNative(point);
+    QAccessibleInterface *childInterface = iface->childAt(screenPoint.x(), screenPoint.y());
     // No child found, meaning we hit this element.
-    if (!childInterface)
+    if (!childInterface || !childInterface->isValid())
         return NSAccessibilityUnignoredAncestor(self);
 
     // find the deepest child at the point
     QAccessibleInterface *childOfChildInterface = 0;
     do {
-        childOfChildInterface = childInterface->childAt(point.x, y);
-        if (childOfChildInterface)
+        childOfChildInterface = childInterface->childAt(screenPoint.x(), screenPoint.y());
+        if (childOfChildInterface && childOfChildInterface->isValid())
             childInterface = childOfChildInterface;
-    } while (childOfChildInterface);
+    } while (childOfChildInterface && childOfChildInterface->isValid());
 
     QAccessible::Id childId = QAccessible::uniqueId(childInterface);
     // hit a child, forward to child accessible interface.
@@ -565,12 +592,12 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
     QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
 
     if (!iface || !iface->isValid()) {
-        qWarning() << "FocusedUIElement for INVALID";
+        qWarning("FocusedUIElement for INVALID");
         return nil;
     }
 
     QAccessibleInterface *childInterface = iface->focusChild();
-    if (childInterface) {
+    if (childInterface && childInterface->isValid()) {
         QAccessible::Id childAxid = QAccessible::uniqueId(childInterface);
         QMacAccessibilityElement *accessibleElement = [QMacAccessibilityElement elementWithId:childAxid];
         return NSAccessibilityUnignoredAncestor(accessibleElement);
@@ -580,3 +607,5 @@ static void convertLineOffset(QAccessibleTextInterface *text, int &line, int &of
 }
 
 @end
+
+#endif // QT_NO_ACCESSIBILITY

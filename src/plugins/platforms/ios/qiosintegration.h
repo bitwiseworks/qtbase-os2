@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,8 +44,12 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qwindowsysteminterface.h>
 
+#include <QtCore/private/qfactoryloader_p.h>
+
 #include "qiosapplicationstate.h"
-#include "qiosfileenginefactory.h"
+#ifndef Q_OS_TVOS
+#include "qiostextinputoverlay.h"
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -48,63 +58,71 @@ class QIOSServices;
 class QIOSIntegration : public QPlatformNativeInterface, public QPlatformIntegration
 {
     Q_OBJECT
-    Q_PROPERTY(bool debugWindowManagement READ debugWindowManagement WRITE setDebugWindowManagement);
-
 public:
     QIOSIntegration();
     ~QIOSIntegration();
 
-    bool hasCapability(Capability cap) const Q_DECL_OVERRIDE;
+    void initialize() override;
 
-    QPlatformWindow *createPlatformWindow(QWindow *window) const Q_DECL_OVERRIDE;
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const Q_DECL_OVERRIDE;
+    bool hasCapability(Capability cap) const override;
 
-    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const Q_DECL_OVERRIDE;
-    QPlatformOffscreenSurface *createPlatformOffscreenSurface(QOffscreenSurface *surface) const Q_DECL_OVERRIDE;
+    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
+    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
 
-    QPlatformFontDatabase *fontDatabase() const Q_DECL_OVERRIDE;
-    QPlatformClipboard *clipboard() const Q_DECL_OVERRIDE;
-    QPlatformInputContext *inputContext() const Q_DECL_OVERRIDE;
-    QPlatformServices *services() const Q_DECL_OVERRIDE;
+    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
+    QPlatformOffscreenSurface *createPlatformOffscreenSurface(QOffscreenSurface *surface) const override;
 
-    QVariant styleHint(StyleHint hint) const Q_DECL_OVERRIDE;
+    QPlatformFontDatabase *fontDatabase() const override;
+#ifndef QT_NO_CLIPBOARD
+    QPlatformClipboard *clipboard() const override;
+#endif
+    QPlatformInputContext *inputContext() const override;
+    QPlatformServices *services() const override;
 
-    QStringList themeNames() const Q_DECL_OVERRIDE;
-    QPlatformTheme *createPlatformTheme(const QString &name) const Q_DECL_OVERRIDE;
+    QVariant styleHint(StyleHint hint) const override;
 
-    QAbstractEventDispatcher *createEventDispatcher() const Q_DECL_OVERRIDE;
-    QPlatformNativeInterface *nativeInterface() const Q_DECL_OVERRIDE;
+    QStringList themeNames() const override;
+    QPlatformTheme *createPlatformTheme(const QString &name) const override;
+
+    QAbstractEventDispatcher *createEventDispatcher() const override;
+    QPlatformNativeInterface *nativeInterface() const override;
 
     QTouchDevice *touchDevice();
-    QPlatformAccessibility *accessibility() const Q_DECL_OVERRIDE;
+#ifndef QT_NO_ACCESSIBILITY
+    QPlatformAccessibility *accessibility() const override;
+#endif
 
     // Called from Objective-C class QIOSScreenTracker, which can't be friended
     void addScreen(QPlatformScreen *screen) { screenAdded(screen); }
     void destroyScreen(QPlatformScreen *screen) { QPlatformIntegration::destroyScreen(screen); }
 
+    void beep() const override;
+
     static QIOSIntegration *instance();
 
     // -- QPlatformNativeInterface --
 
-    void *nativeResourceForWindow(const QByteArray &resource, QWindow *window) Q_DECL_OVERRIDE;
+    void *nativeResourceForWindow(const QByteArray &resource, QWindow *window) override;
 
-    void setDebugWindowManagement(bool);
-    bool debugWindowManagement() const;
+    QFactoryLoader *optionalPlugins() { return m_optionalPlugins; }
+
+    QIOSApplicationState applicationState;
 
 private:
     QPlatformFontDatabase *m_fontDatabase;
+#ifndef Q_OS_TVOS
     QPlatformClipboard *m_clipboard;
+#endif
     QPlatformInputContext *m_inputContext;
     QTouchDevice *m_touchDevice;
-    QIOSApplicationState m_applicationState;
     QIOSServices *m_platformServices;
     mutable QPlatformAccessibility *m_accessibility;
-    QIOSFileEngineFactory m_fileEngineFactory;
-
-    bool m_debugWindowManagement;
+    QFactoryLoader *m_optionalPlugins;
+#ifndef Q_OS_TVOS
+    QIOSTextInputOverlay m_textInputOverlay;
+#endif
 };
 
 QT_END_NAMESPACE
 
 #endif
-

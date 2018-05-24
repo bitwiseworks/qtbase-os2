@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -42,11 +52,11 @@
 
 #ifndef QT_NO_SYSTEMTRAYICON
 
-#include <QtGui>
-
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QCloseEvent>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -68,12 +78,12 @@ Window::Window()
     createActions();
     createTrayIcon();
 
-    connect(showMessageButton, SIGNAL(clicked()), this, SLOT(showMessage()));
-    connect(showIconCheckBox, SIGNAL(toggled(bool)), trayIcon, SLOT(setVisible(bool)));
-    connect(iconComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(setIcon(int)));
-    connect(trayIcon, SIGNAL(messageClicked()), this, SLOT(messageClicked()));
-    connect(trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
-            this, SLOT(iconActivated(QSystemTrayIcon::ActivationReason)));
+    connect(showMessageButton, &QAbstractButton::clicked, this, &Window::showMessage);
+    connect(showIconCheckBox, &QAbstractButton::toggled, trayIcon, &QSystemTrayIcon::setVisible);
+    connect(iconComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &Window::setIcon);
+    connect(trayIcon, &QSystemTrayIcon::messageClicked, this, &Window::messageClicked);
+    connect(trayIcon, &QSystemTrayIcon::activated, this, &Window::iconActivated);
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addWidget(iconGroupBox);
@@ -101,6 +111,11 @@ void Window::setVisible(bool visible)
 //! [2]
 void Window::closeEvent(QCloseEvent *event)
 {
+#ifdef Q_OS_OSX
+    if (!event->spontaneous() || !isVisible()) {
+        return;
+    }
+#endif
     if (trayIcon->isVisible()) {
         QMessageBox::information(this, tr("Systray"),
                                  tr("The program will keep running in the "
@@ -145,10 +160,16 @@ void Window::iconActivated(QSystemTrayIcon::ActivationReason reason)
 void Window::showMessage()
 {
     showIconCheckBox->setChecked(true);
-    QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::MessageIcon(
+    QSystemTrayIcon::MessageIcon msgIcon = QSystemTrayIcon::MessageIcon(
             typeComboBox->itemData(typeComboBox->currentIndex()).toInt());
-    trayIcon->showMessage(titleEdit->text(), bodyEdit->toPlainText(), icon,
+    if (msgIcon == QSystemTrayIcon::NoIcon) {
+        QIcon icon(iconComboBox->itemIcon(iconComboBox->currentIndex()));
+        trayIcon->showMessage(titleEdit->text(), bodyEdit->toPlainText(), icon,
                           durationSpinBox->value() * 1000);
+    } else {
+        trayIcon->showMessage(titleEdit->text(), bodyEdit->toPlainText(), msgIcon,
+                          durationSpinBox->value() * 1000);
+    }
 }
 //! [5]
 
@@ -200,6 +221,8 @@ void Window::createMessageGroupBox()
     typeComboBox->addItem(style()->standardIcon(
             QStyle::SP_MessageBoxCritical), tr("Critical"),
             QSystemTrayIcon::Critical);
+    typeComboBox->addItem(QIcon(), tr("Custom icon"),
+            QSystemTrayIcon::NoIcon);
     typeComboBox->setCurrentIndex(1);
 
     durationLabel = new QLabel(tr("Duration:"));
@@ -245,16 +268,16 @@ void Window::createMessageGroupBox()
 void Window::createActions()
 {
     minimizeAction = new QAction(tr("Mi&nimize"), this);
-    connect(minimizeAction, SIGNAL(triggered()), this, SLOT(hide()));
+    connect(minimizeAction, &QAction::triggered, this, &QWidget::hide);
 
     maximizeAction = new QAction(tr("Ma&ximize"), this);
-    connect(maximizeAction, SIGNAL(triggered()), this, SLOT(showMaximized()));
+    connect(maximizeAction, &QAction::triggered, this, &QWidget::showMaximized);
 
     restoreAction = new QAction(tr("&Restore"), this);
-    connect(restoreAction, SIGNAL(triggered()), this, SLOT(showNormal()));
+    connect(restoreAction, &QAction::triggered, this, &QWidget::showNormal);
 
     quitAction = new QAction(tr("&Quit"), this);
-    connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+    connect(quitAction, &QAction::triggered, qApp, &QCoreApplication::quit);
 }
 
 void Window::createTrayIcon()

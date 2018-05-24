@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,7 +45,6 @@
 #include "qabstracteventdispatcher.h"
 
 #include <qeventloop.h>
-#include <qhash.h>
 
 #include "qthread_p.h"
 #include "private/qcoreapplication_p.h"
@@ -50,8 +56,9 @@ QT_BEGIN_NAMESPACE
 */
 
 QThreadData::QThreadData(int initialRefCount)
-    : _ref(initialRefCount), loopLevel(0), thread(0), threadId(0),
-      eventDispatcher(0), quitNow(false), canWait(true), isAdopted(false)
+    : _ref(initialRefCount), loopLevel(0), scopeLevel(0),
+      eventDispatcher(0),
+      quitNow(false), canWait(true), isAdopted(false), requiresCoreApplication(true)
 {
     // fprintf(stderr, "QThreadData %p created\n", this);
 }
@@ -71,6 +78,13 @@ QThreadData::~QThreadData()
        QThreadData::clearCurrentThreadData();
     }
 
+    // ~QThread() sets thread to nullptr, so if it isn't null here, it's
+    // because we're being run before the main object itself. This can only
+    // happen for QAdoptedThread. Note that both ~QThreadPrivate() and
+    // ~QObjectPrivate() will deref this object again, but that is acceptable
+    // because this destructor is still running (the _ref sub-object has not
+    // been destroyed) and there's no reentrancy. The refcount will become
+    // negative, but that's acceptable.
     QThread *t = thread;
     thread = 0;
     delete t;
@@ -142,16 +156,20 @@ QThreadPrivate::QThreadPrivate(QThreadData *d)
       exited(false), returnCode(-1),
       stackSize(0), priority(QThread::InheritPriority), data(d)
 {
-#if defined (Q_OS_UNIX)
-    thread_id = 0;
-#elif defined (Q_OS_WIN)
+
+// INTEGRITY doesn't support self-extending stack. The default stack size for
+// a pthread on INTEGRITY is too small so we have to increase the default size
+// to 128K.
+#ifdef Q_OS_INTEGRITY
+    stackSize = 128 * 1024;
+#endif
+
+#if defined (Q_OS_WIN)
     handle = 0;
 #  ifndef Q_OS_WINRT
     id = 0;
 #  endif
     waiters = 0;
-#endif
-#if defined (Q_OS_WIN)
     terminationEnabled = true;
     terminatePending = false;
 #endif
@@ -280,7 +298,7 @@ QThreadPrivate::~QThreadPrivate()
     \fn int QThread::idealThreadCount()
 
     Returns the ideal number of threads that can be run on the system. This is done querying
-    the number of processor cores, both real and logical, in the system. This function returns -1
+    the number of processor cores, both real and logical, in the system. This function returns 1
     if the number of processor cores could not be detected.
 */
 
@@ -303,8 +321,9 @@ QThreadPrivate::~QThreadPrivate()
     The effect of the \a priority parameter is dependent on the
     operating system's scheduling policy. In particular, the \a priority
     will be ignored on systems that do not support thread priorities
-    (such as on Linux, see http://linux.die.net/man/2/sched_setscheduler
-    for more details).
+    (such as on Linux, see the
+    \l {http://linux.die.net/man/2/sched_setscheduler}{sched_setscheduler}
+    documentation for more details).
 
     \sa run(), terminate()
 */
@@ -399,7 +418,7 @@ QThread::QThread(QThreadPrivate &dd, QObject *parent)
 
     Note that deleting a QThread object will not stop the execution
     of the thread it manages. Deleting a running QThread (i.e.
-    isFinished() returns \c false) will probably result in a program
+    isFinished() returns \c false) will result in a program
     crash. Wait for the finished() signal before deleting the
     QThread.
 */
@@ -414,7 +433,7 @@ QThread::~QThread()
             locker.relock();
         }
         if (d->running && !d->finished && !d->data->isAdopted)
-            qWarning("QThread: Destroyed while thread is still running");
+            qFatal("QThread: Destroyed while thread is still running");
 
         d->data->thread = 0;
     }
@@ -825,15 +844,17 @@ bool QThread::event(QEvent *event)
 
 void QThread::requestInterruption()
 {
-    Q_D(QThread);
-    QMutexLocker locker(&d->mutex);
-    if (!d->running || d->finished || d->isInFinish)
-        return;
     if (this == QCoreApplicationPrivate::theMainThread) {
         qWarning("QThread::requestInterruption has no effect on the main thread");
         return;
     }
-    d->interruptionRequested = true;
+    Q_D(QThread);
+    // ### Qt 6: use std::atomic_flag, and document that
+    // requestInterruption/isInterruptionRequested do not synchronize with each other
+    QMutexLocker locker(&d->mutex);
+    if (!d->running || d->finished || d->isInFinish)
+        return;
+    d->interruptionRequested.store(true, std::memory_order_relaxed);
 }
 
 /*!
@@ -862,10 +883,103 @@ void QThread::requestInterruption()
 bool QThread::isInterruptionRequested() const
 {
     Q_D(const QThread);
-    QMutexLocker locker(&d->mutex);
-    if (!d->running || d->finished || d->isInFinish)
+    // fast path: check that the flag is not set:
+    if (!d->interruptionRequested.load(std::memory_order_relaxed))
         return false;
-    return d->interruptionRequested;
+    // slow path: if the flag is set, take into account run status:
+    QMutexLocker locker(&d->mutex);
+    return d->running && !d->finished && !d->isInFinish;
+}
+
+/*!
+    \fn template <typename Function, typename... Args> QThread *QThread::create(Function &&f, Args &&... args)
+    \since 5.10
+
+    Creates a new QThread object that will execute the function \a f with the
+    arguments \a args.
+
+    The new thread is not started -- it must be started by an explicit call
+    to start(). This allows you to connect to its signals, move QObjects
+    to the thread, choose the new thread's priority and so on. The function
+    \a f will be called in the new thread.
+
+    Returns the newly created QThread instance.
+
+    \note the caller acquires ownership of the returned QThread instance.
+
+    \note this function is only available when using C++17.
+
+    \warning do not call start() on the returned QThread instance more than once;
+    doing so will result in undefined behavior.
+
+    \sa start()
+*/
+
+/*!
+    \fn template <typename Function> QThread *QThread::create(Function &&f)
+    \since 5.10
+
+    Creates a new QThread object that will execute the function \a f.
+
+    The new thread is not started -- it must be started by an explicit call
+    to start(). This allows you to connect to its signals, move QObjects
+    to the thread, choose the new thread's priority and so on. The function
+    \a f will be called in the new thread.
+
+    Returns the newly created QThread instance.
+
+    \note the caller acquires ownership of the returned QThread instance.
+
+    \warning do not call start() on the returned QThread instance more than once;
+    doing so will result in undefined behavior.
+
+    \sa start()
+*/
+
+#if QT_CONFIG(cxx11_future)
+class QThreadCreateThread : public QThread
+{
+public:
+    explicit QThreadCreateThread(std::future<void> &&future)
+        : m_future(std::move(future))
+    {
+    }
+
+private:
+    void run() override
+    {
+        m_future.get();
+    }
+
+    std::future<void> m_future;
+};
+
+QThread *QThread::createThreadImpl(std::future<void> &&future)
+{
+    return new QThreadCreateThread(std::move(future));
+}
+#endif // QT_CONFIG(cxx11_future)
+
+/*!
+    \class QDaemonThread
+    \since 5.5
+    \brief The QDaemonThread provides a class to manage threads that outlive QCoreApplication
+    \internal
+
+    Note: don't try to deliver events from the started() signal.
+*/
+QDaemonThread::QDaemonThread(QObject *parent)
+    : QThread(parent)
+{
+    // QThread::started() is emitted from the thread we start
+    connect(this, &QThread::started,
+            [](){ QThreadData::current()->requiresCoreApplication = false; });
+}
+
+QDaemonThread::~QDaemonThread()
+{
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qthread.cpp"

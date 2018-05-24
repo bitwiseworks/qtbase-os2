@@ -1,62 +1,46 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-#include <QGuiApplication>
-#include <QOpenGLWindow>
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
-#include <QPainter>
-#include <QElapsedTimer>
+#include <QtGui>
 
-// This application opens three windows and continuously schedules updates for
-// them.  Each of them is a separate QOpenGLWindow so there will be a separate
-// context and swapBuffers call for each.
-//
-// By default the swap interval is 1 so the effect of three blocking swapBuffers
-// on the main thread can be examined. (the result is likely to be different
-// between platforms, for example OS X is buffer queuing meaning that it can
-// block outside swap, resulting in perfect vsync for all three windows, while
-// other systems that block on swap will kill the frame rate due to blocking the
-// thread three times)
-//
-// Pass --novsync to set a swap interval of 0. This should give an unthrottled
-// refresh on all platforms for all three windows.
-//
-// Passing --vsyncone sets swap interval to 1 for the first window and 0 to the
-// others.
-//
-// Pass --extrawindows N to open N windows in addition to the default 3.
-//
+const char applicationDescription[] = "\n\
+This application opens multiple windows and continuously schedules updates for\n\
+them. Each of them is a separate QOpenGLWindow so there will be a separate\n\
+context and swapBuffers call for each.\n\
+\n\
+By default the swap interval is 1 so the effect of multiple blocking swapBuffers\n\
+on the main thread can be examined. (the result is likely to be different\n\
+between platforms, for example OS X is buffer queuing meaning that it can\n\
+block outside swap, resulting in perfect vsync for all three windows, while\n\
+other systems that block on swap will kill the frame rate due to blocking the\n\
+thread three times)\
+";
+
 // For reference, below is a table of some test results.
 //
 //                                    swap interval 1 for all             swap interval 1 for only one and 0 for others
@@ -69,101 +53,162 @@
 
 class Window : public QOpenGLWindow
 {
+    Q_OBJECT
 public:
-    Window(int n) : idx(n) {
-        r = g = b = fps = 0;
-        y = 0;
+    Window(int index) : windowNumber(index + 1), x(0), framesSwapped(0) {
+
+        color = QColor::fromHsl((index * 30) % 360, 255, 127).toRgb();
+
         resize(200, 200);
-        t2.start();
+
+        setObjectName(QString("Window %1").arg(windowNumber));
+
+        connect(this, SIGNAL(frameSwapped()), SLOT(frameSwapped()));
     }
 
     void paintGL() {
         QOpenGLFunctions *f = QOpenGLContext::currentContext()->functions();
-        f->glClearColor(r, g, b, 1);
+        f->glClearColor(color.redF(), color.greenF(), color.blueF(), 1);
         f->glClear(GL_COLOR_BUFFER_BIT);
-        switch (idx % 3) {
-        case 0:
-            r += 0.005f;
-            break;
-        case 1:
-            g += 0.005f;
-            break;
-        case 2:
-            b += 0.005f;
-            break;
-        }
-        if (r > 1)
-            r = 0;
-        if (g > 1)
-            g = 0;
-        if (b > 1)
-            b = 0;
 
-        QPainter p(this);
-        p.setPen(Qt::white);
-        p.drawText(QPoint(20, y), QString(QLatin1String("Window %1 (%2 FPS)")).arg(idx).arg(fps));
-        y += 1;
-        if (y > height() - 20)
-            y = 20;
+        QPainter painter(this);
+        painter.drawLine(x, 0, x, height());
+        x = ++x % width();
+    }
 
-        if (t2.elapsed() > 1000) {
-            fps = 1000.0 / t.elapsed();
-            t2.restart();
-        }
-        t.restart();
-
+public slots:
+    void frameSwapped() {
+        ++framesSwapped;
         update();
     }
 
+protected:
+    void exposeEvent(QExposeEvent *event) {
+        if (!isExposed())
+            return;
+
+        QSurfaceFormat format = context()->format();
+        qDebug() << this << format.swapBehavior() << "with Vsync =" << (format.swapInterval() ? "ON" : "OFF");
+        if (format.swapInterval() != requestedFormat().swapInterval())
+            qWarning() << "WARNING: Did not get requested swap interval of" << requestedFormat().swapInterval() << "for" << this;
+
+        QOpenGLWindow::exposeEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) {
+        qDebug() << this << event;
+        color.setHsl((color.hue() + 90) % 360, color.saturation(), color.lightness());
+        color = color.toRgb();
+    }
+
 private:
-    int idx;
-    GLfloat r, g, b, fps;
-    int y;
-    QElapsedTimer t, t2;
+    int windowNumber;
+    QColor color;
+    int x;
+
+    int framesSwapped;
+    friend void printFps();
 };
+
+static const qreal kFpsInterval = 500;
+
+void printFps()
+{
+    static QElapsedTimer timer;
+    if (!timer.isValid()) {
+        timer.start();
+        return;
+    }
+
+    const qreal frameFactor = (kFpsInterval / timer.elapsed()) * (1000.0 / kFpsInterval);
+
+    QDebug output = qDebug().nospace();
+
+    qreal averageFps = 0;
+    const QWindowList windows = QGuiApplication::topLevelWindows();
+    for (int i = 0; i < windows.size(); ++i) {
+        Window *w = qobject_cast<Window*>(windows.at(i));
+        Q_ASSERT(w);
+
+        int fps = qRound(w->framesSwapped * frameFactor);
+        output << (i + 1) << "=" << fps << ", ";
+
+        averageFps += fps;
+        w->framesSwapped = 0;
+    }
+    averageFps = qRound(averageFps / windows.size());
+    qreal msPerFrame = 1000.0 / averageFps;
+
+    output << "avg=" << averageFps << ", ms=" << msPerFrame;
+
+    timer.restart();
+}
 
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
-    QSurfaceFormat fmt;
-    if (QGuiApplication::arguments().contains(QLatin1String("--novsync"))) {
-        qDebug("swap interval 0 (no throttling)");
-        fmt.setSwapInterval(0);
-    } else {
-        qDebug("swap interval 1 (sync to vblank)");
-    }
-    QSurfaceFormat::setDefaultFormat(fmt);
 
-    Window w1(0);
-    if (QGuiApplication::arguments().contains(QLatin1String("--vsyncone"))) {
-        qDebug("swap interval 1 for first window only");
-        QSurfaceFormat w1fmt = fmt;
-        w1fmt.setSwapInterval(1);
-        w1.setFormat(w1fmt);
-        fmt.setSwapInterval(0);
-        QSurfaceFormat::setDefaultFormat(fmt);
-    }
-    Window w2(1);
-    Window w3(2);
-    w1.setGeometry(QRect(QPoint(10, 100), w1.size()));
-    w2.setGeometry(QRect(QPoint(300, 100), w2.size()));
-    w3.setGeometry(QRect(QPoint(600, 100), w3.size()));
-    w1.show();
-    w2.show();
-    w3.show();
+    QCommandLineParser parser;
+    parser.setApplicationDescription(applicationDescription);
+    parser.addHelpOption();
 
-    QList<QWindow *> extraWindows;
-    int countIdx;
-    if ((countIdx = QGuiApplication::arguments().indexOf(QLatin1String("--extrawindows"))) >= 0) {
-        int extraWindowCount = QGuiApplication::arguments().at(countIdx + 1).toInt();
-        for (int i = 0; i < extraWindowCount; ++i) {
-            Window *w = new Window(3 + i);
-            extraWindows << w;
-            w->show();
+    QCommandLineOption noVsyncOption("novsync", "Disable Vsync by setting swap interval to 0. "
+        "This should give an unthrottled refresh on all platforms for all windows.");
+    parser.addOption(noVsyncOption);
+
+    QCommandLineOption vsyncOneOption("vsyncone", "Enable Vsync only for first window, "
+        "by setting swap interval to 1 for the first window and 0 for the others.");
+    parser.addOption(vsyncOneOption);
+
+    QCommandLineOption numWindowsOption("numwindows", "Open <N> windows instead of the default 3.", "N", "3");
+    parser.addOption(numWindowsOption);
+
+    parser.process(app);
+
+    QSurfaceFormat defaultSurfaceFormat;
+    defaultSurfaceFormat.setSwapInterval(parser.isSet(noVsyncOption) ? 0 : 1);
+    QSurfaceFormat::setDefaultFormat(defaultSurfaceFormat);
+
+    QRect availableGeometry = app.primaryScreen()->availableGeometry();
+
+    int numberOfWindows = qMax(parser.value(numWindowsOption).toInt(), 1);
+    QList<QWindow *> windows;
+    for (int i = 0; i < numberOfWindows; ++i) {
+        Window *w = new Window(i);
+        windows << w;
+
+        if (i == 0 && parser.isSet(vsyncOneOption)) {
+            QSurfaceFormat vsyncedSurfaceFormat = defaultSurfaceFormat;
+            vsyncedSurfaceFormat.setSwapInterval(1);
+            w->setFormat(vsyncedSurfaceFormat);
+            defaultSurfaceFormat.setSwapInterval(0);
+            QSurfaceFormat::setDefaultFormat(defaultSurfaceFormat);
         }
+
+        static int windowWidth = w->width() + 20;
+        static int windowHeight = w->height() + 20;
+
+        static int windowsPerRow = availableGeometry.width() / windowWidth;
+
+        int col = i;
+        int row = col / windowsPerRow;
+        col -= row * windowsPerRow;
+
+        QPoint position = availableGeometry.topLeft();
+        position += QPoint(col * windowWidth, row * windowHeight);
+        w->setFramePosition(position);
+        w->showNormal();
     }
+
+    QTimer fpsTimer;
+    fpsTimer.setInterval(kFpsInterval);
+    fpsTimer.setTimerType(Qt::PreciseTimer);
+    QObject::connect(&fpsTimer, &QTimer::timeout, &printFps);
+    fpsTimer.start();
 
     int r = app.exec();
-    qDeleteAll(extraWindows);
+    qDeleteAll(windows);
     return r;
 }
+
+#include "main.moc"

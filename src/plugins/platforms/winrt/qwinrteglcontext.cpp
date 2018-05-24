@@ -1,75 +1,205 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qwinrteglcontext.h"
+#include "qwinrtwindow.h"
+#include <private/qeventdispatcher_winrt_p.h>
 
+#include <functional>
+
+#include <d3d11.h>
+
+#include <EGL/egl.h>
 #define EGL_EGLEXT_PROTOTYPES
-#include "EGL/eglext.h"
+#include <EGL/eglext.h>
+
+#include <QOffscreenSurface>
+#include <QOpenGLContext>
+#include <QtEglSupport/private/qeglconvenience_p.h>
+#include <QtEglSupport/private/qeglpbuffer_p.h>
 
 QT_BEGIN_NAMESPACE
 
-QWinRTEGLContext::QWinRTEGLContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display, EGLSurface surface, EGLConfig config)
-    : QEGLPlatformContext(format, share, display, &config), m_eglSurface(surface)
+struct WinRTEGLDisplay
 {
+    WinRTEGLDisplay() {
+    }
+    ~WinRTEGLDisplay() {
+        eglTerminate(eglDisplay);
+    }
+
+    EGLDisplay eglDisplay;
+};
+
+Q_GLOBAL_STATIC(WinRTEGLDisplay, g)
+
+class QWinRTEGLContextPrivate
+{
+public:
+    QWinRTEGLContextPrivate() : eglContext(EGL_NO_CONTEXT), eglShareContext(EGL_NO_CONTEXT) { }
+    QSurfaceFormat format;
+    EGLConfig eglConfig;
+    EGLContext eglContext;
+    EGLContext eglShareContext;
+};
+
+QWinRTEGLContext::QWinRTEGLContext(QOpenGLContext *context)
+    : d_ptr(new QWinRTEGLContextPrivate)
+{
+    Q_D(QWinRTEGLContext);
+    d->format = context->format();
+    d->format.setRenderableType(QSurfaceFormat::OpenGLES);
+    if (QPlatformOpenGLContext *shareHandle = context->shareHandle())
+        d->eglShareContext = static_cast<QWinRTEGLContext *>(shareHandle)->d_ptr->eglContext;
 }
 
-void QWinRTEGLContext::swapBuffers(QPlatformSurface *surface)
+QWinRTEGLContext::~QWinRTEGLContext()
 {
-#ifdef Q_OS_WINPHONE
-    const QSize size = surface->surface()->size();
-    eglPostSubBufferNV(eglDisplay(), eglSurfaceForPlatformSurface(surface),
-                       0, 0, size.width(), size.height());
-#else
-    eglSwapBuffers(eglDisplay(), eglSurfaceForPlatformSurface(surface));
-#endif
+    Q_D(QWinRTEGLContext);
+    if (d->eglContext != EGL_NO_CONTEXT)
+        eglDestroyContext(g->eglDisplay, d->eglContext);
 }
 
-EGLSurface QWinRTEGLContext::eglSurfaceForPlatformSurface(QPlatformSurface *surface)
+void QWinRTEGLContext::initialize()
 {
-    if (surface->surface()->surfaceClass() == QSurface::Window) {
-        // All windows use the same surface
-        return m_eglSurface;
-    } else {
-        // TODO: return EGL surfaces for offscreen surfaces
-        qWarning("This plugin does not support offscreen surfaces.");
-        return EGL_NO_SURFACE;
+    Q_D(QWinRTEGLContext);
+
+    // Test if the hardware supports at least level 9_3
+    D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_9_3 }; // minimum feature level
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, featureLevels, 1,
+                                   D3D11_SDK_VERSION, nullptr, nullptr, nullptr);
+    EGLint deviceType = SUCCEEDED(hr) ? EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE
+                                      : EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE;
+
+    eglBindAPI(EGL_OPENGL_ES_API);
+
+    const EGLint displayAttributes[] = {
+        EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
+        EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, deviceType,
+        EGL_PLATFORM_ANGLE_ENABLE_AUTOMATIC_TRIM_ANGLE, true,
+        EGL_NONE,
+    };
+    g->eglDisplay = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, displayAttributes);
+    if (Q_UNLIKELY(g->eglDisplay == EGL_NO_DISPLAY))
+        qCritical("Failed to initialize EGL display: 0x%x", eglGetError());
+
+    // eglInitialize checks for EGL_PLATFORM_ANGLE_ENABLE_AUTOMATIC_TRIM_ANGLE
+    // which adds a suspending handler. This needs to be added from the Xaml
+    // thread itself, otherwise it will not be invoked. add_Suspending does
+    // not return an error unfortunately, so it silently fails and causes
+    // applications to not quit when the system wants to terminate the app
+    // after suspend.
+    hr = QEventDispatcherWinRT::runOnXamlThread([]() {
+        if (!eglInitialize(g->eglDisplay, nullptr, nullptr))
+            qCritical("Failed to initialize EGL: 0x%x", eglGetError());
+        return S_OK;
+    });
+    d->eglConfig = q_configFromGLFormat(g->eglDisplay, d->format);
+
+    const EGLint flags = d->format.testOption(QSurfaceFormat::DebugContext)
+            ? EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR : 0;
+    const EGLint attributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, d->format.majorVersion(),
+        EGL_CONTEXT_MINOR_VERSION_KHR, d->format.minorVersion(),
+        EGL_CONTEXT_FLAGS_KHR, flags,
+        EGL_CONTEXT_OPENGL_NO_ERROR_KHR, true,
+        EGL_NONE
+    };
+    d->eglContext = eglCreateContext(g->eglDisplay, d->eglConfig, d->eglShareContext, attributes);
+    if (d->eglContext == EGL_NO_CONTEXT) {
+        qWarning("QEGLPlatformContext: Failed to create context: %x", eglGetError());
+        return;
     }
 }
 
-QFunctionPointer QWinRTEGLContext::getProcAddress(const QByteArray &procName)
+bool QWinRTEGLContext::makeCurrent(QPlatformSurface *windowSurface)
+{
+    Q_D(QWinRTEGLContext);
+    Q_ASSERT(windowSurface->surface()->supportsOpenGL());
+
+    EGLSurface surface;
+    if (windowSurface->surface()->surfaceClass() == QSurface::Window) {
+        QWinRTWindow *window = static_cast<QWinRTWindow *>(windowSurface);
+        if (window->eglSurface() == EGL_NO_SURFACE)
+            window->createEglSurface(g->eglDisplay, d->eglConfig);
+
+        surface = window->eglSurface();
+    } else { // Offscreen
+        surface = static_cast<QEGLPbuffer *>(windowSurface)->pbuffer();
+    }
+
+    if (surface == EGL_NO_SURFACE)
+        return false;
+
+    const bool ok = eglMakeCurrent(g->eglDisplay, surface, surface, d->eglContext);
+    if (!ok) {
+        qWarning("QEGLPlatformContext: eglMakeCurrent failed: %x", eglGetError());
+        return false;
+    }
+
+    eglSwapInterval(g->eglDisplay, d->format.swapInterval());
+    return true;
+}
+
+void QWinRTEGLContext::doneCurrent()
+{
+    const bool ok = eglMakeCurrent(g->eglDisplay, EGL_NO_SURFACE,
+                                   EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (!ok)
+        qWarning("QEGLPlatformContext: eglMakeCurrent failed: %x", eglGetError());
+}
+
+void QWinRTEGLContext::swapBuffers(QPlatformSurface *windowSurface)
+{
+    Q_ASSERT(windowSurface->surface()->supportsOpenGL());
+
+    const QWinRTWindow *window = static_cast<QWinRTWindow *>(windowSurface);
+    eglSwapBuffers(g->eglDisplay, window->eglSurface());
+}
+
+QSurfaceFormat QWinRTEGLContext::format() const
+{
+    Q_D(const QWinRTEGLContext);
+    return d->format;
+}
+
+QFunctionPointer QWinRTEGLContext::getProcAddress(const char *procName)
 {
     static QHash<QByteArray, QFunctionPointer> standardFuncs;
     if (standardFuncs.isEmpty()) {
@@ -221,7 +351,18 @@ QFunctionPointer QWinRTEGLContext::getProcAddress(const QByteArray &procName)
     if (i != standardFuncs.end())
         return i.value();
 
-    return QEGLPlatformContext::getProcAddress(procName);
+    return eglGetProcAddress(procName);
+}
+
+bool QWinRTEGLContext::isValid() const
+{
+    Q_D(const QWinRTEGLContext);
+    return d->eglContext != EGL_NO_CONTEXT;
+}
+
+EGLDisplay QWinRTEGLContext::display()
+{
+    return g->eglDisplay;
 }
 
 QT_END_NAMESPACE

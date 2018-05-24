@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,7 +45,9 @@
 #include <qpa/qwindowsysteminterface.h>
 #include <QtGui/qwindow.h>
 #include <QtGui/qscreen.h>
+#include <private/qhighdpiscaling_p.h>
 #include <private/qwindow_p.h>
+
 
 QT_BEGIN_NAMESPACE
 
@@ -52,13 +60,24 @@ QPlatformWindow::QPlatformWindow(QWindow *window)
     , d_ptr(new QPlatformWindowPrivate)
 {
     Q_D(QPlatformWindow);
-    d->rect = window->geometry();
+    d->rect = QHighDpi::toNativePixels(window->geometry(), window);
 }
 
 /*!
     Virtual destructor does not delete its top level window.
 */
 QPlatformWindow::~QPlatformWindow()
+{
+}
+
+/*!
+    Called as part of QWindow::create(), after constructing
+    the window. Platforms should prefer to do initialization
+    here instead of in the constructor, as the platform window
+    object will be fully constructed, and associated to the
+    corresponding QWindow, allowing synchronous event delivery.
+*/
+void QPlatformWindow::initialize()
 {
 }
 
@@ -85,7 +104,7 @@ QPlatformWindow *QPlatformWindow::parent() const
 QPlatformScreen *QPlatformWindow::screen() const
 {
     QScreen *scr = window()->screen();
-    return scr ? scr->handle() : Q_NULLPTR;
+    return scr ? scr->handle() : nullptr;
 }
 
 /*!
@@ -97,10 +116,18 @@ QSurfaceFormat QPlatformWindow::format() const
 }
 
 /*!
-    This function is called by Qt whenever a window is moved or the window is resized. The resize
-    can happen programatically(from ie. user application) or by the window manager. This means that
-    there is no need to call this function specifically from the window manager callback, instead
-    call QWindowSystemInterface::handleGeometryChange(QWindow *w, const QRect &newRect);
+    This function is called by Qt whenever a window is moved or resized using the QWindow API.
+
+    Unless you also override QPlatformWindow::geometry(), you need to call the baseclass
+    implementation of this function in any override of QPlatformWindow::setGeometry(), as
+    QWindow::geometry() is expected to report back the set geometry until a confirmation
+    (or rejection) of the new geometry comes back from the window manager and is reported
+    via QWindowSystemInterface::handleGeometryChange().
+
+    Window move/resizes can also be triggered spontaneously by the window manager, or as a
+    response to an earlier requested move/resize via the Qt APIs. There is no need to call
+    this function from the window manager callback, instead call
+    QWindowSystemInterface::handleGeometryChange().
 
     The position(x, y) part of the rect might be inclusive or exclusive of the window frame
     as returned by frameMargins(). You can detect this in the plugin by checking
@@ -134,6 +161,16 @@ QRect QPlatformWindow::normalGeometry() const
 }
 
 QMargins QPlatformWindow::frameMargins() const
+{
+    return QMargins();
+}
+
+/*!
+    The safe area margins of a window represent the area that is safe to
+    place content within, without intersecting areas of the screen where
+    system UI is placed, or where a screen bezel may cover the content.
+*/
+QMargins QPlatformWindow::safeAreaMargins() const
 {
     return QMargins();
 }
@@ -184,15 +221,30 @@ bool QPlatformWindow::isActive() const
 }
 
 /*!
-    Returns \c true if the window is a descendant of an embedded non-Qt window.
-    Example of an embedded non-Qt window is the parent window of an in-process QAxServer.
+    Returns \c true if the window is an ancestor of the given \a child.
 
-    If \a parentWindow is nonzero, only check if the window is embedded in the
-    specified \a parentWindow.
+    Platform overrides should iterate the native window hierarchy of the child,
+    to ensure that ancestary is reflected even with native windows in the window
+    hierarchy.
 */
-bool QPlatformWindow::isEmbedded(const QPlatformWindow *parentWindow) const
+bool QPlatformWindow::isAncestorOf(const QPlatformWindow *child) const
 {
-    Q_UNUSED(parentWindow);
+    for (const QPlatformWindow *parent = child->parent(); parent; parent = child->parent()) {
+        if (parent == this)
+            return true;
+    }
+
+    return false;
+}
+
+/*!
+    Returns \c true if the window is a child of a non-Qt window.
+
+    A embedded window has no parent platform window as reflected
+    though parent(), but will have a native parent window.
+*/
+bool QPlatformWindow::isEmbedded() const
+{
     return false;
 }
 
@@ -238,7 +290,7 @@ QPoint QPlatformWindow::mapFromGlobal(const QPoint &pos) const
 
     Qt::WindowActive can be ignored.
 */
-void QPlatformWindow::setWindowState(Qt::WindowState)
+void QPlatformWindow::setWindowState(Qt::WindowStates)
 {
 }
 
@@ -254,13 +306,13 @@ WId QPlatformWindow::winId() const
     return WId(1);
 }
 
+//jl: It would be useful to have a property on the platform window which indicated if the sub-class
+// supported the setParent. If not, then geometry would be in screen coordinates.
 /*!
     This function is called to enable native child window in QPA. It is common not to support this
     feature in Window systems, but can be faked. When this function is called all geometry of this
     platform window will be relative to the parent.
 */
-//jl: It would be useful to have a property on the platform window which indicated if the sub-class
-// supported the setParent. If not, then geometry would be in screen coordinates.
 void QPlatformWindow::setParent(const QPlatformWindow *parent)
 {
     Q_UNUSED(parent);
@@ -423,6 +475,25 @@ bool QPlatformWindow::startSystemResize(const QPoint &pos, Qt::Corner corner)
 }
 
 /*!
+    Reimplement this method to start a system move operation if
+    the system supports it and return true to indicate success.
+
+    The \a pos is a position of MouseButtonPress event or TouchBegin
+    event from a sequence of mouse events that triggered the movement.
+    It must be specified in window coordinates.
+
+    The default implementation is empty and does nothing with \a pos.
+
+    \since 5.11
+*/
+
+bool QPlatformWindow::startSystemMove(const QPoint &pos)
+{
+    Q_UNUSED(pos)
+    return false;
+}
+
+/*!
     Reimplement this method to set whether frame strut events
     should be sent to \a enabled.
 
@@ -481,13 +552,32 @@ QString QPlatformWindow::formatWindowTitle(const QString &title, const QString &
 QPlatformScreen *QPlatformWindow::screenForGeometry(const QRect &newGeometry) const
 {
     QPlatformScreen *currentScreen = screen();
-    if (!parent() && currentScreen && !currentScreen->geometry().intersects(newGeometry)) {
-        Q_FOREACH (QPlatformScreen* screen, currentScreen->virtualSiblings()) {
-            if (screen->geometry().intersects(newGeometry))
+    QPlatformScreen *fallback = currentScreen;
+    // QRect::center can return a value outside the rectangle if it's empty.
+    // Apply mapToGlobal() in case it is a foreign/embedded window.
+    QPoint center = newGeometry.isEmpty() ? newGeometry.topLeft() : newGeometry.center();
+    if (isForeignWindow())
+        center = mapToGlobal(center - newGeometry.topLeft());
+
+    if (!parent() && currentScreen && !currentScreen->geometry().contains(center)) {
+        const auto screens = currentScreen->virtualSiblings();
+        for (QPlatformScreen *screen : screens) {
+            const QRect screenGeometry = screen->geometry();
+            if (screenGeometry.contains(center))
                 return screen;
+            if (screenGeometry.intersects(newGeometry))
+                fallback = screen;
         }
     }
-    return currentScreen;
+    return fallback;
+}
+
+/*!
+    Returns a size with both dimensions bounded to [0, QWINDOWSIZE_MAX]
+*/
+QSize QPlatformWindow::constrainWindowSize(const QSize &size)
+{
+    return size.expandedTo(QSize(0, 0)).boundedTo(QSize(QWINDOWSIZE_MAX, QWINDOWSIZE_MAX));
 }
 
 /*!
@@ -519,7 +609,8 @@ bool QPlatformWindow::isAlertState() const
 // Return the effective screen for the initial geometry of a window. In a
 // multimonitor-setup, try to find the right screen by checking the transient
 // parent or the mouse cursor for parentless windows (cf QTBUG-34204,
-// QDialog::adjustPosition()).
+// QDialog::adjustPosition()), unless a non-primary screen has been set,
+// in which case we try to respect that.
 static inline const QScreen *effectiveScreen(const QWindow *window)
 {
     if (!window)
@@ -527,13 +618,16 @@ static inline const QScreen *effectiveScreen(const QWindow *window)
     const QScreen *screen = window->screen();
     if (!screen)
         return QGuiApplication::primaryScreen();
-    const QList<QScreen *> siblings = screen->virtualSiblings();
+    if (screen != QGuiApplication::primaryScreen())
+        return screen;
 #ifndef QT_NO_CURSOR
+    const QList<QScreen *> siblings = screen->virtualSiblings();
     if (siblings.size() > 1) {
         const QPoint referencePoint = window->transientParent() ? window->transientParent()->geometry().center() : QCursor::pos();
-        foreach (const QScreen *sibling, siblings)
+        for (const QScreen *sibling : siblings) {
             if (sibling->geometry().contains(referencePoint))
                 return sibling;
+        }
     }
 #endif
     return screen;
@@ -553,6 +647,20 @@ void QPlatformWindow::invalidateSurface()
 {
 }
 
+static QSize fixInitialSize(QSize size, const QWindow *w,
+                            int defaultWidth, int defaultHeight)
+{
+    if (size.width() == 0) {
+        const int minWidth = w->minimumWidth();
+        size.setWidth(minWidth > 0 ? minWidth : defaultWidth);
+    }
+    if (size.height() == 0) {
+        const int minHeight = w->minimumHeight();
+        size.setHeight(minHeight > 0 ? minHeight : defaultHeight);
+    }
+    return size;
+}
+
 /*!
     Helper function to get initial geometry on windowing systems which do not
     do smart positioning and also do not provide a means of centering a
@@ -565,35 +673,35 @@ void QPlatformWindow::invalidateSurface()
 QRect QPlatformWindow::initialGeometry(const QWindow *w,
     const QRect &initialGeometry, int defaultWidth, int defaultHeight)
 {
-    QRect rect(initialGeometry);
-    if (rect.width() == 0) {
-        const int minWidth = w->minimumWidth();
-        rect.setWidth(minWidth > 0 ? minWidth : defaultWidth);
+    if (!w->isTopLevel()) {
+        const qreal factor = QHighDpiScaling::factor(w);
+        const QSize size = fixInitialSize(QHighDpi::fromNative(initialGeometry.size(), factor),
+                                          w, defaultWidth, defaultHeight);
+        return QRect(initialGeometry.topLeft(), QHighDpi::toNative(size, factor));
     }
-    if (rect.height() == 0) {
-        const int minHeight = w->minimumHeight();
-        rect.setHeight(minHeight > 0 ? minHeight : defaultHeight);
-    }
-    if (w->isTopLevel() && qt_window_private(const_cast<QWindow*>(w))->positionAutomatic
-        && w->type() != Qt::Popup) {
-        if (const QScreen *screen = effectiveScreen(w)) {
-            const QRect availableGeometry = screen->availableGeometry();
-            // Center unless the geometry ( + unknown window frame) is too large for the screen).
-            if (rect.height() < (availableGeometry.height() * 8) / 9
+    const QScreen *screen = effectiveScreen(w);
+    if (!screen)
+        return initialGeometry;
+    QRect rect(QHighDpi::fromNativePixels(initialGeometry, w));
+    rect.setSize(fixInitialSize(rect.size(), w, defaultWidth, defaultHeight));
+    if (qt_window_private(const_cast<QWindow*>(w))->positionAutomatic
+            && w->type() != Qt::Popup) {
+        const QRect availableGeometry = screen->availableGeometry();
+        // Center unless the geometry ( + unknown window frame) is too large for the screen).
+        if (rect.height() < (availableGeometry.height() * 8) / 9
                 && rect.width() < (availableGeometry.width() * 8) / 9) {
-                const QWindow *tp = w->transientParent();
-                if (tp) {
-                    // A transient window should be centered w.r.t. its transient parent.
-                    rect.moveCenter(tp->geometry().center());
-                } else {
-                    // Center the window on the screen.  (Only applicable on platforms
-                    // which do not provide a better way.)
-                    rect.moveCenter(availableGeometry.center());
-                }
+            const QWindow *tp = w->transientParent();
+            if (tp) {
+                // A transient window should be centered w.r.t. its transient parent.
+                rect.moveCenter(tp->geometry().center());
+            } else {
+                // Center the window on the screen.  (Only applicable on platforms
+                // which do not provide a better way.)
+                rect.moveCenter(availableGeometry.center());
             }
         }
     }
-    return rect;
+    return QHighDpi::toNativePixels(rect, screen);
 }
 
 /*!
@@ -624,6 +732,82 @@ void QPlatformWindow::requestUpdate()
     QWindowPrivate *wp = (QWindowPrivate *) QObjectPrivate::get(w);
     Q_ASSERT(wp->updateTimer == 0);
     wp->updateTimer = w->startTimer(timeout, Qt::PreciseTimer);
+}
+
+/*!
+    Returns the QWindow minimum size.
+*/
+QSize QPlatformWindow::windowMinimumSize() const
+{
+    return constrainWindowSize(QHighDpi::toNativePixels(window()->minimumSize(), window()));
+}
+
+/*!
+    Returns the QWindow maximum size.
+*/
+QSize QPlatformWindow::windowMaximumSize() const
+{
+    return constrainWindowSize(QHighDpi::toNativePixels(window()->maximumSize(), window()));
+}
+
+/*!
+    Returns the QWindow base size.
+*/
+QSize QPlatformWindow::windowBaseSize() const
+{
+    return QHighDpi::toNativePixels(window()->baseSize(), window());
+}
+
+/*!
+    Returns the QWindow size increment.
+*/
+QSize QPlatformWindow::windowSizeIncrement() const
+{
+    QSize increment = window()->sizeIncrement();
+    if (!QHighDpiScaling::isActive())
+        return increment;
+
+    // Normalize the increment. If not set the increment can be
+    // (-1, -1) or (0, 0). Make that (1, 1) which is scalable.
+    if (increment.isEmpty())
+        increment = QSize(1, 1);
+
+    return QHighDpi::toNativePixels(increment, window());
+}
+
+/*!
+    Returns the QWindow geometry.
+*/
+QRect QPlatformWindow::windowGeometry() const
+{
+    return QHighDpi::toNativePixels(window()->geometry(), window());
+}
+
+/*!
+    Returns the QWindow frame geometry.
+*/
+QRect QPlatformWindow::windowFrameGeometry() const
+{
+    return QHighDpi::toNativePixels(window()->frameGeometry(), window());
+}
+
+/*!
+    Returns the closest acceptable geometry for a given geometry before
+    a resize/move event for platforms that support it, for example to
+    implement heightForWidth().
+*/
+
+QRectF QPlatformWindow::closestAcceptableGeometry(const QWindow *qWindow, const QRectF &nativeRect)
+{
+    const QRectF rectF = QHighDpi::fromNativePixels(nativeRect, qWindow);
+    const QRectF correctedGeometryF = qt_window_private(const_cast<QWindow *>(qWindow))->closestAcceptableGeometry(rectF);
+    return !correctedGeometryF.isEmpty() && rectF != correctedGeometryF
+        ? QHighDpi::toNativePixels(correctedGeometryF, qWindow) : nativeRect;
+}
+
+QRectF QPlatformWindow::windowClosestAcceptableGeometry(const QRectF &nativeRect) const
+{
+    return QPlatformWindow::closestAcceptableGeometry(window(), nativeRect);
 }
 
 /*!

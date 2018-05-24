@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,6 @@
 
 #include "qlistwidget.h"
 
-#ifndef QT_NO_LISTWIDGET
 #include <qitemdelegate.h>
 #include <private/qlistview_p.h>
 #include <private/qwidgetitemdata_p.h>
@@ -184,8 +189,9 @@ int QListModel::rowCount(const QModelIndex &parent) const
     return parent.isValid() ? 0 : items.count();
 }
 
-QModelIndex QListModel::index(QListWidgetItem *item) const
+QModelIndex QListModel::index(const QListWidgetItem *item_) const
 {
+    QListWidgetItem *item = const_cast<QListWidgetItem *>(item_);
     if (!item || !item->view || static_cast<const QListModel *>(item->view->model()) != this
         || items.isEmpty())
         return QModelIndex();
@@ -299,7 +305,10 @@ void QListModel::sort(int column, Qt::SortOrder order)
     std::sort(sorting.begin(), sorting.end(), compare);
     QModelIndexList fromIndexes;
     QModelIndexList toIndexes;
-    for (int r = 0; r < sorting.count(); ++r) {
+    const int sortingCount = sorting.count();
+    fromIndexes.reserve(sortingCount);
+    toIndexes.reserve(sortingCount);
+    for (int r = 0; r < sortingCount; ++r) {
         QListWidgetItem *item = sorting.at(r).first;
         toIndexes.append(createIndex(r, 0, item));
         fromIndexes.append(createIndex(sorting.at(r).second, 0, sorting.at(r).first));
@@ -403,10 +412,10 @@ QList<QListWidgetItem*>::iterator QListModel::sortedInsertionIterator(
     return std::lower_bound(begin, end, item, QListModelGreaterThan());
 }
 
-void QListModel::itemChanged(QListWidgetItem *item)
+void QListModel::itemChanged(QListWidgetItem *item, const QVector<int> &roles)
 {
-    QModelIndex idx = index(item);
-    emit dataChanged(idx, idx);
+    const QModelIndex idx = index(item);
+    emit dataChanged(idx, idx, roles);
 }
 
 QStringList QListModel::mimeTypes() const
@@ -423,7 +432,9 @@ QMimeData *QListModel::internalMimeData()  const
 QMimeData *QListModel::mimeData(const QModelIndexList &indexes) const
 {
     QList<QListWidgetItem*> itemlist;
-    for (int i = 0; i < indexes.count(); ++i)
+    const int indexesCount = indexes.count();
+    itemlist.reserve(indexesCount);
+    for (int i = 0; i < indexesCount; ++i)
         itemlist << at(indexes.at(i).row());
     const QListWidget *view = qobject_cast<const QListWidget*>(QObject::parent());
 
@@ -680,6 +691,9 @@ QListWidgetItem *QListWidgetItem::clone() const
     Sets the data for a given \a role to the given \a value. Reimplement this
     function if you need extra roles or special behavior for certain roles.
 
+    \note The default implementation treats Qt::EditRole and Qt::DisplayRole as
+    referring to the same data.
+
     \sa Qt::ItemDataRole, data()
 */
 void QListWidgetItem::setData(int role, const QVariant &value)
@@ -697,8 +711,12 @@ void QListWidgetItem::setData(int role, const QVariant &value)
     }
     if (!found)
         d->values.append(QWidgetItemData(role, value));
-    if (QListModel *model = (view ? qobject_cast<QListModel*>(view->model()) : 0))
-        model->itemChanged(this);
+    if (QListModel *model = (view ? qobject_cast<QListModel*>(view->model()) : nullptr)) {
+        const QVector<int> roles((role == Qt::DisplayRole) ?
+                                    QVector<int>({Qt::DisplayRole, Qt::EditRole}) :
+                                    QVector<int>({role}));
+        model->itemChanged(this, roles);
+    }
 }
 
 /*!
@@ -940,7 +958,8 @@ QDataStream &operator>>(QDataStream &in, QListWidgetItem &item)
 
     \sa Qt::ItemFlags
 */
-void QListWidgetItem::setFlags(Qt::ItemFlags aflags) {
+void QListWidgetItem::setFlags(Qt::ItemFlags aflags)
+{
     itemFlags = aflags;
     if (QListModel *model = (view ? qobject_cast<QListModel*>(view->model()) : 0))
         model->itemChanged(this);
@@ -1058,10 +1077,6 @@ void QListWidgetPrivate::setup()
     QObject::connect(q, SIGNAL(entered(QModelIndex)), q, SLOT(_q_emitItemEntered(QModelIndex)));
     QObject::connect(model, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
                      q, SLOT(_q_emitItemChanged(QModelIndex)));
-    QObject::connect(q->selectionModel(), SIGNAL(currentChanged(QModelIndex,QModelIndex)),
-                     q, SLOT(_q_emitCurrentItemChanged(QModelIndex,QModelIndex)));
-    QObject::connect(q->selectionModel(), SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
-                     q, SIGNAL(itemSelectionChanged()));
     QObject::connect(model, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
                      q, SLOT(_q_dataChanged(QModelIndex,QModelIndex)));
     QObject::connect(model, SIGNAL(columnsRemoved(QModelIndex,int,int)), q, SLOT(_q_sort()));
@@ -1142,6 +1157,8 @@ void QListWidgetPrivate::_q_dataChanged(const QModelIndex &topLeft,
     \ingroup model-view
     \inmodule QtWidgets
 
+    \image windows-listview.png
+
     QListWidget is a convenience class that provides a list view similar to the
     one supplied by QListView, but with a classic item-based interface for
     adding and removing items. QListWidget uses an internal model to manage
@@ -1184,17 +1201,8 @@ void QListWidgetPrivate::_q_dataChanged(const QModelIndex &topLeft,
     current item changes, the currentItemChanged() signal is emitted with the
     new current item and the item that was previously current.
 
-    \table 100%
-    \row \li \inlineimage windowsvista-listview.png Screenshot of a Windows Vista style list widget
-         \li \inlineimage macintosh-listview.png Screenshot of a Macintosh style table widget
-         \li \inlineimage fusion-listview.png Screenshot of a Fusion style table widget
-    \row \li A \l{Windows Vista Style Widget Gallery}{Windows Vista style} list widget.
-         \li A \l{Macintosh Style Widget Gallery}{Macintosh style} list widget.
-         \li A \l{Fusion Style Widget Gallery}{Fusion style} list widget.
-    \endtable
-
     \sa QListWidgetItem, QListView, QTreeView, {Model/View Programming},
-        {Config Dialog Example}
+        {Tab Dialog Example}
 */
 
 /*!
@@ -1257,7 +1265,7 @@ void QListWidgetPrivate::_q_dataChanged(const QModelIndex &topLeft,
     activated when the user clicks or double clicks on it, depending on the
     system configuration. It is also activated when the user presses the
     activation key (on Windows and X11 this is the \uicontrol Return key, on Mac OS
-    X it is \uicontrol{Ctrl+0}).
+    X it is \uicontrol{Command+O}).
 */
 
 /*!
@@ -1341,6 +1349,31 @@ QListWidget::QListWidget(QWidget *parent)
 
 QListWidget::~QListWidget()
 {
+}
+
+/*!
+    \reimp
+*/
+
+void QListWidget::setSelectionModel(QItemSelectionModel *selectionModel)
+{
+    Q_D(QListWidget);
+
+    if (d->selectionModel) {
+        QObject::disconnect(d->selectionModel, SIGNAL(currentChanged(QModelIndex,QModelIndex)),
+                            this, SLOT(_q_emitCurrentItemChanged(QModelIndex,QModelIndex)));
+        QObject::disconnect(d->selectionModel, SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
+                            this, SIGNAL(itemSelectionChanged()));
+    }
+
+    QListView::setSelectionModel(selectionModel);
+
+    if (d->selectionModel) {
+        QObject::connect(d->selectionModel, SIGNAL(currentChanged(QModelIndex,QModelIndex)),
+                         this, SLOT(_q_emitCurrentItemChanged(QModelIndex,QModelIndex)));
+        QObject::connect(d->selectionModel, SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
+                         this, SIGNAL(itemSelectionChanged()));
+    }
 }
 
 /*!
@@ -1592,7 +1625,7 @@ void QListWidget::editItem(QListWidgetItem *item)
     Opens an editor for the given \a item. The editor remains open after
     editing.
 
-    \sa closePersistentEditor()
+    \sa closePersistentEditor(), isPersistentEditorOpen()
 */
 void QListWidget::openPersistentEditor(QListWidgetItem *item)
 {
@@ -1604,13 +1637,27 @@ void QListWidget::openPersistentEditor(QListWidgetItem *item)
 /*!
     Closes the persistent editor for the given \a item.
 
-    \sa openPersistentEditor()
+    \sa openPersistentEditor(), isPersistentEditorOpen()
 */
 void QListWidget::closePersistentEditor(QListWidgetItem *item)
 {
     Q_D(QListWidget);
     QModelIndex index = d->listModel()->index(item);
     QAbstractItemView::closePersistentEditor(index);
+}
+
+/*!
+    \since 5.10
+
+    Returns whether a persistent editor is open for item \a item.
+
+    \sa openPersistentEditor(), closePersistentEditor()
+*/
+bool QListWidget::isPersistentEditorOpen(QListWidgetItem *item) const
+{
+    Q_D(const QListWidget);
+    const QModelIndex index = d->listModel()->index(item);
+    return QAbstractItemView::isPersistentEditorOpen(index);
 }
 
 /*!
@@ -1694,7 +1741,9 @@ QList<QListWidgetItem*> QListWidget::selectedItems() const
     Q_D(const QListWidget);
     QModelIndexList indexes = selectionModel()->selectedIndexes();
     QList<QListWidgetItem*> items;
-    for (int i = 0; i < indexes.count(); ++i)
+    const int numIndexes = indexes.count();
+    items.reserve(numIndexes);
+    for (int i = 0; i < numIndexes; ++i)
         items.append(d->listModel()->at(indexes.at(i).row()));
     return items;
 }
@@ -1710,7 +1759,9 @@ QList<QListWidgetItem*> QListWidget::findItems(const QString &text, Qt::MatchFla
     QModelIndexList indexes = d->listModel()->match(model()->index(0, 0, QModelIndex()),
                                                 Qt::DisplayRole, text, -1, flags);
     QList<QListWidgetItem*> items;
-    for (int i = 0; i < indexes.size(); ++i)
+    const int indexesSize = indexes.size();
+    items.reserve(indexesSize);
+    for (int i = 0; i < indexesSize; ++i)
         items.append(d->listModel()->at(indexes.at(i).row()));
     return items;
 }
@@ -1795,6 +1846,7 @@ QMimeData *QListWidget::mimeData(const QList<QListWidgetItem*> items) const
 
     // if non empty, it's called from the model's own mimeData
     if (cachedIndexes.isEmpty()) {
+        cachedIndexes.reserve(items.count());
         foreach (QListWidgetItem *item, items)
             cachedIndexes << indexFromItem(item);
 
@@ -1845,7 +1897,9 @@ void QListWidget::dropEvent(QDropEvent *event) {
         if (d->dropOn(event, &row, &col, &topIndex)) {
             QList<QModelIndex> selIndexes = selectedIndexes();
             QList<QPersistentModelIndex> persIndexes;
-            for (int i = 0; i < selIndexes.count(); i++)
+            const int selIndexesCount = selIndexes.count();
+            persIndexes.reserve(selIndexesCount);
+            for (int i = 0; i < selIndexesCount; i++)
                 persIndexes.append(selIndexes.at(i));
 
             if (persIndexes.contains(topIndex))
@@ -1896,17 +1950,31 @@ QList<QListWidgetItem*> QListWidget::items(const QMimeData *data) const
 }
 
 /*!
-    Returns the QModelIndex assocated with the given \a item.
+    Returns the QModelIndex associated with the given \a item.
+
+    \note In Qt versions prior to 5.10, this function took a non-\c{const} \a item.
 */
 
-QModelIndex QListWidget::indexFromItem(QListWidgetItem *item) const
+QModelIndex QListWidget::indexFromItem(const QListWidgetItem *item) const
 {
     Q_D(const QListWidget);
     return d->listModel()->index(item);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
-    Returns a pointer to the QListWidgetItem assocated with the given \a index.
+    \internal
+    \obsolete
+    \overload
+*/
+QModelIndex QListWidget::indexFromItem(QListWidgetItem *item) const
+{
+    return indexFromItem(const_cast<const QListWidgetItem *>(item));
+}
+#endif
+
+/*!
+    Returns a pointer to the QListWidgetItem associated with the given \a index.
 */
 
 QListWidgetItem *QListWidget::itemFromIndex(const QModelIndex &index) const
@@ -1936,5 +2004,4 @@ bool QListWidget::event(QEvent *e)
 QT_END_NAMESPACE
 
 #include "moc_qlistwidget.cpp"
-
-#endif // QT_NO_LISTWIDGET
+#include "moc_qlistwidget_p.cpp"

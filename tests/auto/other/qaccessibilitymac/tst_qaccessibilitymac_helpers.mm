@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,23 +37,10 @@
 #include <QtTest>
 #include <unistd.h>
 
-#import <Cocoa/Cocoa.h>
+#import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 
 QT_USE_NAMESPACE
-
-bool macNativeAccessibilityEnabled()
-{
-    bool enabled = AXAPIEnabled();
-    if (!enabled)
-        qWarning() << "Accessibility is disabled (check System Preferences) skipping test.";
-    return enabled;
-}
-
-bool trusted()
-{
-    return AXIsProcessTrusted();
-}
 
 struct AXErrorTag {
     AXError err;
@@ -199,7 +181,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
     CFRange cfRange;
     NSRange range = NSMakeRange(0, 0);
 
-    if (!AXValueGetValue((AXValueRef)value, kAXValueCFRangeType, &cfRange))
+    if (!AXValueGetValue(AXValueRef(value), AXValueType(kAXValueCFRangeType), &cfRange))
         qDebug() << "Could not get CFRange value out of AXValueRef";
     else if (cfRange.location < 0 || cfRange.length < 0)
         qDebug() << "Cannot convert CFRange with negative location or length to NSRange";
@@ -217,7 +199,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
 + (NSRect)_rectFromValue:(CFTypeRef)value
 {
     NSRect rect = NSMakeRect(0, 0, 0, 0);
-    if (!AXValueGetValue((AXValueRef)value, kAXValueCGRectType, reinterpret_cast<CGRect*>(&rect)))
+    if (!AXValueGetValue(AXValueRef(value), AXValueType(kAXValueCGRectType), reinterpret_cast<CGRect*>(&rect)))
     {
         qDebug() << "Could not get CGRect value out of AXValueRef";
     }
@@ -227,7 +209,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
 + (NSPoint)_pointFromValue:(CFTypeRef)value
 {
     NSPoint point = NSMakePoint(0, 0);
-    if (!AXValueGetValue((AXValueRef)value, kAXValueCGPointType, reinterpret_cast<CGPoint*>(&point)))
+    if (!AXValueGetValue(AXValueRef(value), AXValueType(kAXValueCGPointType), reinterpret_cast<CGPoint*>(&point)))
     {
         qDebug() << "Could not get CGPoint value out of AXValueRef";
     }
@@ -237,7 +219,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
 + (NSSize)_sizeFromValue:(CFTypeRef)value
 {
     NSSize size = NSMakeSize(0, 0);
-    if (!AXValueGetValue((AXValueRef)value, kAXValueCGSizeType, reinterpret_cast<CGSize*>(&size)))
+    if (!AXValueGetValue(AXValueRef(value), AXValueType(kAXValueCGSizeType), reinterpret_cast<CGSize*>(&size)))
     {
         qDebug() << "Could not get CGSize value out of AXValueRef";
     }
@@ -308,7 +290,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
 - (CFTypeRef)_attributeValue:(CFStringRef)attribute forRange:(NSRange)aRange
 {
     CFRange cfRange = CFRangeMake(aRange.location, aRange.length);
-    AXValueRef range = AXValueCreate(kAXValueCFRangeType, &cfRange);
+    AXValueRef range = AXValueCreate(AXValueType(kAXValueCFRangeType), &cfRange);
     CFTypeRef value =  [self _attributeValue:attribute forParameter:range];
     CFRelease(range);
     return value;
@@ -324,7 +306,7 @@ QDebug operator<<(QDebug dbg, AXErrorTag err)
 
 - (CFTypeRef)_attributeValue:(CFStringRef)attribute forPoint:(CGPoint)aPoint
 {
-    AXValueRef point = AXValueCreate(kAXValueCGPointType, &aPoint);
+    AXValueRef point = AXValueCreate(AXValueType(kAXValueCGPointType), &aPoint);
     CFTypeRef value = [self _attributeValue:attribute forParameter:point];
     CFRelease(point);
     return value;
@@ -418,12 +400,6 @@ bool singleWidget()
 
 bool testLineEdit()
 {
-// not sure if this is needed. on my machine the calls succeed.
-//    NSString *path = @"/Users/frederik/qt5/qtbase/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.app/Contents/MacOS/tst_qaccessibilitymac";
-//    NSString *path = @"/Users/frederik/qt5/qtbase/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.app";
-//    AXError e = AXMakeProcessTrusted((CFStringRef) path);
-//    NSLog(@"error: %i", e);
-
     TestAXObject *appObject = [TestAXObject getApplicationAXObject];
     EXPECT(appObject);
 

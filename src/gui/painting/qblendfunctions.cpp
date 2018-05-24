@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -379,179 +385,22 @@ void qt_blend_rgb32_on_rgb32(uchar *destPixels, int dbpl,
             destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
     fflush(stdout);
 #endif
-
-    if (const_alpha != 256) {
-        qt_blend_argb32_on_argb32(destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-        return;
-    }
-
-    const uint *src = (const uint *) srcPixels;
-    uint *dst = (uint *) destPixels;
-    int len = w * 4;
-    for (int y=0; y<h; ++y) {
-        memcpy(dst, src, len);
-        dst = (quint32 *)(((uchar *) dst) + dbpl);
-        src = (const quint32 *)(((const uchar *) src) + sbpl);
-    }
-}
-
-template<QtPixelOrder PixelOrder>
-static void qt_blend_argb32pm_on_a2rgb30pm(uchar *destPixels, int dbpl,
-                                           const uchar *srcPixels, int sbpl,
-                                           int w, int h,
-                                           int const_alpha)
-{
-#ifdef QT_DEBUG_DRAW
-    fprintf(stdout, "qt_blend_argb32pm_on_a2rgb30pm: dst=(%p, %d), src=(%p, %d), dim=(%d, %d) alpha=%d\n",
-            destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-    fflush(stdout);
-#endif
-
     const uint *src = (const uint *) srcPixels;
     uint *dst = (uint *) destPixels;
     if (const_alpha == 256) {
-        for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint s = src[x];
-                dst[x] = qConvertArgb32ToA2rgb30<PixelOrder>(s) + BYTE_MUL_RGB30(dst[x], 255 - qAlpha(s));
-            }
+        const int len = w * 4;
+        for (int y = 0; y < h; ++y) {
+            memcpy(dst, src, len);
             dst = (quint32 *)(((uchar *) dst) + dbpl);
             src = (const quint32 *)(((const uchar *) src) + sbpl);
         }
+        return;
     } else if (const_alpha != 0) {
         const_alpha = (const_alpha * 255) >> 8;
+        int ialpha = 255 - const_alpha;
         for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint s = src[x];
-                dst[x] = BYTE_MUL_RGB30(qConvertArgb32ToA2rgb30<PixelOrder>(s), const_alpha) + BYTE_MUL_RGB30(dst[x], 255 - qt_div_255(qAlpha(s) * const_alpha));
-            }
-            dst = (quint32 *)(((uchar *) dst) + dbpl);
-            src = (const quint32 *)(((const uchar *) src) + sbpl);
-        }
-    }
-}
-
-template<QtPixelOrder PixelOrder>
-static void qt_blend_rgb32_on_rgb30(uchar *destPixels, int dbpl,
-                                    const uchar *srcPixels, int sbpl,
-                                    int w, int h,
-                                    int const_alpha)
-{
-#ifdef QT_DEBUG_DRAW
-    fprintf(stdout, "qt_blend_rgb32_on_rgb30: dst=(%p, %d), src=(%p, %d), dim=(%d, %d) alpha=%d\n",
-            destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-    fflush(stdout);
-#endif
-
-    if (const_alpha != 256) {
-        qt_blend_argb32pm_on_a2rgb30pm<PixelOrder>(destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-        return;
-    }
-
-    const uint *src = (const uint *) srcPixels;
-    uint *dst = (uint *) destPixels;
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            dst[x] = qConvertRgb32ToRgb30<PixelOrder>(src[x]);
-        }
-        dst = (quint32 *)(((uchar *) dst) + dbpl);
-        src = (const quint32 *)(((const uchar *) src) + sbpl);
-    }
-}
-
-static void qt_blend_a2rgb30pm_on_a2rgb30pm(uchar *destPixels, int dbpl,
-                                           const uchar *srcPixels, int sbpl,
-                                           int w, int h,
-                                           int const_alpha)
-{
-#ifdef QT_DEBUG_DRAW
-    fprintf(stdout, "qt_blend_a2rgb30pm_on_a2rgb30pm: dst=(%p, %d), src=(%p, %d), dim=(%d, %d) alpha=%d\n",
-            destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-    fflush(stdout);
-#endif
-
-    const uint *src = (const uint *) srcPixels;
-    uint *dst = (uint *) destPixels;
-    if (const_alpha == 256) {
-        for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint s = src[x];
-                dst[x] = s + BYTE_MUL_RGB30(dst[x], 255 - qAlphaRgb30(s));
-            }
-            dst = (quint32 *)(((uchar *) dst) + dbpl);
-            src = (const quint32 *)(((const uchar *) src) + sbpl);
-        }
-    } else if (const_alpha != 0) {
-        const uint const_alpha255 = (const_alpha * 255) >> 8;
-        for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint a = (qAlphaRgb30(src[x]) * const_alpha) >> 8;
-                uint s = BYTE_MUL_RGB30(src[x], const_alpha255);
-                dst[x] = s + BYTE_MUL_RGB30(dst[x], 255 - a);
-            }
-            dst = (quint32 *)(((uchar *) dst) + dbpl);
-            src = (const quint32 *)(((const uchar *) src) + sbpl);
-        }
-    }
-}
-
-
-static void qt_blend_rgb30_on_rgb30(uchar *destPixels, int dbpl,
-                                    const uchar *srcPixels, int sbpl,
-                                    int w, int h,
-                                    int const_alpha)
-{
-#ifdef QT_DEBUG_DRAW
-    fprintf(stdout, "qt_blend_rgb30_on_rgb30: dst=(%p, %d), src=(%p, %d), dim=(%d, %d) alpha=%d\n",
-            destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-    fflush(stdout);
-#endif
-
-    if (const_alpha != 256) {
-        qt_blend_a2rgb30pm_on_a2rgb30pm(destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-        return;
-    }
-
-    const uint *src = (const uint *) srcPixels;
-    uint *dst = (uint *) destPixels;
-    int len = w * 4;
-    for (int y=0; y<h; ++y) {
-        memcpy(dst, src, len);
-        dst = (quint32 *)(((uchar *) dst) + dbpl);
-        src = (const quint32 *)(((const uchar *) src) + sbpl);
-    }
-}
-
-static void qt_blend_a2bgr30pm_on_a2rgb30pm(uchar *destPixels, int dbpl,
-                                           const uchar *srcPixels, int sbpl,
-                                           int w, int h,
-                                           int const_alpha)
-{
-#ifdef QT_DEBUG_DRAW
-    fprintf(stdout, "qt_blend_a2bgr30pm_on_a2rgb32pm: dst=(%p, %d), src=(%p, %d), dim=(%d, %d) alpha=%d\n",
-            destPixels, dbpl, srcPixels, sbpl, w, h, const_alpha);
-    fflush(stdout);
-#endif
-
-    const uint *src = (const uint *) srcPixels;
-    uint *dst = (uint *) destPixels;
-    if (const_alpha == 256) {
-        for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint s = qRgbSwapRgb30(src[x]);
-                dst[x] = s + BYTE_MUL_RGB30(dst[x], 255 - qAlphaRgb30(s));
-            }
-            dst = (quint32 *)(((uchar *) dst) + dbpl);
-            src = (const quint32 *)(((const uchar *) src) + sbpl);
-        }
-    } else if (const_alpha != 0) {
-        const uint const_alpha255 = (const_alpha * 255) >> 8;
-        for (int y=0; y<h; ++y) {
-            for (int x=0; x<w; ++x) {
-                uint a = (qAlphaRgb30(src[x]) * const_alpha) >> 8;
-                uint s = BYTE_MUL_RGB30(src[x], const_alpha255);
-                dst[x] = qRgbSwapRgb30(s) + BYTE_MUL_RGB30(dst[x], 255 - a);
-            }
+            for (int x=0; x<w; ++x)
+                dst[x] = INTERPOLATE_PIXEL_255(dst[x], ialpha, src[x], const_alpha);
             dst = (quint32 *)(((uchar *) dst) + dbpl);
             src = (const quint32 *)(((const uchar *) src) + sbpl);
         }
@@ -571,7 +420,7 @@ struct Blend_RGB32_on_RGB32_ConstAlpha {
     }
 
     inline void write(quint32 *dst, quint32 src) {
-        *dst = BYTE_MUL(src, m_alpha) + BYTE_MUL(*dst, m_ialpha);
+        *dst = INTERPOLATE_PIXEL_255(src, m_alpha, *dst, m_ialpha);
     }
 
     inline void flush(void *) {}
@@ -772,30 +621,6 @@ void qInitBlendFunctions()
     qBlendFunctions[QImage::Format_RGBA8888_Premultiplied][QImage::Format_RGBX8888] = qt_blend_rgb32_on_rgb32;
     qBlendFunctions[QImage::Format_RGBA8888_Premultiplied][QImage::Format_RGBA8888_Premultiplied] = qt_blend_argb32_on_argb32;
 #endif
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_RGB32] = qt_blend_rgb32_on_rgb30<PixelOrderBGR>;
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_ARGB32_Premultiplied] = qt_blend_argb32pm_on_a2rgb30pm<PixelOrderBGR>;
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_BGR30] = qt_blend_rgb30_on_rgb30;
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_A2BGR30_Premultiplied] = qt_blend_a2rgb30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_RGB30] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_BGR30][QImage::Format_A2RGB30_Premultiplied] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_RGB32] = qt_blend_rgb32_on_rgb30<PixelOrderBGR>;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_ARGB32_Premultiplied] = qt_blend_argb32pm_on_a2rgb30pm<PixelOrderBGR>;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_BGR30] = qt_blend_rgb30_on_rgb30;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_A2BGR30_Premultiplied] = qt_blend_a2rgb30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_RGB30] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2BGR30_Premultiplied][QImage::Format_A2RGB30_Premultiplied] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_RGB32] = qt_blend_rgb32_on_rgb30<PixelOrderRGB>;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_ARGB32_Premultiplied] = qt_blend_argb32pm_on_a2rgb30pm<PixelOrderRGB>;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_BGR30] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_A2BGR30_Premultiplied] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_RGB30] = qt_blend_rgb30_on_rgb30;
-    qBlendFunctions[QImage::Format_RGB30][QImage::Format_A2RGB30_Premultiplied] = qt_blend_a2rgb30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_RGB32] = qt_blend_rgb32_on_rgb30<PixelOrderRGB>;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_ARGB32_Premultiplied] = qt_blend_argb32pm_on_a2rgb30pm<PixelOrderRGB>;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_BGR30] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_A2BGR30_Premultiplied] = qt_blend_a2bgr30pm_on_a2rgb30pm;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_RGB30] = qt_blend_rgb30_on_rgb30;
-    qBlendFunctions[QImage::Format_A2RGB30_Premultiplied][QImage::Format_A2RGB30_Premultiplied] = qt_blend_a2rgb30pm_on_a2rgb30pm;
 
     qTransformFunctions[QImage::Format_RGB32][QImage::Format_RGB32] = qt_transform_image_rgb32_on_rgb32;
     qTransformFunctions[QImage::Format_RGB32][QImage::Format_ARGB32_Premultiplied] = qt_transform_image_argb32_on_argb32;

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,12 +29,11 @@
 
 #include <QtTest/QtTest>
 #include <QtWidgets>
+#include <private/qstylehelper_p.h>
 
 const int N = 1;
 
-enum Size { Normal, Small, Mini };
-
-Q_DECLARE_METATYPE(Size);
+Q_DECLARE_METATYPE(QStyleHelper::WidgetSizePolicy);
 
 #define CT(E) \
     static const ControlType E = QSizePolicy::E;
@@ -68,7 +62,7 @@ class tst_QMacStyle : public QObject
     Q_OBJECT
 
 public:
-    tst_QMacStyle() { qRegisterMetaType<Size>("Size"); }
+    tst_QMacStyle() { qRegisterMetaType<QStyleHelper::WidgetSizePolicy>("WidgetSizePolicy"); }
 
 private slots:
     void sizeHints_data();
@@ -90,27 +84,27 @@ private:
     static QSize gap(QWidget *widget1, QWidget *widget2);
     static int hgap(QWidget *widget1, QWidget *widget2) { return gap(widget1, widget2).width(); }
     static int vgap(QWidget *widget1, QWidget *widget2) { return gap(widget1, widget2).height(); }
-    static void setSize(QWidget *widget, Size size);
+    static void setSize(QWidget *widget, QStyleHelper::WidgetSizePolicy size);
     static int spacing(ControlType control1, ControlType control2, Qt::Orientation orientation,
                        QStyleOption *option = 0, QWidget *widget = 0);
-    static int hspacing(ControlType control1, ControlType control2, Size size = Normal);
-    static int vspacing(ControlType control1, ControlType control2, Size size = Normal);
+    static int hspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size = QStyleHelper::SizeLarge);
+    static int vspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size = QStyleHelper::SizeLarge);
 };
 
 #define SIZE(x, y, z) \
-    ((size == Normal) ? (x) : (size == Small) ? (y) : (z))
+    ((size == QStyleHelper::SizeLarge) ? (x) : (size == QStyleHelper::SizeSmall) ? (y) : (z))
 
 void tst_QMacStyle::sizeHints_data()
 {
-    QTest::addColumn<Size>("size");
-    QTest::newRow("normal") << Normal;
-//    QTest::newRow("small") << Small;
-//    QTest::newRow("mini") << Mini;
+    QTest::addColumn<QStyleHelper::WidgetSizePolicy>("size");
+    QTest::newRow("normal") << QStyleHelper::SizeLarge;
+//    QTest::newRow("small") << QStyleHelper::SizeSmall;
+//    QTest::newRow("mini") << QStyleHelper::SizeMini;
 }
 
 void tst_QMacStyle::sizeHints()
 {
-    QFETCH(Size, size);
+    QFETCH(QStyleHelper::WidgetSizePolicy, size);
     QDialog w;
     setSize(&w, size);
 
@@ -134,12 +128,12 @@ void tst_QMacStyle::sizeHints()
     QComboBox comboBox1(&w);
     comboBox1.setEditable(false);
     comboBox1.addItem("Foo");
-    QCOMPARE(sh(&comboBox1).height(), SIZE(20, 17, 15));
+    QCOMPARE(sh(&comboBox1).height(), SIZE(26, 17, 15));
 
     QComboBox comboBox2(&w);
     comboBox2.setEditable(true);
     comboBox2.addItem("Foo");
-    QCOMPARE(sh(&comboBox2).height(), SIZE(22, 17, 15));
+    QCOMPARE(sh(&comboBox2).height(), SIZE(26, 17, 15));
 
     // Combos in toolbars use the actual widget rect to
     // avoid faulty clipping:
@@ -147,7 +141,7 @@ void tst_QMacStyle::sizeHints()
     setSize(&tb, size);
     QComboBox comboBox3(&tb);
     comboBox3.addItem("Foo");
-    QCOMPARE(sh(&comboBox3).height(), SIZE(26, -1, -1));
+    QCOMPARE(sh(&comboBox3).height(), SIZE(32, -1, -1));
 
     QSlider slider1(Qt::Horizontal, &w);
     QCOMPARE(sh(&slider1).height(), SIZE(15, 12, 10));
@@ -165,7 +159,7 @@ void tst_QMacStyle::sizeHints()
     QPushButton cancel1("Cancel", &w);
 
     QSize s1 = sh(&ok1);
-    if (size == Normal) {
+    if (size == QStyleHelper::SizeLarge) {
         // AHIG says 68, Builder does 70, and Qt seems to do 69
         QVERIFY(s1.width() >= 68 && s1.width() <= 70);
     }
@@ -227,7 +221,7 @@ void tst_QMacStyle::layoutMargins_data()
 
 void tst_QMacStyle::layoutMargins()
 {
-    QFETCH(Size, size);
+    QFETCH(QStyleHelper::WidgetSizePolicy, size);
     QWidget w;
     setSize(&w, size);
 
@@ -240,7 +234,7 @@ void tst_QMacStyle::layoutSpacings_data()
 
 void tst_QMacStyle::layoutSpacings()
 {
-    QFETCH(Size, size);
+    QFETCH(QStyleHelper::WidgetSizePolicy, size);
 
     /*
         Constraints specified by AHIG.
@@ -309,16 +303,16 @@ QSize tst_QMacStyle::gap(QWidget *widget1, QWidget *widget2)
     return s + QSize(d.x(), d.y());
 }
 
-void tst_QMacStyle::setSize(QWidget *widget, Size size)
+void tst_QMacStyle::setSize(QWidget *widget, QStyleHelper::WidgetSizePolicy size)
 {
     switch (size) {
-    case Normal:
+    case QStyleHelper::SizeLarge:
         widget->setAttribute(Qt::WA_MacNormalSize, true);
         break;
-    case Small:
+    case QStyleHelper::SizeSmall:
         widget->setAttribute(Qt::WA_MacSmallSize, true);
         break;
-    case Mini:
+    case QStyleHelper::SizeMini:
         widget->setAttribute(Qt::WA_MacMiniSize, true);
     }
 }
@@ -329,7 +323,7 @@ int tst_QMacStyle::spacing(ControlType control1, ControlType control2, Qt::Orien
     return QApplication::style()->layoutSpacing(control1, control2, orientation, option, widget);
 }
 
-int tst_QMacStyle::hspacing(ControlType control1, ControlType control2, Size size)
+int tst_QMacStyle::hspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size)
 {
     QWidget w;
     setSize(&w, size);
@@ -340,7 +334,7 @@ int tst_QMacStyle::hspacing(ControlType control1, ControlType control2, Size siz
     return spacing(control1, control2, Qt::Horizontal, &opt);
 }
 
-int tst_QMacStyle::vspacing(ControlType control1, ControlType control2, Size size)
+int tst_QMacStyle::vspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size)
 {
     QWidget w;
     setSize(&w, size);

@@ -7,6 +7,7 @@ CONFIG += console bootstrap
 CONFIG -= qt
 DEFINES += \
     QT_BUILD_QMAKE \
+    QT_NO_FOREACH \
     PROEVALUATOR_FULL
 
 VPATH += \
@@ -15,9 +16,8 @@ VPATH += \
     ../src/corelib/kernel \
     ../src/corelib/codecs \
     ../src/corelib/plugin \
-    ../src/corelib/xml \
     ../src/corelib/io \
-    ../src/corelib/json \
+    ../src/corelib/serialization \
     ../tools/shared/windows
 
 INCLUDEPATH += . \
@@ -26,7 +26,6 @@ INCLUDEPATH += . \
            generators/unix \
            generators/win32 \
            generators/mac \
-           generators/integrity \
            ../tools/shared
 
 include(qmake.pri)

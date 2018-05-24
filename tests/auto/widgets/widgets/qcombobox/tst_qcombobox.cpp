@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -67,14 +62,14 @@
 #include <qstyleditemdelegate.h>
 #include <qstandarditemmodel.h>
 #include <qproxystyle.h>
+#include <qfont.h>
 
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+#include "../../../shared/platforminputcontext.h"
+#include <private/qinputmethod_p.h>
+
+#include <QtTest/private/qtesthelpers_p.h>
+
+using namespace QTestPrivate;
 
 class tst_QComboBox : public QObject
 {
@@ -83,10 +78,9 @@ class tst_QComboBox : public QObject
 public:
     tst_QComboBox() {}
 
-public slots:
-    void init();
-
 private slots:
+    void initTestCase();
+    void cleanupTestCase();
     void getSetCheck();
     void ensureReturnIsIgnored();
     void setEditable();
@@ -122,11 +116,11 @@ private slots:
     void flaggedItems_data();
     void flaggedItems();
     void pixmapIcon();
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
     void mouseWheel_data();
     void mouseWheel();
     void popupWheelHandling();
-#endif // !QT_NO_WHEELEVENT
+#endif // QT_CONFIG(wheelevent)
     void layoutDirection();
     void itemListPosition();
     void separatorItem_data();
@@ -161,10 +155,19 @@ private slots:
     void itemData();
     void task_QTBUG_31146_popupCompletion();
     void task_QTBUG_41288_completerChangesCurrentIndex();
+    void task_QTBUG_54191_slotOnEditTextChangedSetsComboBoxToReadOnly();
     void keyboardSelection();
     void setCustomModelAndView();
     void updateDelegateOnEditableChange();
+    void respectChangedOwnershipOfItemView();
     void task_QTBUG_39088_inputMethodHints();
+    void task_QTBUG_49831_scrollerNotActivated();
+    void task_QTBUG_56693_itemFontFromModel();
+    void inputMethodUpdate();
+    void task_QTBUG_52027_mapCompleterIndex();
+
+private:
+    PlatformInputContext m_platformInputContext;
 };
 
 class MyAbstractItemDelegate : public QAbstractItemDelegate
@@ -209,6 +212,18 @@ protected:
     void setSelection(const QRect &, QItemSelectionModel::SelectionFlags) {}
     QRegion visualRegionForSelection(const QItemSelection &) const { return QRegion(); }
 };
+
+void tst_QComboBox::initTestCase()
+{
+    QInputMethodPrivate *inputMethodPrivate = QInputMethodPrivate::get(qApp->inputMethod());
+    inputMethodPrivate->testContext = &m_platformInputContext;
+}
+
+void tst_QComboBox::cleanupTestCase()
+{
+    QInputMethodPrivate *inputMethodPrivate = QInputMethodPrivate::get(qApp->inputMethod());
+    inputMethodPrivate->testContext = 0;
+}
 
 // Testing get/set functions
 void tst_QComboBox::getSetCheck()
@@ -308,17 +323,17 @@ void tst_QComboBox::getSetCheck()
     obj1.setValidator(var9);
     QCOMPARE(obj1.validator(), (const QValidator *)var9);
     obj1.setValidator((QValidator *)0);
-    QCOMPARE(obj1.validator(), (const QValidator *)0);
+    QCOMPARE(obj1.validator(), nullptr);
     delete var9;
 
     // QAbstractItemDelegate * QComboBox::itemDelegate()
     // void QComboBox::setItemDelegate(QAbstractItemDelegate *)
     MyAbstractItemDelegate *var10 = new MyAbstractItemDelegate;
     obj1.setItemDelegate(var10);
-    QCOMPARE(obj1.itemDelegate(), (QAbstractItemDelegate *)var10);
+    QCOMPARE(obj1.itemDelegate(), var10);
     QTest::ignoreMessage(QtWarningMsg, "QComboBox::setItemDelegate: cannot set a 0 delegate");
     obj1.setItemDelegate((QAbstractItemDelegate *)0);
-    QCOMPARE(obj1.itemDelegate(), (QAbstractItemDelegate *)var10);
+    QCOMPARE(obj1.itemDelegate(), var10);
     // delete var10; // No delete, since QComboBox takes ownership
 
     // QAbstractItemModel * QComboBox::model()
@@ -398,13 +413,6 @@ private:
 
 };
 
-void tst_QComboBox::init()
-{
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
-}
-
 void tst_QComboBox::setEditable()
 {
     TestWidget topLevel;
@@ -453,7 +461,7 @@ void tst_QComboBox::setPalette()
     for (int i = 0; i < comboChildren.size(); ++i) {
         QObject *o = comboChildren.at(i);
         if (o->isWidgetType()) {
-            QVERIFY(((QWidget*)o)->palette() == pal);
+            QCOMPARE(((QWidget*)o)->palette(), pal);
         }
     }
 
@@ -462,12 +470,12 @@ void tst_QComboBox::setPalette()
     //Setting it on the lineedit should be separate form the combo
     testWidget->lineEdit()->setPalette(pal);
     QVERIFY(testWidget->palette() != pal);
-    QVERIFY(testWidget->lineEdit()->palette() == pal);
+    QCOMPARE(testWidget->lineEdit()->palette(), pal);
     pal.setColor(QPalette::Base, Qt::green);
     //Setting it on the combo directly should override lineedit
     testWidget->setPalette(pal);
-    QVERIFY(testWidget->palette() == pal);
-    QVERIFY(testWidget->lineEdit()->palette() == pal);
+    QCOMPARE(testWidget->palette(), pal);
+    QCOMPARE(testWidget->lineEdit()->palette(), pal);
 }
 
 void tst_QComboBox::sizeAdjustPolicy()
@@ -478,7 +486,7 @@ void tst_QComboBox::sizeAdjustPolicy()
     QComboBox *testWidget = topLevel.comboBox();
     // test that adding new items will not change the sizehint for AdjustToContentsOnFirstShow
     QVERIFY(!testWidget->count());
-    QVERIFY(testWidget->sizeAdjustPolicy() == QComboBox::AdjustToContentsOnFirstShow);
+    QCOMPARE(testWidget->sizeAdjustPolicy(), QComboBox::AdjustToContentsOnFirstShow);
     QVERIFY(testWidget->isVisible());
     QSize firstShow = testWidget->sizeHint();
     testWidget->addItem("normal item");
@@ -751,7 +759,7 @@ void tst_QComboBox::insertPolicy()
 
     // First check that there is the right number of entries, or
     // we may unwittingly pass
-    QVERIFY((int)result.count() == testWidget->count());
+    QCOMPARE((int)result.count(), testWidget->count());
 
     // No need to compare if there are no strings to compare
     if (result.count() > 0) {
@@ -796,7 +804,7 @@ void tst_QComboBox::virtualAutocompletion()
     QApplication::sendEvent(testWidget, &kr1);
 
     qApp->processEvents(); // Process events to trigger autocompletion
-    QTRY_VERIFY(testWidget->currentIndex() == 1);
+    QTRY_COMPARE(testWidget->currentIndex(), 1);
 
     QKeyEvent kp2(QEvent::KeyPress, Qt::Key_O, 0, "o");
     QKeyEvent kr2(QEvent::KeyRelease, Qt::Key_O, 0, "o");
@@ -845,7 +853,7 @@ void tst_QComboBox::autoCompletionCaseSensitivity()
     testWidget->clearEditText();
     QSignalSpy spyReturn(testWidget, SIGNAL(activated(int)));
     testWidget->setAutoCompletionCaseSensitivity(Qt::CaseInsensitive);
-    QVERIFY(testWidget->autoCompletionCaseSensitivity() == Qt::CaseInsensitive);
+    QCOMPARE(testWidget->autoCompletionCaseSensitivity(), Qt::CaseInsensitive);
 
     QTest::keyClick(testWidget->lineEdit(), Qt::Key_A);
     qApp->processEvents();
@@ -879,7 +887,7 @@ void tst_QComboBox::autoCompletionCaseSensitivity()
     // case sensitive
     testWidget->clearEditText();
     testWidget->setAutoCompletionCaseSensitivity(Qt::CaseSensitive);
-    QVERIFY(testWidget->autoCompletionCaseSensitivity() == Qt::CaseSensitive);
+    QCOMPARE(testWidget->autoCompletionCaseSensitivity(), Qt::CaseSensitive);
     QTest::keyClick(testWidget->lineEdit(), Qt::Key_A);
     qApp->processEvents();
     QCOMPARE(testWidget->currentText(), QString("aww"));
@@ -1377,7 +1385,7 @@ void tst_QComboBox::textpixmapdata()
         QCOMPARE(icon.cacheKey(), icons.at(i).cacheKey());
         QPixmap original = icons.at(i).pixmap(1024);
         QPixmap pixmap = icon.pixmap(1024);
-        QVERIFY(pixmap.toImage() == original.toImage());
+        QCOMPARE(pixmap.toImage(), original.toImage());
     }
 
     for (int i = 0; i<text.count(); ++i) {
@@ -1611,7 +1619,7 @@ void tst_QComboBox::setModel()
     QCOMPARE(box.currentIndex(), 0);
     QVERIFY(box.model() != oldModel);
     QVERIFY(box.rootModelIndex() != rootModelIndex);
-    QVERIFY(box.rootModelIndex() == QModelIndex());
+    QCOMPARE(box.rootModelIndex(), QModelIndex());
 
     // check that setting the very same model doesn't move the current item
     box.setCurrentIndex(1);
@@ -2025,7 +2033,7 @@ void tst_QComboBox::pixmapIcon()
     QCOMPARE( box.itemIcon(1).isNull(), false );
 }
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 // defined to be 120 by the wheel mouse vendors according to the docs
 #define WHEEL_DELTA 120
 
@@ -2044,7 +2052,13 @@ void tst_QComboBox::mouseWheel_data()
     QTest::newRow("upper locked") << disabled << start << wheel << expected;
 
     wheel = -1;
-    expected = 5;
+    const bool allowsWheelScroll = QApplication::style()->styleHint(QStyle::SH_ComboBox_AllowWheelScrolling);
+    // on OS X & iOS mouse wheel shall have no effect on combo box
+    if (!allowsWheelScroll)
+        expected = start;
+    else // on other OSes we should jump to next enabled item (no. 5)
+        expected = 5;
+
     QTest::newRow("jump over") << disabled << start << wheel << expected;
 
     disabled.clear();
@@ -2116,7 +2130,7 @@ void tst_QComboBox::popupWheelHandling()
     QVERIFY(comboBox->view()->isVisible());
     QCOMPARE(comboBox->view()->pos(), popupPos);
 }
-#endif // !QT_NO_WHEELEVENT
+#endif // QT_CONFIG(wheelevent)
 
 void tst_QComboBox::layoutDirection()
 {
@@ -2243,7 +2257,7 @@ void tst_QComboBox::task190351_layout()
     listCombo.setCurrentIndex(70);
     listCombo.showPopup();
     QTRY_VERIFY(listCombo.view());
-    QTest::qWaitForWindowExposed(listCombo.view());
+    QVERIFY(QTest::qWaitForWindowExposed(listCombo.view()));
     QTRY_VERIFY(listCombo.view()->isVisible());
     QApplication::processEvents();
 
@@ -2307,9 +2321,10 @@ void tst_QComboBox::task191329_size()
 
     QStandardItemModel model(rows, 2);
     for (int row = 0; row < model.rowCount(); ++row) {
+        const QString rowS = QLatin1String("row ") + QString::number(row);
         for (int column = 0; column < model.columnCount(); ++column) {
-            QStandardItem *item = new QStandardItem(QString("row %0, column %1").arg(row).arg(column));
-            model.setItem(row, column, item);
+            const QString text = rowS + QLatin1String(", column ") + QString::number(column);
+            model.setItem(row, column, new QStandardItem(text));
         }
     }
     QTableView *table = new QTableView();
@@ -2389,10 +2404,10 @@ void tst_QComboBox::task248169_popupWithMinimalSize()
     QTRY_VERIFY(comboBox.isVisible());
     comboBox.showPopup();
     QTRY_VERIFY(comboBox.view());
-    QTest::qWaitForWindowExposed(comboBox.view());
+    QVERIFY(QTest::qWaitForWindowExposed(comboBox.view()));
     QTRY_VERIFY(comboBox.view()->isVisible());
 
-#if defined QT_BUILD_INTERNAL && !defined Q_OS_BLACKBERRY
+#if defined QT_BUILD_INTERNAL
     QFrame *container = comboBox.findChild<QComboBoxPrivateContainer *>();
     QVERIFY(container);
     QTRY_VERIFY(desktop.screenGeometry(container).contains(container->geometry()));
@@ -2686,7 +2701,8 @@ void tst_QComboBox::resetModel()
 
         void reset()
         {
-            QStringListModel::reset();
+            QStringListModel::beginResetModel();
+            QStringListModel::endResetModel();
         }
     };
     QComboBox cb;
@@ -2747,7 +2763,7 @@ void tst_QComboBox::keyBoardNavigationWithMouse()
     QCOMPARE(combo.currentText(), QLatin1String("0"));
 
     // When calling cursor function, Windows CE responds with: This function is not supported on this system.
-#if !defined Q_OS_WINCE && !defined Q_OS_QNX
+#if !defined Q_OS_QNX
     // Force cursor movement to prevent QCursor::setPos() from returning prematurely on QPA:
     centerCursor(combo.view());
     QTest::qWait(200);
@@ -2858,10 +2874,11 @@ void tst_QComboBox::task_QTBUG_10491_currentIndexAndModelColumn()
 
     QStandardItemModel model(4, 4, &comboBox);
     for (int i = 0; i < 4; i++){
-        model.setItem(i, 0, new QStandardItem(QString("Employee Nr %1").arg(i)));
-        model.setItem(i, 1, new QStandardItem(QString("Street Nr %1").arg(i)));
-        model.setItem(i, 2, new QStandardItem(QString("Town Nr %1").arg(i)));
-        model.setItem(i, 3, new QStandardItem(QString("Phone Nr %1").arg(i)));
+        const QString iS = QString::number(i);
+        model.setItem(i, 0, new QStandardItem(QLatin1String("Employee Nr ") + iS));
+        model.setItem(i, 1, new QStandardItem(QLatin1String("Street Nr ") + iS));
+        model.setItem(i, 2, new QStandardItem(QLatin1String("Town Nr ") + iS));
+        model.setItem(i, 3, new QStandardItem(QLatin1String("Phone Nr ") + iS));
     }
     comboBox.setModel(&model);
     comboBox.setModelColumn(0);
@@ -2907,12 +2924,12 @@ void tst_QComboBox::itemData()
     // ensure that the currentText(), the DisplayRole and the EditRole
     // stay in sync when using QComboBox's default model
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
+        QString itemText = QLatin1String("item text ") + QString::number(i);
         comboBox.addItem(itemText);
     }
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
+        QString itemText = QLatin1String("item text ") + QString::number(i);
         QCOMPARE(comboBox.itemText(i), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
@@ -2924,14 +2941,11 @@ void tst_QComboBox::itemData()
         QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
     }
 
-    for (int i = 0; i < itemCount; ++i) {
-        // now change by using setItemText
-        QString itemText = QString("setItemText %1").arg(i);
-        comboBox.setItemText(i, itemText);
-    }
+    for (int i = 0; i < itemCount; ++i) // now change by using setItemText
+        comboBox.setItemText(i, QLatin1String("setItemText ") + QString::number(i));
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("setItemText %1").arg(i);
+        QString itemText = QLatin1String("setItemText ") + QString::number(i);
         QCOMPARE(comboBox.itemText(i), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
@@ -2945,12 +2959,12 @@ void tst_QComboBox::itemData()
 
     for (int i = 0; i < itemCount; ++i) {
         // now change by changing the DisplayRole's data
-        QString itemText = QString("setItemData(DisplayRole) %1").arg(i);
+        QString itemText = QLatin1String("setItemData(DisplayRole) ") + QString::number(i);
         comboBox.setItemData(i, QVariant(itemText), Qt::DisplayRole);
     }
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("setItemData(DisplayRole) %1").arg(i);
+        QString itemText = QLatin1String("setItemData(DisplayRole) ") + QString::number(i);
         QCOMPARE(comboBox.itemText(i), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
@@ -2964,12 +2978,12 @@ void tst_QComboBox::itemData()
 
     for (int i = 0; i < itemCount; ++i) {
         // now change by changing the EditRole's data
-        QString itemText = QString("setItemData(EditRole) %1").arg(i);
+        QString itemText = QLatin1String("setItemData(EditRole) ") + QString::number(i);
         comboBox.setItemData(i, QVariant(itemText), Qt::EditRole);
     }
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("setItemData(EditRole) %1").arg(i);
+        QString itemText = QLatin1String("setItemData(EditRole) ") + QString::number(i);
         QCOMPARE(comboBox.itemText(i), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
@@ -2986,14 +3000,14 @@ void tst_QComboBox::itemData()
 
     // set additional user data in the addItem call
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
-        QString itemDataText = QString("item data %1").arg(i);
-        comboBox.addItem(itemText, QVariant(itemDataText));
+        const QString iS = QString::number(i);
+        comboBox.addItem(QLatin1String("item text ") + iS, QVariant(QLatin1String("item data ") + iS));
     }
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
-        QString itemDataText = QString("item data %1").arg(i);
+        const QString iS = QString::number(i);
+        QString itemText = QLatin1String("item text ") + iS;
+        QString itemDataText = QLatin1String("item data ") + iS;
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i).toString(), itemDataText);
@@ -3016,8 +3030,9 @@ void tst_QComboBox::itemData()
     QString qtlogoPath = QFINDTESTDATA("qtlogo.png");
     QIcon icon = QIcon(QPixmap(qtlogoPath));
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
-        QString itemDataText = QString("item data %1").arg(i);
+        const QString iS = QString::number(i);
+        QString itemText = QLatin1String("item text ") + iS;
+        QString itemDataText = QLatin1String("item data ") + iS;
         double d = i;
         comboBox.addItem(itemText);
         comboBox.setItemData(i, QVariant(itemDataText), Qt::UserRole);
@@ -3026,8 +3041,9 @@ void tst_QComboBox::itemData()
     }
 
     for (int i = 0; i < itemCount; ++i) {
-        QString itemText = QString("item text %1").arg(i);
-        QString itemDataText = QString("item data %1").arg(i);
+        const QString iS = QString::number(i);
+        QString itemText = QLatin1String("item text ") + iS;
+        QString itemDataText = QLatin1String("item data ") + iS;
         double d = i;
         QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
         QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
@@ -3116,6 +3132,30 @@ void tst_QComboBox::task_QTBUG_41288_completerChangesCurrentIndex()
     }
 }
 
+namespace {
+    struct SetReadOnly {
+        QComboBox *cb;
+        explicit SetReadOnly(QComboBox *cb) : cb(cb) {}
+        void operator()() const
+        { cb->setEditable(false); }
+    };
+}
+
+void tst_QComboBox::task_QTBUG_54191_slotOnEditTextChangedSetsComboBoxToReadOnly()
+{
+    QComboBox cb;
+    cb.addItems(QStringList() << "one" << "two");
+    cb.setEditable(true);
+    cb.setCurrentIndex(0);
+
+    connect(&cb, &QComboBox::editTextChanged,
+            SetReadOnly(&cb));
+
+    cb.setCurrentIndex(1);
+    // the real test is that it didn't crash...
+    QCOMPARE(cb.currentIndex(), 1);
+}
+
 void tst_QComboBox::keyboardSelection()
 {
     QComboBox comboBox;
@@ -3176,6 +3216,241 @@ void tst_QComboBox::task_QTBUG_39088_inputMethodHints()
     box.setEditable(true);
     box.setInputMethodHints(Qt::ImhNoPredictiveText);
     QCOMPARE(box.lineEdit()->inputMethodHints(), Qt::ImhNoPredictiveText);
+}
+
+void tst_QComboBox::respectChangedOwnershipOfItemView()
+{
+    QComboBox box1;
+    QComboBox box2;
+    QTableView *v1 = new QTableView;
+    box1.setView(v1);
+
+    QSignalSpy spy1(v1, SIGNAL(destroyed()));
+    box2.setView(v1); // Ownership should now be transferred to box2
+
+
+    QTableView *v2 = new QTableView(&box1);
+    box1.setView(v2);  // Here we do not expect v1 to be deleted
+    QApplication::processEvents();
+    QCOMPARE(spy1.count(), 0);
+
+    QSignalSpy spy2(v2, SIGNAL(destroyed()));
+    box1.setView(v1);
+    QCOMPARE(spy2.count(), 1);
+}
+
+void tst_QComboBox::task_QTBUG_49831_scrollerNotActivated()
+{
+    QStringList modelData;
+    for (int i = 0; i < 1000; i++)
+        modelData << QStringLiteral("Item %1").arg(i);
+    QStringListModel model(modelData);
+
+    QComboBox box;
+    box.setModel(&model);
+    box.setCurrentIndex(500);
+    box.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&box));
+    QTest::mouseMove(&box, QPoint(5, 5), 100);
+    box.showPopup();
+    QFrame *container = box.findChild<QComboBoxPrivateContainer *>();
+    QVERIFY(container);
+    QVERIFY(QTest::qWaitForWindowExposed(container));
+
+    QList<QComboBoxPrivateScroller *> scrollers = container->findChildren<QComboBoxPrivateScroller *>();
+    // Not all styles support scrollers. We rely only on those platforms that do to catch any regression.
+    if (!scrollers.isEmpty()) {
+        Q_FOREACH (QComboBoxPrivateScroller *scroller, scrollers) {
+            if (scroller->isVisible()) {
+                QSignalSpy doScrollSpy(scroller, SIGNAL(doScroll(int)));
+                QTest::mouseMove(scroller, QPoint(5, 5), 500);
+                QTRY_VERIFY(doScrollSpy.count() > 0);
+            }
+        }
+    }
+}
+
+class QTBUG_56693_Model : public QStandardItemModel
+{
+public:
+    QTBUG_56693_Model(QObject *parent = nullptr)
+        : QStandardItemModel(parent)
+    { }
+
+    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override
+    {
+        if (role == Qt::FontRole) {
+            if (index.row() < 5) {
+                QFont font = QApplication::font();
+                font.setItalic(true);
+                return font;
+            } else {
+                return QApplication::font();
+            }
+        }
+        return QStandardItemModel::data(index, role);
+    }
+};
+
+class QTBUG_56693_ProxyStyle : public QProxyStyle
+{
+public:
+    QTBUG_56693_ProxyStyle(QStyle *style)
+        : QProxyStyle(style), italicItemsNo(0)
+    {
+
+    }
+
+    void drawControl(ControlElement element, const QStyleOption *opt, QPainter *p, const QWidget *w = nullptr) const override
+    {
+        if (element == CE_MenuItem)
+            if (const QStyleOptionMenuItem *menuItem = qstyleoption_cast<const QStyleOptionMenuItem *>(opt))
+                if (menuItem->font.italic())
+                    italicItemsNo++;
+
+        baseStyle()->drawControl(element, opt, p, w);
+    }
+
+    mutable int italicItemsNo;
+};
+
+void tst_QComboBox::task_QTBUG_56693_itemFontFromModel()
+{
+    QComboBox box;
+    if (!qobject_cast<QComboMenuDelegate *>(box.itemDelegate()))
+        QSKIP("Only for combo boxes using QComboMenuDelegate");
+
+    QTBUG_56693_Model model;
+    box.setModel(&model);
+
+    QTBUG_56693_ProxyStyle *proxyStyle = new QTBUG_56693_ProxyStyle(box.style());
+    box.setStyle(proxyStyle);
+    box.setFont(QApplication::font());
+
+    for (int i = 0; i < 10; i++)
+        box.addItem(QLatin1String("Item ") + QString::number(i));
+
+    box.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&box));
+    box.showPopup();
+    QFrame *container = box.findChild<QComboBoxPrivateContainer *>();
+    QVERIFY(container);
+    QVERIFY(QTest::qWaitForWindowExposed(container));
+
+    QCOMPARE(proxyStyle->italicItemsNo, 5);
+
+    box.hidePopup();
+}
+
+void tst_QComboBox::inputMethodUpdate()
+{
+    TestWidget topLevel;
+    topLevel.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
+    QComboBox *testWidget = topLevel.comboBox();
+    // make sure we have no lineedit
+    QVERIFY(!testWidget->lineEdit());
+    // test setEditable(true)
+    testWidget->setEditable(true);
+    QVERIFY(testWidget->lineEdit());
+
+    testWidget->activateWindow();
+    testWidget->setFocus();
+    QTRY_VERIFY(testWidget->hasFocus());
+    QTRY_COMPARE(qApp->focusObject(), testWidget);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        QInputMethodEvent event("preedit text", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        attributes << QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, 0, 1, QVariant());
+        QInputMethodEvent event("preedit text", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        QInputMethodEvent event("", attributes);
+        event.setCommitString("preedit text");
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+    QCOMPARE(testWidget->lineEdit()->text(), QString("preedit text"));
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        attributes << QInputMethodEvent::Attribute(QInputMethodEvent::Selection, 0, 0, QVariant());
+        QInputMethodEvent event("", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+}
+
+void tst_QComboBox::task_QTBUG_52027_mapCompleterIndex()
+{
+    QStringList words;
+    words << "" << "foobar1" << "foobar2";
+
+    QStringList altWords;
+    altWords << "foobar2" << "hello" << "," << "world" << "" << "foobar0" << "foobar1";
+
+    QComboBox cbox;
+    setFrameless(&cbox);
+    cbox.setEditable(true);
+    cbox.setInsertPolicy(QComboBox::NoInsert);
+    cbox.addItems(words);
+
+    QCompleter *completer = new QCompleter(altWords);
+    completer->setCaseSensitivity(Qt::CaseInsensitive);
+    cbox.setCompleter(completer);
+
+    QSignalSpy spy(&cbox, SIGNAL(activated(int)));
+    QCOMPARE(spy.count(), 0);
+    cbox.move(200, 200);
+    cbox.show();
+    QApplication::setActiveWindow(&cbox);
+    QVERIFY(QTest::qWaitForWindowActive(&cbox));
+
+    QTest::keyClicks(&cbox, "foobar2");
+    QApplication::processEvents();
+    QTRY_VERIFY(completer->popup());
+    QTest::keyClick(completer->popup(), Qt::Key_Down);
+    QApplication::processEvents();
+    QTest::keyClick(completer->popup(), Qt::Key_Return);
+    QApplication::processEvents();
+    QList<QVariant> arguments = spy.takeLast();
+    QCOMPARE(arguments.at(0).toInt(), 2);
+
+    cbox.lineEdit()->selectAll();
+    cbox.lineEdit()->del();
+
+    QSortFilterProxyModel* model = new QSortFilterProxyModel();
+    model->setSourceModel(cbox.model());
+    model->setFilterFixedString("foobar1");
+    completer->setModel(model);
+
+    QApplication::setActiveWindow(&cbox);
+    QVERIFY(QTest::qWaitForWindowActive(&cbox));
+
+    QTest::keyClicks(&cbox, "foobar1");
+    QApplication::processEvents();
+    QTRY_VERIFY(completer->popup());
+    QTest::keyClick(completer->popup(), Qt::Key_Down);
+    QApplication::processEvents();
+    QTest::keyClick(completer->popup(), Qt::Key_Return);
+    QApplication::processEvents();
+    arguments = spy.takeLast();
+    QCOMPARE(arguments.at(0).toInt(), 1);
 }
 
 QTEST_MAIN(tst_QComboBox)

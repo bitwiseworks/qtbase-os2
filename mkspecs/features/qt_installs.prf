@@ -28,15 +28,15 @@
 
 #headers
 qt_install_headers {
-    class_headers.files = $$SYNCQT.HEADER_CLASSES
-    class_headers.path = $$[QT_INSTALL_HEADERS]/$$MODULE_INCNAME
-    INSTALLS += class_headers
+    gen_headers.files = $$SYNCQT.GENERATED_HEADER_FILES
+    gen_headers.path = $$[QT_INSTALL_HEADERS]/$$MODULE_INCNAME
+    INSTALLS += gen_headers
 
-    targ_headers.files = $$SYNCQT.HEADER_FILES
+    targ_headers.files = $$SYNCQT.HEADER_FILES $$SYNCQT.INJECTED_HEADER_FILES
     targ_headers.path = $$[QT_INSTALL_HEADERS]/$$MODULE_INCNAME
     INSTALLS += targ_headers
 
-    private_headers.files = $$SYNCQT.PRIVATE_HEADER_FILES
+    private_headers.files = $$SYNCQT.PRIVATE_HEADER_FILES $$SYNCQT.INJECTED_PRIVATE_HEADER_FILES
     private_headers.path = $$[QT_INSTALL_HEADERS]/$$MODULE_INCNAME/$$VERSION/$$MODULE_INCNAME/private
     INSTALLS += private_headers
 

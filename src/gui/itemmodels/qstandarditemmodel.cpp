@@ -1,39 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qstandarditemmodel.h"
-
-#ifndef QT_NO_STANDARDITEMMODEL
 
 #include <QtCore/qdatetime.h>
 #include <QtCore/qlist.h>
@@ -50,6 +54,11 @@
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
+
+static inline QString qStandardItemModelDataListMimeType()
+{
+    return QStringLiteral("application/x-qstandarditemmodeldatalist");
+}
 
 class QStandardItemModelLessThan
 {
@@ -76,23 +85,6 @@ public:
         return *(r.first) < *(l.first);
     }
 };
-
-/*!
-  \internal
-*/
-QStandardItemPrivate::~QStandardItemPrivate()
-{
-    QVector<QStandardItem*>::const_iterator it;
-    for (it = children.constBegin(); it != children.constEnd(); ++it) {
-        QStandardItem *child = *it;
-        if (child)
-            child->d_func()->setModel(0);
-        delete child;
-    }
-    children.clear();
-    if (parent && model)
-        parent->d_func()->childDeleted(q_func());
-}
 
 /*!
   \internal
@@ -154,8 +146,14 @@ void QStandardItemPrivate::setChild(int row, int column, QStandardItem *item,
     if (model && emitChanged)
         emit model->layoutChanged();
 
-    if (emitChanged && model)
-        model->d_func()->itemChanged(item);
+    if (emitChanged && model) {
+        if (item) {
+            model->d_func()->itemChanged(item);
+        } else {
+            const QModelIndex idx = model->index(row, column, q->index());
+            emit model->dataChanged(idx, idx);
+        }
+    }
 }
 
 
@@ -180,7 +178,75 @@ void QStandardItemPrivate::childDeleted(QStandardItem *child)
 {
     int index = childIndex(child);
     Q_ASSERT(index != -1);
+    const auto modelIndex = child->index();
     children.replace(index, 0);
+    emit model->dataChanged(modelIndex, modelIndex);
+}
+
+namespace {
+
+    struct ByNormalizedRole
+    {
+        static int normalizedRole(int role)
+        {
+            return role == Qt::EditRole ? Qt::DisplayRole : role;
+        }
+
+       bool operator()(const QStandardItemData& standardItemData, const std::pair<const int &, const QVariant&>& roleMapIt) const
+       {
+           return standardItemData.role < normalizedRole(roleMapIt.first);
+       }
+       bool operator()(const std::pair<const int&, const QVariant &>& roleMapIt, const QStandardItemData& standardItemData) const
+       {
+           return normalizedRole(roleMapIt.first) < standardItemData.role;
+       }
+
+    };
+
+    /*
+        Based on std::transform with a twist. The inputs are iterators of <int, QVariant> pair.
+        The variant is checked for validity and if not valid, that element is not taken into account
+        which means that the resulting output might be shorter than the input.
+    */
+    template<class Input, class OutputIt>
+    OutputIt roleMapStandardItemDataTransform(Input first1, Input last1, OutputIt d_first)
+    {
+        while (first1 != last1) {
+            if ((*first1).second.isValid())
+                *d_first++ = QStandardItemData(*first1);
+            ++first1;
+        }
+        return d_first;
+    }
+
+
+    /*
+        Based on std::set_union with a twist. The idea is to create a union of both inputs
+        with an additional constraint: if an input contains an invalid variant, it means
+        that this one should not be taken into account for generating the output.
+    */
+    template<class Input1, class Input2,
+             class OutputIt, class Compare>
+    OutputIt roleMapStandardItemDataUnion(Input1 first1, Input1 last1,
+                                          Input2 first2, Input2 last2,
+                                          OutputIt d_first, Compare comp)
+    {
+        for (; first1 != last1; ++d_first) {
+            if (first2 == last2) {
+                return roleMapStandardItemDataTransform(first1, last1, d_first);
+            }
+            if (comp(*first2, *first1)) {
+                *d_first = *first2++;
+            } else {
+                if ((*first1).second.isValid())
+                    *d_first = QStandardItemData(*first1);
+                if (!comp(*first1, *first2))
+                    ++first2;
+                ++first1;
+            }
+        }
+        return std::copy(first2, last2, d_first);
+    }
 }
 
 /*!
@@ -190,23 +256,44 @@ void QStandardItemPrivate::setItemData(const QMap<int, QVariant> &roles)
 {
     Q_Q(QStandardItem);
 
-    //let's build the vector of new values
-    QVector<QStandardItemData> newValues;
-    QMap<int, QVariant>::const_iterator it;
-    for (it = roles.begin(); it != roles.end(); ++it) {
-        QVariant value = it.value();
-        if (value.isValid()) {
-            int role = it.key();
-            role = (role == Qt::EditRole) ? Qt::DisplayRole : role;
-            QStandardItemData wid(role,it.value());
-            newValues.append(wid);
-        }
-    }
+    auto byRole = [](const QStandardItemData& item1, const QStandardItemData& item2) {
+        return item1.role < item2.role;
+    };
 
-    if (values!=newValues) {
-        values=newValues;
-        if (model)
-            model->d_func()->itemChanged(q);
+    std::sort(values.begin(), values.end(), byRole);
+
+    /*
+        Create a vector of QStandardItemData that will contain the original values
+        if the matching role is not contained in roles, the new value if it is and
+        if the new value is an invalid QVariant, it will be removed.
+    */
+    QVector<QStandardItemData> newValues;
+    newValues.reserve(values.size());
+    roleMapStandardItemDataUnion(roles.keyValueBegin(),
+                                 roles.keyValueEnd(),
+                                 values.cbegin(), values.cend(),
+                                 std::back_inserter(newValues), ByNormalizedRole());
+
+    if (newValues != values) {
+        values.swap(newValues);
+        if (model) {
+            QVector<int> roleKeys;
+            roleKeys.reserve(roles.size() + 1);
+            bool hasEditRole = false;
+            bool hasDisplayRole = false;
+            for (auto it = roles.keyBegin(); it != roles.keyEnd(); ++it) {
+                roleKeys.push_back(*it);
+                if (*it == Qt::EditRole)
+                    hasEditRole = true;
+                else if (*it == Qt::DisplayRole)
+                    hasDisplayRole = true;
+            }
+            if (hasEditRole && !hasDisplayRole)
+                roleKeys.push_back(Qt::DisplayRole);
+            else if (!hasEditRole && hasDisplayRole)
+                roleKeys.push_back(Qt::EditRole);
+            model->d_func()->itemChanged(q, roleKeys);
+        }
     }
 }
 
@@ -331,9 +418,6 @@ QStandardItemModelPrivate::QStandardItemModelPrivate()
 */
 QStandardItemModelPrivate::~QStandardItemModelPrivate()
 {
-    delete itemPrototype;
-    qDeleteAll(columnHeaderItems);
-    qDeleteAll(rowHeaderItems);
 }
 
 /*!
@@ -369,7 +453,7 @@ void QStandardItemModelPrivate::_q_emitItemChanged(const QModelIndex &topLeft,
 bool QStandardItemPrivate::insertRows(int row, const QList<QStandardItem*> &items)
 {
     Q_Q(QStandardItem);
-    if ((row < 0) || (row > rowCount()))
+    if ((row < 0) || (row > rowCount()) || items.isEmpty())
         return false;
     int count = items.count();
     if (model)
@@ -400,7 +484,7 @@ bool QStandardItemPrivate::insertRows(int row, const QList<QStandardItem*> &item
 bool QStandardItemPrivate::insertRows(int row, int count, const QList<QStandardItem*> &items)
 {
     Q_Q(QStandardItem);
-    if ((count < 1) || (row < 0) || (row > rowCount()))
+    if ((count < 1) || (row < 0) || (row > rowCount()) || count == 0)
         return false;
     if (model)
         model->d_func()->rowsAboutToBeInserted(q, row, row + count - 1);
@@ -442,7 +526,7 @@ bool QStandardItemPrivate::insertRows(int row, int count, const QList<QStandardI
 bool QStandardItemPrivate::insertColumns(int column, int count, const QList<QStandardItem*> &items)
 {
     Q_Q(QStandardItem);
-    if ((count < 1) || (column < 0) || (column > columnCount()))
+    if ((count < 1) || (column < 0) || (column > columnCount()) || count == 0)
         return false;
     if (model)
         model->d_func()->columnsAboutToBeInserted(q, column, column + count - 1);
@@ -484,9 +568,10 @@ bool QStandardItemPrivate::insertColumns(int column, int count, const QList<QSta
 /*!
   \internal
 */
-void QStandardItemModelPrivate::itemChanged(QStandardItem *item)
+void QStandardItemModelPrivate::itemChanged(QStandardItem *item, const QVector<int> &roles)
 {
     Q_Q(QStandardItemModel);
+    Q_ASSERT(item);
     if (item->d_func()->parent == 0) {
         // Header item
         int idx = columnHeaderItems.indexOf(item);
@@ -499,8 +584,8 @@ void QStandardItemModelPrivate::itemChanged(QStandardItem *item)
         }
     } else {
         // Normal item
-        QModelIndex index = q->indexFromItem(item);
-        emit q->dataChanged(index, index);
+        const QModelIndex index = q->indexFromItem(item);
+        emit q->dataChanged(index, index, roles);
     }
 }
 
@@ -696,20 +781,16 @@ void QStandardItemModelPrivate::columnsRemoved(QStandardItem *parent,
     Constructs an item.
 */
 QStandardItem::QStandardItem()
-    : d_ptr(new QStandardItemPrivate)
+    : QStandardItem(*new QStandardItemPrivate)
 {
-    Q_D(QStandardItem);
-    d->q_ptr = this;
 }
 
 /*!
     Constructs an item with the given \a text.
 */
 QStandardItem::QStandardItem(const QString &text)
-    : d_ptr(new QStandardItemPrivate)
+    : QStandardItem(*new QStandardItemPrivate)
 {
-    Q_D(QStandardItem);
-    d->q_ptr = this;
     setText(text);
 }
 
@@ -717,22 +798,17 @@ QStandardItem::QStandardItem(const QString &text)
     Constructs an item with the given \a icon and \a text.
 */
 QStandardItem::QStandardItem(const QIcon &icon, const QString &text)
-    : d_ptr(new QStandardItemPrivate)
+    : QStandardItem(text)
 {
-    Q_D(QStandardItem);
-    d->q_ptr = this;
     setIcon(icon);
-    setText(text);
 }
 
 /*!
    Constructs an item with \a rows rows and \a columns columns of child items.
 */
 QStandardItem::QStandardItem(int rows, int columns)
-    : d_ptr(new QStandardItemPrivate)
+    : QStandardItem(*new QStandardItemPrivate)
 {
-    Q_D(QStandardItem);
-    d->q_ptr = this;
     setRowCount(rows);
     setColumnCount(columns);
 }
@@ -780,6 +856,15 @@ QStandardItem &QStandardItem::operator=(const QStandardItem &other)
 */
 QStandardItem::~QStandardItem()
 {
+    Q_D(QStandardItem);
+    for (QStandardItem *child : qAsConst(d->children)) {
+        if (child)
+            child->d_func()->setModel(0);
+        delete child;
+    }
+    d->children.clear();
+    if (d->parent && d->model)
+        d->parent->d_func()->childDeleted(this);
 }
 
 /*!
@@ -814,6 +899,9 @@ void QStandardItem::setData(const QVariant &value, int role)
 {
     Q_D(QStandardItem);
     role = (role == Qt::EditRole) ? Qt::DisplayRole : role;
+    const QVector<int> roles((role == Qt::DisplayRole) ?
+                                QVector<int>({Qt::DisplayRole, Qt::EditRole}) :
+                                QVector<int>({role}));
     QVector<QStandardItemData>::iterator it;
     for (it = d->values.begin(); it != d->values.end(); ++it) {
         if ((*it).role == role) {
@@ -825,13 +913,13 @@ void QStandardItem::setData(const QVariant &value, int role)
                 d->values.erase(it);
             }
             if (d->model)
-                d->model->d_func()->itemChanged(this);
+                d->model->d_func()->itemChanged(this, roles);
             return;
         }
     }
     d->values.append(QStandardItemData(role, value));
     if (d->model)
-        d->model->d_func()->itemChanged(this);
+        d->model->d_func()->itemChanged(this, roles);
 }
 
 /*!
@@ -1224,7 +1312,7 @@ void QStandardItem::setSelectable(bool selectable)
   The item delegate will render a checkable item with a check box next to the
   item's text.
 
-  \sa isCheckable(), setCheckState(), setTristate()
+  \sa isCheckable(), setCheckState(), setUserTristate(), setAutoTristate()
 */
 void QStandardItem::setCheckable(bool checkable)
 {
@@ -1244,33 +1332,87 @@ void QStandardItem::setCheckable(bool checkable)
 
   The default value is false.
 
-  \sa setCheckable(), checkState(), isTristate()
+  \sa setCheckable(), checkState(), isUserTristate(), isAutoTristate()
 */
 
 /*!
-  Sets whether the item is tristate. If \a tristate is true, the
-  item is checkable with three separate states; otherwise, the item
-  is checkable with two states. (Note that this also requires that
-  the item is checkable; see isCheckable().)
+  \fn void QStandardItem::setTristate(bool tristate)
+  \obsolete
 
-  \sa isTristate(), setCheckable(), setCheckState()
+  Use QStandardItem::setAutoTristate(bool tristate) instead.
+  For a tristate checkbox that the user can change between all three
+  states, use QStandardItem::setUserTristate(bool tristate) instead.
 */
-void QStandardItem::setTristate(bool tristate)
+
+/*!
+  \fn void QStandardItem::isTristate() const
+  \obsolete
+
+  Use QStandardItem::isAutoTristate() instead.
+  For a tristate checkbox that the user can change between all three
+  states, use QStandardItem::isUserTristate() instead.
+*/
+
+/*!
+  Determines that the item is tristate and controlled by QTreeWidget if \a tristate
+  is \c true.
+  This enables automatic management of the state of parent items in QTreeWidget
+  (checked if all children are checked, unchecked if all children are unchecked,
+  or partially checked if only some children are checked).
+
+  \since 5.6
+  \sa isAutoTristate(), setCheckable(), setCheckState()
+*/
+void QStandardItem::setAutoTristate(bool tristate)
 {
     Q_D(QStandardItem);
-    d->changeFlags(tristate, Qt::ItemIsTristate);
+    d->changeFlags(tristate, Qt::ItemIsAutoTristate);
 }
 
 /*!
-  \fn bool QStandardItem::isTristate() const
+  \fn bool QStandardItem::isAutoTristate() const
 
-  Returns whether the item is tristate; that is, if it's checkable with three
-  separate states.
+  Returns whether the item is tristate and is controlled by QTreeWidget.
 
   The default value is false.
 
-  \sa setTristate(), isCheckable(), checkState()
+  \since 5.6
+  \sa setAutoTristate(), isCheckable(), checkState()
 */
+
+/*!
+  Sets whether the item is tristate and controlled by the user.
+  If \a tristate is true, the user can cycle through three separate states;
+  otherwise, the item is checkable with two states.
+  (Note that this also requires that the item is checkable; see isCheckable().)
+
+  \since 5.6
+  \sa isUserTristate(), setCheckable(), setCheckState()
+*/
+void QStandardItem::setUserTristate(bool tristate)
+{
+    Q_D(QStandardItem);
+    d->changeFlags(tristate, Qt::ItemIsUserTristate);
+}
+
+/*!
+  \fn bool QStandardItem::isUserTristate() const
+  \since 5.6
+
+  Returns whether the item is tristate; that is, if it's checkable with three
+  separate states and the user can cycle through all three states.
+
+  The default value is false.
+
+  \sa setUserTristate(), isCheckable(), checkState()
+*/
+
+#if QT_DEPRECATED_SINCE(5, 6)
+void QStandardItem::setTristate(bool tristate)
+{
+    setAutoTristate(tristate);
+}
+#endif
 
 #ifndef QT_NO_DRAGANDDROP
 
@@ -1678,6 +1820,8 @@ bool QStandardItem::hasChildren() const
     item) takes ownership of \a item. If necessary, the row count and column
     count are increased to fit the item.
 
+    \note Passing a null pointer as \a item removes the item.
+
     \sa child()
 */
 void QStandardItem::setChild(int row, int column, QStandardItem *item)
@@ -1742,14 +1886,16 @@ QStandardItem *QStandardItem::takeChild(int row, int column)
 QList<QStandardItem*> QStandardItem::takeRow(int row)
 {
     Q_D(QStandardItem);
+    QList<QStandardItem*> items;
     if ((row < 0) || (row >= rowCount()))
-        return QList<QStandardItem*>();
+        return items;
     if (d->model)
         d->model->d_func()->rowsAboutToBeRemoved(this, row, row);
-    QList<QStandardItem*> items;
+
     int index = d->childIndex(row, 0);  // Will return -1 if there are no columns
     if (index != -1) {
         int col_count = d->columnCount();
+        items.reserve(col_count);
         for (int column = 0; column < col_count; ++column) {
             QStandardItem *ch = d->children.at(index + column);
             if (ch)
@@ -1774,13 +1920,15 @@ QList<QStandardItem*> QStandardItem::takeRow(int row)
 QList<QStandardItem*> QStandardItem::takeColumn(int column)
 {
     Q_D(QStandardItem);
+    QList<QStandardItem*> items;
     if ((column < 0) || (column >= columnCount()))
-        return QList<QStandardItem*>();
+        return items;
     if (d->model)
         d->model->d_func()->columnsAboutToBeRemoved(this, column, column);
-    QList<QStandardItem*> items;
 
-    for (int row = d->rowCount() - 1; row >= 0; --row) {
+    const int rowCount = d->rowCount();
+    items.reserve(rowCount);
+    for (int row = rowCount - 1; row >= 0; --row) {
         int index = d->childIndex(row, column);
         QStandardItem *ch = d->children.at(index);
         if (ch)
@@ -1810,36 +1958,7 @@ bool QStandardItem::operator<(const QStandardItem &other) const
 {
     const int role = model() ? model()->sortRole() : Qt::DisplayRole;
     const QVariant l = data(role), r = other.data(role);
-    // this code is copied from QSortFilterProxyModel::lessThan()
-    if (l.userType() == QVariant::Invalid)
-        return false;
-    if (r.userType() == QVariant::Invalid)
-        return true;
-    switch (l.userType()) {
-    case QVariant::Int:
-        return l.toInt() < r.toInt();
-    case QVariant::UInt:
-        return l.toUInt() < r.toUInt();
-    case QVariant::LongLong:
-        return l.toLongLong() < r.toLongLong();
-    case QVariant::ULongLong:
-        return l.toULongLong() < r.toULongLong();
-    case QMetaType::Float:
-        return l.toFloat() < r.toFloat();
-    case QVariant::Double:
-        return l.toDouble() < r.toDouble();
-    case QVariant::Char:
-        return l.toChar() < r.toChar();
-    case QVariant::Date:
-        return l.toDate() < r.toDate();
-    case QVariant::Time:
-        return l.toTime() < r.toTime();
-    case QVariant::DateTime:
-        return l.toDateTime() < r.toDateTime();
-    case QVariant::String:
-    default:
-        return l.toString().compare(r.toString()) < 0;
-    }
+    return QAbstractItemModelPrivate::isVariantLessThan(l, r);
 }
 
 /*!
@@ -2087,6 +2206,11 @@ QStandardItemModel::QStandardItemModel(QStandardItemModelPrivate &dd, QObject *p
 */
 QStandardItemModel::~QStandardItemModel()
 {
+    Q_D(QStandardItemModel);
+    delete d->itemPrototype;
+    qDeleteAll(d->columnHeaderItems);
+    qDeleteAll(d->rowHeaderItems);
+    d->root.reset();
 }
 
 /*!
@@ -2109,6 +2233,7 @@ void QStandardItemModel::clear()
     Q_D(QStandardItemModel);
     beginResetModel();
     d->root.reset(new QStandardItem);
+    d->root->setFlags(Qt::ItemIsDropEnabled);
     d->root->d_func()->setModel(this);
     qDeleteAll(d->columnHeaderItems);
     d->columnHeaderItems.clear();
@@ -2467,7 +2592,9 @@ QList<QStandardItem*> QStandardItemModel::findItems(const QString &text,
     QModelIndexList indexes = match(index(0, column, QModelIndex()),
                                     Qt::DisplayRole, text, -1, flags);
     QList<QStandardItem*> items;
-    for (int i = 0; i < indexes.size(); ++i)
+    const int numIndexes = indexes.size();
+    items.reserve(numIndexes);
+    for (int i = 0; i < numIndexes; ++i)
         items.append(itemFromIndex(indexes.at(i)));
     return items;
 }
@@ -2915,7 +3042,7 @@ void QStandardItemModel::sort(int column, Qt::SortOrder order)
 */
 QStringList QStandardItemModel::mimeTypes() const
 {
-    return QAbstractItemModel::mimeTypes() <<  QLatin1String("application/x-qstandarditemmodeldatalist");
+    return QAbstractItemModel::mimeTypes() << qStandardItemModelDataListMimeType();
 }
 
 /*!
@@ -2927,7 +3054,7 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
     if(!data)
         return 0;
 
-    QString format = QLatin1String("application/x-qstandarditemmodeldatalist");
+    const QString format = qStandardItemModelDataListMimeType();
     if (!mimeTypes().contains(format))
         return data;
     QByteArray encoded;
@@ -2942,7 +3069,7 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
             itemsSet << item;
             stack.push(item);
         } else {
-            qWarning() << "QStandardItemModel::mimeData: No item associated with invalid index";
+            qWarning("QStandardItemModel::mimeData: No item associated with invalid index");
             return 0;
         }
     }
@@ -2960,10 +3087,7 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
             for (int i = 0; i < childList.count(); ++i) {
                 QStandardItem *chi = childList.at(i);
                 if (chi) {
-                    QSet<QStandardItem *>::iterator it = itemsSet.find(chi);
-                    if (it != itemsSet.end()) {
-                        itemsSet.erase(it);
-                    }
+                    itemsSet.erase(itemsSet.constFind(chi));
                     stack.push(chi);
                 }
             }
@@ -2971,9 +3095,8 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
     }
 
     stack.reserve(itemsSet.count());
-    foreach (QStandardItem *item, itemsSet) {
+    for (QStandardItem *item : qAsConst(itemsSet))
         stack.push(item);
-    }
 
     //stream everything recursively
     while (!stack.isEmpty()) {
@@ -3023,7 +3146,7 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     if (!data || !(action == Qt::CopyAction || action == Qt::MoveAction))
         return false;
     // check if the format is supported
-    QString format = QLatin1String("application/x-qstandarditemmodeldatalist");
+    const QString format = qStandardItemModelDataListMimeType();
     if (!data->hasFormat(format))
         return QAbstractItemModel::dropMimeData(data, action, row, column, parent);
 
@@ -3073,13 +3196,13 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     for (int i = 0; i < rows.count(); ++i)
         rowsToInsert[rows.at(i)] = 1;
     for (int i = 0; i < rowsToInsert.count(); ++i) {
-        if (rowsToInsert[i] == 1){
+        if (rowsToInsert.at(i) == 1){
             rowsToInsert[i] = dragRowCount;
             ++dragRowCount;
         }
     }
     for (int i = 0; i < rows.count(); ++i)
-        rows[i] = top + rowsToInsert[rows[i]];
+        rows[i] = top + rowsToInsert.at(rows.at(i));
 
     QBitArray isWrittenTo(dragRowCount * dragColumnCount);
 
@@ -3134,5 +3257,3 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
 QT_END_NAMESPACE
 
 #include "moc_qstandarditemmodel.cpp"
-
-#endif // QT_NO_STANDARDITEMMODEL

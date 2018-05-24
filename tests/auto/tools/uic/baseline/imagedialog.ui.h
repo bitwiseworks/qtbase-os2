@@ -10,14 +10,11 @@
 #define IMAGEDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -155,7 +152,7 @@ public:
 
         vboxLayout->addLayout(gridLayout);
 
-        spacerItem = new QSpacerItem(QSizePolicy::Minimum, QSizePolicy::Expanding);
+        spacerItem = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding);
 
         vboxLayout->addItem(spacerItem);
 
@@ -166,7 +163,7 @@ public:
         hboxLayout->setContentsMargins(1, 1, 1, 1);
         hboxLayout->setObjectName(QStringLiteral("hboxLayout"));
         hboxLayout->setObjectName(QStringLiteral(""));
-        spacerItem1 = new QSpacerItem(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        spacerItem1 = new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
 
         hboxLayout->addItem(spacerItem1);
 
@@ -199,14 +196,14 @@ public:
 
     void retranslateUi(QDialog *dialog)
     {
-        dialog->setWindowTitle(QApplication::translate("ImageDialog", "Create Image", 0));
-        widthLabel->setText(QApplication::translate("ImageDialog", "Width:", 0));
-        heightLabel->setText(QApplication::translate("ImageDialog", "Height:", 0));
-        nameLineEdit->setText(QApplication::translate("ImageDialog", "Untitled image", 0));
-        nameLabel->setText(QApplication::translate("ImageDialog", "Name:", 0));
-        colorDepthLabel->setText(QApplication::translate("ImageDialog", "Color depth:", 0));
-        okButton->setText(QApplication::translate("ImageDialog", "OK", 0));
-        cancelButton->setText(QApplication::translate("ImageDialog", "Cancel", 0));
+        dialog->setWindowTitle(QApplication::translate("ImageDialog", "Create Image", nullptr));
+        widthLabel->setText(QApplication::translate("ImageDialog", "Width:", nullptr));
+        heightLabel->setText(QApplication::translate("ImageDialog", "Height:", nullptr));
+        nameLineEdit->setText(QApplication::translate("ImageDialog", "Untitled image", nullptr));
+        nameLabel->setText(QApplication::translate("ImageDialog", "Name:", nullptr));
+        colorDepthLabel->setText(QApplication::translate("ImageDialog", "Color depth:", nullptr));
+        okButton->setText(QApplication::translate("ImageDialog", "OK", nullptr));
+        cancelButton->setText(QApplication::translate("ImageDialog", "Cancel", nullptr));
     } // retranslateUi
 
 };

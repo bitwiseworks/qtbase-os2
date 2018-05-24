@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,9 +40,7 @@
 #include "qqnxglobal.h"
 
 #include "qqnxscreeneventhandler.h"
-#if defined(QQNX_SCREENEVENTTHREAD)
 #include "qqnxscreeneventthread.h"
-#endif
 #include "qqnxintegration.h"
 #include "qqnxkeytranslator.h"
 #include "qqnxscreen.h"
@@ -61,9 +65,7 @@ QQnxScreenEventHandler::QQnxScreenEventHandler(QQnxIntegration *integration)
     , m_lastButtonState(Qt::NoButton)
     , m_lastMouseWindow(0)
     , m_touchDevice(0)
-#if defined(QQNX_SCREENEVENTTHREAD)
     , m_eventThread(0)
-#endif
     , m_focusLostTimer(-1)
 {
     // Create a touch device
@@ -141,7 +143,7 @@ bool QQnxScreenEventHandler::handleEvent(screen_event_t event, int qnxType)
 
     default:
         // event ignored
-        qScreenEventDebug() << Q_FUNC_INFO << "unknown event" << qnxType;
+        qScreenEventDebug("unknown event %d", qnxType);
         return false;
     }
 
@@ -188,11 +190,10 @@ void QQnxScreenEventHandler::injectKeyboardEvent(int flags, int sym, int modifie
 
         QWindowSystemInterface::handleExtendedKeyEvent(QGuiApplication::focusWindow(), type, key, qtMod,
                 scan, sym, modifiers, keyStr);
-        qScreenEventDebug() << Q_FUNC_INFO << "Qt key t=" << type << ", k=" << key << ", s=" << keyStr;
+        qScreenEventDebug() << "Qt key t=" << type << ", k=" << key << ", s=" << keyStr;
     }
 }
 
-#if defined(QQNX_SCREENEVENTTHREAD)
 void QQnxScreenEventHandler::setScreenEventThread(QQnxScreenEventThread *eventThread)
 {
     m_eventThread = eventThread;
@@ -227,26 +228,25 @@ void QQnxScreenEventHandler::processEventsFromScreenThread()
 
     m_eventThread->unlock();
 }
-#endif
 
 void QQnxScreenEventHandler::handleKeyboardEvent(screen_event_t event)
 {
     // get flags of key event
     int flags;
-    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_KEY_FLAGS, &flags),
+    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_FLAGS, &flags),
                         "Failed to query event flags");
 
     // get key code
     int sym;
-    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_KEY_SYM, &sym),
+    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_SYM, &sym),
                         "Failed to query event sym");
 
     int modifiers;
-    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_KEY_MODIFIERS, &modifiers),
+    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_MODIFIERS, &modifiers),
                         "Failed to query event modifieres");
 
     int scan;
-    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_KEY_SCAN, &scan),
+    Q_SCREEN_CHECKERROR(screen_get_event_property_iv(event, SCREEN_PROPERTY_SCAN, &scan),
                         "Failed to query event scan");
 
     int cap;
@@ -254,13 +254,8 @@ void QQnxScreenEventHandler::handleKeyboardEvent(screen_event_t event)
                         "Failed to query event cap");
 
     int sequenceId = 0;
-#if defined(Q_OS_BLACKBERRY)
-    Q_SCREEN_CHECKERROR(
-            screen_get_event_property_iv(event, SCREEN_PROPERTY_SEQUENCE_ID, &sequenceId),
-            "Failed to query event seqId");
-#endif
-
     bool inject = true;
+
     Q_FOREACH (QQnxScreenEventFilter *filter, m_eventFilters) {
         if (filter->handleKeyboardEvent(flags, sym, modifiers, scan, cap, sequenceId)) {
             inject = false;
@@ -315,12 +310,12 @@ void QQnxScreenEventHandler::handlePointerEvent(screen_event_t event)
 
         if (wOld) {
             QWindowSystemInterface::handleLeaveEvent(wOld);
-            qScreenEventDebug() << Q_FUNC_INFO << "Qt leave, w=" << wOld;
+            qScreenEventDebug() << "Qt leave, w=" << wOld;
         }
 
         if (w) {
             QWindowSystemInterface::handleEnterEvent(w);
-            qScreenEventDebug() << Q_FUNC_INFO << "Qt enter, w=" << w;
+            qScreenEventDebug() << "Qt enter, w=" << w;
         }
     }
 
@@ -363,14 +358,14 @@ void QQnxScreenEventHandler::handlePointerEvent(screen_event_t event)
             m_lastLocalMousePoint != localPoint ||
             m_lastButtonState != buttons) {
             QWindowSystemInterface::handleMouseEvent(w, localPoint, globalPoint, buttons);
-            qScreenEventDebug() << Q_FUNC_INFO << "Qt mouse, w=" << w << ", (" << localPoint.x() << "," << localPoint.y() << "), b=" << static_cast<int>(buttons);
+            qScreenEventDebug() << "Qt mouse, w=" << w << ", (" << localPoint.x() << "," << localPoint.y() << "), b=" << static_cast<int>(buttons);
         }
 
         if (wheelDelta) {
             // Screen only supports a single wheel, so we will assume Vertical orientation for
             // now since that is pretty much standard.
             QWindowSystemInterface::handleWheelEvent(w, localPoint, globalPoint, wheelDelta, Qt::Vertical);
-            qScreenEventDebug() << Q_FUNC_INFO << "Qt wheel, w=" << w << ", (" << localPoint.x() << "," << localPoint.y() << "), d=" << static_cast<int>(wheelDelta);
+            qScreenEventDebug() << "Qt wheel, w=" << w << ", (" << localPoint.x() << "," << localPoint.y() << "), d=" << static_cast<int>(wheelDelta);
         }
     }
 
@@ -427,12 +422,12 @@ void QQnxScreenEventHandler::handleTouchEvent(screen_event_t event, int qnxType)
 
             if (wOld) {
                 QWindowSystemInterface::handleLeaveEvent(wOld);
-                qScreenEventDebug() << Q_FUNC_INFO << "Qt leave, w=" << wOld;
+                qScreenEventDebug() << "Qt leave, w=" << wOld;
             }
 
             if (w) {
                 QWindowSystemInterface::handleEnterEvent(w);
-                qScreenEventDebug() << Q_FUNC_INFO << "Qt enter, w=" << w;
+                qScreenEventDebug() << "Qt enter, w=" << w;
             }
         }
         m_lastMouseWindow = qnxWindow;
@@ -496,7 +491,7 @@ void QQnxScreenEventHandler::handleTouchEvent(screen_event_t event, int qnxType)
 
             // inject event into Qt
             QWindowSystemInterface::handleTouchEvent(w, m_touchDevice, pointList);
-            qScreenEventDebug() << Q_FUNC_INFO << "Qt touch, w =" << w
+            qScreenEventDebug() << "Qt touch, w =" << w
                                 << ", p=" << m_touchPoints[touchId].area.topLeft()
                                 << ", t=" << type;
         }
@@ -542,7 +537,7 @@ void QQnxScreenEventHandler::handleDisplayEvent(screen_event_t event)
         return;
     }
 
-    qScreenEventDebug() << Q_FUNC_INFO << "display attachment is now:" << isAttached;
+    qScreenEventDebug() << "display attachment is now:" << isAttached;
     QQnxScreen *screen = m_qnxIntegration->screenForNative(nativeDisplay);
 
     if (!screen) {
@@ -552,7 +547,7 @@ void QQnxScreenEventHandler::handleDisplayEvent(screen_event_t event)
             if (val[0] == 0 && val[1] == 0) //If screen size is invalid, wait for the next event
                 return;
 
-            qScreenEventDebug() << "creating new QQnxScreen for newly attached display";
+            qScreenEventDebug("creating new QQnxScreen for newly attached display");
             m_qnxIntegration->createDisplay(nativeDisplay, false /* not primary, we assume */);
         }
     } else if (!isAttached) {
@@ -565,7 +560,7 @@ void QQnxScreenEventHandler::handleDisplayEvent(screen_event_t event)
 
         if (!screen->isPrimaryScreen()) {
             // libscreen display is deactivated, let's remove the QQnxScreen / QScreen
-            qScreenEventDebug() << "removing display";
+            qScreenEventDebug("removing display");
             m_qnxIntegration->removeDisplay(screen);
         }
     }
@@ -584,21 +579,21 @@ void QQnxScreenEventHandler::handlePropertyEvent(screen_event_t event)
 
     errno = 0;
     screen_window_t window = 0;
-    if (screen_get_event_property_pv(event, SCREEN_PROPERTY_WINDOW, (void**)&window) != 0)
+    if (Q_UNLIKELY(screen_get_event_property_pv(event, SCREEN_PROPERTY_WINDOW, (void**)&window) != 0))
         qFatal("QQnx: failed to query window property, errno=%d", errno);
 
     errno = 0;
     int property;
-    if (screen_get_event_property_iv(event, SCREEN_PROPERTY_NAME, &property) != 0)
+    if (Q_UNLIKELY(screen_get_event_property_iv(event, SCREEN_PROPERTY_NAME, &property) != 0))
         qFatal("QQnx: failed to query window property, errno=%d", errno);
 
     switch (property) {
-    case SCREEN_PROPERTY_KEYBOARD_FOCUS:
+    case SCREEN_PROPERTY_FOCUS:
         handleKeyboardFocusPropertyEvent(window);
         break;
     default:
         // event ignored
-        qScreenEventDebug() << Q_FUNC_INFO << "Ignore property event for property: " << property;
+        qScreenEventDebug() << "Ignore property event for property: " << property;
     }
 }
 
@@ -606,7 +601,7 @@ void QQnxScreenEventHandler::handleKeyboardFocusPropertyEvent(screen_window_t wi
 {
     errno = 0;
     int focus = 0;
-    if (window && screen_get_window_property_iv(window, SCREEN_PROPERTY_KEYBOARD_FOCUS, &focus) != 0)
+    if (Q_UNLIKELY(window && screen_get_window_property_iv(window, SCREEN_PROPERTY_FOCUS, &focus) != 0))
         qFatal("QQnx: failed to query keyboard focus property, errno=%d", errno);
 
     QWindow *focusWindow = QQnxIntegration::window(window);

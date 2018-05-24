@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,6 +43,9 @@ public:
     virtual ~tst_QFontCache();
 
 private slots:
+    void engineData_data();
+    void engineData();
+
     void clear();
 };
 
@@ -67,6 +65,48 @@ tst_QFontCache::tst_QFontCache()
 
 tst_QFontCache::~tst_QFontCache()
 {
+}
+
+void tst_QFontCache::engineData_data()
+{
+    QTest::addColumn<QString>("family");
+    QTest::addColumn<QString>("cacheKey");
+
+    QTest::newRow("unquoted-family-name") << QString("Times New Roman") << QString("Times New Roman");
+    QTest::newRow("quoted-family-name") << QString("'Times New Roman'") << QString("Times New Roman");
+    QTest::newRow("invalid") << QString("invalid") << QString("invalid");
+    QTest::newRow("multiple") << QString("invalid, Times New Roman") << QString("invalid,Times New Roman");
+    QTest::newRow("multiple spaces") << QString("invalid,  Times New Roman ") << QString("invalid,Times New Roman");
+    QTest::newRow("multiple spaces quotes") << QString("'invalid',  Times New Roman ") << QString("invalid,Times New Roman");
+    QTest::newRow("multiple2") << QString("invalid, Times New Roman  , foobar, 'baz'") << QString("invalid,Times New Roman,foobar,baz");
+    QTest::newRow("invalid spaces") << QString("invalid spaces, Times New Roman ") << QString("invalid spaces,Times New Roman");
+    QTest::newRow("invalid spaces quotes") << QString("'invalid spaces', 'Times New Roman' ") << QString("invalid spaces,Times New Roman");
+}
+
+void tst_QFontCache::engineData()
+{
+    QFETCH(QString, family);
+    QFETCH(QString, cacheKey);
+
+    QFont f(family);
+    f.exactMatch(); // loads engine
+
+    QFontPrivate *d = QFontPrivate::get(f);
+
+    QFontDef req = d->request;
+    // copy-pasted from QFontDatabase::load(), to engineer the cache key
+    if (req.pixelSize == -1) {
+        req.pixelSize = std::floor(((req.pointSize * d->dpi) / 72) * 100 + 0.5) / 100;
+        req.pixelSize = qRound(req.pixelSize);
+    }
+    if (req.pointSize < 0)
+        req.pointSize = req.pixelSize*72.0/d->dpi;
+
+    req.family = cacheKey;
+
+    QFontEngineData *engineData = QFontCache::instance()->findEngineData(req);
+
+    QCOMPARE(engineData, QFontPrivate::get(f)->engineData);
 }
 
 void tst_QFontCache::clear()
@@ -110,7 +150,7 @@ void tst_QFontCache::clear()
         fontEngine->ref.ref();
 
         // cache the engine once again; there is a special case when the engine is cached more than once
-        QFontCache::instance()->insertEngine(QFontCache::Key(QFontDef(), 0, 0), fontEngine);
+        QFontCache::instance()->insertEngine(QFontCache::Key(QFontDef(), 0, 1), fontEngine);
     }
 
     // use it:

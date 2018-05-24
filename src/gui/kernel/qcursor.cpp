@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,6 +49,7 @@
 
 #include <qpa/qplatformcursor.h>
 #include <private/qguiapplication_p.h>
+#include <private/qhighdpiscaling_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -165,6 +172,12 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+  \fn void QCursor::swap(QCursor &other)
+
+  Swaps this cursor with the \a other cursor.
+ */
+
+/*!
     \fn QPoint QCursor::pos(const QScreen *screen)
 
     Returns the position of the cursor (hot spot) of the \a screen
@@ -177,9 +190,14 @@ QT_BEGIN_NAMESPACE
 */
 QPoint QCursor::pos(const QScreen *screen)
 {
-    if (screen)
-        if (const QPlatformCursor *cursor = screen->handle()->cursor())
-            return cursor->pos();
+    if (screen) {
+        if (const QPlatformCursor *cursor = screen->handle()->cursor()) {
+            const QPlatformScreen *ps = screen->handle();
+            QPoint nativePos = cursor->pos();
+            ps = ps->screenForPosition(nativePos);
+            return QHighDpi::fromNativePixels(nativePos, ps->screen());
+        }
+    }
     return QGuiApplicationPrivate::lastCursorPosition.toPoint();
 }
 
@@ -231,12 +249,12 @@ void QCursor::setPos(QScreen *screen, int x, int y)
 {
     if (screen) {
         if (QPlatformCursor *cursor = screen->handle()->cursor()) {
-            const QPoint pos = QPoint(x, y);
+            const QPoint devicePos = QHighDpi::toNativePixels(QPoint(x, y), screen);
             // Need to check, since some X servers generate null mouse move
             // events, causing looping in applications which call setPos() on
             // every mouse move event.
-            if (pos != cursor->pos())
-                cursor->setPos(pos);
+            if (devicePos != cursor->pos())
+                cursor->setPos(devicePos);
         }
     }
 }
@@ -362,9 +380,6 @@ QDataStream &operator>>(QDataStream &s, QCursor &c)
     because this size is supported on all platforms. Some platforms
     also support 16 x 16, 48 x 48, and 64 x 64 cursors.
 
-    \note On Windows CE, the cursor size is fixed. If the pixmap
-    is bigger than the system size, it will be scaled.
-
     \sa QPixmap::QPixmap(), QPixmap::setMask()
 */
 
@@ -421,9 +436,6 @@ QCursor::QCursor(const QPixmap &pixmap, int hotX, int hotY)
     because this size is supported on all platforms. Some platforms
     also support 16 x 16, 48 x 48, and 64 x 64 cursors.
 
-    \note On Windows CE, the cursor size is fixed. If the pixmap
-    is bigger than the system size, it will be scaled.
-
     \sa QBitmap::QBitmap(), QBitmap::setMask()
 */
 
@@ -465,6 +477,54 @@ QCursor::QCursor(Qt::CursorShape shape)
     setShape(shape);
 }
 
+/*!
+    \fn bool operator==(const QCursor &lhs, const QCursor &rhs)
+    \relates QCursor
+    \since 5.10
+
+    Equality operator. Returns \c true if \a lhs and \a rhs
+    have the same \l{QCursor::}{shape()} and, in the case of
+    \l{Qt::BitmapCursor}{bitmap cursors}, the same \l{QCursor::}{hotSpot()}
+    and either the same \l{QCursor::}{pixmap()} or the same
+    \l{QCursor::}{bitmap()} and \l{QCursor::}{mask()}.
+
+    \note When comparing bitmap cursors, this function only
+    compares the bitmaps' \l{QPixmap::cacheKey()}{cache keys},
+    not each pixel.
+
+    \sa operator!=(const QCursor &lhs, const QCursor &rhs)
+*/
+bool operator==(const QCursor &lhs, const QCursor &rhs) Q_DECL_NOTHROW
+{
+    if (lhs.d == rhs.d)
+        return true; // Copy or same shape
+
+    // Check pixmaps or bitmaps cache keys. Notice that having BitmapCursor
+    // shape implies either non-null pixmap or non-null bitmap and mask
+    if (lhs.shape() == Qt::BitmapCursor && rhs.shape() == Qt::BitmapCursor
+            && lhs.hotSpot() == rhs.hotSpot()) {
+        if (!lhs.d->pixmap.isNull())
+            return lhs.d->pixmap.cacheKey() == rhs.d->pixmap.cacheKey();
+
+        if (!rhs.d->pixmap.isNull())
+            return false;
+
+        return lhs.d->bm->cacheKey() == rhs.d->bm->cacheKey()
+                && lhs.d->bmm->cacheKey() == rhs.d->bmm->cacheKey();
+    }
+
+    return false;
+}
+
+/*!
+    \fn bool operator!=(const QCursor &lhs, const QCursor &rhs)
+    \relates QCursor
+    \since 5.10
+
+    Inequality operator. Returns the equivalent of !(\a lhs == \a rhs).
+
+    \sa operator==(const QCursor &lhs, const QCursor &rhs)
+*/
 
 /*!
     Returns the cursor shape identifier. The return value is one of

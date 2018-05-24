@@ -1,15 +1,20 @@
 QT = core
-TEMPLATE    =	subdirs
-CONFIG  += ordered
-SUBDIRS	=	lib \
-                theplugin \
-		tst
-!android: !win32: !mac: SUBDIRS += almostplugin
-macx-*: contains(QT_CONFIG, private_tests): SUBDIRS += machtest
-TARGET = tst_qpluginloader
+TEMPLATE = subdirs
+
+tst.depends = lib theplugin
+SUBDIRS = lib \
+          theplugin \
+          tst
+!android:!win32:!darwin {
+    tst.depends += almostplugin
+    SUBDIRS += almostplugin
+}
+macos:qtConfig(private_tests) {
+    tst.depends += machtest
+    SUBDIRS += machtest
+}
 
 # no special install rule for subdir
 INSTALLS =
 
 
-CONFIG += parallel_test

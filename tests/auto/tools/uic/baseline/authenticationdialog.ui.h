@@ -10,13 +10,10 @@
 #define AUTHENTICATIONDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QSpacerItem>
@@ -106,12 +103,12 @@ public:
 
     void retranslateUi(QDialog *Dialog)
     {
-        Dialog->setWindowTitle(QApplication::translate("Dialog", "Http authentication required", 0));
-        label->setText(QApplication::translate("Dialog", "You need to supply a Username and a Password to access this site", 0));
-        label_2->setText(QApplication::translate("Dialog", "Username:", 0));
-        label_3->setText(QApplication::translate("Dialog", "Password:", 0));
-        label_4->setText(QApplication::translate("Dialog", "Site:", 0));
-        siteDescription->setText(QApplication::translate("Dialog", "%1 at %2", 0));
+        Dialog->setWindowTitle(QApplication::translate("Dialog", "Http authentication required", nullptr));
+        label->setText(QApplication::translate("Dialog", "You need to supply a Username and a Password to access this site", nullptr));
+        label_2->setText(QApplication::translate("Dialog", "Username:", nullptr));
+        label_3->setText(QApplication::translate("Dialog", "Password:", nullptr));
+        label_4->setText(QApplication::translate("Dialog", "Site:", nullptr));
+        siteDescription->setText(QApplication::translate("Dialog", "%1 at %2", nullptr));
     } // retranslateUi
 
 };

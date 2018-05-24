@@ -10,15 +10,12 @@
 #define QPRINTWIDGET_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -143,15 +140,15 @@ public:
 
     void retranslateUi(QWidget *QPrintWidget)
     {
-        QPrintWidget->setWindowTitle(QApplication::translate("QPrintWidget", "Form", 0));
-        printerGroup->setTitle(QApplication::translate("QPrintWidget", "Printer", 0));
-        label->setText(QApplication::translate("QPrintWidget", "&Name:", 0));
-        properties->setText(QApplication::translate("QPrintWidget", "P&roperties", 0));
-        label_2->setText(QApplication::translate("QPrintWidget", "Location:", 0));
-        preview->setText(QApplication::translate("QPrintWidget", "Preview", 0));
-        label_3->setText(QApplication::translate("QPrintWidget", "Type:", 0));
-        lOutput->setText(QApplication::translate("QPrintWidget", "Output &file:", 0));
-        fileBrowser->setText(QApplication::translate("QPrintWidget", "...", 0));
+        QPrintWidget->setWindowTitle(QApplication::translate("QPrintWidget", "Form", nullptr));
+        printerGroup->setTitle(QApplication::translate("QPrintWidget", "Printer", nullptr));
+        label->setText(QApplication::translate("QPrintWidget", "&Name:", nullptr));
+        properties->setText(QApplication::translate("QPrintWidget", "P&roperties", nullptr));
+        label_2->setText(QApplication::translate("QPrintWidget", "Location:", nullptr));
+        preview->setText(QApplication::translate("QPrintWidget", "Preview", nullptr));
+        label_3->setText(QApplication::translate("QPrintWidget", "Type:", nullptr));
+        lOutput->setText(QApplication::translate("QPrintWidget", "Output &file:", nullptr));
+        fileBrowser->setText(QApplication::translate("QPrintWidget", "...", nullptr));
     } // retranslateUi
 
 };

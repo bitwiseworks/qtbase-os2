@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -106,7 +112,7 @@ public:
     bool sizeDirty;
     bool layoutDirty;
 
-    QList<QPointer<QTextFrame> > floats;
+    QVector<QPointer<QTextFrame> > floats;
 };
 
 QTextFrameData::QTextFrameData()
@@ -259,7 +265,7 @@ void QTextTableData::updateTableSize()
     const QFixed effectiveLeftMargin = this->leftMargin + border + padding;
     const QFixed effectiveRightMargin = this->rightMargin + border + padding;
     size.height = contentsHeight == -1
-                   ? rowPositions.last() + heights.last() + padding + border + cellSpacing + effectiveBottomMargin
+                   ? rowPositions.constLast() + heights.constLast() + padding + border + cellSpacing + effectiveBottomMargin
                    : effectiveTopMargin + contentsHeight + effectiveBottomMargin;
     size.width = effectiveLeftMargin + contentsWidth + effectiveRightMargin;
 }
@@ -289,7 +295,7 @@ static inline bool isEmptyBlockBeforeTable(const QTextBlock &block, const QTextB
            ;
 }
 
-static inline bool isEmptyBlockBeforeTable(QTextFrame::Iterator it)
+static inline bool isEmptyBlockBeforeTable(const QTextFrame::Iterator &it)
 {
     QTextFrame::Iterator next = it; ++next;
     if (it.currentFrame())
@@ -413,7 +419,7 @@ static bool operator<(int pos, const QCheckPoint &checkPoint)
 
 #endif
 
-static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, const QPointF &origin, QRectF gradientRect = QRectF())
+static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, const QPointF &origin, const QRectF &gradientRect = QRectF())
 {
     p->save();
     if (brush.style() >= Qt::LinearGradientPattern && brush.style() <= Qt::ConicalGradientPattern) {
@@ -467,9 +473,9 @@ public:
     void drawFlow(const QPointF &offset, QPainter *painter, const QAbstractTextDocumentLayout::PaintContext &context,
                   QTextFrame::Iterator it, const QList<QTextFrame *> &floats, QTextBlock *cursorBlockNeedingRepaint) const;
     void drawBlock(const QPointF &offset, QPainter *painter, const QAbstractTextDocumentLayout::PaintContext &context,
-                   QTextBlock bl, bool inRootFrame) const;
+                   const QTextBlock &bl, bool inRootFrame) const;
     void drawListItem(const QPointF &offset, QPainter *painter, const QAbstractTextDocumentLayout::PaintContext &context,
-                      QTextBlock bl, const QTextCharFormat *selectionFormat) const;
+                      const QTextBlock &bl, const QTextCharFormat *selectionFormat) const;
     void drawTableCell(const QRectF &cellRect, QPainter *painter, const QAbstractTextDocumentLayout::PaintContext &cell_context,
                        QTextTable *table, QTextTableData *td, int r, int c,
                        QTextBlock *cursorBlockNeedingRepaint, QPointF *cursorBlockOffset) const;
@@ -487,7 +493,7 @@ public:
     HitPoint hitTest(QTextFrame::Iterator it, HitPoint hit, const QFixedPoint &p,
                      int *position, QTextLayout **l, Qt::HitTestAccuracy accuracy) const;
     HitPoint hitTest(QTextTable *table, const QFixedPoint &point, int *position, QTextLayout **l, Qt::HitTestAccuracy accuracy) const;
-    HitPoint hitTest(QTextBlock bl, const QFixedPoint &point, int *position, QTextLayout **l, Qt::HitTestAccuracy accuracy) const;
+    HitPoint hitTest(const QTextBlock &bl, const QFixedPoint &point, int *position, QTextLayout **l, Qt::HitTestAccuracy accuracy) const;
 
     QTextLayoutStruct layoutCell(QTextTable *t, const QTextTableCell &cell, QFixed width,
                                  int layoutFrom, int layoutTo, QTextTableData *tableData, QFixed absoluteTableY,
@@ -749,7 +755,7 @@ QTextDocumentLayoutPrivate::hitTest(QTextTable *table, const QFixedPoint &point,
 }
 
 QTextDocumentLayoutPrivate::HitPoint
-QTextDocumentLayoutPrivate::hitTest(QTextBlock bl, const QFixedPoint &point, int *position, QTextLayout **l,
+QTextDocumentLayoutPrivate::hitTest(const QTextBlock &bl, const QFixedPoint &point, int *position, QTextLayout **l,
                                     Qt::HitTestAccuracy accuracy) const
 {
     QTextLayout *tl = bl.layout();
@@ -828,6 +834,8 @@ void QTextDocumentLayoutPrivate::drawBorder(QPainter *painter, const QRectF &rec
 
 #ifndef QT_NO_CSSPARSER
     QCss::BorderStyle cssStyle = static_cast<QCss::BorderStyle>(style + 1);
+#else
+    Q_UNUSED(style);
 #endif //QT_NO_CSSPARSER
 
     bool turn_off_antialiasing = !(painter->renderHints() & QPainter::Antialiasing);
@@ -1071,7 +1079,9 @@ void QTextDocumentLayoutPrivate::drawFrame(const QPointF &offset, QPainter *pain
             it = frameIteratorForYPosition(QFixed::fromReal(context.clip.top()));
 
         QList<QTextFrame *> floats;
-        for (int i = 0; i < fd->floats.count(); ++i)
+        const int numFloats = fd->floats.count();
+        floats.reserve(numFloats);
+        for (int i = 0; i < numFloats; ++i)
             floats.append(fd->floats.at(i));
 
         drawFlow(off, painter, context, it, floats, &cursorBlockNeedingRepaint);
@@ -1230,7 +1240,7 @@ void QTextDocumentLayoutPrivate::drawFlow(const QPointF &offset, QPainter *paint
 
             // if we're past what is already laid out then we're better off
             // not trying to draw things that may not be positioned correctly yet
-            if (currentPosInDoc >= checkPoints.last().positionInFrame)
+            if (currentPosInDoc >= checkPoints.constLast().positionInFrame)
                 break;
 
             if (lastVisibleCheckPoint != checkPoints.end()
@@ -1283,7 +1293,7 @@ void QTextDocumentLayoutPrivate::drawFlow(const QPointF &offset, QPainter *paint
 
 void QTextDocumentLayoutPrivate::drawBlock(const QPointF &offset, QPainter *painter,
                                            const QAbstractTextDocumentLayout::PaintContext &context,
-                                           QTextBlock bl, bool inRootFrame) const
+                                           const QTextBlock &bl, bool inRootFrame) const
 {
     const QTextLayout *tl = bl.layout();
     QRectF r = tl->boundingRect();
@@ -1377,7 +1387,7 @@ void QTextDocumentLayoutPrivate::drawBlock(const QPointF &offset, QPainter *pain
 
 void QTextDocumentLayoutPrivate::drawListItem(const QPointF &offset, QPainter *painter,
                                               const QAbstractTextDocumentLayout::PaintContext &context,
-                                              QTextBlock bl, const QTextCharFormat *selectionFormat) const
+                                              const QTextBlock &bl, const QTextCharFormat *selectionFormat) const
 {
     Q_Q(const QTextDocumentLayout);
     const QTextBlockFormat blockFormat = bl.blockFormat();
@@ -1417,7 +1427,7 @@ void QTextDocumentLayoutPrivate::drawListItem(const QPointF &offset, QPainter *p
     case QTextListFormat::ListLowerRoman:
     case QTextListFormat::ListUpperRoman:
         itemText = static_cast<QTextList *>(object)->itemText(bl);
-        size.setWidth(fontMetrics.width(itemText));
+        size.setWidth(fontMetrics.horizontalAdvance(itemText));
         size.setHeight(fontMetrics.height());
         break;
 
@@ -1435,7 +1445,7 @@ void QTextDocumentLayoutPrivate::drawListItem(const QPointF &offset, QPainter *p
 
     QRectF r(pos, size);
 
-    qreal xoff = fontMetrics.width(QLatin1Char(' '));
+    qreal xoff = fontMetrics.horizontalAdvance(QLatin1Char(' '));
     if (dir == Qt::LeftToRight)
         xoff = -xoff - size.width();
     r.translate( xoff, (fontMetrics.height() / 2) - (size.height() / 2));
@@ -1496,7 +1506,7 @@ void QTextDocumentLayoutPrivate::drawListItem(const QPointF &offset, QPainter *p
     painter->restore();
 }
 
-static QFixed flowPosition(const QTextFrame::iterator it)
+static QFixed flowPosition(const QTextFrame::iterator &it)
 {
     if (it.atEnd())
         return 0;
@@ -1590,7 +1600,7 @@ QTextLayoutStruct QTextDocumentLayoutPrivate::layoutCell(QTextTable *t, const QT
     // floats in other cells we must clear the list here.
     data(t)->floats.clear();
 
-//    qDebug() << "layoutCell done";
+//    qDebug("layoutCell done");
 
     return layoutStruct;
 }
@@ -1790,7 +1800,7 @@ recalc_minmax_widths:
         td->columnPositions[i] = td->columnPositions.at(i-1) + td->widths.at(i-1) + 2 * td->border + cellSpacing;
 
     // - margin to compensate the + margin in columnPositions[0]
-    const QFixed contentsWidth = td->columnPositions.last() + td->widths.last() + td->padding + td->border + cellSpacing - leftMargin;
+    const QFixed contentsWidth = td->columnPositions.constLast() + td->widths.constLast() + td->padding + td->border + cellSpacing - leftMargin;
 
     // if the table is too big and causes an overflow re-do the layout with WrapAnywhere as wrap
     // mode
@@ -1837,14 +1847,14 @@ recalc_minmax_widths:
         td->calcRowPosition(r);
 
         const int tableStartPage = (absoluteTableY / pageHeight).truncate();
-        const int currentPage = ((td->rowPositions[r] + absoluteTableY) / pageHeight).truncate();
+        const int currentPage = ((td->rowPositions.at(r) + absoluteTableY) / pageHeight).truncate();
         const QFixed pageBottom = (currentPage + 1) * pageHeight - td->effectiveBottomMargin - absoluteTableY - cellSpacing - td->border;
         const QFixed pageTop = currentPage * pageHeight + td->effectiveTopMargin - absoluteTableY + cellSpacing + td->border;
         const QFixed nextPageTop = pageTop + pageHeight;
 
-        if (td->rowPositions[r] > pageBottom)
+        if (td->rowPositions.at(r) > pageBottom)
             td->rowPositions[r] = nextPageTop;
-        else if (td->rowPositions[r] < pageTop)
+        else if (td->rowPositions.at(r) < pageTop)
             td->rowPositions[r] = pageTop;
 
         bool dropRowToNextPage = true;
@@ -1855,7 +1865,7 @@ recalc_minmax_widths:
         QFixed dropDistance = 0;
 
 relayout:
-        const int rowStartPage = ((td->rowPositions[r] + absoluteTableY) / pageHeight).truncate();
+        const int rowStartPage = ((td->rowPositions.at(r) + absoluteTableY) / pageHeight).truncate();
         // if any of the header rows or the first non-header row start on the next page
         // then the entire header should be dropped
         if (r <= headerRowCount && rowStartPage > tableStartPage && !hasDroppedTable) {
@@ -1919,13 +1929,13 @@ relayout:
         }
 
         if (rowCellCount > 0 && dropRowToNextPage) {
-            dropDistance = nextPageTop - td->rowPositions[r];
+            dropDistance = nextPageTop - td->rowPositions.at(r);
             td->rowPositions[r] = nextPageTop;
             td->heights[r] = 0;
             dropRowToNextPage = false;
             cellHeights.resize(cellCountBeforeRow);
             if (r > headerRowCount)
-                td->heights[r-1] = pageBottom - td->rowPositions[r-1];
+                td->heights[r - 1] = pageBottom - td->rowPositions.at(r - 1);
             goto relayout;
         }
 
@@ -1936,7 +1946,7 @@ relayout:
         }
 
         if (r == headerRowCount - 1) {
-            td->headerHeight = td->rowPositions[r] + td->heights[r] - td->rowPositions[0] + td->cellSpacing + 2 * td->border;
+            td->headerHeight = td->rowPositions.at(r) + td->heights.at(r) - td->rowPositions.at(0) + td->cellSpacing + 2 * td->border;
             td->headerHeight -= td->headerHeight * (td->headerHeight / pageHeight).truncate();
             td->effectiveTopMargin += td->headerHeight;
         }
@@ -2022,7 +2032,7 @@ void QTextDocumentLayoutPrivate::positionFloat(QTextFrame *frame, QTextLine *cur
 //         qDebug() << "have line: right=" << right << "left=" << left << "textWidth=" << currentLine->width();
         if (right - left < QFixed::fromReal(currentLine->naturalTextWidth()) + fd->size.width) {
             layoutStruct->pendingFloats.append(frame);
-//             qDebug() << "    adding to pending list";
+//             qDebug("    adding to pending list");
             return;
         }
     }
@@ -2296,7 +2306,7 @@ void QTextDocumentLayoutPrivate::layoutFlow(QTextFrame::Iterator it, QTextLayout
             docPos = it.currentBlock().position();
 
         if (inRootFrame) {
-            if (qAbs(layoutStruct->y - checkPoints.last().y) > 2000) {
+            if (qAbs(layoutStruct->y - checkPoints.constLast().y) > 2000) {
                 QFixed left, right;
                 floatMargins(layoutStruct->y, layoutStruct, &left, &right);
                 if (left == layoutStruct->x_left && right == layoutStruct->x_right) {
@@ -2535,7 +2545,7 @@ void QTextDocumentLayoutPrivate::layoutFlow(QTextFrame::Iterator it, QTextLayout
             contentHasAlignment = true;
 
         if (it.atEnd()) {
-            //qDebug() << "layout done!";
+            //qDebug("layout done!");
             currentLazyLayoutPosition = -1;
             QCheckPoint cp;
             cp.y = layoutStruct->y;
@@ -2546,7 +2556,7 @@ void QTextDocumentLayoutPrivate::layoutFlow(QTextFrame::Iterator it, QTextLayout
             checkPoints.append(cp);
             checkPoints.reserve(checkPoints.size());
         } else {
-            currentLazyLayoutPosition = checkPoints.last().positionInFrame;
+            currentLazyLayoutPosition = checkPoints.constLast().positionInFrame;
             // #######
             //checkPoints.last().positionInFrame = q->document()->docHandle()->length();
         }
@@ -2603,7 +2613,7 @@ void QTextDocumentLayoutPrivate::layoutBlock(const QTextBlock &bl, int blockPosi
     QFixed extraMargin;
     if (docPrivate->defaultTextOption.flags() & QTextOption::AddSpaceForLineAndParagraphSeparators) {
         QFontMetricsF fm(bl.charFormat().font());
-        extraMargin = QFixed::fromReal(fm.width(QChar(QChar(0x21B5))));
+        extraMargin = QFixed::fromReal(fm.horizontalAdvance(QChar(QChar(0x21B5))));
     }
 
     const QFixed indent = this->blockIndent(blockFormat);
@@ -2893,14 +2903,12 @@ static void markFrames(QTextFrame *current, int from, int oldLength, int length)
         return;
 
     QTextFrameData *fd = data(current);
-    for (int i = 0; i < fd->floats.size(); ++i) {
-        QTextFrame *f = fd->floats[i];
-        if (!f) {
-            // float got removed in editing operation
-            fd->floats.removeAt(i);
-            --i;
-        }
-    }
+    // float got removed in editing operation
+    QTextFrame *null = nullptr; // work-around for (at least) MSVC 2012 emitting
+                                // warning C4100 for its own header <algorithm>
+                                // when passing nullptr directly to std::remove
+    fd->floats.erase(std::remove(fd->floats.begin(), fd->floats.end(), null),
+                     fd->floats.end());
 
     fd->layoutDirty = true;
     fd->sizeDirty = true;
@@ -2915,11 +2923,11 @@ void QTextDocumentLayout::documentChanged(int from, int oldLength, int length)
 {
     Q_D(QTextDocumentLayout);
 
-    QTextBlock startIt = document()->findBlock(from);
+    QTextBlock blockIt = document()->findBlock(from);
     QTextBlock endIt = document()->findBlock(qMax(0, from + length - 1));
     if (endIt.isValid())
         endIt = endIt.next();
-    for (QTextBlock blockIt = startIt; blockIt.isValid() && blockIt != endIt; blockIt = blockIt.next())
+     for (; blockIt.isValid() && blockIt != endIt; blockIt = blockIt.next())
          blockIt.clearLayout();
 
     if (d->docPrivate->pageSize.isNull())
@@ -2960,9 +2968,6 @@ void QTextDocumentLayout::documentChanged(int from, int oldLength, int length)
         d->layoutTimer.start(10, this);
 
     d->insideDocumentChange = false;
-
-    for (QTextBlock blockIt = startIt; blockIt.isValid() && blockIt != endIt; blockIt = blockIt.next())
-         emit updateBlock(blockIt);
 
     if (d->showLayoutProgress) {
         const QSizeF newSize = dynamicDocumentSize();

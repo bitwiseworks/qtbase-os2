@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2017 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,17 +42,19 @@
 
 #ifndef QT_NO_TEMPORARYFILE
 
+#include "qdebug.h"
 #include "qdiriterator.h"
+#include "qpair.h"
 #include "qplatformdefs.h"
-#include <QDebug>
+#include "qrandom.h"
+#include "private/qtemporaryfile_p.h"
 
 #if defined(QT_BUILD_CORE_LIB)
 #include "qcoreapplication.h"
 #endif
 
-#include <stdlib.h> // mkdtemp
-#if defined(Q_OS_QNX) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
-#include <private/qfilesystemengine_p.h>
+#if !defined(Q_OS_WIN)
+#include <errno.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -59,7 +68,7 @@ public:
 
     void create(const QString &templateName);
 
-    QString path;
+    QString pathOrError;
     bool autoRemove;
     bool success;
 };
@@ -86,42 +95,12 @@ static QString defaultTemplateName()
     return QDir::tempPath() + QLatin1Char('/') + baseName + QLatin1String("-XXXXXX");
 }
 
-#if defined(Q_OS_QNX ) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
-
-static int nextRand(int &v)
+void QTemporaryDirPrivate::create(const QString &templateName)
 {
-    int r = v % 62;
-    v /= 62;
-    if (v < 62)
-        v = qrand();
-    return r;
-}
-
-static char *q_mkdtemp(char *templateName)
-{
-    static const char letters[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-    const size_t length = strlen(templateName);
-
-    char *XXXXXX = templateName + length - 6;
-
-    if ((length < 6u) || strncmp(XXXXXX, "XXXXXX", 6))
-        return 0;
-
+    QTemporaryFileName tfn(templateName);
     for (int i = 0; i < 256; ++i) {
-        int v = qrand();
-
-        /* Fill in the random bits.  */
-        XXXXXX[0] = letters[nextRand(v)];
-        XXXXXX[1] = letters[nextRand(v)];
-        XXXXXX[2] = letters[nextRand(v)];
-        XXXXXX[3] = letters[nextRand(v)];
-        XXXXXX[4] = letters[nextRand(v)];
-        XXXXXX[5] = letters[v % 62];
-
-        QString templateNameStr = QFile::decodeName(templateName);
-
-        QFileSystemEntry fileSystemEntry(templateNameStr);
+        tfn.generateNext();
+        QFileSystemEntry fileSystemEntry(tfn.path, QFileSystemEntry::FromNativePath());
         if (QFileSystemEngine::createDirectory(fileSystemEntry, false)) {
             QSystemError error;
             QFileSystemEngine::setPermissions(fileSystemEntry,
@@ -130,33 +109,25 @@ static char *q_mkdtemp(char *templateName)
                                               QFile::ExeOwner, error);
             if (error.error() != 0) {
                 if (!QFileSystemEngine::removeDirectory(fileSystemEntry, false))
-                    qWarning() << "Unable to remove unused directory" << templateNameStr;
+                    qWarning() << "Unable to remove unused directory" << templateName;
                 continue;
             }
-            return templateName;
+            success = true;
+            pathOrError = fileSystemEntry.filePath();
+            return;
         }
+#  ifdef Q_OS_WIN
+        const int exists = ERROR_ALREADY_EXISTS;
+        int code = GetLastError();
+#  else
+        const int exists = EEXIST;
+        int code = errno;
+#  endif
+        if (code != exists)
+            break;
     }
-    return 0;
-}
-
-#else // defined(Q_OS_QNX ) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
-
-static char *q_mkdtemp(char *templateName)
-{
-   return mkdtemp(templateName);
-}
-
-#endif
-
-void QTemporaryDirPrivate::create(const QString &templateName)
-{
-    QByteArray buffer = QFile::encodeName(templateName);
-    if (!buffer.endsWith("XXXXXX"))
-        buffer += "XXXXXX";
-    if (q_mkdtemp(buffer.data())) { // modifies buffer
-        success = true;
-        path = QFile::decodeName(buffer.constData());
-    }
+    pathOrError = qt_error_string();
+    success = false;
 }
 
 //************* QTemporaryDir
@@ -170,10 +141,10 @@ void QTemporaryDirPrivate::create(const QString &templateName)
     \ingroup io
 
 
-    QTemporaryDir is used to create unique temporary dirs safely.
-    The dir itself is created by the constructor. The name of the
+    QTemporaryDir is used to create unique temporary directories safely.
+    The directory itself is created by the constructor. The name of the
     temporary directory is guaranteed to be unique (i.e., you are
-    guaranteed to not overwrite an existing dir), and the directory will
+    guaranteed to not overwrite an existing directory), and the directory will
     subsequently be removed upon destruction of the QTemporaryDir
     object. The directory name is either auto-generated, or created based
     on a template, which is passed to QTemporaryDir's constructor.
@@ -186,7 +157,7 @@ void QTemporaryDirPrivate::create(const QString &templateName)
     created, using isValid(). Do not use \l {QDir::exists()}{exists()}, since a default-constructed
     QDir represents the current directory, which exists.
 
-    The path to the temporary dir can be found by calling path().
+    The path to the temporary directory can be found by calling path().
 
     A temporary directory will have some static part of the name and some
     part that is calculated to be unique. The default path will be
@@ -256,12 +227,51 @@ bool QTemporaryDir::isValid() const
 }
 
 /*!
+   \since 5.6
+
+   If isValid() returns \c false, this function returns the error string that
+   explains why the creation of the temporary directory failed. Otherwise, this
+   function return an empty string.
+*/
+QString QTemporaryDir::errorString() const
+{
+    return d_ptr->success ? QString() : d_ptr->pathOrError;
+}
+
+/*!
    Returns the path to the temporary directory.
    Empty if the QTemporaryDir could not be created.
 */
 QString QTemporaryDir::path() const
 {
-    return d_ptr->path;
+    return d_ptr->success ? d_ptr->pathOrError : QString();
+}
+
+/*!
+    \since 5.9
+
+    Returns the path name of a file in the temporary directory.
+    Does \e not check if the file actually exists in the directory.
+    Redundant multiple separators or "." and ".." directories in
+    \a fileName are not removed (see QDir::cleanPath()). Absolute
+    paths are not allowed.
+*/
+QString QTemporaryDir::filePath(const QString &fileName) const
+{
+    if (QDir::isAbsolutePath(fileName)) {
+        qWarning("QTemporaryDir::filePath: Absolute paths are not allowed: %s", qUtf8Printable(fileName));
+        return QString();
+    }
+
+    if (!d_ptr->success)
+        return QString();
+
+    QString ret = d_ptr->pathOrError;
+    if (!fileName.isEmpty()) {
+        ret += QLatin1Char('/');
+        ret += fileName;
+    }
+    return ret;
 }
 
 /*!

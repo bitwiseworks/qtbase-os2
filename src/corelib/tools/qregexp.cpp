@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,6 +44,7 @@
 #include "qcache.h"
 #include "qdatastream.h"
 #include "qdebug.h"
+#include "qhashfunctions.h"
 #include "qlist.h"
 #include "qmap.h"
 #include "qmutex.h"
@@ -491,7 +498,7 @@ int qFindString(const QChar *haystack, int haystackLen, int from,
          when it is followed by 'char'.
     \endtable
 
-    \keyword QRegExp wildcard matching
+    \target QRegExp wildcard matching
     \section1 Wildcard Matching
 
     Most command shells such as \e bash or \e cmd.exe support "file
@@ -886,6 +893,15 @@ static bool operator==(const QRegExpEngineKey &key1, const QRegExpEngineKey &key
            && key1.cs == key2.cs;
 }
 
+static uint qHash(const QRegExpEngineKey &key, uint seed = 0) Q_DECL_NOTHROW
+{
+    QtPrivate::QHashCombine hash;
+    seed = hash(seed, key.pattern);
+    seed = hash(seed, key.patternSyntax);
+    seed = hash(seed, key.cs);
+    return seed;
+}
+
 class QRegExpEngine;
 
 //Q_DECLARE_TYPEINFO(QVector<int>, Q_MOVABLE_TYPE);
@@ -1019,9 +1035,6 @@ class QRegExpCharClass
 {
 public:
     QRegExpCharClass();
-    inline QRegExpCharClass(const QRegExpCharClass &cc) { operator=(cc); }
-
-    QRegExpCharClass &operator=(const QRegExpCharClass &cc);
 
     void clear();
     bool negative() const { return n; }
@@ -2319,21 +2332,10 @@ QRegExpCharClass::QRegExpCharClass()
 #endif
 }
 
-QRegExpCharClass &QRegExpCharClass::operator=(const QRegExpCharClass &cc)
-{
-    c = cc.c;
-    r = cc.r;
-    n = cc.n;
-#ifndef QT_NO_REGEXP_OPTIM
-    occ1 = cc.occ1;
-#endif
-    return *this;
-}
-
 void QRegExpCharClass::clear()
 {
     c = 0;
-    r.resize(0);
+    r.clear();
     n = false;
 }
 
@@ -3009,7 +3011,7 @@ int QRegExpEngine::getEscape()
     case 'I':
         if (xmlSchemaExtensions) {
             yyCharClass->setNegative(!yyCharClass->negative());
-            // fall through
+            Q_FALLTHROUGH();
         } else {
             break;
         }
@@ -3049,7 +3051,7 @@ int QRegExpEngine::getEscape()
     case 'C':
         if (xmlSchemaExtensions) {
             yyCharClass->setNegative(!yyCharClass->negative());
-            // fall through
+            Q_FALLTHROUGH();
         } else {
             break;
         }
@@ -3095,7 +3097,7 @@ int QRegExpEngine::getEscape()
     case 'P':
         if (xmlSchemaExtensions) {
             yyCharClass->setNegative(!yyCharClass->negative());
-            // fall through
+            Q_FALLTHROUGH();
         } else {
             break;
         }
@@ -3811,11 +3813,6 @@ struct QRegExpPrivate
 };
 
 #if !defined(QT_NO_REGEXP_OPTIM)
-uint qHash(const QRegExpEngineKey &key, uint seed = 0) Q_DECL_NOTHROW
-{
-    return qHash(key.pattern, seed);
-}
-
 typedef QCache<QRegExpEngineKey, QRegExpEngine> EngineCache;
 Q_GLOBAL_STATIC(EngineCache, globalEngineCache)
 static QBasicMutex globalEngineCacheMutex;
@@ -4034,6 +4031,21 @@ QRegExp &QRegExp::operator=(const QRegExp &rx)
 bool QRegExp::operator==(const QRegExp &rx) const
 {
     return priv->engineKey == rx.priv->engineKey && priv->minimal == rx.priv->minimal;
+}
+
+/*!
+    \since 5.6
+    \relates QRegExp
+
+    Returns the hash value for \a key, using
+    \a seed to seed the calculation.
+*/
+uint qHash(const QRegExp &key, uint seed) Q_DECL_NOTHROW
+{
+    QtPrivate::QHashCombine hash;
+    seed = hash(seed, key.priv->engineKey);
+    seed = hash(seed, key.priv->minimal);
+    return seed;
 }
 
 /*!

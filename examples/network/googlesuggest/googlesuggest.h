@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -43,14 +53,7 @@
 
 #include <QtWidgets>
 #include <QtNetwork>
-#include <QObject>
-
-QT_BEGIN_NAMESPACE
-class QLineEdit;
-class QNetworkReply;
-class QTimer;
-class QTreeWidget;
-QT_END_NAMESPACE
+#include <QtCore>
 
 //! [1]
 class GSuggestCompletion : public QObject
@@ -58,10 +61,10 @@ class GSuggestCompletion : public QObject
     Q_OBJECT
 
 public:
-    GSuggestCompletion(QLineEdit *parent = 0);
+    explicit GSuggestCompletion(QLineEdit *parent = nullptr);
     ~GSuggestCompletion();
-    bool eventFilter(QObject *obj, QEvent *ev) Q_DECL_OVERRIDE;
-    void showCompletion(const QStringList &choices);
+    bool eventFilter(QObject *obj, QEvent *ev) override;
+    void showCompletion(const QVector<QString> &choices);
 
 public slots:
 
@@ -71,9 +74,9 @@ public slots:
     void handleNetworkData(QNetworkReply *networkReply);
 
 private:
-    QLineEdit *editor;
-    QTreeWidget *popup;
-    QTimer *timer;
+    QLineEdit *editor = nullptr;
+    QTreeWidget *popup = nullptr;
+    QTimer timer;
     QNetworkAccessManager networkManager;
 };
 //! [1]

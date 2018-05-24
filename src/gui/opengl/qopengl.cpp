@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,6 +42,7 @@
 
 #include "qopenglcontext.h"
 #include "qopenglfunctions.h"
+#include "qoperatingsystemversion.h"
 #include "qoffscreensurface.h"
 
 #include <QtCore/QDebug>
@@ -58,6 +65,10 @@ typedef const GLubyte * (QOPENGLF_APIENTRYP qt_glGetStringi)(GLenum, GLuint);
 QOpenGLExtensionMatcher::QOpenGLExtensionMatcher()
 {
     QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    if (!ctx) {
+        qWarning("QOpenGLExtensionMatcher::QOpenGLExtensionMatcher: No context");
+        return;
+    }
     QOpenGLFunctions *funcs = ctx->functions();
     const char *extensionStr = 0;
 
@@ -73,19 +84,17 @@ QOpenGLExtensionMatcher::QOpenGLExtensionMatcher()
         // clear error state
         while (funcs->glGetError()) {}
 
-        if (ctx) {
-            qt_glGetStringi glGetStringi = (qt_glGetStringi)ctx->getProcAddress("glGetStringi");
+        qt_glGetStringi glGetStringi = (qt_glGetStringi)ctx->getProcAddress("glGetStringi");
 
-            if (!glGetStringi)
-                return;
+        if (!glGetStringi)
+            return;
 
-            GLint numExtensions;
-            funcs->glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
+        GLint numExtensions = 0;
+        funcs->glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
 
-            for (int i = 0; i < numExtensions; ++i) {
-                const char *str = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
-                m_extensions.insert(str);
-            }
+        for (int i = 0; i < numExtensions; ++i) {
+            const char *str = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
+            m_extensions.insert(str);
         }
 #endif // QT_OPENGL_3
     }
@@ -129,26 +138,32 @@ QDebug operator<<(QDebug d, const QOpenGLConfig::Gpu &g)
     return d;
 }
 
+typedef QJsonArray::ConstIterator JsonArrayConstIt;
+
+static inline bool contains(const QJsonArray &haystack, unsigned needle)
+{
+    for (JsonArrayConstIt it = haystack.constBegin(), cend = haystack.constEnd(); it != cend; ++it) {
+        if (needle == it->toString().toUInt(nullptr, /* base */ 0))
+            return true;
+    }
+    return false;
+}
+
+static inline bool contains(const QJsonArray &haystack, const QString &needle)
+{
+    for (JsonArrayConstIt it = haystack.constBegin(), cend = haystack.constEnd(); it != cend; ++it) {
+        if (needle == it->toString())
+            return true;
+    }
+    return false;
+}
+
+namespace {
 enum Operator { NotEqual, LessThan, LessEqualThan, Equals, GreaterThan, GreaterEqualThan };
 static const char operators[][3] = {"!=", "<", "<=", "=", ">", ">="};
 
-static inline QString valueKey()         { return QStringLiteral("value"); }
-static inline QString opKey()            { return QStringLiteral("op"); }
-static inline QString versionKey()       { return QStringLiteral("version"); }
-static inline QString typeKey()          { return QStringLiteral("type"); }
-static inline QString osKey()            { return QStringLiteral("os"); }
-static inline QString vendorIdKey()      { return QStringLiteral("vendor_id"); }
-static inline QString glVendorKey()      { return QStringLiteral("gl_vendor"); }
-static inline QString deviceIdKey()      { return QStringLiteral("device_id"); }
-static inline QString driverVersionKey() { return QStringLiteral("driver_version"); }
-static inline QString featuresKey()      { return QStringLiteral("features"); }
-static inline QString idKey()            { return QStringLiteral("id"); }
-static inline QString descriptionKey()   { return QStringLiteral("description"); }
-static inline QString exceptionsKey()    { return QStringLiteral("exceptions"); }
-
-namespace {
 // VersionTerm describing a version term consisting of number and operator
-// found in "os", "driver_version", "gl_version".
+// found in os.version and driver_version.
 struct VersionTerm {
     VersionTerm() : op(NotEqual) {}
     static VersionTerm fromJson(const QJsonValue &v);
@@ -162,7 +177,7 @@ struct VersionTerm {
 bool VersionTerm::matches(const QVersionNumber &other) const
 {
     if (isNull() || other.isNull()) {
-        qWarning() << Q_FUNC_INFO << "called with invalid parameters";
+        qWarning("called with invalid parameters");
         return false;
     }
     switch (op) {
@@ -188,8 +203,8 @@ VersionTerm VersionTerm::fromJson(const QJsonValue &v)
     if (!v.isObject())
         return result;
     const QJsonObject o = v.toObject();
-    result.number = QVersionNumber::fromString(o.value(valueKey()).toString());
-    const QString opS = o.value(opKey()).toString();
+    result.number = QVersionNumber::fromString(o.value(QLatin1String("value")).toString());
+    const QString opS = o.value(QLatin1String("op")).toString();
     for (size_t i = 0; i < sizeof(operators) / sizeof(operators[0]); ++i) {
         if (opS == QLatin1String(operators[i])) {
             result.op = static_cast<Operator>(i);
@@ -206,21 +221,52 @@ struct OsTypeTerm
     static OsTypeTerm fromJson(const QJsonValue &v);
     static QString hostOs();
     static QVersionNumber hostKernelVersion() { return QVersionNumber::fromString(QSysInfo::kernelVersion()); }
+    static QString hostOsRelease() {
+        QString ver;
+#ifdef Q_OS_WIN
+        const auto osver = QOperatingSystemVersion::current();
+#define Q_WINVER(major, minor) (major << 8 | minor)
+        switch (Q_WINVER(osver.majorVersion(), osver.minorVersion())) {
+        case Q_WINVER(6, 1):
+            ver = QStringLiteral("7");
+            break;
+        case Q_WINVER(6, 2):
+            ver = QStringLiteral("8");
+            break;
+        case Q_WINVER(6, 3):
+            ver = QStringLiteral("8.1");
+            break;
+        case Q_WINVER(10, 0):
+            ver = QStringLiteral("10");
+            break;
+        default:
+            break;
+        }
+#undef Q_WINVER
+#endif
+        return ver;
+    }
 
     bool isNull() const { return type.isEmpty(); }
-    bool matches(const QString &osName, const QVersionNumber &kernelVersion) const
+    bool matches(const QString &osName, const QVersionNumber &kernelVersion, const QString &osRelease) const
     {
         if (isNull() || osName.isEmpty() || kernelVersion.isNull()) {
-            qWarning() << Q_FUNC_INFO << "called with invalid parameters";
+            qWarning("called with invalid parameters");
             return false;
         }
         if (type != osName)
             return false;
-        return versionTerm.isNull() || versionTerm.matches(kernelVersion);
+        if (!versionTerm.isNull() && !versionTerm.matches(kernelVersion))
+            return false;
+        // release is a list of Windows versions where the rule should match
+        if (!release.isEmpty() && !contains(release, osRelease))
+            return false;
+        return true;
     }
 
     QString type;
     VersionTerm versionTerm;
+    QJsonArray release;
 };
 
 OsTypeTerm OsTypeTerm::fromJson(const QJsonValue &v)
@@ -229,8 +275,9 @@ OsTypeTerm OsTypeTerm::fromJson(const QJsonValue &v)
     if (!v.isObject())
         return result;
     const QJsonObject o = v.toObject();
-    result.type = o.value(typeKey()).toString();
-    result.versionTerm = VersionTerm::fromJson(o.value(versionKey()));
+    result.type = o.value(QLatin1String("type")).toString();
+    result.versionTerm = VersionTerm::fromJson(o.value(QLatin1String("version")));
+    result.release = o.value(QLatin1String("release")).toArray();
     return result;
 }
 
@@ -251,22 +298,11 @@ QString OsTypeTerm::hostOs()
 }
 } // anonymous namespace
 
-typedef QJsonArray::ConstIterator JsonArrayConstIt;
-
-static inline bool contains(const QJsonArray &a, unsigned needle)
-{
-    for (JsonArrayConstIt it = a.constBegin(), cend = a.constEnd(); it != cend; ++it) {
-        if (needle == it->toString().toUInt(Q_NULLPTR, /* base */ 0))
-            return true;
-    }
-    return false;
-}
-
 static QString msgSyntaxWarning(const QJsonObject &object, const QString &what)
 {
     QString result;
-    QTextStream(&result) << "Id " << object.value(idKey()).toInt()
-        << " (\"" << object.value(descriptionKey()).toString()
+    QTextStream(&result) << "Id " << object.value(QLatin1String("id")).toInt()
+        << " (\"" << object.value(QLatin1String("description")).toString()
         << "\"): " << what;
     return result;
 }
@@ -277,35 +313,36 @@ static QString msgSyntaxWarning(const QJsonObject &object, const QString &what)
 static bool matches(const QJsonObject &object,
                     const QString &osName,
                     const QVersionNumber &kernelVersion,
+                    const QString &osRelease,
                     const QOpenGLConfig::Gpu &gpu)
 {
-    const OsTypeTerm os = OsTypeTerm::fromJson(object.value(osKey()));
-    if (!os.isNull() && !os.matches(osName, kernelVersion))
+    const OsTypeTerm os = OsTypeTerm::fromJson(object.value(QLatin1String("os")));
+    if (!os.isNull() && !os.matches(osName, kernelVersion, osRelease))
         return false;
 
-    const QJsonValue exceptionsV = object.value(exceptionsKey());
+    const QJsonValue exceptionsV = object.value(QLatin1String("exceptions"));
     if (exceptionsV.isArray()) {
         const QJsonArray exceptionsA = exceptionsV.toArray();
         for (JsonArrayConstIt it = exceptionsA.constBegin(), cend = exceptionsA.constEnd(); it != cend; ++it) {
-            if (matches(it->toObject(), osName, kernelVersion, gpu))
+            if (matches(it->toObject(), osName, kernelVersion, osRelease, gpu))
                 return false;
         }
     }
 
-    const QJsonValue vendorV = object.value(vendorIdKey());
+    const QJsonValue vendorV = object.value(QLatin1String("vendor_id"));
     if (vendorV.isString()) {
-        if (gpu.vendorId != vendorV.toString().toUInt(Q_NULLPTR, /* base */ 0))
+        if (gpu.vendorId != vendorV.toString().toUInt(nullptr, /* base */ 0))
             return false;
     } else {
-        if (object.contains(glVendorKey())) {
-            const QByteArray glVendorV = object.value(glVendorKey()).toString().toUtf8();
+        if (object.contains(QLatin1String("gl_vendor"))) {
+            const QByteArray glVendorV = object.value(QLatin1String("gl_vendor")).toString().toUtf8();
             if (!gpu.glVendor.contains(glVendorV))
                 return false;
         }
     }
 
     if (gpu.deviceId) {
-        const QJsonValue deviceIdV = object.value(deviceIdKey());
+        const QJsonValue deviceIdV = object.value(QLatin1String("device_id"));
         switch (deviceIdV.type()) {
         case QJsonValue::Array:
             if (!contains(deviceIdV.toArray(), gpu.deviceId))
@@ -321,7 +358,7 @@ static bool matches(const QJsonObject &object,
         }
     }
     if (!gpu.driverVersion.isNull()) {
-        const QJsonValue driverVersionV = object.value(driverVersionKey());
+        const QJsonValue driverVersionV = object.value(QLatin1String("driver_version"));
         switch (driverVersionV.type()) {
         case QJsonValue::Object:
             if (!VersionTerm::fromJson(driverVersionV).matches(gpu.driverVersion))
@@ -336,19 +373,29 @@ static bool matches(const QJsonObject &object,
                                     QLatin1String("Driver version must be of type object."));
         }
     }
+
+    if (!gpu.driverDescription.isEmpty()) {
+        const QJsonValue driverDescriptionV = object.value(QLatin1String("driver_description"));
+        if (driverDescriptionV.isString()) {
+            if (!gpu.driverDescription.contains(driverDescriptionV.toString().toUtf8()))
+                return false;
+        }
+    }
+
     return true;
 }
 
 static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
                             const QString &osName,
                             const QVersionNumber &kernelVersion,
+                            const QString &osRelease,
                             const QJsonDocument &doc,
                             QSet<QString> *result,
                             QString *errorMessage)
 {
     result->clear();
     errorMessage->clear();
-    const QJsonValue entriesV = doc.object().value(QStringLiteral("entries"));
+    const QJsonValue entriesV = doc.object().value(QLatin1String("entries"));
     if (!entriesV.isArray()) {
         *errorMessage = QLatin1String("No entries read.");
         return false;
@@ -358,8 +405,8 @@ static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
     for (JsonArrayConstIt eit = entriesA.constBegin(), ecend = entriesA.constEnd(); eit != ecend; ++eit) {
         if (eit->isObject()) {
             const QJsonObject object = eit->toObject();
-            if (matches(object, osName, kernelVersion, gpu)) {
-                const QJsonValue featuresListV = object.value(featuresKey());
+            if (matches(object, osName, kernelVersion, osRelease, gpu)) {
+                const QJsonValue featuresListV = object.value(QLatin1String("features"));
                 if (featuresListV.isArray()) {
                     const QJsonArray featuresListA = featuresListV.toArray();
                     for (JsonArrayConstIt fit = featuresListA.constBegin(), fcend = featuresListA.constEnd(); fit != fcend; ++fit)
@@ -374,6 +421,7 @@ static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
 static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
                             const QString &osName,
                             const QVersionNumber &kernelVersion,
+                            const QString &osRelease,
                             const QByteArray &jsonAsciiData,
                             QSet<QString> *result, QString *errorMessage)
 {
@@ -389,12 +437,13 @@ static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
             << error.offset << ").";
         return false;
     }
-    return readGpuFeatures(gpu, osName, kernelVersion, document, result, errorMessage);
+    return readGpuFeatures(gpu, osName, kernelVersion, osRelease, document, result, errorMessage);
 }
 
 static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
                             const QString &osName,
                             const QVersionNumber &kernelVersion,
+                            const QString &osRelease,
                             const QString &fileName,
                             QSet<QString> *result, QString *errorMessage)
 {
@@ -407,7 +456,7 @@ static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
             << file.errorString();
         return false;
     }
-    const bool success = readGpuFeatures(gpu, osName, kernelVersion, file.readAll(), result, errorMessage);
+    const bool success = readGpuFeatures(gpu, osName, kernelVersion, osRelease, file.readAll(), result, errorMessage);
     if (!success) {
         errorMessage->prepend(QLatin1String("Error reading \"")
                               + QDir::toNativeSeparators(fileName)
@@ -417,37 +466,39 @@ static bool readGpuFeatures(const QOpenGLConfig::Gpu &gpu,
 }
 
 QSet<QString> QOpenGLConfig::gpuFeatures(const QOpenGLConfig::Gpu &gpu,
-                                                  const QString &osName,
-                                                  const QVersionNumber &kernelVersion,
-                                                  const QJsonDocument &doc)
+                                         const QString &osName,
+                                         const QVersionNumber &kernelVersion,
+                                         const QString &osRelease,
+                                         const QJsonDocument &doc)
 {
     QSet<QString> result;
     QString errorMessage;
-    if (!readGpuFeatures(gpu, osName, kernelVersion, doc, &result, &errorMessage))
+    if (!readGpuFeatures(gpu, osName, kernelVersion, osRelease, doc, &result, &errorMessage))
         qWarning().noquote() << errorMessage;
     return result;
 }
 
 QSet<QString> QOpenGLConfig::gpuFeatures(const QOpenGLConfig::Gpu &gpu,
-                                                  const QString &osName,
-                                                  const QVersionNumber &kernelVersion,
-                                                  const QString &fileName)
+                                         const QString &osName,
+                                         const QVersionNumber &kernelVersion,
+                                         const QString &osRelease,
+                                         const QString &fileName)
 {
     QSet<QString> result;
     QString errorMessage;
-    if (!readGpuFeatures(gpu, osName, kernelVersion, fileName, &result, &errorMessage))
+    if (!readGpuFeatures(gpu, osName, kernelVersion, osRelease, fileName, &result, &errorMessage))
         qWarning().noquote() << errorMessage;
     return result;
 }
 
 QSet<QString> QOpenGLConfig::gpuFeatures(const Gpu &gpu, const QJsonDocument &doc)
 {
-    return gpuFeatures(gpu, OsTypeTerm::hostOs(), OsTypeTerm::hostKernelVersion(), doc);
+    return gpuFeatures(gpu, OsTypeTerm::hostOs(), OsTypeTerm::hostKernelVersion(), OsTypeTerm::hostOsRelease(), doc);
 }
 
 QSet<QString> QOpenGLConfig::gpuFeatures(const Gpu &gpu, const QString &fileName)
 {
-    return gpuFeatures(gpu, OsTypeTerm::hostOs(), OsTypeTerm::hostKernelVersion(), fileName);
+    return gpuFeatures(gpu, OsTypeTerm::hostOs(), OsTypeTerm::hostKernelVersion(), OsTypeTerm::hostOsRelease(), fileName);
 }
 
 QOpenGLConfig::Gpu QOpenGLConfig::Gpu::fromContext()
@@ -480,7 +531,7 @@ Q_GUI_EXPORT std::set<QByteArray> *qgpu_features(const QString &filename)
 {
     const QSet<QString> features = QOpenGLConfig::gpuFeatures(QOpenGLConfig::Gpu::fromContext(), filename);
     std::set<QByteArray> *result = new std::set<QByteArray>;
-    foreach (const QString &feature, features)
+    for (const QString &feature : features)
         result->insert(feature.toUtf8());
     return result;
 }

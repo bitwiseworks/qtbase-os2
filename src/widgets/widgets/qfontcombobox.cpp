@@ -1,39 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qfontcombobox.h"
-
-#ifndef QT_NO_FONTCOMBOBOX
 
 #include <qstringlistmodel.h>
 #include <qitemdelegate.h>
@@ -43,6 +47,7 @@
 #include <qapplication.h>
 #include <private/qcombobox_p.h>
 #include <QDesktopWidget>
+#include <private/qdesktopwidget_p.h>
 #include <qdebug.h>
 
 QT_BEGIN_NAMESPACE
@@ -156,7 +161,7 @@ static QFontDatabase::WritingSystem writingSystemForFont(const QFont &font, bool
         return QFontDatabase::TraditionalChinese;
     }
 
-    system = writingSystems.last();
+    system = writingSystems.constLast();
 
     if (!*hasLatin) {
         // we need to show something
@@ -184,22 +189,22 @@ public:
     // painting
     void paint(QPainter *painter,
                const QStyleOptionViewItem &option,
-               const QModelIndex &index) const Q_DECL_OVERRIDE;
+               const QModelIndex &index) const override;
 
     QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const Q_DECL_OVERRIDE;
+                   const QModelIndex &index) const override;
 
-    QIcon truetype;
-    QIcon bitmap;
+    const QIcon truetype;
+    const QIcon bitmap;
     QFontDatabase::WritingSystem writingSystem;
 };
 
 QFontFamilyDelegate::QFontFamilyDelegate(QObject *parent)
-    : QAbstractItemDelegate(parent)
+    : QAbstractItemDelegate(parent),
+      truetype(QStringLiteral(":/qt-project.org/styles/commonstyle/images/fonttruetype-16.png")),
+      bitmap(QStringLiteral(":/qt-project.org/styles/commonstyle/images/fontbitmap-16.png")),
+      writingSystem(QFontDatabase::Any)
 {
-    truetype = QIcon(QLatin1String(":/qt-project.org/styles/commonstyle/images/fonttruetype-16.png"));
-    bitmap = QIcon(QLatin1String(":/qt-project.org/styles/commonstyle/images/fontbitmap-16.png"));
-    writingSystem = QFontDatabase::Any;
 }
 
 void QFontFamilyDelegate::paint(QPainter *painter,
@@ -258,7 +263,7 @@ void QFontFamilyDelegate::paint(QPainter *painter,
         system = writingSystem;
 
     if (system != QFontDatabase::Any) {
-        int w = painter->fontMetrics().width(text + QLatin1String("  "));
+        int w = painter->fontMetrics().horizontalAdvance(text + QLatin1String("  "));
         painter->setFont(font2);
         QString sample = QFontDatabase().writingSystemSample(system);
         if (option.direction == Qt::RightToLeft)
@@ -282,7 +287,7 @@ QSize QFontFamilyDelegate::sizeHint(const QStyleOptionViewItem &option,
 //     font.setFamily(text);
     font.setPointSize(QFontInfo(font).pointSize() * 3/2);
     QFontMetrics fontMetrics(font);
-    return QSize(fontMetrics.width(text), fontMetrics.height());
+    return QSize(fontMetrics.horizontalAdvance(text), fontMetrics.height());
 }
 
 
@@ -398,14 +403,6 @@ void QFontComboBoxPrivate::_q_currentChanged(const QString &text)
     \image windowsvista-fontcombobox.png Screenshot of QFontComboBox on Windows Vista
 
     \sa QComboBox, QFont, QFontInfo, QFontMetrics, QFontDatabase, {Character Map Example}
-*/
-
-/*!
-    \fn void QFontComboBox::setWritingSystem(QFontDatabase::WritingSystem script)
-*/
-
-/*!
-    \fn void QFontComboBox::setCurrentFont(const QFont &font);
 */
 
 /*!
@@ -527,7 +524,7 @@ void QFontComboBox::setCurrentFont(const QFont &font)
 }
 
 /*!
-    \fn QFontComboBox::currentFontChanged(const QFont &font)
+    \fn void QFontComboBox::currentFontChanged(const QFont &font)
 
     This signal is emitted whenever the current font changes, with
     the new \a font.
@@ -544,7 +541,7 @@ bool QFontComboBox::event(QEvent *e)
         QListView *lview = qobject_cast<QListView*>(view());
         if (lview) {
             lview->window()->setFixedWidth(qMin(width() * 5 / 3,
-                               QApplication::desktop()->availableGeometry(lview).width()));
+                               QDesktopWidgetPrivate::availableGeometry(lview).width()));
         }
     }
     return QComboBox::event(e);
@@ -557,7 +554,7 @@ QSize QFontComboBox::sizeHint() const
 {
     QSize sz = QComboBox::sizeHint();
     QFontMetrics fm(font());
-    sz.setWidth(fm.width(QLatin1Char('m'))*14);
+    sz.setWidth(fm.horizontalAdvance(QLatin1Char('m'))*14);
     return sz;
 }
 
@@ -565,5 +562,3 @@ QT_END_NAMESPACE
 
 #include "qfontcombobox.moc"
 #include "moc_qfontcombobox.cpp"
-
-#endif // QT_NO_FONTCOMBOBOX

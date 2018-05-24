@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'mydialog.ui'
 **
-** Created by: Qt User Interface Compiler version 5.0.0
+** Created by: Qt User Interface Compiler version 5.9.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -10,11 +10,8 @@
 #define MYDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QVBoxLayout>
@@ -59,10 +56,12 @@ public:
 
     void retranslateUi(QDialog *MyDialog)
     {
-        MyDialog->setWindowTitle(QApplication::translate("MyDialog", "Mach 2!", 0));
-        aLabel->setText(QApplication::translate("MyDialog", "Join the life in the fastlane; - PCH enable your project today! -", 0));
-        aButton->setText(QApplication::translate("MyDialog", "&Quit", 0));
-        aButton->setShortcut(QApplication::translate("MyDialog", "Alt+Q", 0));
+        MyDialog->setWindowTitle(QApplication::translate("MyDialog", "Mach 2!", nullptr));
+        aLabel->setText(QApplication::translate("MyDialog", "Join the life in the fastlane; - PCH enable your project today! -", nullptr));
+        aButton->setText(QApplication::translate("MyDialog", "&Quit", nullptr));
+#ifndef QT_NO_SHORTCUT
+        aButton->setShortcut(QApplication::translate("MyDialog", "Alt+Q", nullptr));
+#endif // QT_NO_SHORTCUT
     } // retranslateUi
 
 };

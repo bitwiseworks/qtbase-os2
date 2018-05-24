@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,13 +34,14 @@
 #include <QtGui/QOpenGLVertexArrayObject>
 #include <QtGui/QOpenGLBuffer>
 #include <QtGui/QOpenGLPaintDevice>
+#include <QtGui/QOpenGLTexture>
 #include <QtGui/QPainter>
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 #include <QtGui/QOffscreenSurface>
 #include <QtGui/QGenericMatrix>
 #include <QtGui/QMatrix4x4>
-#include <QtGui/private/qopengltextureblitter_p.h>
+#include <QtGui/qopengltextureblitter.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qopenglextensions_p.h>
 #include <qpa/qplatformintegration.h>
@@ -71,6 +67,7 @@ class tst_QOpenGL : public QObject
 Q_OBJECT
 
 private slots:
+    void initTestCase();
     void sharedResourceCleanup_data();
     void sharedResourceCleanup();
     void multiGroupSharedResourceCleanup_data();
@@ -86,8 +83,11 @@ private slots:
     void fboRenderingRGB30_data();
     void fboRenderingRGB30();
     void fboHandleNulledAfterContextDestroyed();
+    void fboMRT();
+    void fboMRT_differentFormats();
     void openGLPaintDevice_data();
     void openGLPaintDevice();
+    void openGLPaintDeviceWithChangingContext();
     void aboutToBeDestroyed();
     void sizeLessWindow();
     void QTBUG15621_triangulatingStrokerDivZero();
@@ -97,8 +97,8 @@ private slots:
     void textureblitterFullTargetRectTransform();
     void textureblitterPartTargetRectTransform();
     void defaultSurfaceFormat();
-
     void imageFormatPainting();
+    void nullTextureInitializtion();
 
 #ifdef USE_GLX
     void glxContextWrap();
@@ -111,6 +111,7 @@ private slots:
     void vaoCreate();
     void bufferCreate();
     void bufferMapRange();
+    void defaultQGLCurrentBuffer();
 };
 
 struct SharedResourceTracker
@@ -203,6 +204,12 @@ static QSurface *createSurface(int surfaceClass)
         return offscreenSurface;
     }
     return 0;
+}
+
+void tst_QOpenGL::initTestCase()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL))
+        QSKIP("OpenGL is not supported on this platform.");
 }
 
 static void common_data()
@@ -382,6 +389,7 @@ static bool fuzzyComparePixels(const QRgb testPixel, const QRgb refPixel, const 
 
 static void fuzzyCompareImages(const QImage &testImage, const QImage &referenceImage, const char* file, int line)
 {
+    QCOMPARE(testImage.devicePixelRatio(), referenceImage.devicePixelRatio());
     QCOMPARE(testImage.width(), referenceImage.width());
     QCOMPARE(testImage.height(), referenceImage.height());
 
@@ -514,7 +522,7 @@ void tst_QOpenGL::fboTextureOwnership()
     // pull out the texture
     GLuint texture = fbo->takeTexture();
     QVERIFY(texture != 0);
-    QVERIFY(fbo->texture() == 0);
+    QCOMPARE(fbo->texture(), GLuint(0));
 
     // verify that the next bind() creates a new texture
     fbo->bind();
@@ -594,6 +602,14 @@ void tst_QOpenGL::fboRenderingRGB30_data()
     common_data();
 }
 
+#ifndef GL_RGB5_A1
+#define GL_RGB5_A1                        0x8057
+#endif
+
+#ifndef GL_RGBA8
+#define GL_RGBA8                          0x8058
+#endif
+
 #ifndef GL_RGB10_A2
 #define GL_RGB10_A2                       0x8059
 #endif
@@ -605,6 +621,24 @@ void tst_QOpenGL::fboRenderingRGB30_data()
 #ifndef GL_FULL_SUPPORT
 #define GL_FULL_SUPPORT                   0x82B7
 #endif
+
+static bool hasRGB10A2(QOpenGLContext *ctx)
+{
+    if (ctx->format().majorVersion() < 3)
+        return false;
+#ifndef QT_OPENGL_ES_2
+    if (!ctx->isOpenGLES() && ctx->format().majorVersion() >= 4) {
+        GLint value = -1;
+        QOpenGLFunctions_4_2_Core* vFuncs = ctx->versionFunctions<QOpenGLFunctions_4_2_Core>();
+        if (vFuncs && vFuncs->initializeOpenGLFunctions()) {
+            vFuncs->glGetInternalformativ(GL_TEXTURE_2D, GL_RGB10_A2, GL_FRAMEBUFFER_RENDERABLE, 1, &value);
+            if (value != GL_FULL_SUPPORT)
+                return false;
+        }
+    }
+#endif
+    return true;
+}
 
 void tst_QOpenGL::fboRenderingRGB30()
 {
@@ -623,23 +657,8 @@ void tst_QOpenGL::fboRenderingRGB30()
     if (!QOpenGLFramebufferObject::hasOpenGLFramebufferObjects())
         QSKIP("QOpenGLFramebufferObject not supported on this platform");
 
-    if (ctx.format().majorVersion() < 3)
+    if (!hasRGB10A2(&ctx))
         QSKIP("An internal RGB30_A2 format is not guaranteed on this platform");
-
-#if !defined(QT_NO_OPENGL) && !defined(QT_OPENGL_ES_2)
-    // NVidia currently only supports RGB30 and RGB30_A2 in their Quadro drivers,
-    // but they do provide an extension for querying the support. We use the query
-    // in case they implement the required formats later.
-    if (!ctx.isOpenGLES() && ctx.format().majorVersion() >= 4) {
-        GLint value = -1;
-        QOpenGLFunctions_4_2_Core* vFuncs = ctx.versionFunctions<QOpenGLFunctions_4_2_Core>();
-        if (vFuncs && vFuncs->initializeOpenGLFunctions()) {
-            vFuncs->glGetInternalformativ(GL_TEXTURE_2D, GL_RGB10_A2, GL_FRAMEBUFFER_RENDERABLE, 1, &value);
-            if (value != GL_FULL_SUPPORT)
-                QSKIP("The required RGB30_A2 format is not supported by this driver");
-        }
-    }
-#endif
 
     // No multisample with combined depth/stencil attachment:
     QOpenGLFramebufferObjectFormat fboFormat;
@@ -720,6 +739,150 @@ void tst_QOpenGL::fboHandleNulledAfterContextDestroyed()
     QCOMPARE(fbo->handle(), 0U);
 }
 
+void tst_QOpenGL::fboMRT()
+{
+    QWindow window;
+    window.setSurfaceType(QWindow::OpenGLSurface);
+    window.setGeometry(0, 0, 10, 10);
+    window.create();
+
+    QOpenGLContext ctx;
+    QVERIFY(ctx.create());
+    ctx.makeCurrent(&window);
+
+    if (!QOpenGLFramebufferObject::hasOpenGLFramebufferObjects())
+        QSKIP("QOpenGLFramebufferObject not supported on this platform");
+
+    if (!ctx.functions()->hasOpenGLFeature(QOpenGLFunctions::MultipleRenderTargets))
+        QSKIP("Multiple render targets not supported on this platform");
+
+    QOpenGLExtraFunctions *ef = ctx.extraFunctions();
+
+    {
+        // 3 color attachments, different sizes, same internal format, no depth/stencil.
+        QVector<QSize> sizes;
+        sizes << QSize(128, 128) << QSize(192, 128) << QSize(432, 123);
+        QOpenGLFramebufferObject fbo(sizes[0]);
+        fbo.addColorAttachment(sizes[1]);
+        fbo.addColorAttachment(sizes[2]);
+        QVERIFY(fbo.bind());
+        QCOMPARE(fbo.attachment(), QOpenGLFramebufferObject::NoAttachment);
+        QCOMPARE(sizes, fbo.sizes());
+        QCOMPARE(sizes[0], fbo.size());
+        // Clear the three buffers to red, green and blue.
+        GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+        ef->glDrawBuffers(1, &drawBuf);
+        ef->glClearColor(1, 0, 0, 1);
+        ef->glClear(GL_COLOR_BUFFER_BIT);
+        drawBuf = GL_COLOR_ATTACHMENT0 + 1;
+        ef->glDrawBuffers(1, &drawBuf);
+        ef->glClearColor(0, 1, 0, 1);
+        ef->glClear(GL_COLOR_BUFFER_BIT);
+        drawBuf = GL_COLOR_ATTACHMENT0 + 2;
+        ef->glDrawBuffers(1, &drawBuf);
+        ef->glClearColor(0, 0, 1, 1);
+        ef->glClear(GL_COLOR_BUFFER_BIT);
+        // Verify, keeping in mind that only a 128x123 area is touched in the buffers.
+        // Some drivers do not get this right, unfortunately, so do not rely on it.
+        const char *vendor = (const char *) ef->glGetString(GL_VENDOR);
+        bool hasCorrectMRT = false;
+        if (vendor && strstr(vendor, "NVIDIA")) // maybe others too
+            hasCorrectMRT = true;
+        QImage img = fbo.toImage(false, 0);
+        QCOMPARE(img.size(), sizes[0]);
+        QCOMPARE(img.pixel(0, 0), qRgb(255, 0, 0));
+        if (hasCorrectMRT)
+            QCOMPARE(img.pixel(127, 122), qRgb(255, 0, 0));
+        img = fbo.toImage(false, 1);
+        QCOMPARE(img.size(), sizes[1]);
+        QCOMPARE(img.pixel(0, 0), qRgb(0, 255, 0));
+        if (hasCorrectMRT)
+            QCOMPARE(img.pixel(127, 122), qRgb(0, 255, 0));
+        img = fbo.toImage(false, 2);
+        QCOMPARE(img.size(), sizes[2]);
+        QCOMPARE(img.pixel(0, 0), qRgb(0, 0, 255));
+        if (hasCorrectMRT)
+            QCOMPARE(img.pixel(127, 122), qRgb(0, 0, 255));
+        fbo.release();
+    }
+
+    {
+        // 2 color attachments, same size, same internal format, depth/stencil.
+        QVector<QSize> sizes;
+        sizes.fill(QSize(128, 128), 2);
+        QOpenGLFramebufferObject fbo(sizes[0], QOpenGLFramebufferObject::CombinedDepthStencil);
+        fbo.addColorAttachment(sizes[1]);
+        QVERIFY(fbo.bind());
+        QCOMPARE(fbo.attachment(), QOpenGLFramebufferObject::CombinedDepthStencil);
+        QCOMPARE(sizes, fbo.sizes());
+        QCOMPARE(sizes[0], fbo.size());
+        ef->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        ef->glFinish();
+        fbo.release();
+    }
+}
+
+void tst_QOpenGL::fboMRT_differentFormats()
+{
+    QWindow window;
+    window.setSurfaceType(QWindow::OpenGLSurface);
+    window.setGeometry(0, 0, 10, 10);
+    window.create();
+
+    QOpenGLContext ctx;
+    QVERIFY(ctx.create());
+    ctx.makeCurrent(&window);
+
+    QOpenGLFunctions *f = ctx.functions();
+    const char * vendor = (const char *) f->glGetString(GL_VENDOR);
+    if (vendor && strstr(vendor, "VMware, Inc."))
+        QSKIP("The tested formats may not be supported on this platform");
+
+    if (!QOpenGLFramebufferObject::hasOpenGLFramebufferObjects())
+        QSKIP("QOpenGLFramebufferObject not supported on this platform");
+
+    if (!f->hasOpenGLFeature(QOpenGLFunctions::MultipleRenderTargets))
+        QSKIP("Multiple render targets not supported on this platform");
+
+    if (!hasRGB10A2(&ctx))
+        QSKIP("RGB10_A2 not supported on this platform");
+
+    // 3 color attachments, same size, different internal format, depth/stencil.
+    QVector<QSize> sizes;
+    sizes.fill(QSize(128, 128), 3);
+    QOpenGLFramebufferObjectFormat format;
+    format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
+    QVector<GLenum> internalFormats;
+    internalFormats << GL_RGBA8 << GL_RGB10_A2 << GL_RGB5_A1;
+    format.setInternalTextureFormat(internalFormats[0]);
+    QOpenGLFramebufferObject fbo(sizes[0], format);
+    fbo.addColorAttachment(sizes[1], internalFormats[1]);
+    fbo.addColorAttachment(sizes[2], internalFormats[2]);
+
+    QVERIFY(fbo.bind());
+    QCOMPARE(fbo.attachment(), QOpenGLFramebufferObject::CombinedDepthStencil);
+    QCOMPARE(sizes, fbo.sizes());
+    QCOMPARE(sizes[0], fbo.size());
+
+    QOpenGLExtraFunctions *ef = ctx.extraFunctions();
+    QVERIFY(ef->glGetError() == 0);
+    ef->glClearColor(1, 0, 0, 1);
+    GLenum drawBuf[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT0 + 1, GL_COLOR_ATTACHMENT0 + 2 };
+    ef->glDrawBuffers(3, drawBuf);
+    ef->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    QVERIFY(ef->glGetError() == 0);
+
+    QImage img = fbo.toImage(true, 0);
+    QCOMPARE(img.size(), sizes[0]);
+    QCOMPARE(img.pixel(0, 0), qRgb(255, 0, 0));
+    img = fbo.toImage(true, 1);
+    QCOMPARE(img.size(), sizes[1]);
+    QCOMPARE(img.format(), QImage::Format_A2BGR30_Premultiplied);
+    QCOMPARE(img.pixel(0, 0), qRgb(255, 0, 0));
+
+    fbo.release();
+}
+
 void tst_QOpenGL::imageFormatPainting()
 {
     QScopedPointer<QSurface> surface(createSurface(QSurface::Window));
@@ -794,6 +957,14 @@ void tst_QOpenGL::openGLPaintDevice_data()
     QTest::newRow("Using QOffscreenSurface - RGB16") << int(QSurface::Offscreen) << QImage::Format_RGB16;
 }
 
+static void drawColoredRects(QPainter *p, const QSize &size)
+{
+    p->fillRect(0, 0, size.width() / 2, size.height() / 2, Qt::red);
+    p->fillRect(size.width() / 2, 0, size.width() / 2, size.height() / 2, Qt::green);
+    p->fillRect(size.width() / 2, size.height() / 2, size.width() / 2, size.height() / 2, Qt::blue);
+    p->fillRect(0, size.height() / 2, size.width() / 2, size.height() / 2, Qt::white);
+}
+
 void tst_QOpenGL::openGLPaintDevice()
 {
 #if defined(Q_OS_LINUX) && defined(Q_CC_GNU) && !defined(__x86_64__)
@@ -816,10 +987,7 @@ void tst_QOpenGL::openGLPaintDevice()
 
     QImage image(size, imageFormat);
     QPainter p(&image);
-    p.fillRect(0, 0, image.width() / 2, image.height() / 2, Qt::red);
-    p.fillRect(image.width() / 2, 0, image.width() / 2, image.height() / 2, Qt::green);
-    p.fillRect(image.width() / 2, image.height() / 2, image.width() / 2, image.height() / 2, Qt::blue);
-    p.fillRect(0, image.height() / 2, image.width() / 2, image.height() / 2, Qt::white);
+    drawColoredRects(&p, image.size());
     p.end();
 
     QOpenGLFramebufferObject fbo(size);
@@ -827,10 +995,7 @@ void tst_QOpenGL::openGLPaintDevice()
 
     QOpenGLPaintDevice device(size);
     QVERIFY(p.begin(&device));
-    p.fillRect(0, 0, image.width() / 2, image.height() / 2, Qt::red);
-    p.fillRect(image.width() / 2, 0, image.width() / 2, image.height() / 2, Qt::green);
-    p.fillRect(image.width() / 2, image.height() / 2, image.width() / 2, image.height() / 2, Qt::blue);
-    p.fillRect(0, image.height() / 2, image.width() / 2, image.height() / 2, Qt::white);
+    drawColoredRects(&p, image.size());
     p.end();
 
     QImage actual = fbo.toImage().convertToFormat(imageFormat);
@@ -854,6 +1019,59 @@ void tst_QOpenGL::openGLPaintDevice()
     actual = fbo.toImage().convertToFormat(imageFormat);
     QCOMPARE(image.size(), actual.size());
     QCOMPARE(image, actual);
+}
+
+void tst_QOpenGL::openGLPaintDeviceWithChangingContext()
+{
+    QScopedPointer<QSurface> surface(createSurface(QSurface::Window));
+    const QSize size(512, 512);
+
+    // QOpenGLPaintDevice has a thread-local paint engine. Therefore render
+    // twice, with a different context and device. Under the hood it will
+    // still use the same paint engine!
+
+    QOpenGLContext ctx;
+    QVERIFY(ctx.create());
+    QVERIFY(ctx.makeCurrent(surface.data()));
+
+    QOpenGLFramebufferObject fbo(size);
+    QVERIFY(fbo.bind());
+
+    QOpenGLPaintDevice device(size);
+
+    QPainter p;
+    QVERIFY(p.begin(&device));
+    drawColoredRects(&p, size);
+    p.end();
+
+    QImage img1 = fbo.toImage();
+
+    QOpenGLContext ctx2;
+    // When supported, test the special case, where the second context is
+    // totally incompatible due to being a core profile one.
+    QSurfaceFormat coreFormat;
+    coreFormat.setVersion(3, 2);
+    coreFormat.setProfile(QSurfaceFormat::CoreProfile);
+    ctx2.setFormat(coreFormat);
+    if (!ctx2.create() || !ctx2.makeCurrent(surface.data())) {
+        ctx2.setFormat(QSurfaceFormat());
+        QVERIFY(ctx2.create());
+    }
+
+    QVERIFY(ctx2.makeCurrent(surface.data()));
+
+    QOpenGLFramebufferObject fbo2(size);
+    QVERIFY(fbo2.bind());
+
+    QOpenGLPaintDevice device2(size);
+
+    QVERIFY(p.begin(&device2));
+    drawColoredRects(&p, size);
+    p.end();
+
+    QImage img2 = fbo2.toImage();
+
+    QFUZZY_COMPARE_IMAGES(img1, img2);
 }
 
 void tst_QOpenGL::aboutToBeDestroyed()
@@ -1174,18 +1392,18 @@ void tst_QOpenGL::textureblitterPartTargetRectTransform()
 void tst_QOpenGL::defaultSurfaceFormat()
 {
     QSurfaceFormat fmt;
-    QVERIFY(QSurfaceFormat::defaultFormat() == fmt);
+    QCOMPARE(QSurfaceFormat::defaultFormat(), fmt);
 
     fmt.setDepthBufferSize(16);
     QSurfaceFormat::setDefaultFormat(fmt);
-    QVERIFY(QSurfaceFormat::defaultFormat() == fmt);
+    QCOMPARE(QSurfaceFormat::defaultFormat(), fmt);
     QCOMPARE(QSurfaceFormat::defaultFormat().depthBufferSize(), 16);
 
     QScopedPointer<QWindow> window(new QWindow);
-    QVERIFY(window->requestedFormat() == fmt);
+    QCOMPARE(window->requestedFormat(), fmt);
 
     QScopedPointer<QOpenGLContext> context(new QOpenGLContext);
-    QVERIFY(context->format() == fmt);
+    QCOMPARE(context->format(), fmt);
 }
 
 #ifdef USE_GLX
@@ -1195,7 +1413,7 @@ void tst_QOpenGL::glxContextWrap()
     window->setSurfaceType(QWindow::OpenGLSurface);
     window->setGeometry(0, 0, 10, 10);
     window->show();
-    QTest::qWaitForWindowExposed(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
 
     QPlatformNativeInterface *nativeIf = QGuiApplicationPrivate::instance()->platformIntegration()->nativeInterface();
     QVERIFY(nativeIf);
@@ -1214,7 +1432,7 @@ void tst_QOpenGL::glxContextWrap()
     QOpenGLContext *ctx = new QOpenGLContext;
     ctx->setNativeHandle(QVariant::fromValue<QGLXNativeContext>(QGLXNativeContext(context)));
     QVERIFY(ctx->create());
-    QVERIFY(ctx->nativeHandle().value<QGLXNativeContext>().context() == context);
+    QCOMPARE(ctx->nativeHandle().value<QGLXNativeContext>().context(), context);
     QVERIFY(nativeIf->nativeResourceForContext(QByteArrayLiteral("glxcontext"), ctx) == (void *) context);
 
     QVERIFY(ctx->makeCurrent(window));
@@ -1239,7 +1457,7 @@ void tst_QOpenGL::wglContextWrap()
     window->setSurfaceType(QWindow::OpenGLSurface);
     window->setGeometry(0, 0, 256, 256);
     window->show();
-    QTest::qWaitForWindowExposed(window.data());
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
 
     QVariant v = ctx->nativeHandle();
     QVERIFY(!v.isNull());
@@ -1365,6 +1583,45 @@ void tst_QOpenGL::bufferMapRange()
 
     buf.destroy();
     ctx->doneCurrent();
+}
+
+void tst_QOpenGL::defaultQGLCurrentBuffer()
+{
+    QScopedPointer<QSurface> surface(createSurface(QSurface::Window));
+    QScopedPointer<QOpenGLContext> ctx(new QOpenGLContext);
+    ctx->create();
+    ctx->makeCurrent(surface.data());
+
+    // Bind default FBO on the current context, and record what's the current QGL FBO. It should
+    // be nullptr because the default platform OpenGL FBO is not backed by a
+    // QOpenGLFramebufferObject.
+    QOpenGLFramebufferObject::bindDefault();
+    QOpenGLFramebufferObject *defaultQFBO = QOpenGLContextPrivate::get(ctx.data())->qgl_current_fbo;
+
+    // Create new FBO, bind it, and see that the QGL FBO points to the newly created FBO.
+    QScopedPointer<QOpenGLFramebufferObject> obj(new QOpenGLFramebufferObject(128, 128));
+    obj->bind();
+    QOpenGLFramebufferObject *customQFBO = QOpenGLContextPrivate::get(ctx.data())->qgl_current_fbo;
+    QVERIFY(defaultQFBO != customQFBO);
+
+    // Bind the default FBO, and check that the QGL FBO points to the original FBO object.
+    QOpenGLFramebufferObject::bindDefault();
+    QOpenGLFramebufferObject *finalQFBO = QOpenGLContextPrivate::get(ctx.data())->qgl_current_fbo;
+    QCOMPARE(defaultQFBO, finalQFBO);
+
+    ctx->doneCurrent();
+}
+
+void tst_QOpenGL::nullTextureInitializtion()
+{
+    QScopedPointer<QSurface> surface(createSurface(QSurface::Window));
+    QOpenGLContext ctx;
+    ctx.create();
+    ctx.makeCurrent(surface.data());
+
+    QImage i;
+    QOpenGLTexture t(i);
+    QVERIFY(!t.isCreated());
 }
 
 QTEST_MAIN(tst_QOpenGL)

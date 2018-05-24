@@ -10,12 +10,9 @@
 #define CHATSETNICKNAME_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -115,10 +112,10 @@ public:
 
     void retranslateUi(QDialog *NicknameDialog)
     {
-        NicknameDialog->setWindowTitle(QApplication::translate("NicknameDialog", "Set nickname", 0));
-        label->setText(QApplication::translate("NicknameDialog", "New nickname:", 0));
-        okButton->setText(QApplication::translate("NicknameDialog", "OK", 0));
-        cancelButton->setText(QApplication::translate("NicknameDialog", "Cancel", 0));
+        NicknameDialog->setWindowTitle(QApplication::translate("NicknameDialog", "Set nickname", nullptr));
+        label->setText(QApplication::translate("NicknameDialog", "New nickname:", nullptr));
+        okButton->setText(QApplication::translate("NicknameDialog", "OK", nullptr));
+        cancelButton->setText(QApplication::translate("NicknameDialog", "Cancel", nullptr));
     } // retranslateUi
 
 };

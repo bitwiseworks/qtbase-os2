@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,8 @@
 // We mean it.
 //
 
+#include <QtWidgets/private/qtwidgetsglobal_p.h>
+
 #include <qthread.h>
 #include <qmutex.h>
 #include <qwaitcondition.h>
@@ -57,6 +65,8 @@
 #include <qelapsedtimer.h>
 
 #include <private/qfilesystemengine_p.h>
+
+QT_REQUIRE_CONFIG(filesystemmodel);
 
 QT_BEGIN_NAMESPACE
 
@@ -74,7 +84,8 @@ public:
     bool operator ==(const QExtendedInformation &fileInfo) const {
        return mFileInfo == fileInfo.mFileInfo
        && displayType == fileInfo.displayType
-       && permissions() == fileInfo.permissions();
+       && permissions() == fileInfo.permissions()
+       && lastModified() == fileInfo.lastModified();
     }
 
 #ifndef QT_NO_FSFILEENGINE
@@ -142,14 +153,12 @@ private :
 
 class QFileIconProvider;
 
-#ifndef QT_NO_FILESYSTEMMODEL
-
 class Q_AUTOTEST_EXPORT QFileInfoGatherer : public QThread
 {
 Q_OBJECT
 
 Q_SIGNALS:
-    void updates(const QString &directory, const QList<QPair<QString, QFileInfo> > &updates);
+    void updates(const QString &directory, const QVector<QPair<QString, QFileInfo> > &updates);
     void newListOfFiles(const QString &directory, const QStringList &listOfFiles) const;
     void nameResolved(const QString &fileName, const QString &resolvedName) const;
     void directoryLoaded(const QString &path);
@@ -157,6 +166,13 @@ Q_SIGNALS:
 public:
     explicit QFileInfoGatherer(QObject *parent = 0);
     ~QFileInfoGatherer();
+
+#if QT_CONFIG(filesystemwatcher) && defined(Q_OS_WIN)
+    QStringList watchedFiles() const            { return watcher->files(); }
+    QStringList watchedDirectories() const      { return watcher->directories(); }
+    void watchPaths(const QStringList &paths)   { watcher->addPaths(paths); }
+    void unwatchPaths(const QStringList &paths) { watcher->removePaths(paths); }
+#endif // filesystemwatcher && Q_OS_WIN
 
     // only callable from this->thread():
     void clear();
@@ -172,11 +188,15 @@ public Q_SLOTS:
     void setResolveSymlinks(bool enable);
     void setIconProvider(QFileIconProvider *provider);
 
+private Q_SLOTS:
+    void driveAdded();
+    void driveRemoved();
+
 private:
-    void run() Q_DECL_OVERRIDE;
+    void run() override;
     // called by run():
     void getFileInfos(const QString &path, const QStringList &files);
-    void fetch(const QFileInfo &info, QElapsedTimer &base, bool &firstTime, QList<QPair<QString, QFileInfo> > &updatedFiles, const QString &path);
+    void fetch(const QFileInfo &info, QElapsedTimer &base, bool &firstTime, QVector<QPair<QString, QFileInfo> > &updatedFiles, const QString &path);
 
 private:
     mutable QMutex mutex;
@@ -196,9 +216,6 @@ private:
     QFileIconProvider *m_iconProvider; // not accessed by run()
     QFileIconProvider defaultProvider;
 };
-#endif // QT_NO_FILESYSTEMMODEL
-
 
 QT_END_NAMESPACE
 #endif // QFILEINFOGATHERER_H
-

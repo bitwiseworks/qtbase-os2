@@ -6,9 +6,10 @@ SOURCES   = main.cpp \
             renderthread.cpp \
             window.cpp
 QT += widgets
+requires(qtConfig(filedialog))
 
 # install
-target.path = $$[QT_INSTALL_EXAMPLES]/corelib/threads/mandelbrot
+target.path = $$[QT_INSTALL_EXAMPLES]/corelib/threads/queuedcustomtype
 INSTALLS += target
 
 

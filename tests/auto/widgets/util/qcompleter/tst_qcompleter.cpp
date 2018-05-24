@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,15 +34,11 @@
 #include <QList>
 #include <QPointer>
 
+#include <QtTest/private/qtesthelpers_p.h>
+
 #include "../../../../shared/filesystem.h"
 
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+using namespace QTestPrivate;
 
 class CsvCompleter : public QCompleter
 {
@@ -61,7 +52,7 @@ public:
 
 protected:
     QStringList splitPath(const QString &path) const {
-        return csv ? path.split(",") : QCompleter::splitPath(path);
+        return csv ? path.split(QLatin1Char(',')) : QCompleter::splitPath(path);
     }
 
 private:
@@ -148,6 +139,8 @@ private slots:
     void task253125_lineEditCompletion();
     void task247560_keyboardNavigation();
     void QTBUG_14292_filesystem();
+    void QTBUG_52028_tabAutoCompletes();
+    void QTBUG_51889_activatedSentTwice();
 
 private:
     void filter(bool assync = false);
@@ -291,8 +284,8 @@ retry:
 // Testing get/set functions
 void tst_QCompleter::getSetCheck()
 {
-    QStandardItemModel model(3,3);
-    QCompleter completer(&model);
+    QStandardItemModel standardItemModel(3,3);
+    QCompleter completer(&standardItemModel);
 
     // QString QCompleter::completionPrefix()
     // void QCompleter::setCompletionPrefix(QString)
@@ -352,6 +345,21 @@ void tst_QCompleter::getSetCheck()
     QCOMPARE(completer.wrapAround(), true); // default value
     completer.setWrapAround(false);
     QCOMPARE(completer.wrapAround(), false);
+
+#if QT_CONFIG(filesystemmodel)
+    // QTBUG-54642, changing from QFileSystemModel to another model should restore role.
+    completer.setCompletionRole(Qt::EditRole);
+    QCOMPARE(completer.completionRole(), static_cast<int>(Qt::EditRole)); // default value
+    QFileSystemModel fileSystemModel;
+    completer.setModel(&fileSystemModel);
+    QCOMPARE(completer.completionRole(), static_cast<int>(QFileSystemModel::FileNameRole));
+    completer.setModel(&standardItemModel);
+    QCOMPARE(completer.completionRole(), static_cast<int>(Qt::EditRole));
+    completer.setCompletionRole(Qt::ToolTipRole);
+    QStandardItemModel standardItemModel2(2, 2); // Do not clobber a custom role when changing models
+    completer.setModel(&standardItemModel2);
+    QCOMPARE(completer.completionRole(), static_cast<int>(Qt::ToolTipRole));
+#endif // QT_CONFIG(filesystemmodel)
 }
 
 void tst_QCompleter::csMatchingOnCsSortedModel_data()
@@ -367,7 +375,7 @@ void tst_QCompleter::csMatchingOnCsSortedModel_data()
     QTest::addColumn<QString>("completion");
     QTest::addColumn<QString>("completionText");
 
-#define ROWNAME(name) (qPrintable(QString("%1 %2").arg(name).arg(i)))
+#define ROWNAME(name) ((QByteArray(name) + ' ' + QByteArray::number(i)).constData())
 
     for (int i = 0; i < 2; i++) {
          if (i == 1)
@@ -590,10 +598,7 @@ void tst_QCompleter::directoryModel_data()
         if (i == 1)
             QTest::newRow("FILTERING_OFF") << "FILTERING_OFF" << "" << "" << "";
 
-#if defined(Q_OS_WINCE)
-        QTest::newRow("()") << "" << "" << "/" << "/";
-        QTest::newRow("()") << "\\Program" << "" << "Program Files" << "\\Program Files";
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
         QTest::newRow("()") << "C" << "" << "C:" << "C:";
         QTest::newRow("()") << "C:\\Program" << "" << "Program Files" << "C:\\Program Files";
 #elif defined (Q_OS_MAC)
@@ -605,7 +610,7 @@ void tst_QCompleter::directoryModel_data()
         QTest::newRow("(/et)") << "/et" << "" << "etc" << "/etc";
 #else
         QTest::newRow("()") << "" << "" << "/" << "/";
-#if !defined(Q_OS_IRIX) && !defined(Q_OS_AIX) && !defined(Q_OS_HPUX) && !defined(Q_OS_QNX)
+#if !defined(Q_OS_AIX) && !defined(Q_OS_HPUX) && !defined(Q_OS_QNX)
         QTest::newRow("(/h)") << "/h" << "" << "home" << "/home";
 #endif
         QTest::newRow("(/et)") << "/et" << "" << "etc" << "/etc";
@@ -639,10 +644,7 @@ void tst_QCompleter::fileSystemModel_data()
         if (i == 1)
             QTest::newRow("FILTERING_OFF") << "FILTERING_OFF" << "" << "" << "";
 
-#if defined(Q_OS_WINCE)
-        QTest::newRow("()") << "" << "" << "/" << "/";
-        QTest::newRow("()") << "\\Program" << "" << "Program Files" << "\\Program Files";
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
         QTest::newRow("()") << "C" << "" << "C:" << "C:";
         QTest::newRow("()") << "C:\\Program" << "" << "Program Files" << "C:\\Program Files";
 #elif defined (Q_OS_MAC)
@@ -654,7 +656,7 @@ void tst_QCompleter::fileSystemModel_data()
         QTest::newRow("(/et)") << "/et" << "" << "etc" << "/etc";
 #else
         QTest::newRow("()") << "" << "" << "/" << "/";
-#if !defined(Q_OS_IRIX) && !defined(Q_OS_AIX) && !defined(Q_OS_HPUX) && !defined(Q_OS_QNX)
+#if !defined(Q_OS_AIX) && !defined(Q_OS_HPUX) && !defined(Q_OS_QNX)
         QTest::newRow("(/h)") << "/h" << "" << "home" << "/home";
 #endif
         QTest::newRow("(/et)") << "/et" << "" << "etc" << "/etc";
@@ -1043,9 +1045,9 @@ void tst_QCompleter::setters()
     QAbstractItemModel *oldModel = completer->model();
     completer->setModel(dirModel);
     QVERIFY(completer->popup()->model() != oldModel);
-    QVERIFY(completer->popup()->model() == completer->completionModel());
+    QCOMPARE(completer->popup()->model(), completer->completionModel());
     completer->setPopup(new QListView);
-    QVERIFY(completer->popup()->model() == completer->completionModel());
+    QCOMPARE(completer->popup()->model(), completer->completionModel());
     completer->setModel(new QStringListModel(completer));
     QVERIFY(dirModel == 0); // must have been deleted
 
@@ -1062,7 +1064,7 @@ void tst_QCompleter::modelDeletion()
     QStringListModel *listModel = new QStringListModel(list);
     completer->setCompletionPrefix("i");
     completer->setModel(listModel);
-    QVERIFY(completer->completionCount() == 3);
+    QCOMPARE(completer->completionCount(), 3);
     QScopedPointer<QListView> view(new QListView);
     view->setModel(completer->completionModel());
     delete listModel;
@@ -1070,8 +1072,8 @@ void tst_QCompleter::modelDeletion()
     view->show();
     qApp->processEvents();
     view.reset();
-    QVERIFY(completer->completionCount() == 0);
-    QVERIFY(completer->currentRow() == -1);
+    QCOMPARE(completer->completionCount(), 0);
+    QCOMPARE(completer->currentRow(), -1);
 }
 
 void tst_QCompleter::multipleWidgets()
@@ -1097,8 +1099,8 @@ void tst_QCompleter::multipleWidgets()
     comboBox->show();
     window.activateWindow();
     QApplication::setActiveWindow(&window);
-    QTest::qWait(50);
-    QTRY_VERIFY(qApp->focusWidget() == comboBox);
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    QCOMPARE(QApplication::focusWidget(), comboBox);
     comboBox->lineEdit()->setText("it");
     QCOMPARE(comboBox->currentText(), QString("it")); // should not complete with setText
     QTest::keyPress(comboBox, 'e');
@@ -1110,8 +1112,7 @@ void tst_QCompleter::multipleWidgets()
     lineEdit->setCompleter(&completer);
     lineEdit->show();
     lineEdit->setFocus();
-    QTest::qWait(50);
-    QTRY_VERIFY(qApp->focusWidget() == lineEdit);
+    QTRY_COMPARE(QApplication::focusWidget(), lineEdit);
     lineEdit->setText("it");
     QCOMPARE(lineEdit->text(), QString("it")); // should not completer with setText
     QCOMPARE(comboBox->currentText(), QString("")); // combo box text must not change!
@@ -1148,13 +1149,13 @@ void tst_QCompleter::focusIn()
     lineEdit2->show();
 
     comboBox->setFocus();
-    QTRY_VERIFY(completer.widget() == comboBox);
+    QTRY_COMPARE(completer.widget(), comboBox);
     lineEdit->setFocus();
-    QTRY_VERIFY(completer.widget() == lineEdit);
+    QTRY_COMPARE(completer.widget(), lineEdit);
     comboBox->setFocus();
-    QTRY_VERIFY(completer.widget() == comboBox);
+    QTRY_COMPARE(completer.widget(), comboBox);
     lineEdit2->setFocus();
-    QTRY_VERIFY(completer.widget() == comboBox);
+    QTRY_COMPARE(completer.widget(), comboBox);
 }
 
 void tst_QCompleter::dynamicSortOrder()
@@ -1164,7 +1165,7 @@ void tst_QCompleter::dynamicSortOrder()
     completer.setModelSorting(QCompleter::CaseSensitivelySortedModel);
     QStandardItem *root = model.invisibleRootItem();
     for (int i = 0; i < 20; i++) {
-        root->appendRow(new QStandardItem(QString("%1").arg(i)));
+        root->appendRow(new QStandardItem(QString::number(i)));
     }
     root->appendRow(new QStandardItem("13"));
     root->sortChildren(0, Qt::AscendingOrder);
@@ -1189,7 +1190,7 @@ void tst_QCompleter::disabledItems()
     model->appendRow(suggestions);
     model->appendRow(new QStandardItem("suggestions Enabled"));
     QCompleter *completer = new QCompleter(model, &lineEdit);
-    QSignalSpy spy(completer, SIGNAL(activated(QString)));
+    QSignalSpy spy(completer, QOverload<const QString &>::of(&QCompleter::activated));
     lineEdit.setCompleter(completer);
     lineEdit.move(200, 200);
     lineEdit.show();
@@ -1213,9 +1214,9 @@ void tst_QCompleter::task178797_activatedOnReturn()
     words << "foobar1" << "foobar2";
     QLineEdit ledit;
     setFrameless(&ledit);
-    QCompleter *completer = new QCompleter(words);
+    QCompleter *completer = new QCompleter(words, &ledit);
     ledit.setCompleter(completer);
-    QSignalSpy spy(completer, SIGNAL(activated(QString)));
+    QSignalSpy spy(completer, QOverload<const QString &>::of(&QCompleter::activated));
     QCOMPARE(spy.count(), 0);
     ledit.move(200, 200);
     ledit.show();
@@ -1256,7 +1257,7 @@ void tst_QCompleter::task189564_omitNonSelectableItems()
 
     QStringList strings;
     for (int i = 0; i < n; ++i)
-        strings << QString("%1%2").arg(prefix).arg(i);
+        strings << prefix + QString::number(i);
     const QString omitString(strings.at(n / 2));
     task189564_StringListModel model(omitString);
     model.setStringList(strings);
@@ -1283,7 +1284,7 @@ public:
         if (completer()) {
             completer()->setCompletionMode(QCompleter::PopupCompletion);
             completer()->setCompletionRole(Qt::DisplayRole);
-            connect(lineEdit(), SIGNAL(editingFinished()), SLOT(setCompletionPrefix()));
+            connect(lineEdit(), &QLineEdit::editingFinished, this, &task246056_ComboBox::setCompletionPrefix);
         }
     }
 private slots:
@@ -1302,7 +1303,7 @@ void tst_QCompleter::task246056_setCompletionPrefix()
     comboBox.show();
     QApplication::setActiveWindow(&comboBox);
     QVERIFY(QTest::qWaitForWindowActive(&comboBox));
-    QSignalSpy spy(comboBox.completer(), SIGNAL(activated(QModelIndex)));
+    QSignalSpy spy(comboBox.completer(), QOverload<const QModelIndex &>::of(&QCompleter::activated));
     QTest::keyPress(&comboBox, 'a');
     QTest::keyPress(comboBox.completer()->popup(), Qt::Key_Down);
     QTest::keyPress(comboBox.completer()->popup(), Qt::Key_Down);
@@ -1320,7 +1321,7 @@ public:
 
     task250064_TextEdit()
     {
-        completer = new QCompleter;
+        completer = new QCompleter(this);
         completer->setWidget(this);
     }
 
@@ -1553,9 +1554,9 @@ void tst_QCompleter::task247560_keyboardNavigation()
     QStandardItemModel model;
 
     for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++) {
-            model.setItem(i, j, new QStandardItem(QString("row %1 column %2").arg(i).arg(j)));
-        }
+        const QString prefix = QLatin1String("row ") + QString::number(i) + QLatin1String(" column ");
+        for (int j = 0; j < 5; j++)
+            model.setItem(i, j, new QStandardItem(prefix + QString::number(j)));
     }
 
 
@@ -1736,6 +1737,109 @@ void tst_QCompleter::QTBUG_14292_filesystem()
     //there is no reason creating a file should open a popup, it did in Qt 4.7.0
     QTest::qWait(60);
     QVERIFY(!comp.popup()->isVisible());
+}
+
+void tst_QCompleter::QTBUG_52028_tabAutoCompletes()
+{
+    QStringList words;
+    words << "foobar1" << "foobar2" << "hux";
+
+    QWidget w;
+    w.setLayout(new QVBoxLayout);
+
+    QComboBox cbox;
+    cbox.setEditable(true);
+    cbox.setInsertPolicy(QComboBox::NoInsert);
+    cbox.addItems(words);
+
+    cbox.completer()->setCaseSensitivity(Qt::CaseInsensitive);
+    cbox.completer()->setCompletionMode(QCompleter::PopupCompletion);
+
+    w.layout()->addWidget(&cbox);
+
+    // Adding a line edit is a good reason for tab to do something unrelated
+    QLineEdit le;
+    w.layout()->addWidget(&le);
+
+    const auto pos = QApplication::desktop()->availableGeometry(&w).topLeft() + QPoint(200,200);
+    w.move(pos);
+    w.show();
+    QApplication::setActiveWindow(&w);
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+
+    QSignalSpy activatedSpy(&cbox, QOverload<int>::of(&QComboBox::activated));
+
+    // Tab key will complete but not activate
+    cbox.lineEdit()->clear();
+    QTest::keyClick(&cbox, Qt::Key_H);
+    QVERIFY(cbox.completer()->popup());
+    QTRY_VERIFY(cbox.completer()->popup()->isVisible());
+    QTest::keyClick(cbox.completer()->popup(), Qt::Key_Tab);
+    QCOMPARE(cbox.completer()->currentCompletion(), QLatin1String("hux"));
+    QCOMPARE(activatedSpy.count(), 0);
+    QEXPECT_FAIL("", "QTBUG-52028 will not be fixed today.", Abort);
+    QCOMPARE(cbox.currentText(), QLatin1String("hux"));
+    QCOMPARE(activatedSpy.count(), 0);
+    QVERIFY(!le.hasFocus());
+}
+
+void tst_QCompleter::QTBUG_51889_activatedSentTwice()
+{
+    QStringList words;
+    words << "foobar1" << "foobar2" << "bar" <<"hux";
+
+    QWidget w;
+    w.setLayout(new QVBoxLayout);
+
+    QComboBox cbox;
+    setFrameless(&cbox);
+    cbox.setEditable(true);
+    cbox.setInsertPolicy(QComboBox::NoInsert);
+    cbox.addItems(words);
+
+    cbox.completer()->setCaseSensitivity(Qt::CaseInsensitive);
+    cbox.completer()->setCompletionMode(QCompleter::PopupCompletion);
+
+    w.layout()->addWidget(&cbox);
+
+    QLineEdit le;
+    w.layout()->addWidget(&le);
+
+    const auto pos = QApplication::desktop()->availableGeometry(&w).topLeft() + QPoint(200,200);
+    w.move(pos);
+    w.show();
+    QApplication::setActiveWindow(&w);
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+
+    QSignalSpy activatedSpy(&cbox, QOverload<int>::of(&QComboBox::activated));
+
+    // Navigate + enter activates only once (first item)
+    cbox.lineEdit()->clear();
+    QTest::keyClick(&cbox, Qt::Key_F);
+    QVERIFY(cbox.completer()->popup());
+    QTRY_VERIFY(cbox.completer()->popup()->isVisible());
+    QTest::keyClick(cbox.completer()->popup(), Qt::Key_Down);
+    QTest::keyClick(cbox.completer()->popup(), Qt::Key_Return);
+    QTRY_COMPARE(activatedSpy.count(), 1);
+
+    // Navigate + enter activates only once (non-first item)
+    cbox.lineEdit()->clear();
+    activatedSpy.clear();
+    QTest::keyClick(&cbox, Qt::Key_H);
+    QVERIFY(cbox.completer()->popup());
+    QTRY_VERIFY(cbox.completer()->popup()->isVisible());
+    QTest::keyClick(cbox.completer()->popup(), Qt::Key_Down);
+    QTest::keyClick(cbox.completer()->popup(), Qt::Key_Return);
+    QTRY_COMPARE(activatedSpy.count(), 1);
+
+    // Full text + enter activates only once
+    cbox.lineEdit()->clear();
+    activatedSpy.clear();
+    QTest::keyClicks(&cbox, "foobar1");
+    QVERIFY(cbox.completer()->popup());
+    QTRY_VERIFY(cbox.completer()->popup()->isVisible());
+    QTest::keyClick(&cbox, Qt::Key_Return);
+    QTRY_COMPARE(activatedSpy.count(), 1);
 }
 
 QTEST_MAIN(tst_QCompleter)

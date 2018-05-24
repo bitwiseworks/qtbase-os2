@@ -15,6 +15,8 @@ SUBPROGRAMS = \
      crashes \
      datatable \
      datetime \
+     deleteLater \
+     deleteLater_noApp \
      differentexec \
      exceptionthrow \
      expectfail \
@@ -28,6 +30,7 @@ SUBPROGRAMS = \
      longstring \
      maxwarnings \
      multiexec \
+     pairdiagnostics \
      printdatatags \
      printdatatagswithglobaltags \
      qexecstringlist \
@@ -44,4 +47,8 @@ SUBPROGRAMS = \
      verbose2 \
      verifyexceptionthrown \
      warnings \
-     xunit
+     xunit \
+     mouse
+
+INCLUDEPATH += ../../../../shared/
+HEADERS += ../../../../shared/emulationdetector.h

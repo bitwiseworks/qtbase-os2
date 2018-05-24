@@ -1,51 +1,74 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
+#include <QtWidgets/qtwidgetsglobal.h>
+#if QT_CONFIG(colordialog)
 #include "qcolordialog.h"
+#endif
+#if QT_CONFIG(fontdialog)
 #include "qfontdialog.h"
+#endif
+#if QT_CONFIG(filedialog)
 #include "qfiledialog.h"
+#endif
 
 #include "qevent.h"
 #include "qdesktopwidget.h"
-#include "qpushbutton.h"
+#include <private/qdesktopwidget_p.h>
 #include "qapplication.h"
 #include "qlayout.h"
+#if QT_CONFIG(sizegrip)
 #include "qsizegrip.h"
+#endif
+#if QT_CONFIG(whatsthis)
 #include "qwhatsthis.h"
+#endif
+#if QT_CONFIG(menu)
 #include "qmenu.h"
+#endif
 #include "qcursor.h"
+#if QT_CONFIG(messagebox)
 #include "qmessagebox.h"
+#endif
+#if QT_CONFIG(errormessage)
 #include "qerrormessage.h"
+#endif
 #include <qpa/qplatformtheme.h>
 #include "private/qdialog_p.h"
 #include "private/qguiapplication_p.h"
@@ -57,34 +80,39 @@ QT_BEGIN_NAMESPACE
 
 static inline int themeDialogType(const QDialog *dialog)
 {
-#ifndef QT_NO_FILEDIALOG
+#if QT_CONFIG(filedialog)
     if (qobject_cast<const QFileDialog *>(dialog))
         return QPlatformTheme::FileDialog;
 #endif
-#ifndef QT_NO_COLORDIALOG
+#if QT_CONFIG(colordialog)
     if (qobject_cast<const QColorDialog *>(dialog))
         return QPlatformTheme::ColorDialog;
 #endif
-#ifndef QT_NO_FONTDIALOG
+#if QT_CONFIG(fontdialog)
     if (qobject_cast<const QFontDialog *>(dialog))
         return QPlatformTheme::FontDialog;
 #endif
-#ifndef QT_NO_MESSAGEBOX
+#if QT_CONFIG(messagebox)
     if (qobject_cast<const QMessageBox *>(dialog))
         return QPlatformTheme::MessageDialog;
 #endif
-#ifndef QT_NO_ERRORMESSAGE
+#if QT_CONFIG(errormessage)
     if (qobject_cast<const QErrorMessage *>(dialog))
         return QPlatformTheme::MessageDialog;
 #endif
     return -1;
 }
 
+QDialogPrivate::~QDialogPrivate()
+{
+    delete m_platformHelper;
+}
+
 QPlatformDialogHelper *QDialogPrivate::platformHelper() const
 {
     // Delayed creation of the platform, ensuring that
     // that qobject_cast<> on the dialog works in the plugin.
-    if (!m_platformHelperCreated) {
+    if (!m_platformHelperCreated && canBeNativeDialog()) {
         m_platformHelperCreated = true;
         QDialogPrivate *ncThis = const_cast<QDialogPrivate *>(this);
         QDialog *dialog = ncThis->q_func();
@@ -243,7 +271,7 @@ void QDialogPrivate::deletePlatformHelper()
     \section1 Escape Key
 
     If the user presses the Esc key in a dialog, QDialog::reject()
-    will be called. This will cause the window to close: The \l{QCloseEvent}{close event} cannot be \l{QCloseEvent::ignore()}{ignored}.
+    will be called. This will cause the window to close: The \l{QCloseEvent}{close event} cannot be \l{QEvent::ignore()}{ignored}.
 
     \section1 Extensibility
 
@@ -356,6 +384,7 @@ QDialog::~QDialog()
   default default button becomes the default button. This is what a
   push button calls when it loses focus.
 */
+#if QT_CONFIG(pushbutton)
 void QDialogPrivate::setDefault(QPushButton *pushButton)
 {
     Q_Q(QDialog);
@@ -400,6 +429,7 @@ void QDialogPrivate::hideDefault()
         list.at(i)->setDefault(false);
     }
 }
+#endif
 
 void QDialogPrivate::resetModalitySetByOpen()
 {
@@ -415,31 +445,6 @@ void QDialogPrivate::resetModalitySetByOpen()
     }
     resetModalityTo = -1;
 }
-
-#if defined(Q_OS_WINCE)
-#ifdef Q_OS_WINCE_WM
-void QDialogPrivate::_q_doneAction()
-{
-    //Done...
-    QApplication::postEvent(q_func(), new QEvent(QEvent::OkRequest));
-}
-#endif
-
-/*!
-    \reimp
-*/
-bool QDialog::event(QEvent *e)
-{
-    bool result = QWidget::event(e);
-#ifdef Q_OS_WINCE
-    if (e->type() == QEvent::OkRequest) {
-        accept();
-        result = true;
-     }
-#endif
-    return result;
-}
-#endif
 
 /*!
   In general returns the modal dialog's result code, \c Accepted or
@@ -516,7 +521,7 @@ int QDialog::exec()
 {
     Q_D(QDialog);
 
-    if (d->eventLoop) {
+    if (Q_UNLIKELY(d->eventLoop)) {
         qWarning("QDialog::exec: Recursive call detected");
         return -1;
     }
@@ -565,14 +570,14 @@ int QDialog::exec()
   last window closed, the QApplication::lastWindowClosed() signal is
   emitted.
 
-  \sa accept(), reject(), QApplication::activeWindow(), QApplication::quit()
+  \sa accept(), reject(), QApplication::activeWindow(), QCoreApplication::quit()
 */
 
 void QDialog::done(int r)
 {
     Q_D(QDialog);
-    hide();
     setResult(r);
+    hide();
 
     d->close_helper(QWidgetPrivate::CloseNoEvent);
     d->resetModalitySetByOpen();
@@ -620,7 +625,7 @@ bool QDialog::eventFilter(QObject *o, QEvent *e)
 /*! \reimp */
 void QDialog::contextMenuEvent(QContextMenuEvent *e)
 {
-#if defined(QT_NO_WHATSTHIS) || defined(QT_NO_MENU)
+#if !QT_CONFIG(whatsthis) || !QT_CONFIG(menu)
     Q_UNUSED(e);
 #else
     QWidget *w = childAt(e->pos());
@@ -648,16 +653,17 @@ void QDialog::contextMenuEvent(QContextMenuEvent *e)
 /*! \reimp */
 void QDialog::keyPressEvent(QKeyEvent *e)
 {
+#ifndef QT_NO_SHORTCUT
     //   Calls reject() if Escape is pressed. Simulates a button
     //   click for the default button if Enter is pressed. Move focus
     //   for the arrow keys. Ignore the rest.
-#ifdef Q_OS_MAC
-    if(e->modifiers() == Qt::ControlModifier && e->key() == Qt::Key_Period) {
+    if (e->matches(QKeySequence::Cancel)) {
         reject();
     } else
 #endif
     if (!e->modifiers() || (e->modifiers() & Qt::KeypadModifier && e->key() == Qt::Key_Enter)) {
         switch (e->key()) {
+#if QT_CONFIG(pushbutton)
         case Qt::Key_Enter:
         case Qt::Key_Return: {
             QList<QPushButton*> list = findChildren<QPushButton*>();
@@ -671,9 +677,7 @@ void QDialog::keyPressEvent(QKeyEvent *e)
             }
         }
         break;
-        case Qt::Key_Escape:
-            reject();
-            break;
+#endif
         default:
             e->ignore();
             return;
@@ -686,7 +690,7 @@ void QDialog::keyPressEvent(QKeyEvent *e)
 /*! \reimp */
 void QDialog::closeEvent(QCloseEvent *e)
 {
-#ifndef QT_NO_WHATSTHIS
+#if QT_CONFIG(whatsthis)
     if (isModal() && QWhatsThis::inWhatsThisMode())
         QWhatsThis::leaveWhatsThisMode();
 #endif
@@ -733,6 +737,7 @@ void QDialog::setVisible(bool visible)
           and actually catches most cases... If not, then they simply
           have to use [widget*]->setFocus() themselves...
         */
+#if QT_CONFIG(pushbutton)
         if (d->mainDef && fw->focusPolicy() == Qt::NoFocus) {
             QWidget *first = fw;
             while ((first = first->nextInFocusChain()) != fw && first->focusPolicy() == Qt::NoFocus)
@@ -750,6 +755,7 @@ void QDialog::setVisible(bool visible)
                 }
             }
         }
+#endif
         if (fw && !fw->hasFocus()) {
             QFocusEvent e(QEvent::FocusIn, Qt::TabFocusReason);
             QApplication::sendEvent(fw, &e);
@@ -777,10 +783,12 @@ void QDialog::setVisible(bool visible)
             d->eventLoop->exit();
     }
 
+#if QT_CONFIG(pushbutton)
     const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme();
     if (d->mainDef && isActiveWindow()
         && theme->themeHint(QPlatformTheme::DialogSnapToDefaultButton).toBool())
         QCursor::setPos(d->mainDef->mapToGlobal(d->mainDef->rect().center()));
+#endif
 }
 
 /*!\reimp */
@@ -808,13 +816,13 @@ void QDialog::adjustPosition(QWidget* w)
         w = w->window();
     QRect desk;
     if (w) {
-        scrn = QApplication::desktop()->screenNumber(w);
-    } else if (QApplication::desktop()->isVirtualDesktop()) {
-        scrn = QApplication::desktop()->screenNumber(QCursor::pos());
+        scrn = QDesktopWidgetPrivate::screenNumber(w);
+    } else if (QDesktopWidgetPrivate::isVirtualDesktop()) {
+        scrn = QDesktopWidgetPrivate::screenNumber(QCursor::pos());
     } else {
-        scrn = QApplication::desktop()->screenNumber(this);
+        scrn = QDesktopWidgetPrivate::screenNumber(this);
     }
-    desk = QApplication::desktop()->availableGeometry(scrn);
+    desk = QDesktopWidgetPrivate::availableGeometry(scrn);
 
     QWidgetList list = QApplication::topLevelWidgets();
     for (int i = 0; (extraw == 0 || extrah == 0) && i < list.size(); ++i) {
@@ -864,6 +872,14 @@ void QDialog::adjustPosition(QWidget* w)
         p.setY(desk.y() + desk.height() - height() - extrah);
     if (p.y() < desk.y())
         p.setY(desk.y());
+
+    // QTBUG-52735: Manually set the correct target screen since scaling in a
+    // subsequent call to QWindow::resize() may otherwise use the wrong factor
+    // if the screen changed notification is still in an event queue.
+    if (scrn >= 0) {
+        if (QWindow *window = windowHandle())
+            window->setScreen(QGuiApplication::screens().at(scrn));
+    }
 
     move(p);
 }
@@ -994,7 +1010,7 @@ void QDialog::showExtension(bool showIt)
             setFixedSize(w, height() + s.height());
         }
         d->extension->show();
-#ifndef QT_NO_SIZEGRIP
+#if QT_CONFIG(sizegrip)
         const bool sizeGripEnabled = isSizeGripEnabled();
         setSizeGripEnabled(false);
         d->sizeGripEnabled = sizeGripEnabled;
@@ -1007,7 +1023,7 @@ void QDialog::showExtension(bool showIt)
         resize(d->size);
         if (layout())
             layout()->setEnabled(true);
-#ifndef QT_NO_SIZEGRIP
+#if QT_CONFIG(sizegrip)
         setSizeGripEnabled(d->sizeGripEnabled);
 #endif
     }
@@ -1051,7 +1067,7 @@ QSize QDialog::minimumSizeHint() const
     \brief whether show() should pop up the dialog as modal or modeless
 
     By default, this property is \c false and show() pops up the dialog
-    as modeless. Setting his property to true is equivalent to setting
+    as modeless. Setting this property to true is equivalent to setting
     QWidget::windowModality to Qt::ApplicationModal.
 
     exec() ignores the value of this property and always pops up the
@@ -1068,7 +1084,7 @@ void QDialog::setModal(bool modal)
 
 bool QDialog::isSizeGripEnabled() const
 {
-#ifndef QT_NO_SIZEGRIP
+#if QT_CONFIG(sizegrip)
     Q_D(const QDialog);
     return !!d->resizer;
 #else
@@ -1079,11 +1095,11 @@ bool QDialog::isSizeGripEnabled() const
 
 void QDialog::setSizeGripEnabled(bool enabled)
 {
-#ifdef QT_NO_SIZEGRIP
+#if !QT_CONFIG(sizegrip)
     Q_UNUSED(enabled);
 #else
     Q_D(QDialog);
-#ifndef QT_NO_SIZEGRIP
+#if QT_CONFIG(sizegrip)
     d->sizeGripEnabled = enabled;
     if (enabled && d->doShowExtension)
         return;
@@ -1104,7 +1120,7 @@ void QDialog::setSizeGripEnabled(bool enabled)
             d->resizer = 0;
         }
     }
-#endif //QT_NO_SIZEGRIP
+#endif // QT_CONFIG(sizegrip)
 }
 
 
@@ -1112,7 +1128,7 @@ void QDialog::setSizeGripEnabled(bool enabled)
 /*! \reimp */
 void QDialog::resizeEvent(QResizeEvent *)
 {
-#ifndef QT_NO_SIZEGRIP
+#if QT_CONFIG(sizegrip)
     Q_D(QDialog);
     if (d->resizer) {
         if (isRightToLeft())

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -70,7 +76,9 @@
 
 QT_BEGIN_NAMESPACE
 
-
+#ifndef QFONTCACHE_DECREASE_TRIGGER_LIMIT
+#  define QFONTCACHE_DECREASE_TRIGGER_LIMIT 256
+#endif
 
 bool QFontDef::exactMatch(const QFontDef &other) const
 {
@@ -112,9 +120,6 @@ bool QFontDef::exactMatch(const QFontDef &other) const
     QFontDatabase::parseFontName(family, this_foundry, this_family);
     QFontDatabase::parseFontName(other.family, other_foundry, other_family);
 
-    this_family = QFontDatabase::resolveFontFamilyAlias(this_family);
-    other_family = QFontDatabase::resolveFontFamilyAlias(other_family);
-
     return (styleHint     == other.styleHint
             && styleStrategy == other.styleStrategy
             && weight        == other.weight
@@ -131,7 +136,7 @@ extern bool qt_is_gui_used;
 
 Q_GUI_EXPORT int qt_defaultDpiX()
 {
-    if (qApp->testAttribute(Qt::AA_Use96Dpi))
+    if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
     if (!qt_is_gui_used)
@@ -146,7 +151,7 @@ Q_GUI_EXPORT int qt_defaultDpiX()
 
 Q_GUI_EXPORT int qt_defaultDpiY()
 {
-    if (qApp->testAttribute(Qt::AA_Use96Dpi))
+    if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
     if (!qt_is_gui_used)
@@ -549,7 +554,7 @@ QFont::QFont(const QFont &font, QPaintDevice *pd)
         d->dpi = dpi;
         d->screen = screen;
     } else {
-        d = font.d.data();
+        d = font.d;
     }
 }
 
@@ -654,7 +659,7 @@ QFont::QFont(const QString &family, int pointSize, int weight, bool italic)
     Constructs a font that is a copy of \a font.
 */
 QFont::QFont(const QFont &font)
-    : d(font.d.data()), resolve_mask(font.resolve_mask)
+    : d(font.d), resolve_mask(font.resolve_mask)
 {
 }
 
@@ -670,7 +675,7 @@ QFont::~QFont()
 */
 QFont &QFont::operator=(const QFont &font)
 {
-    d = font.d.data();
+    d = font.d;
     resolve_mask = font.resolve_mask;
     return *this;
 }
@@ -722,11 +727,9 @@ void QFont::setFamily(const QString &family)
 /*!
     \since 4.8
 
-    Returns the requested font style name, it will be used to match the
+    Returns the requested font style name. This can be used to match the
     font with irregular styles (that can't be normalized in other style
-    properties). It depends on system font support, thus only works for
-    OS X and X11 so far. On Windows irregular styles will be added
-    as separate font families so there is no need for this.
+    properties).
 
     \sa setFamily(), setStyle()
 */
@@ -739,7 +742,12 @@ QString QFont::styleName() const
     \since 4.8
 
     Sets the style name of the font to \a styleName. When set, other style properties
-    like \l style() and \l weight() will be ignored for font matching.
+    like \l style() and \l weight() will be ignored for font matching, though they may be
+    simulated afterwards if supported by the platform's font engine.
+
+    Due to the lower quality of artificially simulated styles, and the lack of full cross
+    platform support, it is not recommended to use matching by style name together with
+    matching by style properties
 
     \sa styleName()
 */
@@ -820,7 +828,7 @@ int QFont::pointSize() const
     \li Vertical hinting (light)
     \li Full hinting
     \row
-    \li Cocoa on OS X
+    \li Cocoa on \macos
     \li No hinting
     \li No hinting
     \li No hinting
@@ -980,6 +988,10 @@ int QFont::pixelSize() const
   Sets the style() of the font to QFont::StyleItalic if \a enable is true;
   otherwise the style is set to QFont::StyleNormal.
 
+  \note If styleName() is set, this value may be ignored, or if supported
+  on the platform, the font may be rendered tilted instead of picking a
+  designed italic font-variant.
+
   \sa italic(), QFontInfo
 */
 
@@ -1045,6 +1057,8 @@ int QFont::weight() const
     Sets the weight of the font to \a weight, using the scale defined by
     \l QFont::Weight enumeration.
 
+    \note If styleName() is set, this value may be ignored for font selection.
+
     \sa weight(), QFontInfo
 */
 void QFont::setWeight(int weight)
@@ -1077,6 +1091,9 @@ void QFont::setWeight(int weight)
     otherwise sets the weight to \l{Weight}{QFont::Normal}.
 
     For finer boldness control use setWeight().
+
+    \note If styleName() is set, this value may be ignored, or if supported
+    on the platform, the font artificially embolded.
 
     \sa bold(), setWeight()
 */
@@ -1307,6 +1324,11 @@ QFont::StyleHint QFont::styleHint() const
            looking font that contains the character. The NoFontMerging flag disables this feature.
            Please note that enabling this flag will not prevent Qt from automatically picking a
            suitable font when the selected font does not support the writing system of the text.
+    \value PreferNoShaping Sometimes, a font will apply complex rules to a set of characters in
+           order to display them correctly. In some writing systems, such as Brahmic scripts, this is
+           required in order for the text to be legible, but in e.g. Latin script, it is merely
+           a cosmetic feature. The PreferNoShaping flag will disable all such features when they
+           are not required, which will improve performance in most cases (since Qt 5.10).
 
     Any of these may be OR-ed with one of these flags:
 
@@ -1371,6 +1393,7 @@ void QFont::setStyleStrategy(StyleStrategy s)
     Predefined stretch values that follow the CSS naming convention. The higher
     the value, the more stretched the text is.
 
+    \value AnyStretch 0 Accept any stretch matched using the other QFont properties (added in Qt 5.8)
     \value UltraCondensed 50
     \value ExtraCondensed 62
     \value Condensed 75
@@ -1397,20 +1420,25 @@ int QFont::stretch() const
 /*!
     Sets the stretch factor for the font.
 
-    The stretch factor changes the width of all characters in the font
-    by \a factor percent.  For example, setting \a factor to 150
+    The stretch factor matches a condensed or expanded version of the font or
+    applies a stretch transform that changes the width of all characters
+    in the font by \a factor percent.  For example, setting \a factor to 150
     results in all characters in the font being 1.5 times (ie. 150%)
-    wider.  The default stretch factor is 100.  The minimum stretch
-    factor is 1, and the maximum stretch factor is 4000.
+    wider.  The minimum stretch factor is 1, and the maximum stretch factor
+    is 4000.  The default stretch factor is \c AnyStretch, which will accept
+    any stretch factor and not apply any transform on the font.
 
     The stretch factor is only applied to outline fonts.  The stretch
     factor is ignored for bitmap fonts.
+
+    \note When matching a font with a native non-default stretch factor,
+    requesting a stretch of 100 will stretch it back to a medium width font.
 
     \sa stretch(), QFont::Stretch
 */
 void QFont::setStretch(int factor)
 {
-    if (factor < 1 || factor > 4000) {
+    if (factor < 0 || factor > 4000) {
         qWarning("QFont::setStretch: Parameter '%d' out of range", factor);
         return;
     }
@@ -1647,8 +1675,8 @@ bool QFont::operator<(const QFont &f) const
 {
     if (f.d == d) return false;
     // the < operator for fontdefs ignores point sizes.
-    QFontDef &r1 = f.d->request;
-    QFontDef &r2 = d->request;
+    const QFontDef &r1 = f.d->request;
+    const QFontDef &r2 = d->request;
     if (r1.pointSize != r2.pointSize) return r1.pointSize < r2.pointSize;
     if (r1.pixelSize != r2.pixelSize) return r1.pixelSize < r2.pixelSize;
     if (r1.weight != r2.weight) return r1.weight < r2.weight;
@@ -1825,7 +1853,7 @@ void QFont::insertSubstitutions(const QString &familyName,
     QFontSubst *fontSubst = globalFontSubst();
     Q_ASSERT(fontSubst != 0);
     QStringList &list = (*fontSubst)[familyName.toLower()];
-    foreach (const QString &substituteName, substituteNames) {
+    for (const QString &substituteName : substituteNames) {
         const QString lowerSubstituteName = substituteName.toLower();
         if (!list.contains(lowerSubstituteName))
             list.append(lowerSubstituteName);
@@ -1860,14 +1888,9 @@ void QFont::removeSubstitutions(const QString &familyName)
 */
 QStringList QFont::substitutions()
 {
-    typedef QFontSubst::const_iterator QFontSubstConstIterator;
-
     QFontSubst *fontSubst = globalFontSubst();
     Q_ASSERT(fontSubst != 0);
-    QStringList ret;
-    const QFontSubstConstIterator cend = fontSubst->constEnd();
-    for (QFontSubstConstIterator it = fontSubst->constBegin(); it != cend; ++it)
-        ret.append(it.key());
+    QStringList ret = fontSubst->keys();
 
     ret.sort();
     return ret;
@@ -2001,7 +2024,7 @@ QString QFont::key() const
 QString QFont::toString() const
 {
     const QChar comma(QLatin1Char(','));
-    return family() + comma +
+    QString fontDescription = family() + comma +
         QString::number(     pointSizeF()) + comma +
         QString::number(      pixelSize()) + comma +
         QString::number((int) styleHint()) + comma +
@@ -2011,6 +2034,12 @@ QString QFont::toString() const
         QString::number((int) strikeOut()) + comma +
         QString::number((int)fixedPitch()) + comma +
         QString::number((int)   false);
+
+    QString fontStyle = styleName();
+    if (!fontStyle.isEmpty())
+        fontDescription += comma + fontStyle;
+
+    return fontDescription;
 }
 
 /*!
@@ -2035,7 +2064,7 @@ uint qHash(const QFont &font, uint seed) Q_DECL_NOTHROW
  */
 bool QFont::fromString(const QString &descrip)
 {
-    QStringList l(descrip.split(QLatin1Char(',')));
+    const auto l = descrip.splitRef(QLatin1Char(','));
 
     int count = l.count();
     if (!count || (count > 2 && count < 9) || count > 11) {
@@ -2044,7 +2073,7 @@ bool QFont::fromString(const QString &descrip)
         return false;
     }
 
-    setFamily(l[0]);
+    setFamily(l[0].toString());
     if (count > 1 && l[1].toDouble() > 0.0)
         setPointSizeF(l[1].toDouble());
     if (count == 9) {
@@ -2054,7 +2083,7 @@ bool QFont::fromString(const QString &descrip)
         setUnderline(l[5].toInt());
         setStrikeOut(l[6].toInt());
         setFixedPitch(l[7].toInt());
-    } else if (count == 10) {
+    } else if (count >= 10) {
         if (l[2].toInt() > 0)
             setPixelSize(l[2].toInt());
         setStyleHint((StyleHint) l[3].toInt());
@@ -2063,7 +2092,12 @@ bool QFont::fromString(const QString &descrip)
         setUnderline(l[6].toInt());
         setStrikeOut(l[7].toInt());
         setFixedPitch(l[8].toInt());
+        if (count == 11)
+            d->request.styleName = l[10].toString();
+        else
+            d->request.styleName.clear();
     }
+
     if (count >= 9 && !d->request.fixedPitch) // assume 'false' fixedPitch equals default
         d->request.ignorePitch = true;
 
@@ -2115,6 +2149,9 @@ QString QFont::lastResortFamily() const
     return QString::fromLatin1("helvetica");
 }
 
+extern QStringList qt_fallbacksForFamily(const QString &family, QFont::Style style,
+                                         QFont::StyleHint styleHint, QChar::Script script);
+
 /*!
     \fn QString QFont::defaultFamily() const
 
@@ -2125,8 +2162,7 @@ QString QFont::lastResortFamily() const
 */
 QString QFont::defaultFamily() const
 {
-    QPlatformFontDatabase *fontDB = QGuiApplicationPrivate::platformIntegration()->fontDatabase();
-    const QStringList fallbacks = fontDB->fallbacksForFamily(QString(), QFont::StyleNormal
+    const QStringList fallbacks = qt_fallbacksForFamily(QString(), QFont::StyleNormal
                                       , QFont::StyleHint(d->request.styleHint), QChar::Script_Common);
     if (!fallbacks.isEmpty())
         return fallbacks.first();
@@ -2223,6 +2259,8 @@ QDataStream &operator<<(QDataStream &s, const QFont &font)
     }
     if (s.version() >= QDataStream::Qt_5_4)
         s << (quint8)font.d->request.hintingPreference;
+    if (s.version() >= QDataStream::Qt_5_6)
+        s << (quint8)font.d->capital;
     return s;
 }
 
@@ -2313,7 +2351,11 @@ QDataStream &operator>>(QDataStream &s, QFont &font)
         s >> value;
         font.d->request.hintingPreference = QFont::HintingPreference(value);
     }
-
+    if (s.version() >= QDataStream::Qt_5_6) {
+        quint8 value;
+        s >> value;
+        font.d->capital = QFont::Capitalization(value);
+    }
     return s;
 }
 
@@ -2385,7 +2427,7 @@ QDataStream &operator>>(QDataStream &s, QFont &font)
     that is not screen-compatible.
 */
 QFontInfo::QFontInfo(const QFont &font)
-    : d(font.d.data())
+    : d(font.d)
 {
 }
 
@@ -2393,7 +2435,7 @@ QFontInfo::QFontInfo(const QFont &font)
     Constructs a copy of \a fi.
 */
 QFontInfo::QFontInfo(const QFontInfo &fi)
-    : d(fi.d.data())
+    : d(fi.d)
 {
 }
 
@@ -2409,7 +2451,7 @@ QFontInfo::~QFontInfo()
 */
 QFontInfo &QFontInfo::operator=(const QFontInfo &fi)
 {
-    d = fi.d.data();
+    d = fi.d;
     return *this;
 }
 
@@ -2793,6 +2835,10 @@ void QFontCache::insertEngineData(const QFontDef &def, QFontEngineData *engineDa
     Q_ASSERT(!engineDataCache.contains(def));
 
     engineData->ref.ref();
+    // Decrease now rather than waiting
+    if (total_cost > min_cost * 2 && engineDataCache.size() >= QFONTCACHE_DECREASE_TRIGGER_LIMIT)
+        decreaseCache();
+
     engineDataCache.insert(def, engineData);
     increaseCost(sizeof(QFontEngineData));
 }
@@ -2802,6 +2848,10 @@ QFontEngine *QFontCache::findEngine(const Key &key)
     EngineCache::Iterator it = engineCache.find(key),
                          end = engineCache.end();
     if (it == end) return 0;
+
+    Q_ASSERT(it.value().data != nullptr);
+    Q_ASSERT(key.multi == (it.value().data->type() == QFontEngine::Multi));
+
     // found... update the hitcount and timestamp
     updateHitCountAndTimeStamp(it.value());
 
@@ -2822,6 +2872,9 @@ void QFontCache::updateHitCountAndTimeStamp(Engine &value)
 
 void QFontCache::insertEngine(const Key &key, QFontEngine *engine, bool insertMulti)
 {
+    Q_ASSERT(engine != nullptr);
+    Q_ASSERT(key.multi == (engine->type() == QFontEngine::Multi));
+
 #ifdef QFONTCACHE_DEBUG
     FC_DEBUG("QFontCache: inserting new engine %p, refcount %d", engine, engine->ref.load());
     if (!insertMulti && engineCache.contains(key)) {
@@ -2830,8 +2883,10 @@ void QFontCache::insertEngine(const Key &key, QFontEngine *engine, bool insertMu
                  key.def.pixelSize, key.def.weight, key.def.style, key.def.fixedPitch);
     }
 #endif
-
     engine->ref.ref();
+    // Decrease now rather than waiting
+    if (total_cost > min_cost * 2 && engineCache.size() >= QFONTCACHE_DECREASE_TRIGGER_LIMIT)
+        decreaseCache();
 
     Engine data(engine);
     data.timestamp = ++current_timestamp;
@@ -2892,7 +2947,11 @@ void QFontCache::timerEvent(QTimerEvent *)
 
         return;
     }
+    decreaseCache();
+}
 
+void QFontCache::decreaseCache()
+{
     // go through the cache and count up everything in use
     uint in_use_cost = 0;
 

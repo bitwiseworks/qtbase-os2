@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -243,11 +249,11 @@ static QFile::Permissions modeToPermissions(quint32 mode)
 static quint32 permissionsToMode(QFile::Permissions perms)
 {
     quint32 mode = 0;
-    if (mode & (QFile::ReadOwner | QFile::ReadUser))
+    if (perms & (QFile::ReadOwner | QFile::ReadUser))
         mode |= UnixFileAttributes::ReadUser;
-    if (mode & (QFile::WriteOwner | QFile::WriteUser))
+    if (perms & (QFile::WriteOwner | QFile::WriteUser))
         mode |= UnixFileAttributes::WriteUser;
-    if (mode & (QFile::ExeOwner | QFile::ExeUser))
+    if (perms & (QFile::ExeOwner | QFile::ExeUser))
         mode |= UnixFileAttributes::WriteUser;
     if (perms & QFile::ReadGroup)
         mode |= UnixFileAttributes::ReadGroup;
@@ -303,6 +309,7 @@ enum HostOS {
     HostOS400    = 18,
     HostOSX      = 19
 };
+Q_DECLARE_TYPEINFO(HostOS, Q_PRIMITIVE_TYPE);
 
 enum GeneralPurposeFlag {
     Encrypted = 0x01,
@@ -314,6 +321,7 @@ enum GeneralPurposeFlag {
     Utf8Names = 0x0800,
     CentralDirectoryEncrypted = 0x2000
 };
+Q_DECLARE_TYPEINFO(GeneralPurposeFlag, Q_PRIMITIVE_TYPE);
 
 enum CompressionMethod {
     CompressionMethodStored = 0,
@@ -340,6 +348,7 @@ enum CompressionMethod {
     CompressionMethodPPMd = 98,
     CompressionMethodWzAES = 99
 };
+Q_DECLARE_TYPEINFO(CompressionMethod, Q_PRIMITIVE_TYPE);
 
 struct LocalFileHeader
 {
@@ -354,6 +363,7 @@ struct LocalFileHeader
     uchar file_name_length[2];
     uchar extra_field_length[2];
 };
+Q_DECLARE_TYPEINFO(LocalFileHeader, Q_PRIMITIVE_TYPE);
 
 struct DataDescriptor
 {
@@ -361,6 +371,7 @@ struct DataDescriptor
     uchar compressed_size[4];
     uchar uncompressed_size[4];
 };
+Q_DECLARE_TYPEINFO(DataDescriptor, Q_PRIMITIVE_TYPE);
 
 struct CentralFileHeader
 {
@@ -382,6 +393,7 @@ struct CentralFileHeader
     uchar offset_local_header[4];
     LocalFileHeader toLocalHeader() const;
 };
+Q_DECLARE_TYPEINFO(CentralFileHeader, Q_PRIMITIVE_TYPE);
 
 struct EndOfDirectory
 {
@@ -394,6 +406,7 @@ struct EndOfDirectory
     uchar dir_start_offset[4];
     uchar comment_length[2];
 };
+Q_DECLARE_TYPEINFO(EndOfDirectory, Q_PRIMITIVE_TYPE);
 
 struct FileHeader
 {
@@ -402,38 +415,7 @@ struct FileHeader
     QByteArray extra_field;
     QByteArray file_comment;
 };
-
-QZipReader::FileInfo::FileInfo()
-    : isDir(false), isFile(false), isSymLink(false), crc(0), size(0)
-{
-}
-
-QZipReader::FileInfo::~FileInfo()
-{
-}
-
-QZipReader::FileInfo::FileInfo(const FileInfo &other)
-{
-    operator=(other);
-}
-
-QZipReader::FileInfo& QZipReader::FileInfo::operator=(const FileInfo &other)
-{
-    filePath = other.filePath;
-    isDir = other.isDir;
-    isFile = other.isFile;
-    isSymLink = other.isSymLink;
-    permissions = other.permissions;
-    crc = other.crc;
-    size = other.size;
-    lastModified = other.lastModified;
-    return *this;
-}
-
-bool QZipReader::FileInfo::isValid() const
-{
-    return isDir || isFile || isSymLink;
-}
+Q_DECLARE_TYPEINFO(FileHeader, Q_MOVABLE_TYPE);
 
 class QZipPrivate
 {
@@ -449,18 +431,19 @@ public:
             delete device;
     }
 
-    void fillFileInfo(int index, QZipReader::FileInfo &fileInfo) const;
+    QZipReader::FileInfo fillFileInfo(int index) const;
 
     QIODevice *device;
     bool ownDevice;
     bool dirtyFileTree;
-    QList<FileHeader> fileHeaders;
+    QVector<FileHeader> fileHeaders;
     QByteArray comment;
     uint start_of_directory;
 };
 
-void QZipPrivate::fillFileInfo(int index, QZipReader::FileInfo &fileInfo) const
+QZipReader::FileInfo QZipPrivate::fillFileInfo(int index) const
 {
+    QZipReader::FileInfo fileInfo;
     FileHeader header = fileHeaders.at(index);
     quint32 mode = readUInt(header.h.external_file_attributes);
     const HostOS hostOS = HostOS(readUShort(header.h.version_made) >> 8);
@@ -502,7 +485,7 @@ void QZipPrivate::fillFileInfo(int index, QZipReader::FileInfo &fileInfo) const
         break;
     default:
         qWarning("QZip: Zip entry format at %d is not supported.", index);
-        return; // we don't support anything else
+        return fileInfo; // we don't support anything else
     }
 
     ushort general_purpose_bits = readUShort(header.h.general_purpose_bits);
@@ -515,10 +498,14 @@ void QZipPrivate::fillFileInfo(int index, QZipReader::FileInfo &fileInfo) const
 
     // fix the file path, if broken (convert separators, eat leading and trailing ones)
     fileInfo.filePath = QDir::fromNativeSeparators(fileInfo.filePath);
-    while (!fileInfo.filePath.isEmpty() && (fileInfo.filePath.at(0) == QLatin1Char('.') || fileInfo.filePath.at(0) == QLatin1Char('/')))
-        fileInfo.filePath = fileInfo.filePath.mid(1);
-    while (!fileInfo.filePath.isEmpty() && fileInfo.filePath.at(fileInfo.filePath.size() - 1) == QLatin1Char('/'))
-        fileInfo.filePath.chop(1);
+    QStringRef filePathRef(&fileInfo.filePath);
+    while (filePathRef.startsWith(QLatin1Char('.')) || filePathRef.startsWith(QLatin1Char('/')))
+        filePathRef = filePathRef.mid(1);
+    while (filePathRef.endsWith(QLatin1Char('/')))
+        filePathRef.chop(1);
+
+    fileInfo.filePath = filePathRef.toString();
+    return fileInfo;
 }
 
 class QZipReaderPrivate : public QZipPrivate
@@ -589,7 +576,7 @@ void QZipReaderPrivate::scanFiles()
     uchar tmp[4];
     device->read((char *)tmp, 4);
     if (readUInt(tmp) != 0x04034b50) {
-        qWarning() << "QZip: not a zip file!";
+        qWarning("QZip: not a zip file!");
         return;
     }
 
@@ -601,7 +588,7 @@ void QZipReaderPrivate::scanFiles()
     while (start_of_directory == -1) {
         const int pos = device->size() - int(sizeof(EndOfDirectory)) - i;
         if (pos < 0 || i > 65535) {
-            qWarning() << "QZip: EndOfDirectory not found";
+            qWarning("QZip: EndOfDirectory not found");
             return;
         }
 
@@ -618,7 +605,7 @@ void QZipReaderPrivate::scanFiles()
     ZDEBUG("start_of_directory at %d, num_dir_entries=%d", start_of_directory, num_dir_entries);
     int comment_length = readUShort(eod.comment_length);
     if (comment_length != i)
-        qWarning() << "QZip: failed to parse zip file.";
+        qWarning("QZip: failed to parse zip file.");
     comment = device->read(qMin(comment_length, i));
 
 
@@ -627,30 +614,30 @@ void QZipReaderPrivate::scanFiles()
         FileHeader header;
         int read = device->read((char *) &header.h, sizeof(CentralFileHeader));
         if (read < (int)sizeof(CentralFileHeader)) {
-            qWarning() << "QZip: Failed to read complete header, index may be incomplete";
+            qWarning("QZip: Failed to read complete header, index may be incomplete");
             break;
         }
         if (readUInt(header.h.signature) != 0x02014b50) {
-            qWarning() << "QZip: invalid header signature, index may be incomplete";
+            qWarning("QZip: invalid header signature, index may be incomplete");
             break;
         }
 
         int l = readUShort(header.h.file_name_length);
         header.file_name = device->read(l);
         if (header.file_name.length() != l) {
-            qWarning() << "QZip: Failed to read filename from zip index, index may be incomplete";
+            qWarning("QZip: Failed to read filename from zip index, index may be incomplete");
             break;
         }
         l = readUShort(header.h.extra_field_length);
         header.extra_field = device->read(l);
         if (header.extra_field.length() != l) {
-            qWarning() << "QZip: Failed to read extra field in zip file, skipping file, index may be incomplete";
+            qWarning("QZip: Failed to read extra field in zip file, skipping file, index may be incomplete");
             break;
         }
         l = readUShort(header.h.file_comment_length);
         header.file_comment = device->read(l);
         if (header.file_comment.length() != l) {
-            qWarning() << "QZip: Failed to read read file comment, index may be incomplete";
+            qWarning("QZip: Failed to read read file comment, index may be incomplete");
             break;
         }
 
@@ -816,12 +803,6 @@ void QZipWriterPrivate::addEntry(EntryType type, const QString &fileName, const 
 */
 
 /*!
-    \variable FileInfo::d
-    \internal
-    private pointer.
-*/
-
-/*!
     \class QZipReader
     \internal
     \since 4.5
@@ -843,16 +824,17 @@ void QZipWriterPrivate::addEntry(EntryType type, const QString &fileName, const 
 QZipReader::QZipReader(const QString &archive, QIODevice::OpenMode mode)
 {
     QScopedPointer<QFile> f(new QFile(archive));
-    f->open(mode);
+    const bool result = f->open(mode);
     QZipReader::Status status;
-    if (f->error() == QFile::NoError)
+    const QFileDevice::FileError error = f->error();
+    if (result && error == QFile::NoError) {
         status = NoError;
-    else {
-        if (f->error() == QFile::ReadError)
+    } else {
+        if (error == QFile::ReadError)
             status = FileReadError;
-        else if (f->error() == QFile::OpenError)
+        else if (error == QFile::OpenError)
             status = FileOpenError;
-        else if (f->error() == QFile::PermissionsError)
+        else if (error == QFile::PermissionsError)
             status = FilePermissionsError;
         else
             status = FileError;
@@ -913,15 +895,14 @@ bool QZipReader::exists() const
 /*!
     Returns the list of files the archive contains.
 */
-QList<QZipReader::FileInfo> QZipReader::fileInfoList() const
+QVector<QZipReader::FileInfo> QZipReader::fileInfoList() const
 {
     d->scanFiles();
-    QList<QZipReader::FileInfo> files;
-    for (int i = 0; i < d->fileHeaders.size(); ++i) {
-        QZipReader::FileInfo fi;
-        d->fillFileInfo(i, fi);
-        files.append(fi);
-    }
+    QVector<FileInfo> files;
+    const int numFileHeaders = d->fileHeaders.size();
+    files.reserve(numFileHeaders);
+    for (int i = 0; i < numFileHeaders; ++i)
+        files.append(d->fillFileInfo(i));
     return files;
 
 }
@@ -945,10 +926,9 @@ int QZipReader::count() const
 QZipReader::FileInfo QZipReader::entryInfoAt(int index) const
 {
     d->scanFiles();
-    QZipReader::FileInfo fi;
     if (index >= 0 && index < d->fileHeaders.count())
-        d->fillFileInfo(index, fi);
-    return fi;
+        return d->fillFileInfo(index);
+    return QZipReader::FileInfo();
 }
 
 /*!
@@ -1044,8 +1024,8 @@ bool QZipReader::extractAll(const QString &destinationDir) const
     QDir baseDir(destinationDir);
 
     // create directories first
-    QList<FileInfo> allFiles = fileInfoList();
-    foreach (const FileInfo &fi, allFiles) {
+    const QVector<FileInfo> allFiles = fileInfoList();
+    for (const FileInfo &fi : allFiles) {
         const QString absPath = destinationDir + QDir::separator() + fi.filePath;
         if (fi.isDir) {
             if (!baseDir.mkpath(fi.filePath))
@@ -1056,7 +1036,7 @@ bool QZipReader::extractAll(const QString &destinationDir) const
     }
 
     // set up symlinks
-    foreach (const FileInfo &fi, allFiles) {
+    for (const FileInfo &fi : allFiles) {
         const QString absPath = destinationDir + QDir::separator() + fi.filePath;
         if (fi.isSymLink) {
             QString destination = QFile::decodeName(fileData(fi.filePath));
@@ -1074,7 +1054,7 @@ bool QZipReader::extractAll(const QString &destinationDir) const
         }
     }
 
-    foreach (const FileInfo &fi, allFiles) {
+    for (const FileInfo &fi : allFiles) {
         const QString absPath = destinationDir + QDir::separator() + fi.filePath;
         if (fi.isFile) {
             QFile f(absPath);
@@ -1141,9 +1121,8 @@ void QZipReader::close()
 QZipWriter::QZipWriter(const QString &fileName, QIODevice::OpenMode mode)
 {
     QScopedPointer<QFile> f(new QFile(fileName));
-    f->open(mode);
     QZipWriter::Status status;
-    if (f->error() == QFile::NoError)
+    if (f->open(mode) && f->error() == QFile::NoError)
         status = QZipWriter::NoError;
     else {
         if (f->error() == QFile::WriteError)

@@ -1,5 +1,6 @@
 TARGET = bearermonitor
 QT = core gui network widgets
+requires(qtConfig(treeview))
 
 HEADERS = sessionwidget.h \
           bearermonitor.h
@@ -12,8 +13,7 @@ FORMS = bearermonitor_240_320.ui \
         bearermonitor_640_480.ui \
         sessionwidget.ui
 
-win32:!wince: LIBS += -lws2_32
-wince: LIBS += -lws2
+win32:LIBS += -lws2_32
 
 CONFIG += console
 

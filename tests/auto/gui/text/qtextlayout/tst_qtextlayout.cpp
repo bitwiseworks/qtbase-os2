@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -59,13 +54,10 @@ class tst_QTextLayout : public QObject
 
 public:
     tst_QTextLayout();
-    virtual ~tst_QTextLayout();
 
-
-public slots:
+private slots:
     void init();
     void cleanup();
-private slots:
     void getSetCheck();
     void lineBreaking();
 #ifdef QT_BUILD_INTERNAL
@@ -142,6 +134,9 @@ private slots:
     void xToCursorForLigatures();
     void cursorInNonStopChars();
     void nbsp();
+    void nbspWithFormat();
+    void noModificationOfInputString();
+    void superscriptCrash_qtbug53911();
 
 private:
     QFont testFont;
@@ -199,10 +194,6 @@ tst_QTextLayout::tst_QTextLayout()
 #endif
 }
 
-tst_QTextLayout::~tst_QTextLayout()
-{
-}
-
 void tst_QTextLayout::init()
 {
     testFont = QFont();
@@ -212,7 +203,7 @@ void tst_QTextLayout::init()
     testFont.setPixelSize(TESTFONT_SIZE);
     testFont.setWeight(QFont::Normal);
 #ifdef QT_BUILD_INTERNAL
-    QCOMPARE(QFontMetrics(testFont).width('a'), testFont.pixelSize());
+    QCOMPARE(QFontMetrics(testFont).horizontalAdvance('a'), testFont.pixelSize());
 #endif
 }
 
@@ -1123,10 +1114,10 @@ void tst_QTextLayout::boundingRectTopLeft()
 void tst_QTextLayout::graphemeBoundaryForSurrogatePairs()
 {
     QString txt;
-    txt.append("a");
+    txt.append(QLatin1Char('a'));
     txt.append(0xd87e);
     txt.append(0xdc25);
-    txt.append("b");
+    txt.append(QLatin1Char('b'));
     QTextLayout layout(txt);
     QTextEngine *engine = layout.engine();
     const QCharAttributes *attrs = engine->attributes();
@@ -1321,7 +1312,7 @@ void tst_QTextLayout::testDefaultTabs()
     QCOMPARE(line.cursorToX(31), 480.);
 
     QTextOption option = layout.textOption();
-    option.setTabStop(90);
+    option.setTabStopDistance(90);
     layout.setTextOption(option);
     layout.beginLayout();
     line = layout.createLine();
@@ -1360,7 +1351,7 @@ void tst_QTextLayout::testTabs()
 
     layout.setCacheEnabled(true);
     QTextOption option = layout.textOption();
-    option.setTabStop(150);
+    option.setTabStopDistance(150);
     layout.setTextOption(option);
 
     layout.beginLayout();
@@ -1675,6 +1666,7 @@ void tst_QTextLayout::testTabDPIScale()
             case QPaintDevice::PdmPhysicalDpiY:
                 return 72;
             case QPaintDevice::PdmDevicePixelRatio:
+            case QPaintDevice::PdmDevicePixelRatioScaled:
                 ; // fall through
             }
             return 0;
@@ -1744,7 +1736,7 @@ void tst_QTextLayout::capitalization_allUpperCase()
     QTextEngine *engine = layout.engine();
     engine->itemize();
     QCOMPARE(engine->layoutData->items.count(), 1);
-    QVERIFY(engine->layoutData->items.at(0).analysis.flags == QScriptAnalysis::Uppercase);
+    QCOMPARE(engine->layoutData->items.at(0).analysis.flags, ushort(QScriptAnalysis::Uppercase));
 }
 
 void tst_QTextLayout::capitalization_allUpperCase_newline()
@@ -1764,9 +1756,9 @@ void tst_QTextLayout::capitalization_allUpperCase_newline()
     QTextEngine *engine = layout.engine();
     engine->itemize();
     QCOMPARE(engine->layoutData->items.count(), 3);
-    QVERIFY(engine->layoutData->items.at(0).analysis.flags == QScriptAnalysis::Uppercase);
-    QVERIFY(engine->layoutData->items.at(1).analysis.flags == QScriptAnalysis::LineOrParagraphSeparator);
-    QVERIFY(engine->layoutData->items.at(2).analysis.flags == QScriptAnalysis::Uppercase);
+    QCOMPARE(engine->layoutData->items.at(0).analysis.flags, ushort(QScriptAnalysis::Uppercase));
+    QCOMPARE(engine->layoutData->items.at(1).analysis.flags, ushort(QScriptAnalysis::LineOrParagraphSeparator));
+    QCOMPARE(engine->layoutData->items.at(2).analysis.flags, ushort(QScriptAnalysis::Uppercase));
 }
 
 void tst_QTextLayout::capitalization_allLowerCase()
@@ -1782,7 +1774,7 @@ void tst_QTextLayout::capitalization_allLowerCase()
     QTextEngine *engine = layout.engine();
     engine->itemize();
     QCOMPARE(engine->layoutData->items.count(), 1);
-    QVERIFY(engine->layoutData->items.at(0).analysis.flags == QScriptAnalysis::Lowercase);
+    QCOMPARE(engine->layoutData->items.at(0).analysis.flags, ushort(QScriptAnalysis::Lowercase));
 }
 
 void tst_QTextLayout::capitalization_smallCaps()
@@ -1798,8 +1790,8 @@ void tst_QTextLayout::capitalization_smallCaps()
     QTextEngine *engine = layout.engine();
     engine->itemize();
     QCOMPARE(engine->layoutData->items.count(), 2);
-    QVERIFY(engine->layoutData->items.at(0).analysis.flags == QScriptAnalysis::None);
-    QVERIFY(engine->layoutData->items.at(1).analysis.flags == QScriptAnalysis::SmallCaps);
+    QCOMPARE(engine->layoutData->items.at(0).analysis.flags, ushort(QScriptAnalysis::None));
+    QCOMPARE(engine->layoutData->items.at(1).analysis.flags, ushort(QScriptAnalysis::SmallCaps));
 }
 
 void tst_QTextLayout::capitalization_capitalize()
@@ -1815,11 +1807,11 @@ void tst_QTextLayout::capitalization_capitalize()
     QTextEngine *engine = layout.engine();
     engine->itemize();
     QCOMPARE(engine->layoutData->items.count(), 5);
-    QVERIFY(engine->layoutData->items.at(0).analysis.flags == QScriptAnalysis::Uppercase);
-    QVERIFY(engine->layoutData->items.at(1).analysis.flags == QScriptAnalysis::None);
-    QVERIFY(engine->layoutData->items.at(2).analysis.flags == QScriptAnalysis::Tab);
-    QVERIFY(engine->layoutData->items.at(3).analysis.flags == QScriptAnalysis::Uppercase);
-    QVERIFY(engine->layoutData->items.at(4).analysis.flags == QScriptAnalysis::None);
+    QCOMPARE(engine->layoutData->items.at(0).analysis.flags, ushort(QScriptAnalysis::Uppercase));
+    QCOMPARE(engine->layoutData->items.at(1).analysis.flags, ushort(QScriptAnalysis::None));
+    QCOMPARE(engine->layoutData->items.at(2).analysis.flags, ushort(QScriptAnalysis::Tab));
+    QCOMPARE(engine->layoutData->items.at(3).analysis.flags, ushort(QScriptAnalysis::Uppercase));
+    QCOMPARE(engine->layoutData->items.at(4).analysis.flags, ushort(QScriptAnalysis::None));
 }
 
 void tst_QTextLayout::longText()
@@ -1984,7 +1976,12 @@ void tst_QTextLayout::textWidthVsWIdth()
                        "./libs -I/home/ettrich/dev/creator/tools -I../../plugins -I../../shared/scriptwrapper -I../../libs/3rdparty/botan/build -Idialogs -Iactionmanager -Ieditorma"
                        "nager -Iprogressmanager -Iscriptmanager -I.moc/debug-shared -I.uic -o .obj/debug-shared/sidebar.o sidebar.cpp"));
 
-    // textWidth includes right bearing, but it should never be LARGER than width if there is space for at least one character
+    // The naturalTextWidth includes right bearing, but should never be LARGER than line width if
+    // there is space for at least one character. Unfortunately that assumption may not hold if the
+    // font engine fails to report an accurate minimum right bearing for the font, eg. when the
+    // minimum right bearing reported by the font engine doesn't cover all the glyphs in the font.
+    // The result is that this test may fail in some cases. We should fix this by running the test
+    // with a font that we know have no suprising right bearings. See qtextlayout.cpp for details.
     for (int width = 100; width < 1000; ++width) {
         layout.beginLayout();
         QTextLine line = layout.createLine();
@@ -2096,8 +2093,8 @@ void tst_QTextLayout::cursorInNonStopChars()
     QTextLine line = layout.createLine();
     layout.endLayout();
 
-    QVERIFY(line.cursorToX(1) == line.cursorToX(3));
-    QVERIFY(line.cursorToX(2) == line.cursorToX(3));
+    QCOMPARE(line.cursorToX(1), line.cursorToX(3));
+    QCOMPARE(line.cursorToX(2), line.cursorToX(3));
 }
 
 void tst_QTextLayout::justifyTrailingSpaces()
@@ -2168,6 +2165,130 @@ void tst_QTextLayout::layoutWithCustomTabStops()
     qreal longWidth = textLayout->maximumWidth();
 
     QVERIFY(longWidth > shortWidth);
+}
+
+void tst_QTextLayout::noModificationOfInputString()
+{
+    QString s = QString(QChar(QChar::LineSeparator));
+    {
+        QTextLayout layout;
+        layout.setText(s);
+
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        QCOMPARE(s.size(), 1);
+        QCOMPARE(s.at(0), QChar(QChar::LineSeparator));
+    }
+
+    {
+        QTextLayout layout;
+        layout.setText(s);
+
+        QTextOption option;
+        option.setFlags(QTextOption::ShowLineAndParagraphSeparators);
+        layout.setTextOption(option);
+
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        QCOMPARE(s.size(), 1);
+        QCOMPARE(s.at(0), QChar(QChar::LineSeparator));
+    }
+}
+
+void tst_QTextLayout::superscriptCrash_qtbug53911()
+{
+    static int fontSizes = 64;
+    static QString layoutText = "THIS IS SOME EXAMPLE TEXT THIS IS SOME EXAMPLE TEXT";
+
+    QList<QTextLayout*> textLayouts;
+    for (int i = 0; i < fontSizes; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            QTextLayout* newTextLayout = new QTextLayout();
+            newTextLayout->setText(layoutText);
+            QList<QTextLayout::FormatRange> formatRanges;
+            QTextLayout::FormatRange formatRange;
+
+            formatRange.format.setFont(QFont());
+            formatRange.format.setFontPointSize(i + 5);
+
+            switch (j) {
+            case 0:
+                formatRange.format.setFontWeight(QFont::Normal);
+                formatRange.format.setFontItalic(false);
+                break;
+            case 1:
+                formatRange.format.setFontWeight(QFont::Bold);
+                formatRange.format.setFontItalic(false);
+                break;
+            case 2:
+                formatRange.format.setFontWeight(QFont::Bold);
+                formatRange.format.setFontItalic(true);
+                break;
+            case 3:
+                formatRange.format.setFontWeight(QFont::Normal);
+                formatRange.format.setFontItalic(true);
+                break;
+            }
+
+            formatRange.format.setVerticalAlignment( QTextCharFormat::AlignSuperScript);
+
+            formatRange.start = 0;
+            formatRange.length = layoutText.size();
+            formatRanges << formatRange;
+            newTextLayout->setAdditionalFormats(formatRanges);
+
+            textLayouts.push_front(newTextLayout);
+        }
+    }
+
+    // This loop would crash before fix for QTBUG-53911
+    foreach (QTextLayout *textLayout, textLayouts) {
+        textLayout->beginLayout();
+        while (textLayout->createLine().isValid());
+        textLayout->endLayout();
+    }
+
+    qDeleteAll(textLayouts);
+}
+
+void tst_QTextLayout::nbspWithFormat()
+{
+    QString s1 = QLatin1String("ABCDEF ");
+    QString s2 = QLatin1String("GHI");
+    QChar nbsp(QChar::Nbsp);
+    QString s3 = QLatin1String("JKLMNOPQRSTUVWXYZ");
+
+    QTextLayout layout;
+    layout.setText(s1 + s2 + nbsp + s3);
+
+    QTextLayout::FormatRange formatRange;
+    formatRange.start = s1.length() + s2.length();
+    formatRange.length = 1;
+    formatRange.format.setFontUnderline(true);
+
+    QList<QTextLayout::FormatRange> overrides;
+    overrides.append(formatRange);
+
+    layout.setAdditionalFormats(overrides);
+
+    layout.beginLayout();
+    forever {
+        QTextLine line = layout.createLine();
+        if (!line.isValid())
+            break;
+        line.setLineWidth(1);
+    }
+    layout.endLayout();
+
+    QCOMPARE(layout.lineCount(), 2);
+    QCOMPARE(layout.lineAt(0).textStart(), 0);
+    QCOMPARE(layout.lineAt(0).textLength(), s1.length());
+    QCOMPARE(layout.lineAt(1).textStart(), s1.length());
+    QCOMPARE(layout.lineAt(1).textLength(), s2.length() + 1 + s3.length());
 }
 
 QTEST_MAIN(tst_QTextLayout)

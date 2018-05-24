@@ -2,3 +2,7 @@
 *
 [passwordAuth]
 *
+[serverTest]
+windows
+[downloadBigFile]
+windows

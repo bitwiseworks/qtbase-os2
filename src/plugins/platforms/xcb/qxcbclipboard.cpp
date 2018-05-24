@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -84,7 +90,7 @@ public:
     }
 
 protected:
-    QStringList formats_sys() const Q_DECL_OVERRIDE
+    QStringList formats_sys() const override
     {
         if (isEmpty())
             return QStringList();
@@ -114,13 +120,13 @@ protected:
         return formatList;
     }
 
-    bool hasFormat_sys(const QString &format) const Q_DECL_OVERRIDE
+    bool hasFormat_sys(const QString &format) const override
     {
         QStringList list = formats();
         return list.contains(format);
     }
 
-    QVariant retrieveData_sys(const QString &fmt, QVariant::Type requestedType) const Q_DECL_OVERRIDE
+    QVariant retrieveData_sys(const QString &fmt, QVariant::Type requestedType) const override
     {
         if (fmt.isEmpty() || isEmpty())
             return QByteArray();
@@ -232,7 +238,7 @@ public:
     }
 
 protected:
-    void timerEvent(QTimerEvent *ev) Q_DECL_OVERRIDE
+    void timerEvent(QTimerEvent *ev) override
     {
         if (ev->timerId() == abort_timer) {
             // this can happen when the X client we are sending data
@@ -261,54 +267,33 @@ const int QXcbClipboard::clipboard_timeout = 5000;
 
 QXcbClipboard::QXcbClipboard(QXcbConnection *c)
     : QXcbObject(c), QPlatformClipboard()
-    , m_requestor(XCB_NONE)
-    , m_owner(XCB_NONE)
-    , m_incr_active(false)
-    , m_clipboard_closing(false)
-    , m_incr_receive_time(0)
 {
     Q_ASSERT(QClipboard::Clipboard == 0);
     Q_ASSERT(QClipboard::Selection == 1);
-    m_xClipboard[QClipboard::Clipboard] = 0;
-    m_xClipboard[QClipboard::Selection] = 0;
     m_clientClipboard[QClipboard::Clipboard] = 0;
     m_clientClipboard[QClipboard::Selection] = 0;
     m_timestamp[QClipboard::Clipboard] = XCB_CURRENT_TIME;
     m_timestamp[QClipboard::Selection] = XCB_CURRENT_TIME;
+    m_owner = connection()->getQtSelectionOwner();
 
-    QXcbScreen *platformScreen = screen();
-
-    int x = 0, y = 0, w = 3, h = 3;
-
-    m_owner = xcb_generate_id(xcb_connection());
-    Q_XCB_CALL(xcb_create_window(xcb_connection(),
-                                 XCB_COPY_FROM_PARENT,            // depth -- same as root
-                                 m_owner,                        // window id
-                                 platformScreen->screen()->root,                   // parent window id
-                                 x, y, w, h,
-                                 0,                               // border width
-                                 XCB_WINDOW_CLASS_INPUT_OUTPUT,   // window class
-                                 platformScreen->screen()->root_visual, // visual
-                                 0,                               // value mask
-                                 0));                             // value list
 #ifndef QT_NO_DEBUG
     QByteArray ba("Qt clipboard window");
-    Q_XCB_CALL(xcb_change_property(xcb_connection(),
-                                   XCB_PROP_MODE_REPLACE,
-                                   m_owner,
-                                   atom(QXcbAtom::_NET_WM_NAME),
-                                   atom(QXcbAtom::UTF8_STRING),
-                                   8,
-                                   ba.length(),
-                                   ba.constData()));
+    xcb_change_property(xcb_connection(),
+                        XCB_PROP_MODE_REPLACE,
+                        m_owner,
+                        atom(QXcbAtom::_NET_WM_NAME),
+                        atom(QXcbAtom::UTF8_STRING),
+                        8,
+                        ba.length(),
+                        ba.constData());
 #endif
 
     if (connection()->hasXFixes()) {
         const uint32_t mask = XCB_XFIXES_SELECTION_EVENT_MASK_SET_SELECTION_OWNER |
                 XCB_XFIXES_SELECTION_EVENT_MASK_SELECTION_WINDOW_DESTROY |
                 XCB_XFIXES_SELECTION_EVENT_MASK_SELECTION_CLIENT_CLOSE;
-        Q_XCB_CALL(xcb_xfixes_select_selection_input_checked(xcb_connection(), m_owner, XCB_ATOM_PRIMARY, mask));
-        Q_XCB_CALL(xcb_xfixes_select_selection_input_checked(xcb_connection(), m_owner, atom(QXcbAtom::CLIPBOARD), mask));
+        xcb_xfixes_select_selection_input_checked(xcb_connection(), m_owner, XCB_ATOM_PRIMARY, mask);
+        xcb_xfixes_select_selection_input_checked(xcb_connection(), m_owner, atom(QXcbAtom::CLIPBOARD), mask);
     }
 }
 
@@ -320,8 +305,7 @@ QXcbClipboard::~QXcbClipboard()
             m_timestamp[QClipboard::Selection] != XCB_CURRENT_TIME) {
 
         // First we check if there is a clipboard manager.
-        xcb_get_selection_owner_cookie_t cookie = xcb_get_selection_owner(xcb_connection(), atom(QXcbAtom::CLIPBOARD_MANAGER));
-        xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(xcb_connection(), cookie, 0);
+        auto reply = Q_XCB_REPLY(xcb_get_selection_owner, xcb_connection(), atom(QXcbAtom::CLIPBOARD_MANAGER));
         if (reply && reply->owner != XCB_NONE) {
             // we delete the property so the manager saves all TARGETS.
             xcb_delete_property(xcb_connection(), m_owner, atom(QXcbAtom::_QT_SELECTION));
@@ -335,8 +319,11 @@ QXcbClipboard::~QXcbClipboard()
                          "clipboard manager in a reasonable time");
             }
         }
-        free(reply);
     }
+
+    if (m_clientClipboard[QClipboard::Clipboard] != m_clientClipboard[QClipboard::Selection])
+        delete m_clientClipboard[QClipboard::Clipboard];
+    delete m_clientClipboard[QClipboard::Selection];
 }
 
 void QXcbClipboard::incrTransactionPeeker(xcb_generic_event_t *ge, bool &accepted)
@@ -353,13 +340,7 @@ void QXcbClipboard::incrTransactionPeeker(xcb_generic_event_t *ge, bool &accepte
 
 xcb_window_t QXcbClipboard::getSelectionOwner(xcb_atom_t atom) const
 {
-    xcb_connection_t *c = xcb_connection();
-    xcb_get_selection_owner_cookie_t cookie = xcb_get_selection_owner(c, atom);
-    xcb_get_selection_owner_reply_t *reply;
-    reply = xcb_get_selection_owner_reply(c, cookie, 0);
-    xcb_window_t win = reply->owner;
-    free(reply);
-    return win;
+    return connection()->getSelectionOwner(atom);
 }
 
 xcb_atom_t QXcbClipboard::atomForMode(QClipboard::Mode mode) const
@@ -392,9 +373,9 @@ QMimeData * QXcbClipboard::mimeData(QClipboard::Mode mode)
         return m_clientClipboard[mode];
     } else {
         if (!m_xClipboard[mode])
-            m_xClipboard[mode] = new QXcbClipboardMime(mode, this);
+            m_xClipboard[mode].reset(new QXcbClipboardMime(mode, this));
 
-        return m_xClipboard[mode];
+        return m_xClipboard[mode].data();
     }
 }
 
@@ -476,26 +457,26 @@ xcb_window_t QXcbClipboard::requestor() const
         QXcbClipboard *that = const_cast<QXcbClipboard *>(this);
 
         xcb_window_t window = xcb_generate_id(xcb_connection());
-        Q_XCB_CALL(xcb_create_window(xcb_connection(),
-                                     XCB_COPY_FROM_PARENT,            // depth -- same as root
-                                     window,                        // window id
-                                     platformScreen->screen()->root,                   // parent window id
-                                     x, y, w, h,
-                                     0,                               // border width
-                                     XCB_WINDOW_CLASS_INPUT_OUTPUT,   // window class
-                                     platformScreen->screen()->root_visual, // visual
-                                     0,                               // value mask
-                                     0));                             // value list
+        xcb_create_window(xcb_connection(),
+                          XCB_COPY_FROM_PARENT,                  // depth -- same as root
+                          window,                                // window id
+                          platformScreen->screen()->root,        // parent window id
+                          x, y, w, h,
+                          0,                                     // border width
+                          XCB_WINDOW_CLASS_INPUT_OUTPUT,         // window class
+                          platformScreen->screen()->root_visual, // visual
+                          0,                                     // value mask
+                          0);                                    // value list
 #ifndef QT_NO_DEBUG
         QByteArray ba("Qt clipboard requestor window");
-        Q_XCB_CALL(xcb_change_property(xcb_connection(),
-                                       XCB_PROP_MODE_REPLACE,
-                                       window,
-                                       atom(QXcbAtom::_NET_WM_NAME),
-                                       atom(QXcbAtom::UTF8_STRING),
-                                       8,
-                                       ba.length(),
-                                       ba.constData()));
+        xcb_change_property(xcb_connection(),
+                            XCB_PROP_MODE_REPLACE,
+                            window,
+                            atom(QXcbAtom::_NET_WM_NAME),
+                            atom(QXcbAtom::UTF8_STRING),
+                            8,
+                            ba.length(),
+                            ba.constData());
 #endif
 
         uint32_t mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
@@ -619,7 +600,7 @@ void QXcbClipboard::handleSelectionRequest(xcb_selection_request_event_t *req)
         return;
     }
 
-    xcb_selection_notify_event_t event;
+    Q_DECLARE_XCB_EVENT(event, xcb_selection_notify_event_t);
     event.response_type = XCB_SELECTION_NOTIFY;
     event.requestor = req->requestor;
     event.selection = req->selection;
@@ -741,10 +722,12 @@ void QXcbClipboard::handleXFixesSelectionRequest(xcb_xfixes_selection_notify_eve
     if (mode > QClipboard::Selection)
         return;
 
-    // here we care only about the xfixes events that come from non Qt processes
-    if (event->owner != XCB_NONE && event->owner != owner()) {
+    // Note1: Here we care only about the xfixes events that come from other processes.
+    // Note2: If the QClipboard::clear() is issued, event->owner is XCB_NONE,
+    // so we check selection_timestamp to not handle our own QClipboard::clear().
+    if (event->owner != owner() && event->selection_timestamp > m_timestamp[mode]) {
         if (!m_xClipboard[mode]) {
-            m_xClipboard[mode] = new QXcbClipboardMime(mode, this);
+            m_xClipboard[mode].reset(new QXcbClipboardMime(mode, this));
         } else {
             m_xClipboard[mode]->reset();
         }
@@ -774,17 +757,14 @@ bool QXcbClipboard::clipboardReadProperty(xcb_window_t win, xcb_atom_t property,
         format = &dummy_format;
 
     // Don't read anything, just get the size of the property data
-    xcb_get_property_cookie_t cookie = Q_XCB_CALL(xcb_get_property(xcb_connection(), false, win, property, XCB_GET_PROPERTY_TYPE_ANY, 0, 0));
-    xcb_get_property_reply_t *reply = xcb_get_property_reply(xcb_connection(), cookie, 0);
+    auto reply = Q_XCB_REPLY(xcb_get_property, xcb_connection(), false, win, property, XCB_GET_PROPERTY_TYPE_ANY, 0, 0);
     if (!reply || reply->type == XCB_NONE) {
-        free(reply);
         buffer->resize(0);
         return false;
     }
     *type = reply->type;
     *format = reply->format;
     bytes_left = reply->bytes_after;
-    free(reply);
 
     int  offset = 0, buffer_offset = 0;
 
@@ -799,17 +779,15 @@ bool QXcbClipboard::clipboardReadProperty(xcb_window_t win, xcb_atom_t property,
         while (bytes_left) {
             // more to read...
 
-            xcb_get_property_cookie_t cookie = Q_XCB_CALL(xcb_get_property(xcb_connection(), false, win, property, XCB_GET_PROPERTY_TYPE_ANY, offset, maxsize/4));
-            reply = xcb_get_property_reply(xcb_connection(), cookie, 0);
-            if (!reply || reply->type == XCB_NONE) {
-                free(reply);
+            reply = Q_XCB_REPLY(xcb_get_property, xcb_connection(), false, win, property, XCB_GET_PROPERTY_TYPE_ANY, offset, maxsize/4);
+            if (!reply || reply->type == XCB_NONE)
                 break;
-            }
+
             *type = reply->type;
             *format = reply->format;
             bytes_left = reply->bytes_after;
-            char *data = (char *)xcb_get_property_value(reply);
-            int length = xcb_get_property_value_length(reply);
+            char *data = (char *)xcb_get_property_value(reply.get());
+            int length = xcb_get_property_value_length(reply.get());
 
             // Here we check if we get a buffer overflow and tries to
             // recover -- this shouldn't normally happen, but it doesn't
@@ -829,7 +807,6 @@ bool QXcbClipboard::clipboardReadProperty(xcb_window_t win, xcb_atom_t property,
                 // offset is specified in 32-bit multiples
                 offset += length / 4;
             }
-            free(reply);
         }
     }
 
@@ -906,13 +883,9 @@ xcb_generic_event_t *QXcbClipboard::waitForClipboardEvent(xcb_window_t win, int 
             return e;
 
         if (checkManager) {
-            xcb_get_selection_owner_cookie_t cookie = xcb_get_selection_owner(xcb_connection(), atom(QXcbAtom::CLIPBOARD_MANAGER));
-            xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(xcb_connection(), cookie, 0);
-            if (!reply || reply->owner == XCB_NONE) {
-                free(reply);
+            auto reply = Q_XCB_REPLY(xcb_get_selection_owner, xcb_connection(), atom(QXcbAtom::CLIPBOARD_MANAGER));
+            if (!reply || reply->owner == XCB_NONE)
                 return 0;
-            }
-            free(reply);
         }
 
         // process other clipboard events, since someone is probably requesting data from us
@@ -926,10 +899,7 @@ xcb_generic_event_t *QXcbClipboard::waitForClipboardEvent(xcb_window_t win, int 
         connection()->flush();
 
         // sleep 50 ms, so we don't use up CPU cycles all the time.
-        struct timeval usleep_tv;
-        usleep_tv.tv_sec = 0;
-        usleep_tv.tv_usec = 50000;
-        select(0, 0, 0, 0, &usleep_tv);
+        QThread::msleep(50);
     } while (timer.elapsed() < timeout);
 
     return 0;

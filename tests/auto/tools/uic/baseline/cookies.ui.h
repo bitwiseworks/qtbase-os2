@@ -10,9 +10,7 @@
 #define COOKIES_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
@@ -93,9 +91,9 @@ public:
 
     void retranslateUi(QDialog *CookiesDialog)
     {
-        CookiesDialog->setWindowTitle(QApplication::translate("CookiesDialog", "Cookies", 0));
-        removeButton->setText(QApplication::translate("CookiesDialog", "&Remove", 0));
-        removeAllButton->setText(QApplication::translate("CookiesDialog", "Remove &All Cookies", 0));
+        CookiesDialog->setWindowTitle(QApplication::translate("CookiesDialog", "Cookies", nullptr));
+        removeButton->setText(QApplication::translate("CookiesDialog", "&Remove", nullptr));
+        removeAllButton->setText(QApplication::translate("CookiesDialog", "Remove &All Cookies", nullptr));
     } // retranslateUi
 
 };

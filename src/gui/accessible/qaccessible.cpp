@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,11 +52,14 @@
 #include <qpa/qplatformintegration.h>
 
 #include <QtCore/qdebug.h>
+#include <QtCore/qloggingcategory.h>
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qhash.h>
 #include <private/qfactoryloader_p.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcAccessibilityCore, "qt.accessibility.core");
 
 /*!
     \class QAccessible
@@ -85,7 +94,7 @@ QT_BEGIN_NAMESPACE
     to replace or extend the default behavior of the static functions
     in QAccessible.
 
-    Qt supports Microsoft Active Accessibility (MSAA), OS X
+    Qt supports Microsoft Active Accessibility (MSAA), \macos
     Accessibility, and the Unix/X11 AT-SPI standard. Other backends
     can be supported using QAccessibleBridge.
 
@@ -442,31 +451,30 @@ QT_BEGIN_NAMESPACE
     \sa QAccessibleInterface::interface_cast(), QAccessibleTextInterface, QAccessibleValueInterface, QAccessibleActionInterface, QAccessibleTableInterface, QAccessibleTableCellInterface
 */
 
-/*!
-    \fn QAccessibleInterface::~QAccessibleInterface()
+#ifndef QT_NO_ACCESSIBILITY
 
-    Destroys the object.
+/*!
+    Destroys the QAccessibleInterface.
 */
+QAccessibleInterface::~QAccessibleInterface()
+{
+}
 
 /*!
     \typedef QAccessible::Id
-    \relates QAccessible
 
     Synonym for unsigned, used by the QAccessibleInterface cache.
 */
 
-#ifndef QT_NO_ACCESSIBILITY
 
 /* accessible widgets plugin discovery stuff */
-#ifndef QT_NO_LIBRARY
 Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
     (QAccessibleFactoryInterface_iid, QLatin1String("/accessible")))
-#endif
+typedef QHash<QString, QAccessiblePlugin*> QAccessiblePluginsHash;
+Q_GLOBAL_STATIC(QAccessiblePluginsHash, qAccessiblePlugins)
 
 // FIXME turn this into one global static struct
 Q_GLOBAL_STATIC(QList<QAccessible::InterfaceFactory>, qAccessibleFactories)
-typedef QHash<QString, QAccessiblePlugin*> QAccessiblePluginsHash;
-Q_GLOBAL_STATIC(QAccessiblePluginsHash, qAccessiblePlugins)
 Q_GLOBAL_STATIC(QList<QAccessible::ActivationObserver *>, qAccessibleActivationObservers)
 
 QAccessible::UpdateHandler QAccessible::updateHandler = 0;
@@ -608,6 +616,11 @@ QAccessible::RootObjectHandler QAccessible::installRootObjectHandler(RootObjectH
     \sa installActivationObserver()
 */
 
+QAccessible::ActivationObserver::~ActivationObserver()
+{
+    // must be empty until ### Qt 6
+}
+
 /*!
     \internal
 
@@ -679,7 +692,6 @@ QAccessibleInterface *QAccessible::queryAccessibleInterface(QObject *object)
                 return iface;
             }
         }
-#ifndef QT_NO_LIBRARY
         // Find a QAccessiblePlugin (factory) for the class name. If there's
         // no entry in the cache try to create it using the plugin loader.
         if (!qAccessiblePlugins()->contains(cn)) {
@@ -701,7 +713,6 @@ QAccessibleInterface *QAccessible::queryAccessibleInterface(QObject *object)
             }
             return result;
         }
-#endif
         mo = mo->superClass();
     }
 
@@ -750,7 +761,7 @@ void QAccessible::deleteAccessibleInterface(Id id)
 */
 QAccessible::Id QAccessible::uniqueId(QAccessibleInterface *iface)
 {
-    Id id = QAccessibleCache::instance()->idToInterface.key(iface);
+    Id id = QAccessibleCache::instance()->idForInterface(iface);
     if (!id)
         id = registerAccessibleInterface(iface);
     return id;
@@ -763,7 +774,7 @@ QAccessible::Id QAccessible::uniqueId(QAccessibleInterface *iface)
 */
 QAccessibleInterface *QAccessible::accessibleInterface(Id id)
 {
-    return QAccessibleCache::instance()->idToInterface.value(id);
+    return QAccessibleCache::instance()->interfaceForId(id);
 }
 
 
@@ -847,18 +858,17 @@ void QAccessible::updateAccessibility(QAccessibleEvent *event)
     // during construction of widgets. If you see cases where the
     // cache seems wrong, this call is "to blame", but the code that
     // caches dynamic data should be updated to handle change events.
-    if (!isActive() || !event->accessibleInterface())
-        return;
+    QAccessibleInterface *iface = event->accessibleInterface();
+    if (isActive() && iface) {
+        if (event->type() == QAccessible::TableModelChanged) {
+            if (iface->tableInterface())
+                iface->tableInterface()->modelChange(static_cast<QAccessibleTableModelChangeEvent*>(event));
+        }
 
-    if (event->type() == QAccessible::TableModelChanged) {
-        QAccessibleInterface *iface = event->accessibleInterface();
-        if (iface && iface->tableInterface())
-            iface->tableInterface()->modelChange(static_cast<QAccessibleTableModelChangeEvent*>(event));
-    }
-
-    if (updateHandler) {
-        updateHandler(event);
-        return;
+        if (updateHandler) {
+            updateHandler(event);
+            return;
+        }
     }
 
     if (QPlatformAccessibility *pfAccessibility = platformAccessibility())
@@ -1254,10 +1264,6 @@ QColor QAccessibleInterface::backgroundColor() const
     return QColor();
 }
 
-QAccessibleInterface::~QAccessibleInterface()
-{
-}
-
 /*!
     \fn QAccessibleTextInterface *QAccessibleInterface::textInterface()
 */
@@ -1329,9 +1335,13 @@ QAccessibleInterface::~QAccessibleInterface()
     the overload taking a \l QObject parameter as it might be cheaper.
 */
 
-/*! \fn QAccessibleEvent::~QAccessibleEvent()
+/*!
   Destroys the event.
 */
+QAccessibleEvent::~QAccessibleEvent()
+{
+    // must be empty until ### Qt 6
+}
 
 /*! \fn QAccessible::Event QAccessibleEvent::type() const
   Returns the event type.
@@ -1363,8 +1373,13 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
     QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_object);
     if (!iface)
         return 0;
-    if (m_child != -1)
+    if (m_child != -1) {
         iface = iface->child(m_child);
+        if (Q_UNLIKELY(!iface)) {
+            qCWarning(lcAccessibilityCore) << "Invalid child in QAccessibleEvent:" << m_object << "child:" << m_child;
+            return 0;
+        }
+    }
     return QAccessible::uniqueId(iface);
 }
 
@@ -1400,6 +1415,13 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Returns the new value of the accessible object of this event.
 */
+/*!
+    \internal
+*/
+QAccessibleValueChangeEvent::~QAccessibleValueChangeEvent()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \class QAccessibleStateChangeEvent
@@ -1437,7 +1459,13 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
     other hand tells about the change and has focused set to \c true since
     the focus state is changed from \c true to \c false.
 */
-
+/*!
+    \internal
+*/
+QAccessibleStateChangeEvent::~QAccessibleStateChangeEvent()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \class QAccessibleTableModelChangeEvent
@@ -1512,7 +1540,14 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
     change type \a changeType.
 */
 /*!
-   \class QAccessibleTextCursorEvent
+    \internal
+*/
+QAccessibleTableModelChangeEvent::~QAccessibleTableModelChangeEvent()
+{
+    // must be empty until ### Qt 6
+}
+/*!
+    \class QAccessibleTextCursorEvent
     \ingroup accessibility
     \inmodule QtGui
 
@@ -1533,9 +1568,17 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Sets the cursor \a position for this event.
 */
+/*!
+    \internal
+*/
+QAccessibleTextCursorEvent::~QAccessibleTextCursorEvent()
+{
+    // must be empty until ### Qt 6
+}
+
 
 /*!
-    \fn QAccessibleTextCursorEvent(QAccessibleInterface *iface, int cursorPos)
+    \fn QAccessibleTextCursorEvent::QAccessibleTextCursorEvent(QAccessibleInterface *iface, int cursorPos)
 
     Create a new QAccessibleTextCursorEvent for \a iface,
     The \a cursorPos is the new cursor position.
@@ -1566,6 +1609,14 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Returns the text that has been inserted.
 */
+/*!
+    \internal
+*/
+QAccessibleTextInsertEvent::~QAccessibleTextInsertEvent()
+{
+    // must be empty until ### Qt 6
+}
+
 
 /*!
     \class QAccessibleTextRemoveEvent
@@ -1601,6 +1652,14 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Returns the text that has been removed.
 */
+/*!
+    \internal
+*/
+QAccessibleTextRemoveEvent::~QAccessibleTextRemoveEvent()
+{
+    // must be empty until ### Qt 6
+}
+
 /*!
    \fn QAccessibleTextSelectionEvent::QAccessibleTextSelectionEvent(QAccessibleInterface *iface, int start, int end)
 
@@ -1655,6 +1714,14 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Returns the removed text.
 */
+/*!
+    \internal
+*/
+QAccessibleTextUpdateEvent::~QAccessibleTextUpdateEvent()
+{
+    // must be empty until ### Qt 6
+}
+
 
 /*!
     \class QAccessibleTextSelectionEvent
@@ -1682,12 +1749,18 @@ QAccessible::Id QAccessibleEvent::uniqueId() const
 
     Sets the selection for this event from position \a start to \a end.
 */
+/*!
+    \internal
+*/
+QAccessibleTextSelectionEvent::~QAccessibleTextSelectionEvent()
+{
+    // must be empty until ### Qt 6
+}
 
 
 
 /*!
     Returns the QAccessibleInterface associated with the event.
-    The caller of this function takes ownership of the returned interface.
 */
 QAccessibleInterface *QAccessibleEvent::accessibleInterface() const
 {
@@ -1695,22 +1768,15 @@ QAccessibleInterface *QAccessibleEvent::accessibleInterface() const
         return QAccessible::accessibleInterface(m_uniqueId);
 
     QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_object);
-    if (!iface || !iface->isValid()) {
-        static bool hasWarned = false;
-        if (!iface && !hasWarned) {
-            qWarning() << "Problem creating accessible interface for: " << m_object << endl
-                       << "Make sure to deploy Qt with accessibility plugins.";
-            hasWarned = true;
-        }
+    if (!iface || !iface->isValid())
         return 0;
-    }
 
     if (m_child >= 0) {
         QAccessibleInterface *child = iface->child(m_child);
         if (child) {
             iface = child;
         } else {
-            qWarning() << "Cannot creat accessible child interface for object: " << m_object << " index: " << m_child;
+            qCWarning(lcAccessibilityCore) << "Cannot create accessible child interface for object: " << m_object << " index: " << m_child;
         }
     }
     return iface;
@@ -1920,10 +1986,13 @@ QDebug operator<<(QDebug d, const QAccessibleEvent &ev)
 */
 
 /*!
-    \fn QAccessibleTextInterface::~QAccessibleTextInterface()
 
     Destroys the QAccessibleTextInterface.
 */
+QAccessibleTextInterface::~QAccessibleTextInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn void QAccessibleTextInterface::addSelection(int startOffset, int endOffset)
@@ -2306,10 +2375,13 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
-    \fn QAccessibleEditableTextInterface::~QAccessibleEditableTextInterface()
 
     Destroys the QAccessibleEditableTextInterface.
 */
+QAccessibleEditableTextInterface::~QAccessibleEditableTextInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn void QAccessibleEditableTextInterface::deleteText(int startOffset, int endOffset)
@@ -2348,10 +2420,13 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
-    \fn QAccessibleValueInterface::~QAccessibleValueInterface()
+    Destroys the QAccessibleValueInterface.
 
-    Destructor.
 */
+QAccessibleValueInterface::~QAccessibleValueInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn QVariant QAccessibleValueInterface::currentValue() const
@@ -2410,6 +2485,14 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
+    Destroys the QAccessibleImageInterface.
+*/
+QAccessibleImageInterface::~QAccessibleImageInterface()
+{
+    // must be empty until ### Qt 6
+}
+
+/*!
     \class QAccessibleTableCellInterface
     \inmodule QtGui
     \ingroup accessibility
@@ -2421,10 +2504,13 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
-    \fn virtual QAccessibleTableCellInterface::~QAccessibleTableCellInterface()
 
     Destroys the QAccessibleTableCellInterface.
 */
+QAccessibleTableCellInterface::~QAccessibleTableCellInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn virtual int QAccessibleTableCellInterface::columnExtent() const
@@ -2486,10 +2572,13 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
-    \fn virtual QAccessibleTableInterface::~QAccessibleTableInterface()
 
     Destroys the QAccessibleTableInterface.
 */
+QAccessibleTableInterface::~QAccessibleTableInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn virtual QAccessibleInterface *QAccessibleTableInterface::cellAt(int row, int column) const
@@ -2659,10 +2748,13 @@ QString QAccessibleTextInterface::textAtOffset(int offset, QAccessible::TextBoun
 */
 
 /*!
-    \fn QAccessibleActionInterface::~QAccessibleActionInterface()
 
     Destroys the QAccessibleActionInterface.
 */
+QAccessibleActionInterface::~QAccessibleActionInterface()
+{
+    // must be empty until ### Qt 6
+}
 
 /*!
     \fn QStringList QAccessibleActionInterface::actionNames() const

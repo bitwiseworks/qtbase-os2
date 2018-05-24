@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,10 +41,8 @@ class tst_QClipboard : public QObject
 {
     Q_OBJECT
 private slots:
-#ifdef QT_NO_CLIPBOARD
     void initTestCase();
-    void cleanupTestCase();
-#else
+#if QT_CONFIG(clipboard)
     void init();
 #if defined(Q_OS_WIN) || defined(Q_OS_MAC) || defined(Q_OS_QNX)
     void copy_exit_paste();
@@ -63,23 +56,22 @@ private slots:
 #endif
 };
 
-#ifdef QT_NO_CLIPBOARD
 void tst_QClipboard::initTestCase()
 {
+#if !QT_CONFIG(clipboard)
     QSKIP("This test requires clipboard support");
+#endif
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: Manipulating the clipboard requires real input events. Can't auto test.");
 }
 
-void tst_QClipboard::cleanupTestCase()
-{
-    QSKIP("This test requires clipboard support");
-}
-
-#else
-
+#if QT_CONFIG(clipboard)
 void tst_QClipboard::init()
 {
+#if QT_CONFIG(process)
     const QString testdataDir = QFileInfo(QFINDTESTDATA("copier")).absolutePath();
     QVERIFY2(QDir::setCurrent(testdataDir), qPrintable("Could not chdir to " + testdataDir));
+#endif
 }
 
 Q_DECLARE_METATYPE(QClipboard::Mode)
@@ -221,7 +213,7 @@ void tst_QClipboard::testSignals()
 #if defined(Q_OS_WIN) || defined(Q_OS_MAC) || defined(Q_OS_QNX)
 static bool runHelper(const QString &program, const QStringList &arguments, QByteArray *errorMessage)
 {
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
     QProcess process;
     process.setReadChannelMode(QProcess::ForwardedChannels);
     process.start(program, arguments);
@@ -257,19 +249,19 @@ static bool runHelper(const QString &program, const QStringList &arguments, QByt
         return false;
     }
     return true;
-#else // QT_NO_PROCESS
+#else // QT_CONFIG(process)
     Q_UNUSED(program)
     Q_UNUSED(arguments)
     Q_UNUSED(errorMessage)
     return false;
-#endif // QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 }
 
 // Test that pasted text remains on the clipboard after a Qt application exits.
 // This test does not make sense on X11 and embedded, copied data disappears from the clipboard when the application exits
 void tst_QClipboard::copy_exit_paste()
 {
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
     // ### It's still possible to test copy/paste - just keep the apps running
     if (!PlatformClipboard::isAvailable())
         QSKIP("Native clipboard not working in this setup");
@@ -285,12 +277,12 @@ void tst_QClipboard::copy_exit_paste()
                        QStringList() << QStringLiteral("--text") << stringArgument,
                        &errorMessage),
              errorMessage.constData());
-#endif // QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 }
 
 void tst_QClipboard::copyImage()
 {
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
     if (!PlatformClipboard::isAvailable())
         QSKIP("Native clipboard not working in this setup");
     QImage image(100, 100, QImage::Format_ARGB32);
@@ -306,7 +298,7 @@ void tst_QClipboard::copyImage()
     QVERIFY2(runHelper(QStringLiteral("paster/paster"),
                        QStringList(QStringLiteral("--image")), &errorMessage),
              errorMessage.constData());
-#endif // QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 }
 
 #endif // Q_OS_WIN || Q_OS_MAC || Q_OS_QNX
@@ -318,10 +310,6 @@ void tst_QClipboard::setMimeData()
     QMimeData *mimeData = new QMimeData;
     const QString TestName(QLatin1String("tst_QClipboard::setMimeData() mimeData"));
     mimeData->setObjectName(TestName);
-#if defined(Q_OS_WINCE)
-    // need to set text on CE
-    mimeData->setText(QLatin1String("Qt/CE foo"));
-#endif
 
     QGuiApplication::clipboard()->setMimeData(mimeData);
     QCOMPARE(QGuiApplication::clipboard()->mimeData(), (const QMimeData *)mimeData);
@@ -443,7 +431,7 @@ void tst_QClipboard::clearBeforeSetText()
     QCOMPARE(QGuiApplication::clipboard()->text(), text);
 }
 
-#endif
+#endif // QT_CONFIG(clipboard)
 
 QTEST_MAIN(tst_QClipboard)
 

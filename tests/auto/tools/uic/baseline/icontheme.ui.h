@@ -10,10 +10,8 @@
 #define ICONTHEME_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
+#include <QtGui/QIcon>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
@@ -77,10 +75,10 @@ public:
 
     void retranslateUi(QWidget *Form)
     {
-        Form->setWindowTitle(QApplication::translate("Form", "Form", 0));
-        fileicon->setText(QApplication::translate("Form", "fileicon", 0));
-        fileandthemeicon->setText(QApplication::translate("Form", "PushButton", 0));
-        themeicon->setText(QApplication::translate("Form", "PushButton", 0));
+        Form->setWindowTitle(QApplication::translate("Form", "Form", nullptr));
+        fileicon->setText(QApplication::translate("Form", "fileicon", nullptr));
+        fileandthemeicon->setText(QApplication::translate("Form", "PushButton", nullptr));
+        themeicon->setText(QApplication::translate("Form", "PushButton", nullptr));
     } // retranslateUi
 
 };

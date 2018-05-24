@@ -1,4 +1,5 @@
 QT += widgets
+requires(qtConfig(combobox))
 
 HEADERS       = iconpreviewarea.h \
                 iconsizespinbox.h \
@@ -10,19 +11,10 @@ SOURCES       = iconpreviewarea.cpp \
                 main.cpp \
                 mainwindow.cpp
 
+DEFINES += SRCDIR=\\\"$$PWD/\\\"
+
 EXAMPLE_FILES = images/*
 
 # install
 target.path = $$[QT_INSTALL_EXAMPLES]/widgets/widgets/icons
 INSTALLS += target
-
-
-wince {
-    imageFiles.files = images/*
-    wincewm*: {
-        imageFiles.path = "/My Documents/My Pictures"
-    } else {
-        imageFiles.path    = images
-    }
-    DEPLOYMENT += imageFiles
-}

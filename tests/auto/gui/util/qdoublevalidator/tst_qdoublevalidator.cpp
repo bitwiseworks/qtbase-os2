@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,6 +38,8 @@ class tst_QDoubleValidator : public QObject
 private slots:
     void validate_data();
     void validate();
+    void zeroPaddedExponent_data();
+    void zeroPaddedExponent();
     void validateThouSep_data();
     void validateThouSep();
     void validateIntEquiv_data();
@@ -240,6 +237,61 @@ void tst_QDoubleValidator::validate()
     dv.setNotation(QDoubleValidator::StandardNotation);
     QCOMPARE((int)dv.validate(value, dummy), (int)standard_state);
 }
+
+void tst_QDoubleValidator::zeroPaddedExponent_data()
+{
+    QTest::addColumn<double>("minimum");
+    QTest::addColumn<double>("maximum");
+    QTest::addColumn<int>("decimals");
+    QTest::addColumn<QString>("value");
+    QTest::addColumn<bool>("rejectZeroPaddedExponent");
+    QTest::addColumn<QValidator::State>("state");
+
+    QTest::newRow("data01") << 1229.0  << 1231.0  << 0 << QString("123e+1") << false << ACC;
+    QTest::newRow("data02") << 12290.0 << 12310.0 << 0 << QString("123e2")  << false << ACC;
+    QTest::newRow("data03") << 12.290  << 12.310  << 2 << QString("123e-")  << false << ITM;
+    QTest::newRow("data04") << 12.290  << 12.310  << 2 << QString("123e-1") << false << ACC;
+    QTest::newRow("data05") << 1.2290  << 1.2310  << 3 << QString("123e-2") << false << ACC;
+
+    QTest::newRow("data11") << 1229.0  << 1231.0  << 0 << QString("123e+1") << true << ACC;
+    QTest::newRow("data12") << 12290.0 << 12310.0 << 0 << QString("123e2")  << true << ACC;
+    QTest::newRow("data13") << 12.290  << 12.310  << 2 << QString("123e-")  << true << ITM;
+    QTest::newRow("data14") << 12.290  << 12.310  << 2 << QString("123e-1") << true << ACC;
+    QTest::newRow("data15") << 1.2290  << 1.2310  << 3 << QString("123e-2") << true << ACC;
+
+    QTest::newRow("data21") << 1229.0  << 1231.0  << 0 << QString("123e+01") << false << ACC;
+    QTest::newRow("data22") << 12290.0 << 12310.0 << 0 << QString("123e02")  << false << ACC;
+    QTest::newRow("data23") << 12.290  << 12.310  << 2 << QString("123e-0")  << false << ITM;
+    QTest::newRow("data24") << 12.290  << 12.310  << 2 << QString("123e-01") << false << ACC;
+    QTest::newRow("data25") << 1.2290  << 1.2310  << 3 << QString("123e-02") << false << ACC;
+
+    QTest::newRow("data31") << 1229.0  << 1231.0  << 0 << QString("123e+01") << true << INV;
+    QTest::newRow("data32") << 12290.0 << 12310.0 << 0 << QString("123e02")  << true << INV;
+    QTest::newRow("data33") << 12.290  << 12.310  << 2 << QString("123e-0")  << true << INV;
+    QTest::newRow("data34") << 12.290  << 12.310  << 2 << QString("123e-01") << true << INV;
+    QTest::newRow("data35") << 1.2290  << 1.2310  << 3 << QString("123e-02") << true << INV;
+
+}
+
+void tst_QDoubleValidator::zeroPaddedExponent()
+{
+    QFETCH(double, minimum);
+    QFETCH(double, maximum);
+    QFETCH(int, decimals);
+    QFETCH(QString, value);
+    QFETCH(bool, rejectZeroPaddedExponent);
+    QFETCH(QValidator::State, state);
+
+    QLocale locale(QLocale::C);
+    if (rejectZeroPaddedExponent)
+        locale.setNumberOptions(QLocale::RejectLeadingZeroInExponent);
+
+    QDoubleValidator dv(minimum, maximum, decimals, 0);
+    dv.setLocale(locale);
+    int dummy;
+    QCOMPARE((int)dv.validate(value, dummy), (int)state);
+}
+
 void tst_QDoubleValidator::notifySignals()
 {
     QLocale::setDefault(QLocale("C"));
@@ -256,41 +308,41 @@ void tst_QDoubleValidator::notifySignals()
     dv.setTop(0.8);
     QCOMPARE(topSpy.count(), 1);
     QCOMPARE(changedSpy.count(), 1);
-    QVERIFY(dv.top() == 0.8);
+    QCOMPARE(dv.top(), 0.8);
     dv.setBottom(0.2);
     QCOMPARE(bottomSpy.count(), 1);
     QCOMPARE(changedSpy.count(), 2);
-    QVERIFY(dv.bottom() == 0.2);
+    QCOMPARE(dv.bottom(), 0.2);
 
     dv.setRange(0.2, 0.7);
     QCOMPARE(topSpy.count(), 2);
     QCOMPARE(bottomSpy.count(), 1);
     QCOMPARE(decSpy.count(), 1);
     QCOMPARE(changedSpy.count(), 3);
-    QVERIFY(dv.bottom() == 0.2);
-    QVERIFY(dv.top() == 0.7);
-    QVERIFY(dv.decimals() == 0.);
+    QCOMPARE(dv.bottom(), 0.2);
+    QCOMPARE(dv.top(), 0.7);
+    QCOMPARE(dv.decimals(), 0);
 
     dv.setRange(0.3, 0.7);
     QCOMPARE(topSpy.count(), 2);
     QCOMPARE(bottomSpy.count(), 2);
     QCOMPARE(changedSpy.count(), 4);
-    QVERIFY(dv.bottom() == 0.3);
-    QVERIFY(dv.top() == 0.7);
-    QVERIFY(dv.decimals() == 0.);
+    QCOMPARE(dv.bottom(), 0.3);
+    QCOMPARE(dv.top(), 0.7);
+    QCOMPARE(dv.decimals(), 0);
 
     dv.setRange(0.4, 0.6);
     QCOMPARE(topSpy.count(), 3);
     QCOMPARE(bottomSpy.count(), 3);
     QCOMPARE(changedSpy.count(), 5);
-    QVERIFY(dv.bottom() == 0.4);
-    QVERIFY(dv.top() == 0.6);
-    QVERIFY(dv.decimals() == 0.);
+    QCOMPARE(dv.bottom(), 0.4);
+    QCOMPARE(dv.top(), 0.6);
+    QCOMPARE(dv.decimals(), 0);
 
     dv.setDecimals(10);
     QCOMPARE(decSpy.count(), 2);
     QCOMPARE(changedSpy.count(), 6);
-    QVERIFY(dv.decimals() == 10.);
+    QCOMPARE(dv.decimals(), 10);
 
 
     dv.setRange(0.4, 0.6, 100);
@@ -298,14 +350,14 @@ void tst_QDoubleValidator::notifySignals()
     QCOMPARE(bottomSpy.count(), 3);
     QCOMPARE(decSpy.count(), 3);
     QCOMPARE(changedSpy.count(), 7);
-    QVERIFY(dv.bottom() == 0.4);
-    QVERIFY(dv.top() == 0.6);
-    QVERIFY(dv.decimals() == 100.);
+    QCOMPARE(dv.bottom(), 0.4);
+    QCOMPARE(dv.top(), 0.6);
+    QCOMPARE(dv.decimals(), 100);
 
     dv.setNotation(QDoubleValidator::StandardNotation);
     QCOMPARE(notSpy.count(), 1);
     QCOMPARE(changedSpy.count(), 8);
-    QVERIFY(dv.notation() == QDoubleValidator::StandardNotation);
+    QCOMPARE(dv.notation(), QDoubleValidator::StandardNotation);
 
     dv.setRange(dv.bottom(), dv.top(), dv.decimals());
     QCOMPARE(topSpy.count(), 3);

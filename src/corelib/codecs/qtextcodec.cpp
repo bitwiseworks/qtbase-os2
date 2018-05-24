@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,6 +43,7 @@
 
 #ifndef QT_NO_TEXTCODEC
 
+#include "qbytearraymatcher.h"
 #include "qlist.h"
 #include "qfile.h"
 #include "qstringlist.h"
@@ -52,10 +59,10 @@
 #if !defined(QT_BOOTSTRAPPED)
 #  include "qtsciicodec_p.h"
 #  include "qisciicodec_p.h"
-#if defined(QT_USE_ICU)
+#if QT_CONFIG(icu)
 #include "qicucodec_p.h"
 #else
-#if !defined(QT_NO_ICONV)
+#if QT_CONFIG(iconv)
 #  include "qiconvcodec_p.h"
 #endif
 #ifdef Q_OS_WIN
@@ -73,7 +80,7 @@
 #  endif // !Q_OS_INTEGRITY
 #endif // !QT_NO_BIG_CODECS
 
-#endif // QT_USE_ICU
+#endif // icu
 #endif // QT_BOOTSTRAPPED
 
 #include "qmutex.h"
@@ -81,7 +88,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <locale.h>
-#if defined (_XOPEN_UNIX) && !defined(Q_OS_QNX) && !defined(Q_OS_OSF) && !defined(Q_OS_ANDROID)
+#if defined (_XOPEN_UNIX) && !defined(Q_OS_QNX) && !defined(Q_OS_ANDROID)
 # include <langinfo.h>
 #endif
 
@@ -93,7 +100,7 @@ typedef QList<QByteArray>::ConstIterator ByteArrayListConstIt;
 Q_GLOBAL_STATIC_WITH_ARGS(QMutex, textCodecsMutex, (QMutex::Recursive));
 QMutex *qTextCodecsMutex() { return textCodecsMutex(); }
 
-#if !defined(QT_USE_ICU)
+#if !QT_CONFIG(icu)
 static char qtolower(char c)
 { if (c >= 'A' && c <= 'Z') return c + 0x20; return c; }
 static bool qisalnum(char c)
@@ -126,7 +133,7 @@ bool qTextCodecNameMatch(const char *n, const char *h)
 }
 
 
-#if !defined(Q_OS_WIN32) && !defined(Q_OS_WINCE) && !defined(QT_LOCALE_IS_UTF8)
+#if !defined(Q_OS_WIN32) && !defined(QT_LOCALE_IS_UTF8)
 static QTextCodec *checkForCodec(const QByteArray &name) {
     QTextCodec *c = QTextCodec::codecForName(name);
     if (!c) {
@@ -163,7 +170,7 @@ static QTextCodec *setupLocaleMapper()
 
 #if defined(QT_LOCALE_IS_UTF8)
     locale = QTextCodec::codecForName("UTF-8");
-#elif defined(Q_OS_WIN) || defined(Q_OS_WINCE)
+#elif defined(Q_OS_WIN)
     locale = QTextCodec::codecForName("System");
 #else
 
@@ -173,12 +180,12 @@ static QTextCodec *setupLocaleMapper()
     // This is because the builtin utf8 codec is around 5 times faster
     // then the using QIconvCodec
 
-#if defined (_XOPEN_UNIX) && !defined(Q_OS_OSF)
+#if defined (_XOPEN_UNIX)
     char *charset = nl_langinfo(CODESET);
     if (charset)
         locale = QTextCodec::codecForName(charset);
 #endif
-#if !defined(QT_NO_ICONV) && !defined(QT_BOOTSTRAPPED)
+#if QT_CONFIG(iconv)
     if (!locale) {
         // no builtin codec for the locale found, let's try using iconv
         (void) new QIconvCodec();
@@ -280,10 +287,10 @@ static void setup()
     (void)new QBig5Codec;
     (void)new QBig5hkscsCodec;
 #  endif // !QT_NO_BIG_CODECS && !Q_OS_INTEGRITY
-#if !defined(QT_NO_ICONV)
+#if QT_CONFIG(iconv)
     (void) new QIconvCodec;
 #endif
-#if defined(Q_OS_WIN32) || defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN32)
     (void) new QWindowsLocalCodec;
 #endif // Q_OS_WIN32
 #endif // !QT_NO_CODECS && !QT_BOOTSTRAPPED
@@ -300,7 +307,7 @@ static void setup()
 }
 #else
 static void setup() {}
-#endif // QT_USE_ICU
+#endif // icu
 
 /*!
     \enum QTextCodec::ConversionFlag
@@ -513,7 +520,7 @@ QTextCodec *QTextCodec::codecForName(const QByteArray &name)
         return 0;
     setup();
 
-#ifndef QT_USE_ICU
+#if !QT_CONFIG(icu)
     QTextCodecCache *cache = &globalData->codecCache;
     QTextCodec *codec;
     if (cache) {
@@ -580,7 +587,7 @@ QTextCodec* QTextCodec::codecForMib(int mib)
         }
     }
 
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     return QIcuCodec::codecForMibUnlocked(mib);
 #else
     return 0;
@@ -612,7 +619,7 @@ QList<QByteArray> QTextCodec::availableCodecs()
         codecs += (*it)->aliases();
     }
 
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     codecs += QIcuCodec::availableCodecs();
 #endif
 
@@ -628,7 +635,7 @@ QList<QByteArray> QTextCodec::availableCodecs()
 */
 QList<int> QTextCodec::availableMibs()
 {
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     return QIcuCodec::availableMibs();
 #else
     QMutexLocker locker(textCodecsMutex());
@@ -682,7 +689,7 @@ QTextCodec* QTextCodec::codecForLocale()
 
     QTextCodec *codec = globalData->codecForLocale.loadAcquire();
     if (!codec) {
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
         textCodecsMutex()->lock();
         codec = QIcuCodec::defaultCodecUnlocked();
         textCodecsMutex()->unlock();
@@ -797,6 +804,7 @@ QTextEncoder* QTextCodec::makeEncoder(QTextCodec::ConversionFlags flags) const
     The \a state of the convertor used is updated.
 */
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Converts \a str from Unicode to the encoding of this codec, and
     returns the result in a QByteArray.
@@ -804,6 +812,19 @@ QTextEncoder* QTextCodec::makeEncoder(QTextCodec::ConversionFlags flags) const
 QByteArray QTextCodec::fromUnicode(const QString& str) const
 {
     return convertFromUnicode(str.constData(), str.length(), 0);
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+
+    Converts \a str from Unicode to the encoding of this codec, and
+    returns the result in a QByteArray.
+*/
+QByteArray QTextCodec::fromUnicode(QStringView str) const
+{
+    return convertFromUnicode(str.data(), str.length(), nullptr);
 }
 
 /*!
@@ -838,6 +859,7 @@ bool QTextCodec::canEncode(QChar ch) const
     return (state.invalidChars == 0);
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     \overload
 
@@ -850,7 +872,22 @@ bool QTextCodec::canEncode(const QString& s) const
     convertFromUnicode(s.constData(), s.length(), &state);
     return (state.invalidChars == 0);
 }
+#endif
 
+/*!
+    \overload
+    \since 5.10
+
+    Returns \c true if the Unicode string \a s can be fully encoded
+    with this codec; otherwise returns \c false.
+*/
+bool QTextCodec::canEncode(QStringView s) const
+{
+    ConverterState state;
+    state.flags = ConvertInvalidToNull;
+    convertFromUnicode(s.data(), s.length(), &state);
+    return !state.invalidChars;
+}
 /*!
     \overload
 
@@ -915,6 +952,7 @@ bool QTextEncoder::hasFailure() const
     return state.invalidChars != 0;
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Converts the Unicode string \a str into an encoded QByteArray.
 */
@@ -922,6 +960,17 @@ QByteArray QTextEncoder::fromUnicode(const QString& str)
 {
     QByteArray result = c->fromUnicode(str.constData(), str.length(), &state);
     return result;
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+    Converts the Unicode string \a str into an encoded QByteArray.
+*/
+QByteArray QTextEncoder::fromUnicode(QStringView str)
+{
+    return c->fromUnicode(str.data(), str.length(), &state);
 }
 
 /*!
@@ -993,7 +1042,7 @@ QString QTextDecoder::toUnicode(const char *chars, int len)
 }
 
 // in qstring.cpp:
-void qt_from_latin1(ushort *dst, const char *str, size_t size);
+void qt_from_latin1(ushort *dst, const char *str, size_t size) Q_DECL_NOTHROW;
 
 /*! \overload
 
@@ -1044,10 +1093,12 @@ QTextCodec *QTextCodec::codecForHtml(const QByteArray &ba, QTextCodec *defaultCo
     // determine charset
     QTextCodec *c = QTextCodec::codecForUtfText(ba, 0);
     if (!c) {
+        static Q_RELAXED_CONSTEXPR auto matcher = qMakeStaticByteArrayMatcher("meta ");
         QByteArray header = ba.left(1024).toLower();
-        int pos = header.indexOf("meta ");
+        int pos = matcher.indexIn(header);
         if (pos != -1) {
-            pos = header.indexOf("charset=", pos);
+            static Q_RELAXED_CONSTEXPR auto matcher = qMakeStaticByteArrayMatcher("charset=");
+            pos = matcher.indexIn(header, pos);
             if (pos != -1) {
                 pos += qstrlen("charset=");
 
@@ -1154,7 +1205,6 @@ QTextCodec *QTextCodec::codecForUtfText(const QByteArray &ba)
     Returns the codec used by QObject::tr() on its argument. If this
     function returns 0 (the default), tr() assumes Latin-1.
 */
-
 
 /*!
     \internal

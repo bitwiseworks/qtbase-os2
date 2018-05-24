@@ -1,60 +1,72 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include "qglobal.h"
 
 #if !defined(QWS) && defined(Q_OS_MAC)
 #   include "private/qcore_mac_p.h"
 #   include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#include "qglobal.h"
-
 #include "qplatformdefs.h"
 
 #include "qdatastream.h"
 #include "qdebug.h"
+#include "qhashfunctions.h"
 #include "qstring.h"
 #include "qlocale.h"
 #include "qlocale_p.h"
 #include "qlocale_tools_p.h"
-#include "qdatetime_p.h"
+#if QT_CONFIG(datetimeparser)
 #include "qdatetimeparser_p.h"
+#endif
 #include "qnamespace.h"
 #include "qdatetime.h"
 #include "qstringlist.h"
 #include "qvariant.h"
 #include "qstringbuilder.h"
 #include "private/qnumeric_p.h"
-#include "private/qsystemlibrary_p.h"
+#include <cmath>
+#ifndef QT_NO_SYSTEMLOCALE
+#   include "qmutex.h"
+#endif
 #ifdef Q_OS_WIN
 #   include <qt_windows.h>
 #   include <time.h>
@@ -72,7 +84,7 @@ public:
 
 Q_GLOBAL_STATIC(QSystemLocaleSingleton, QSystemLocale_globalSystemLocale)
 static QLocaleData *system_data = 0;
-Q_GLOBAL_STATIC(QLocaleData, globalLocaleData)
+static QLocaleData globalLocaleData;
 #endif
 
 /******************************************************************************
@@ -83,14 +95,14 @@ QT_BEGIN_INCLUDE_NAMESPACE
 #include "qlocale_data_p.h"
 QT_END_INCLUDE_NAMESPACE
 
-QLocale::Language QLocalePrivate::codeToLanguage(const QString &code)
+QLocale::Language QLocalePrivate::codeToLanguage(QStringView code) Q_DECL_NOTHROW
 {
-    int len = code.length();
+    const auto len = code.size();
     if (len != 2 && len != 3)
         return QLocale::C;
-    ushort uc1 = len-- > 0 ? code[0].toLower().unicode() : 0;
-    ushort uc2 = len-- > 0 ? code[1].toLower().unicode() : 0;
-    ushort uc3 = len-- > 0 ? code[2].toLower().unicode() : 0;
+    ushort uc1 = code[0].toLower().unicode();
+    ushort uc2 = code[1].toLower().unicode();
+    ushort uc3 = len > 2 ? code[2].toLower().unicode() : 0;
 
     const unsigned char *c = language_code_list;
     for (; *c != 0; c += 3) {
@@ -98,38 +110,46 @@ QLocale::Language QLocalePrivate::codeToLanguage(const QString &code)
             return QLocale::Language((c - language_code_list)/3);
     }
 
-    // legacy codes
-    if (uc1 == 'n' && uc2 == 'o' && uc3 == 0) { // no -> nb
-        Q_STATIC_ASSERT(QLocale::Norwegian == QLocale::NorwegianBokmal);
-        return QLocale::Norwegian;
+    if (uc3 == 0) {
+        // legacy codes
+        if (uc1 == 'n' && uc2 == 'o') { // no -> nb
+            Q_STATIC_ASSERT(QLocale::Norwegian == QLocale::NorwegianBokmal);
+            return QLocale::Norwegian;
+        }
+        if (uc1 == 't' && uc2 == 'l') { // tl -> fil
+            Q_STATIC_ASSERT(QLocale::Tagalog == QLocale::Filipino);
+            return QLocale::Tagalog;
+        }
+        if (uc1 == 's' && uc2 == 'h') { // sh -> sr[_Latn]
+            Q_STATIC_ASSERT(QLocale::SerboCroatian == QLocale::Serbian);
+            return QLocale::SerboCroatian;
+        }
+        if (uc1 == 'm' && uc2 == 'o') { // mo -> ro
+            Q_STATIC_ASSERT(QLocale::Moldavian == QLocale::Romanian);
+            return QLocale::Moldavian;
+        }
+        // Android uses the following deprecated codes
+        if (uc1 == 'i' && uc2 == 'w') // iw -> he
+            return QLocale::Hebrew;
+        if (uc1 == 'i' && uc2 == 'n') // in -> id
+            return QLocale::Indonesian;
+        if (uc1 == 'j' && uc2 == 'i') // ji -> yi
+            return QLocale::Yiddish;
     }
-    if (uc1 == 't' && uc2 == 'l' && uc3 == 0) { // tl -> fil
-        Q_STATIC_ASSERT(QLocale::Tagalog == QLocale::Filipino);
-        return QLocale::Tagalog;
-    }
-    if (uc1 == 's' && uc2 == 'h' && uc3 == 0) { // sh -> sr[_Latn]
-        Q_STATIC_ASSERT(QLocale::SerboCroatian == QLocale::Serbian);
-        return QLocale::SerboCroatian;
-    }
-    if (uc1 == 'm' && uc2 == 'o' && uc3 == 0) { // mo -> ro
-        Q_STATIC_ASSERT(QLocale::Moldavian == QLocale::Romanian);
-        return QLocale::Moldavian;
-    }
-
     return QLocale::C;
 }
 
-QLocale::Script QLocalePrivate::codeToScript(const QString &code)
+QLocale::Script QLocalePrivate::codeToScript(QStringView code) Q_DECL_NOTHROW
 {
-    int len = code.length();
+    const auto len = code.size();
     if (len != 4)
         return QLocale::AnyScript;
 
     // script is titlecased in our data
-    unsigned char c0 = code.at(0).toUpper().toLatin1();
-    unsigned char c1 = code.at(1).toLower().toLatin1();
-    unsigned char c2 = code.at(2).toLower().toLatin1();
-    unsigned char c3 = code.at(3).toLower().toLatin1();
+    unsigned char c0 = code[0].toUpper().toLatin1();
+    unsigned char c1 = code[1].toLower().toLatin1();
+    unsigned char c2 = code[2].toLower().toLatin1();
+    unsigned char c3 = code[3].toLower().toLatin1();
 
     const unsigned char *c = script_code_list;
     for (int i = 0; i < QLocale::LastScript; ++i, c += 4) {
@@ -139,14 +159,15 @@ QLocale::Script QLocalePrivate::codeToScript(const QString &code)
     return QLocale::AnyScript;
 }
 
-QLocale::Country QLocalePrivate::codeToCountry(const QString &code)
+QLocale::Country QLocalePrivate::codeToCountry(QStringView code) Q_DECL_NOTHROW
 {
-    int len = code.length();
+    const auto len = code.size();
     if (len != 2 && len != 3)
         return QLocale::AnyCountry;
-    ushort uc1 = len-- > 0 ? code[0].toUpper().unicode() : 0;
-    ushort uc2 = len-- > 0 ? code[1].toUpper().unicode() : 0;
-    ushort uc3 = len-- > 0 ? code[2].toUpper().unicode() : 0;
+
+    ushort uc1 = code[0].toUpper().unicode();
+    ushort uc2 = code[1].toUpper().unicode();
+    ushort uc3 = len > 2 ? code[2].toUpper().unicode() : 0;
 
     const unsigned char *c = country_code_list;
     for (; *c != 0; c += 3) {
@@ -157,48 +178,35 @@ QLocale::Country QLocalePrivate::codeToCountry(const QString &code)
     return QLocale::AnyCountry;
 }
 
-QString QLocalePrivate::languageToCode(QLocale::Language language)
+QLatin1String QLocalePrivate::languageToCode(QLocale::Language language)
 {
     if (language == QLocale::AnyLanguage)
-        return QString();
+        return QLatin1String();
     if (language == QLocale::C)
         return QLatin1String("C");
 
     const unsigned char *c = language_code_list + 3*(uint(language));
 
-    QString code(c[2] == 0 ? 2 : 3, Qt::Uninitialized);
+    return QLatin1String(reinterpret_cast<const char*>(c), c[2] == 0 ? 2 : 3);
 
-    code[0] = ushort(c[0]);
-    code[1] = ushort(c[1]);
-    if (c[2] != 0)
-        code[2] = ushort(c[2]);
-
-    return code;
 }
 
-QString QLocalePrivate::scriptToCode(QLocale::Script script)
+QLatin1String QLocalePrivate::scriptToCode(QLocale::Script script)
 {
     if (script == QLocale::AnyScript || script > QLocale::LastScript)
-        return QString();
+        return QLatin1String();
     const unsigned char *c = script_code_list + 4*(uint(script));
-    return QString::fromLatin1((const char *)c, 4);
+    return QLatin1String(reinterpret_cast<const char *>(c), 4);
 }
 
-QString QLocalePrivate::countryToCode(QLocale::Country country)
+QLatin1String QLocalePrivate::countryToCode(QLocale::Country country)
 {
     if (country == QLocale::AnyCountry)
-        return QString();
+        return QLatin1String();
 
     const unsigned char *c = country_code_list + 3*(uint(country));
 
-    QString code(c[2] == 0 ? 2 : 3, Qt::Uninitialized);
-
-    code[0] = ushort(c[0]);
-    code[1] = ushort(c[1]);
-    if (c[2] != 0)
-        code[2] = ushort(c[2]);
-
-    return code;
+    return QLatin1String(reinterpret_cast<const char*>(c), c[2] == 0 ? 2 : 3);
 }
 
 // http://www.unicode.org/reports/tr35/#Likely_Subtags
@@ -318,38 +326,22 @@ QByteArray QLocalePrivate::bcp47Name(char separator) const
     if (m_data->m_language_id == QLocale::AnyLanguage)
         return QByteArray();
     if (m_data->m_language_id == QLocale::C)
-        return QByteArrayLiteral("C");
+        return QByteArrayLiteral("en");
 
     QLocaleId localeId = QLocaleId::fromIds(m_data->m_language_id, m_data->m_script_id, m_data->m_country_id);
     return localeId.withLikelySubtagsRemoved().name(separator);
 }
 
-const QLocaleData *QLocaleData::findLocaleData(QLocale::Language language, QLocale::Script script, QLocale::Country country)
+static const QLocaleData *findLocaleDataById(const QLocaleId &localeId)
 {
-    QLocaleId localeId = QLocaleId::fromIds(language, script, country);
-    localeId = localeId.withLikelySubtagsAdded();
-
-    uint idx = locale_index[localeId.language_id];
+    const uint idx = locale_index[localeId.language_id];
 
     const QLocaleData *data = locale_data + idx;
 
-    if (idx == 0) // default language has no associated country
+    if (idx == 0) // default language has no associated script or country
         return data;
 
     Q_ASSERT(data->m_language_id == localeId.language_id);
-
-    if (localeId.script_id != QLocale::AnyScript && localeId.country_id != QLocale::AnyCountry) {
-        // both script and country are explicitly specified
-        do {
-            if (data->m_script_id == localeId.script_id && data->m_country_id == localeId.country_id)
-                return data;
-            ++data;
-        } while (data->m_language_id == localeId.language_id);
-
-        // no match; try again with default script
-        localeId.script_id = QLocale::AnyScript;
-        data = locale_data + idx;
-    }
 
     if (localeId.script_id == QLocale::AnyScript && localeId.country_id == QLocale::AnyCountry)
         return data;
@@ -359,15 +351,76 @@ const QLocaleData *QLocaleData::findLocaleData(QLocale::Language language, QLoca
             if (data->m_country_id == localeId.country_id)
                 return data;
             ++data;
-        } while (data->m_language_id == localeId.language_id);
+        } while (data->m_language_id && data->m_language_id == localeId.language_id);
     } else if (localeId.country_id == QLocale::AnyCountry) {
         do {
             if (data->m_script_id == localeId.script_id)
                 return data;
             ++data;
-        } while (data->m_language_id == localeId.language_id);
+        } while (data->m_language_id && data->m_language_id == localeId.language_id);
+    } else {
+        do {
+            if (data->m_script_id == localeId.script_id && data->m_country_id == localeId.country_id)
+                return data;
+            ++data;
+        } while (data->m_language_id && data->m_language_id == localeId.language_id);
     }
 
+    return 0;
+}
+
+const QLocaleData *QLocaleData::findLocaleData(QLocale::Language language, QLocale::Script script, QLocale::Country country)
+{
+    QLocaleId localeId = QLocaleId::fromIds(language, script, country);
+    QLocaleId likelyId = localeId.withLikelySubtagsAdded();
+
+    const uint idx = locale_index[likelyId.language_id];
+
+    // Try a straight match with the likely data:
+    if (const QLocaleData *const data = findLocaleDataById(likelyId))
+        return data;
+    QList<QLocaleId> tried;
+    tried.push_back(likelyId);
+
+    // No match; try again with likely country
+    if (country != QLocale::AnyCountry
+        && (language != QLocale::AnyLanguage || script != QLocale::AnyScript)) {
+        localeId = QLocaleId::fromIds(language, script, QLocale::AnyCountry);
+        likelyId = localeId.withLikelySubtagsAdded();
+        if (!tried.contains(likelyId)) {
+            if (const QLocaleData *const data = findLocaleDataById(likelyId))
+                return data;
+            tried.push_back(likelyId);
+        }
+
+        // No match; try again with any country
+        if (!tried.contains(localeId)) {
+            if (const QLocaleData *const data = findLocaleDataById(localeId))
+                return data;
+            tried.push_back(localeId);
+        }
+    }
+
+    // No match; try again with likely script
+    if (script != QLocale::AnyScript
+        && (language != QLocale::AnyLanguage || country != QLocale::AnyCountry)) {
+        localeId = QLocaleId::fromIds(language, QLocale::AnyScript, country);
+        likelyId = localeId.withLikelySubtagsAdded();
+        if (!tried.contains(likelyId)) {
+            if (const QLocaleData *const data = findLocaleDataById(likelyId))
+                return data;
+            tried.push_back(likelyId);
+        }
+
+        // No match; try again with any script
+        if (!tried.contains(localeId)) {
+            if (const QLocaleData *const data = findLocaleDataById(localeId))
+                return data;
+            tried.push_back(localeId);
+        }
+    }
+
+    // No match; return data at original index
     return locale_data + idx;
 }
 
@@ -420,7 +473,7 @@ bool qt_splitLocaleName(const QString &name, QString &lang, QString &script, QSt
             state = ScriptState;
             break;
         case ScriptState: {
-            QString scripts = QString::fromLatin1((const char *)script_code_list, sizeof(script_code_list));
+            QString scripts = QString::fromLatin1((const char *)script_code_list, sizeof(script_code_list) - 1);
             if (value.length() == 4 && scripts.indexOf(value) % 4 == 0) {
                 // script name is always 4 characters
                 script = value;
@@ -476,7 +529,7 @@ static const QLocaleData *findLocaleData(const QString &name)
     return QLocaleData::findLocaleData(lang, script, cntry);
 }
 
-QString qt_readEscapedFormatString(const QString &format, int *idx)
+QString qt_readEscapedFormatString(QStringView format, int *idx)
 {
     int &i = *idx;
 
@@ -510,28 +563,44 @@ QString qt_readEscapedFormatString(const QString &format, int *idx)
     return result;
 }
 
-int qt_repeatCount(const QString &s, int i)
+/*!
+    \internal
+
+    Counts the number of identical leading characters in \a s.
+
+    If \a s is empty, returns 0.
+
+    Otherwise, returns the number of consecutive \c{s.front()}
+    characters at the start of \a s.
+
+    \code
+    qt_repeatCount(u"a");   // == 1
+    qt_repeatCount(u"ab");  // == 1
+    qt_repeatCount(u"aab"); // == 2
+    \endcode
+*/
+int qt_repeatCount(QStringView s)
 {
-    QChar c = s.at(i);
-    int j = i + 1;
+    if (s.isEmpty())
+        return 0;
+    const QChar c = s.front();
+    qsizetype j = 1;
     while (j < s.size() && s.at(j) == c)
         ++j;
-    return j - i;
+    return int(j);
 }
 
 static const QLocaleData *default_data = 0;
-static uint default_number_options = 0;
+static QLocale::NumberOptions default_number_options = QLocale::DefaultNumberOptions;
 
 static const QLocaleData *const c_data = locale_data;
 static QLocalePrivate *c_private()
 {
-    static QLocalePrivate c_locale = { c_data, Q_BASIC_ATOMIC_INITIALIZER(1), 0 };
+    static QLocalePrivate c_locale = { c_data, Q_BASIC_ATOMIC_INITIALIZER(1), QLocale::OmitGroupSeparator };
     return &c_locale;
 }
 
 #ifndef QT_NO_SYSTEMLOCALE
-
-
 /******************************************************************************
 ** Default system locale behavior
 */
@@ -543,7 +612,6 @@ static QLocalePrivate *c_private()
 */
 QSystemLocale::QSystemLocale()
 {
-    delete _systemLocale;
     _systemLocale = this;
 
     if (system_data)
@@ -580,7 +648,7 @@ void QLocalePrivate::updateSystemPrivate()
 {
     const QSystemLocale *sys_locale = systemLocale();
     if (!system_data)
-        system_data = globalLocaleData();
+        system_data = &globalLocaleData;
 
     // tell the object that the system locale has changed.
     sys_locale->query(QSystemLocale::LocaleChanged, QVariant());
@@ -621,14 +689,24 @@ void QLocalePrivate::updateSystemPrivate()
     if (!res.isNull())
         system_data->m_plus = res.toString().at(0).unicode();
 }
-#endif
+#endif // !QT_NO_SYSTEMLOCALE
 
 static const QLocaleData *systemData()
 {
 #ifndef QT_NO_SYSTEMLOCALE
-    // copy over the information from the fallback locale and modify
-    if (!system_data || system_data->m_language_id == 0)
-        QLocalePrivate::updateSystemPrivate();
+    /*
+      Copy over the information from the fallback locale and modify.
+
+      This modifies (cross-thread) global state, so take care to only call it in
+      one thread.
+    */
+    {
+        static QBasicMutex systemDataMutex;
+        systemDataMutex.lock();
+        if (!system_data || system_data->m_language_id == 0)
+            QLocalePrivate::updateSystemPrivate();
+        systemDataMutex.unlock();
+    }
 
     return system_data;
 #else
@@ -697,7 +775,9 @@ static QLocalePrivate *localePrivateByName(const QString &name)
 {
     if (name == QLatin1String("C"))
         return c_private();
-    return QLocalePrivate::create(findLocaleData(name));
+    const QLocaleData *data = findLocaleData(name);
+    return QLocalePrivate::create(data, data->m_language_id == QLocale::C ?
+                                      QLocale::OmitGroupSeparator : QLocale::DefaultNumberOptions);
 }
 
 static QLocalePrivate *findLocalePrivate(QLocale::Language language, QLocale::Script script,
@@ -708,7 +788,7 @@ static QLocalePrivate *findLocalePrivate(QLocale::Language language, QLocale::Sc
 
     const QLocaleData *data = QLocaleData::findLocaleData(language, script, country);
 
-    int numberOptions = 0;
+    QLocale::NumberOptions numberOptions = QLocale::DefaultNumberOptions;
 
     // If not found, should default to system
     if (data->m_language_id == QLocale::C && language != QLocale::C) {
@@ -772,6 +852,8 @@ QLocale::QLocale(const QString &name)
 QLocale::QLocale()
     : d(*defaultLocalePrivate)
 {
+    // Make sure system data is up to date
+    systemData();
 }
 
 /*!
@@ -866,6 +948,29 @@ bool QLocale::operator!=(const QLocale &other) const
 }
 
 /*!
+    \fn void QLocale::swap(QLocale &other)
+    \since 5.6
+
+    Swaps locale \a other with this locale. This operation is very fast and
+    never fails.
+*/
+
+/*!
+    \since 5.6
+    \relates QLocale
+
+    Returns the hash value for \a key, using
+    \a seed to seed the calculation.
+*/
+uint qHash(const QLocale &key, uint seed) Q_DECL_NOTHROW
+{
+    QtPrivate::QHashCombine hash;
+    seed = hash(seed, key.d->m_data);
+    seed = hash(seed, key.d->m_numberOptions);
+    return seed;
+}
+
+/*!
     \since 4.2
 
     Sets the \a options related to number conversions for this
@@ -886,7 +991,7 @@ void QLocale::setNumberOptions(NumberOptions options)
 */
 QLocale::NumberOptions QLocale::numberOptions() const
 {
-    return static_cast<NumberOption>(d->m_numberOptions);
+    return static_cast<NumberOptions>(d->m_numberOptions);
 }
 
 /*!
@@ -897,7 +1002,7 @@ QLocale::NumberOptions QLocale::numberOptions() const
 */
 QString QLocale::quoteString(const QString &str, QuotationStyle style) const
 {
-    return quoteString(&str, style);
+    return quoteString(QStringRef(&str), style);
 }
 
 /*!
@@ -1037,48 +1142,37 @@ QLocale::Country QLocale::country() const
 QString QLocale::name() const
 {
     Language l = language();
-
-    QString result = d->languageCode();
-
     if (l == C)
-        return result;
+        return d->languageCode();
 
     Country c = country();
     if (c == AnyCountry)
-        return result;
+        return d->languageCode();
 
-    result.append(QLatin1Char('_'));
-    result.append(d->countryCode());
-
-    return result;
+    return d->languageCode() + QLatin1Char('_') + d->countryCode();
 }
 
-static qlonglong toIntegral_helper(const QLocaleData *d, const QChar *data, int len, bool *ok,
-                                   QLocaleData::GroupSeparatorMode mode, qlonglong)
+static qlonglong toIntegral_helper(const QLocaleData *d, QStringView str, bool *ok,
+                                   QLocale::NumberOptions mode, qlonglong)
 {
-    return d->stringToLongLong(data, len, 10, ok, mode);
+    return d->stringToLongLong(str, 10, ok, mode);
 }
 
-static qulonglong toIntegral_helper(const QLocaleData *d, const QChar *data, int len, bool *ok,
-                                    QLocaleData::GroupSeparatorMode mode, qulonglong)
+static qulonglong toIntegral_helper(const QLocaleData *d, QStringView str, bool *ok,
+                                    QLocale::NumberOptions mode, qulonglong)
 {
-    return d->stringToUnsLongLong(data, len, 10, ok, mode);
+    return d->stringToUnsLongLong(str, 10, ok, mode);
 }
 
 template <typename T> static inline
-T toIntegral_helper(const QLocalePrivate *d, const QChar *data, int len, bool *ok)
+T toIntegral_helper(const QLocalePrivate *d, QStringView str, bool *ok)
 {
     // ### Qt6: use std::conditional<std::is_unsigned<T>::value, qulonglong, qlonglong>::type
     const bool isUnsigned = T(0) < T(-1);
     typedef typename QtPrivate::QConditional<isUnsigned, qulonglong, qlonglong>::Type Int64;
 
-    QLocaleData::GroupSeparatorMode mode
-            = d->m_numberOptions & QLocale::RejectGroupSeparator
-              ? QLocaleData::FailOnGroupSeparators
-              : QLocaleData::ParseGroupSeparators;
-
     // we select the right overload by the last, unused parameter
-    Int64 val = toIntegral_helper(d->m_data, data, len, ok, mode, Int64());
+    Int64 val = toIntegral_helper(d->m_data, str, ok, d->m_numberOptions, Int64());
     if (T(val) != val) {
         if (ok)
             *ok = false;
@@ -1147,6 +1241,7 @@ QString QLocale::scriptToString(QLocale::Script script)
     return QLatin1String(script_name_list + script_name_index[script]);
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Returns the short int represented by the localized string \a s.
 
@@ -1162,7 +1257,7 @@ QString QLocale::scriptToString(QLocale::Script script)
 
 short QLocale::toShort(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<short>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<short>(d, s, ok);
 }
 
 /*!
@@ -1180,7 +1275,7 @@ short QLocale::toShort(const QString &s, bool *ok) const
 
 ushort QLocale::toUShort(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<ushort>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<ushort>(d, s, ok);
 }
 
 /*!
@@ -1198,7 +1293,7 @@ ushort QLocale::toUShort(const QString &s, bool *ok) const
 
 int QLocale::toInt(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<int>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<int>(d, s, ok);
 }
 
 /*!
@@ -1216,7 +1311,7 @@ int QLocale::toInt(const QString &s, bool *ok) const
 
 uint QLocale::toUInt(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<uint>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<uint>(d, s, ok);
 }
 
 /*!
@@ -1235,7 +1330,7 @@ uint QLocale::toUInt(const QString &s, bool *ok) const
 
 qlonglong QLocale::toLongLong(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<qlonglong>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<qlonglong>(d, s, ok);
 }
 
 /*!
@@ -1254,7 +1349,7 @@ qlonglong QLocale::toLongLong(const QString &s, bool *ok) const
 
 qulonglong QLocale::toULongLong(const QString &s, bool *ok) const
 {
-    return toIntegral_helper<qulonglong>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<qulonglong>(d, s, ok);
 }
 
 /*!
@@ -1281,8 +1376,8 @@ float QLocale::toFloat(const QString &s, bool *ok) const
     If \a ok is not 0, reports failure by setting
     *ok to false and success by setting *ok to true.
 
-    Unlike QString::toDouble(), this function does not fall back to
-    the "C" locale if the string cannot be interpreted in this
+    Unlike QString::toDouble(), this function does not use
+    the 'C' locale if the string cannot be interpreted in this
     locale.
 
     \snippet code/src_corelib_tools_qlocale.cpp 3
@@ -1297,12 +1392,7 @@ float QLocale::toFloat(const QString &s, bool *ok) const
 
 double QLocale::toDouble(const QString &s, bool *ok) const
 {
-    QLocaleData::GroupSeparatorMode mode
-        = d->m_numberOptions & RejectGroupSeparator
-            ? QLocaleData::FailOnGroupSeparators
-            : QLocaleData::ParseGroupSeparators;
-
-    return d->m_data->stringToDouble(s.constData(), s.size(), ok, mode);
+    return d->m_data->stringToDouble(s, ok, d->m_numberOptions);
 }
 
 /*!
@@ -1322,7 +1412,7 @@ double QLocale::toDouble(const QString &s, bool *ok) const
 
 short QLocale::toShort(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<short>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<short>(d, s, ok);
 }
 
 /*!
@@ -1342,7 +1432,7 @@ short QLocale::toShort(const QStringRef &s, bool *ok) const
 
 ushort QLocale::toUShort(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<ushort>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<ushort>(d, s, ok);
 }
 
 /*!
@@ -1362,7 +1452,7 @@ ushort QLocale::toUShort(const QStringRef &s, bool *ok) const
 
 int QLocale::toInt(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<int>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<int>(d, s, ok);
 }
 
 /*!
@@ -1382,7 +1472,7 @@ int QLocale::toInt(const QStringRef &s, bool *ok) const
 
 uint QLocale::toUInt(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<uint>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<uint>(d, s, ok);
 }
 
 /*!
@@ -1403,7 +1493,7 @@ uint QLocale::toUInt(const QStringRef &s, bool *ok) const
 
 qlonglong QLocale::toLongLong(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<qlonglong>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<qlonglong>(d, s, ok);
 }
 
 /*!
@@ -1424,7 +1514,7 @@ qlonglong QLocale::toLongLong(const QStringRef &s, bool *ok) const
 
 qulonglong QLocale::toULongLong(const QStringRef &s, bool *ok) const
 {
-    return toIntegral_helper<qulonglong>(d, s.constData(), s.size(), ok);
+    return toIntegral_helper<qulonglong>(d, s, ok);
 }
 
 /*!
@@ -1471,14 +1561,178 @@ float QLocale::toFloat(const QStringRef &s, bool *ok) const
 
 double QLocale::toDouble(const QStringRef &s, bool *ok) const
 {
-    QLocaleData::GroupSeparatorMode mode
-        = d->m_numberOptions & RejectGroupSeparator
-            ? QLocaleData::FailOnGroupSeparators
-            : QLocaleData::ParseGroupSeparators;
+    return d->m_data->stringToDouble(s, ok, d->m_numberOptions);
+}
+#endif // QT_STRINGVIEW_LEVEL < 2
 
-    return d->m_data->stringToDouble(s.constData(), s.size(), ok, mode);
+/*!
+    Returns the short int represented by the localized string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toUShort(), toString()
+
+    \since 5.10
+*/
+
+short QLocale::toShort(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<short>(d, s, ok);
 }
 
+/*!
+    Returns the unsigned short int represented by the localized string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toShort(), toString()
+
+    \since 5.10
+*/
+
+ushort QLocale::toUShort(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<ushort>(d, s, ok);
+}
+
+/*!
+    Returns the int represented by the localized string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toUInt(), toString()
+
+    \since 5.10
+*/
+
+int QLocale::toInt(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<int>(d, s, ok);
+}
+
+/*!
+    Returns the unsigned int represented by the localized string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toInt(), toString()
+
+    \since 5.10
+*/
+
+uint QLocale::toUInt(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<uint>(d, s, ok);
+}
+
+/*!
+    Returns the long long int represented by the localized string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toInt(), toULongLong(), toDouble(), toString()
+
+    \since 5.10
+*/
+
+
+qlonglong QLocale::toLongLong(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<qlonglong>(d, s, ok);
+}
+
+/*!
+    Returns the unsigned long long int represented by the localized
+    string \a s.
+
+    If the conversion fails, the function returns 0.
+
+    If \a ok is not null, failure is reported by setting *ok to false, and
+    success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toLongLong(), toInt(), toDouble(), toString()
+
+    \since 5.10
+*/
+
+qulonglong QLocale::toULongLong(QStringView s, bool *ok) const
+{
+    return toIntegral_helper<qulonglong>(d, s, ok);
+}
+
+/*!
+    Returns the float represented by the localized string \a s, or 0.0
+    if the conversion failed.
+
+    If \a ok is not null, reports failure by setting
+    *ok to false and success by setting *ok to true.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toDouble(), toInt(), toString()
+
+    \since 5.10
+*/
+
+float QLocale::toFloat(QStringView s, bool *ok) const
+{
+    return QLocaleData::convertDoubleToFloat(toDouble(s, ok), ok);
+}
+
+/*!
+    Returns the double represented by the localized string \a s, or
+    0.0 if the conversion failed.
+
+    If \a ok is not null, reports failure by setting
+    *ok to false and success by setting *ok to true.
+
+    Unlike QString::toDouble(), this function does not fall back to
+    the "C" locale if the string cannot be interpreted in this
+    locale.
+
+    \snippet code/src_corelib_tools_qlocale.cpp 3-qstringview
+
+    Notice that the last conversion returns 1234.0, because '.' is the
+    thousands group separator in the German locale.
+
+    This function ignores leading and trailing whitespace.
+
+    \sa toFloat(), toInt(), toString()
+
+    \since 5.10
+*/
+
+double QLocale::toDouble(QStringView s, bool *ok) const
+{
+    return d->m_data->stringToDouble(s, ok, d->m_numberOptions);
+}
 
 /*!
     Returns a localized string representation of \a i.
@@ -1510,6 +1764,7 @@ QString QLocale::toString(qulonglong i) const
     return d->m_data->unsLongLongToString(i, -1, 10, -1, flags);
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Returns a localized string representation of the given \a date in the
     specified \a format.
@@ -1517,6 +1772,19 @@ QString QLocale::toString(qulonglong i) const
 */
 
 QString QLocale::toString(const QDate &date, const QString &format) const
+{
+    return d->dateTimeToString(format, QDateTime(), date, QTime(), this);
+}
+#endif
+
+/*!
+    \since 5.10
+
+    Returns a localized string representation of the given \a date in the
+    specified \a format.
+    If \a format is an empty string, an empty string is returned.
+*/
+QString QLocale::toString(const QDate &date, QStringView format) const
 {
     return d->dateTimeToString(format, QDateTime(), date, QTime(), this);
 }
@@ -1545,7 +1813,7 @@ QString QLocale::toString(const QDate &date, FormatType format) const
     return toString(date, format_str);
 }
 
-static bool timeFormatContainsAP(const QString &format)
+static bool timeFormatContainsAP(QStringView format)
 {
     int i = 0;
     while (i < format.size()) {
@@ -1562,6 +1830,7 @@ static bool timeFormatContainsAP(const QString &format)
     return false;
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Returns a localized string representation of the given \a time according
     to the specified \a format.
@@ -1571,7 +1840,21 @@ QString QLocale::toString(const QTime &time, const QString &format) const
 {
     return d->dateTimeToString(format, QDateTime(), QDate(), time, this);
 }
+#endif
 
+/*!
+    \since 5.10
+
+    Returns a localized string representation of the given \a time according
+    to the specified \a format.
+    If \a format is an empty string, an empty string is returned.
+*/
+QString QLocale::toString(const QTime &time, QStringView format) const
+{
+    return d->dateTimeToString(format, QDateTime(), QDate(), time, this);
+}
+
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     \since 4.4
 
@@ -1581,6 +1864,19 @@ QString QLocale::toString(const QTime &time, const QString &format) const
 */
 
 QString QLocale::toString(const QDateTime &dateTime, const QString &format) const
+{
+    return d->dateTimeToString(format, dateTime, QDate(), QTime(), this);
+}
+#endif
+
+/*!
+    \since 5.10
+
+    Returns a localized string representation of the given \a dateTime according
+    to the specified \a format.
+    If \a format is an empty string, an empty string is returned.
+*/
+QString QLocale::toString(const QDateTime &dateTime, QStringView format) const
 {
     return d->dateTimeToString(format, dateTime, QDate(), QTime(), this);
 }
@@ -1808,9 +2104,9 @@ QDateTime QLocale::toDateTime(const QString &string, FormatType format) const
 QTime QLocale::toTime(const QString &string, const QString &format) const
 {
     QTime time;
-#ifndef QT_BOOTSTRAPPED
+#if QT_CONFIG(datetimeparser)
     QDateTimeParser dt(QVariant::Time, QDateTimeParser::FromString);
-    dt.defaultLocale = *this;
+    dt.setDefaultLocale(*this);
     if (dt.parseFormat(format))
         dt.fromString(string, 0, &time);
 #else
@@ -1839,9 +2135,9 @@ QTime QLocale::toTime(const QString &string, const QString &format) const
 QDate QLocale::toDate(const QString &string, const QString &format) const
 {
     QDate date;
-#ifndef QT_BOOTSTRAPPED
+#if QT_CONFIG(datetimeparser)
     QDateTimeParser dt(QVariant::Date, QDateTimeParser::FromString);
-    dt.defaultLocale = *this;
+    dt.setDefaultLocale(*this);
     if (dt.parseFormat(format))
         dt.fromString(string, &date, 0);
 #else
@@ -1869,12 +2165,12 @@ QDate QLocale::toDate(const QString &string, const QString &format) const
 #ifndef QT_NO_DATESTRING
 QDateTime QLocale::toDateTime(const QString &string, const QString &format) const
 {
-#ifndef QT_BOOTSTRAPPED
+#if QT_CONFIG(datetimeparser)
     QTime time;
     QDate date;
 
     QDateTimeParser dt(QVariant::DateTime, QDateTimeParser::FromString);
-    dt.defaultLocale = *this;
+    dt.setDefaultLocale(*this);
     if (dt.parseFormat(format) && dt.fromString(string, &date, &time))
         return QDateTime(date, time);
 #else
@@ -2002,6 +2298,10 @@ QString QLocale::toString(double i, char f, int prec) const
 
     if (!(d->m_numberOptions & OmitGroupSeparator))
         flags |= QLocaleData::ThousandsGroup;
+    if (!(d->m_numberOptions & OmitLeadingZeroInExponent))
+        flags |= QLocaleData::ZeroPadExponent;
+    if (d->m_numberOptions & IncludeTrailingZeroesAfterDot)
+        flags |= QLocaleData::AddTrailingZeroes;
     return d->m_data->doubleToString(i, prec, form, -1, flags);
 }
 
@@ -2059,8 +2359,8 @@ QList<QLocale> QLocale::matchingLocales(QLocale::Language language,
             && (language == QLocale::AnyLanguage || data->m_language_id == uint(language))) {
         if ((script == QLocale::AnyScript || data->m_script_id == uint(script))
             && (country == QLocale::AnyCountry || data->m_country_id == uint(country))) {
-            QLocale locale(*QLocalePrivate::create(data));
-            result.append(locale);
+            result.append(QLocale(*(data->m_language_id == C ? c_private()
+                                    : QLocalePrivate::create(data))));
         }
         ++data;
     }
@@ -2366,9 +2666,11 @@ QLocale::MeasurementSystem QLocale::measurementSystem() const
 Qt::LayoutDirection QLocale::textDirection() const
 {
     switch (script()) {
+    case QLocale::AdlamScript:
     case QLocale::ArabicScript:
     case QLocale::AvestanScript:
     case QLocale::CypriotScript:
+    case QLocale::HatranScript:
     case QLocale::HebrewScript:
     case QLocale::ImperialAramaicScript:
     case QLocale::InscriptionalPahlaviScript:
@@ -2382,6 +2684,7 @@ Qt::LayoutDirection QLocale::textDirection() const
     case QLocale::MeroiticScript:
     case QLocale::NabataeanScript:
     case QLocale::NkoScript:
+    case QLocale::OldHungarianScript:
     case QLocale::OldNorthArabianScript:
     case QLocale::OldSouthArabianScript:
     case QLocale::OrkhonScript:
@@ -2412,7 +2715,7 @@ Qt::LayoutDirection QLocale::textDirection() const
 */
 QString QLocale::toUpper(const QString &str) const
 {
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     bool ok = true;
     QString result = QIcu::toUpper(d->bcp47Name('_'), str, &ok);
     if (ok)
@@ -2436,7 +2739,7 @@ QString QLocale::toUpper(const QString &str) const
 */
 QString QLocale::toLower(const QString &str) const
 {
-#ifdef QT_USE_ICU
+#if QT_CONFIG(icu)
     bool ok = true;
     const QString result = QIcu::toLower(d->bcp47Name('_'), str, &ok);
     if (ok)
@@ -2488,7 +2791,7 @@ QString QLocale::pmText() const
 }
 
 
-QString QLocalePrivate::dateTimeToString(const QString &format, const QDateTime &datetime,
+QString QLocalePrivate::dateTimeToString(QStringView format, const QDateTime &datetime,
                                          const QDate &dateOnly, const QTime &timeOnly,
                                          const QLocale *q) const
 {
@@ -2521,7 +2824,7 @@ QString QLocalePrivate::dateTimeToString(const QString &format, const QDateTime 
         }
 
         const QChar c = format.at(i);
-        int repeat = qt_repeatCount(format, i);
+        int repeat = qt_repeatCount(format.mid(i));
         bool used = false;
         if (formatDate) {
             switch (c.unicode()) {
@@ -2656,7 +2959,7 @@ QString QLocalePrivate::dateTimeToString(const QString &format, const QDateTime 
 
             case 'a':
                 used = true;
-                if (i + 1 < format.length() && format.at(i + 1).unicode() == 'p') {
+                if (i + 1 < format.size() && format.at(i + 1).unicode() == 'p') {
                     repeat = 2;
                 } else {
                     repeat = 1;
@@ -2666,7 +2969,7 @@ QString QLocalePrivate::dateTimeToString(const QString &format, const QDateTime 
 
             case 'A':
                 used = true;
-                if (i + 1 < format.length() && format.at(i + 1).unicode() == 'P') {
+                if (i + 1 < format.size() && format.at(i + 1).unicode() == 'P') {
                     repeat = 2;
                 } else {
                     repeat = 1;
@@ -2681,14 +2984,17 @@ QString QLocalePrivate::dateTimeToString(const QString &format, const QDateTime 
                 } else {
                     repeat = 1;
                 }
-                switch (repeat) {
-                case 1:
-                    result.append(m_data->longLongToString(time.msec()));
-                    break;
-                case 3:
-                    result.append(m_data->longLongToString(time.msec(), -1, 10, 3, QLocaleData::ZeroPadded));
-                    break;
+
+                // note: the millisecond component is treated like the decimal part of the seconds
+                // so ms == 2 is always printed as "002", but ms == 200 can be either "2" or "200"
+                result.append(m_data->longLongToString(time.msec(), -1, 10, 3, QLocaleData::ZeroPadded));
+                if (repeat == 1) {
+                    if (result.endsWith(zero()))
+                        result.chop(1);
+                    if (result.endsWith(zero()))
+                        result.chop(1);
                 }
+
                 break;
 
             case 't':
@@ -2726,57 +3032,33 @@ QString QLocaleData::doubleToString(const QChar _zero, const QChar plus, const Q
                                     const QChar exponential, const QChar group, const QChar decimal,
                                     double d, int precision, DoubleForm form, int width, unsigned flags)
 {
-    if (precision == -1)
+    if (precision != QLocale::FloatingPointShortest && precision < 0)
         precision = 6;
-    if (width == -1)
+    if (width < 0)
         width = 0;
 
     bool negative = false;
-    bool special_number = false; // nan, +/-inf
     QString num_str;
 
-    // Detect special numbers (nan, +/-inf)
-    if (qt_is_inf(d)) {
-        num_str = QString::fromLatin1("inf");
-        special_number = true;
-        negative = d < 0;
-    } else if (qt_is_nan(d)) {
-        num_str = QString::fromLatin1("nan");
-        special_number = true;
-    }
+    int decpt;
+    int bufSize = 1;
+    if (precision == QLocale::FloatingPointShortest)
+        bufSize += DoubleMaxSignificant;
+    else if (form == DFDecimal) // optimize for numbers between -512k and 512k
+        bufSize += ((d > (1 << 19) || d < -(1 << 19)) ? DoubleMaxDigitsBeforeDecimal : 6) +
+                precision;
+    else // Add extra digit due to different interpretations of precision. Also, "nan" has to fit.
+        bufSize += qMax(2, precision) + 1;
 
-    // Handle normal numbers
-    if (!special_number) {
-        int decpt, sign;
-        QString digits;
+    QVarLengthArray<char> buf(bufSize);
+    int length;
 
-        int mode;
-        if (form == DFDecimal)
-            mode = 3;
-        else
-            mode = 2;
+    doubleToAscii(d, form, precision, buf.data(), bufSize, negative, length, decpt);
 
-        /* This next bit is a bit quirky. In DFExponent form, the precision
-           is the number of digits after decpt. So that would suggest using
-           mode=3 for qdtoa. But qdtoa behaves strangely when mode=3 and
-           precision=0. So we get around this by using mode=2 and reasoning
-           that we want precision+1 significant digits, since the decimal
-           point in this mode is always after the first digit. */
-        int pr = precision;
-        if (form == DFExponent)
-            ++pr;
-
-        char *rve = 0;
-        char *buff = 0;
-        QT_TRY {
-            digits = QLatin1String(qdtoa(d, mode, pr, &decpt, &sign, &rve, &buff));
-        } QT_CATCH(...) {
-            if (buff != 0)
-                free(buff);
-            QT_RETHROW;
-        }
-        if (buff != 0)
-            free(buff);
+    if (qstrncmp(buf.data(), "inf", 3) == 0 || qstrncmp(buf.data(), "nan", 3) == 0) {
+        num_str = QString::fromLatin1(buf.data(), length);
+    } else { // Handle normal numbers
+        QString digits = QString::fromLatin1(buf.data(), length);
 
         if (_zero.unicode() != '0') {
             ushort z = _zero.unicode() - '0';
@@ -2784,12 +3066,12 @@ QString QLocaleData::doubleToString(const QChar _zero, const QChar plus, const Q
                 reinterpret_cast<ushort *>(digits.data())[i] += z;
         }
 
-        bool always_show_decpt = (flags & Alternate || flags & ForcePoint);
+        bool always_show_decpt = (flags & ForcePoint);
         switch (form) {
             case DFExponent: {
                 num_str = exponentForm(_zero, decimal, exponential, group, plus, minus,
                                        digits, decpt, precision, PMDecimalDigits,
-                                       always_show_decpt);
+                                       always_show_decpt, flags & ZeroPadExponent);
                 break;
             }
             case DFDecimal: {
@@ -2799,13 +3081,26 @@ QString QLocaleData::doubleToString(const QChar _zero, const QChar plus, const Q
                 break;
             }
             case DFSignificantDigits: {
-                PrecisionMode mode = (flags & Alternate) ?
+                PrecisionMode mode = (flags & AddTrailingZeroes) ?
                             PMSignificantDigits : PMChopTrailingZeros;
 
-                if (decpt != digits.length() && (decpt <= -4 || decpt > precision))
+                int cutoff = precision < 0 ? 6 : precision;
+                // Find out which representation is shorter
+                if (precision == QLocale::FloatingPointShortest && decpt > 0) {
+                    cutoff = digits.length() + 4; // 'e', '+'/'-', one digit exponent
+                    if (decpt <= 10) {
+                        ++cutoff;
+                    } else {
+                        cutoff += decpt > 100 ? 2 : 1;
+                    }
+                    if (!always_show_decpt && digits.length() > decpt)
+                        ++cutoff; // decpt shown in exponent form, but not in decimal form
+                }
+
+                if (decpt != digits.length() && (decpt <= -4 || decpt > cutoff))
                     num_str = exponentForm(_zero, decimal, exponential, group, plus, minus,
                                            digits, decpt, precision, mode,
-                                           always_show_decpt);
+                                           always_show_decpt, flags & ZeroPadExponent);
                 else
                     num_str = decimalForm(_zero, decimal, group,
                                           digits, decpt, precision, mode,
@@ -2814,23 +3109,22 @@ QString QLocaleData::doubleToString(const QChar _zero, const QChar plus, const Q
             }
         }
 
-        negative = sign != 0 && !isZero(d);
-    }
+        if (isZero(d))
+            negative = false;
 
-    // pad with zeros. LeftAdjusted overrides this flag). Also, we don't
-    // pad special numbers
-    if (flags & QLocaleData::ZeroPadded
-            && !(flags & QLocaleData::LeftAdjusted)
-            && !special_number) {
-        int num_pad_chars = width - num_str.length();
-        // leave space for the sign
-        if (negative
-                || flags & QLocaleData::AlwaysShowSign
-                || flags & QLocaleData::BlankBeforePositive)
-            --num_pad_chars;
+        // pad with zeros. LeftAdjusted overrides this flag). Also, we don't
+        // pad special numbers
+        if (flags & QLocaleData::ZeroPadded && !(flags & QLocaleData::LeftAdjusted)) {
+            int num_pad_chars = width - num_str.length();
+            // leave space for the sign
+            if (negative
+                    || flags & QLocaleData::AlwaysShowSign
+                    || flags & QLocaleData::BlankBeforePositive)
+                --num_pad_chars;
 
-        for (int i = 0; i < num_pad_chars; ++i)
-            num_str.prepend(_zero);
+            for (int i = 0; i < num_pad_chars; ++i)
+                num_str.prepend(_zero);
+        }
     }
 
     // add sign
@@ -2842,7 +3136,7 @@ QString QLocaleData::doubleToString(const QChar _zero, const QChar plus, const Q
         num_str.prepend(QLatin1Char(' '));
 
     if (flags & QLocaleData::CapitalEorX)
-        num_str = num_str.toUpper();
+        num_str = std::move(num_str).toUpper();
 
     return num_str;
 }
@@ -2875,11 +3169,15 @@ QString QLocaleData::longLongToString(const QChar zero, const QChar group,
         negative = false; // neither are negative numbers
     }
 
-    QString num_str;
-    if (base == 10)
-        num_str = qlltoa(l, base, zero);
-    else
-        num_str = qulltoa(l, base, zero);
+QT_WARNING_PUSH
+    /* "unary minus operator applied to unsigned type, result still unsigned" */
+QT_WARNING_DISABLE_MSVC(4146)
+    /*
+      Negating std::numeric_limits<qlonglong>::min() hits undefined behavior, so
+      taking an absolute value has to cast to unsigned to change sign.
+     */
+    QString num_str = qulltoa(negative ? -qulonglong(l) : qulonglong(l), base, zero);
+QT_WARNING_POP
 
     uint cnt_thousand_sep = 0;
     if (flags & ThousandsGroup && base == 10) {
@@ -2892,7 +3190,7 @@ QString QLocaleData::longLongToString(const QChar zero, const QChar group,
     for (int i = num_str.length()/* - cnt_thousand_sep*/; i < precision; ++i)
         num_str.prepend(base == 10 ? zero : QChar::fromLatin1('0'));
 
-    if ((flags & Alternate || flags & ShowBase)
+    if ((flags & ShowBase)
             && base == 8
             && (num_str.isEmpty() || num_str[0].unicode() != QLatin1Char('0')))
         num_str.prepend(QLatin1Char('0'));
@@ -2913,10 +3211,10 @@ QString QLocaleData::longLongToString(const QChar zero, const QChar group,
             --num_pad_chars;
 
         // leave space for optional '0x' in hex form
-        if (base == 16 && (flags & Alternate || flags & ShowBase))
+        if (base == 16 && (flags & ShowBase))
             num_pad_chars -= 2;
         // leave space for optional '0b' in binary form
-        else if (base == 2 && (flags & Alternate || flags & ShowBase))
+        else if (base == 2 && (flags & ShowBase))
             num_pad_chars -= 2;
 
         for (int i = 0; i < num_pad_chars; ++i)
@@ -2924,11 +3222,11 @@ QString QLocaleData::longLongToString(const QChar zero, const QChar group,
     }
 
     if (flags & CapitalEorX)
-        num_str = num_str.toUpper();
+        num_str = std::move(num_str).toUpper();
 
-    if (base == 16 && (flags & Alternate || flags & ShowBase))
+    if (base == 16 && (flags & ShowBase))
         num_str.prepend(QLatin1String(flags & UppercaseBase ? "0X" : "0x"));
-    if (base == 2 && (flags & Alternate || flags & ShowBase))
+    if (base == 2 && (flags & ShowBase))
         num_str.prepend(QLatin1String(flags & UppercaseBase ? "0B" : "0b"));
 
     // add sign
@@ -2956,13 +3254,17 @@ QString QLocaleData::unsLongLongToString(const QChar zero, const QChar group,
                                             int base, int width,
                                             unsigned flags)
 {
+    const QChar resultZero = base == 10 ? zero : QChar(QLatin1Char('0'));
+    QString num_str = l ? qulltoa(l, base, zero) : QString(resultZero);
+
     bool precision_not_specified = false;
     if (precision == -1) {
+        if (flags == NoFlags)
+            return num_str; // fast-path: nothing below applies, so we're done.
+
         precision_not_specified = true;
         precision = 1;
     }
-
-    QString num_str = qulltoa(l, base, zero);
 
     uint cnt_thousand_sep = 0;
     if (flags & ThousandsGroup && base == 10) {
@@ -2972,12 +3274,13 @@ QString QLocaleData::unsLongLongToString(const QChar zero, const QChar group,
         }
     }
 
-    for (int i = num_str.length()/* - cnt_thousand_sep*/; i < precision; ++i)
-        num_str.prepend(base == 10 ? zero : QChar::fromLatin1('0'));
+    const int zeroPadding = precision - num_str.length()/* + cnt_thousand_sep*/;
+    if (zeroPadding > 0)
+        num_str.prepend(QString(zeroPadding, resultZero));
 
-    if ((flags & Alternate || flags & ShowBase)
+    if ((flags & ShowBase)
             && base == 8
-            && (num_str.isEmpty() || num_str[0].unicode() != QLatin1Char('0')))
+            && (num_str.isEmpty() || num_str.at(0).unicode() != QLatin1Char('0')))
         num_str.prepend(QLatin1Char('0'));
 
     // LeftAdjusted overrides this flag ZeroPadded. sprintf only padds
@@ -2990,22 +3293,22 @@ QString QLocaleData::unsLongLongToString(const QChar zero, const QChar group,
         int num_pad_chars = width - num_str.length();
 
         // leave space for optional '0x' in hex form
-        if (base == 16 && flags & Alternate)
+        if (base == 16 && flags & ShowBase)
             num_pad_chars -= 2;
         // leave space for optional '0b' in binary form
-        else if (base == 2 && flags & Alternate)
+        else if (base == 2 && flags & ShowBase)
             num_pad_chars -= 2;
 
-        for (int i = 0; i < num_pad_chars; ++i)
-            num_str.prepend(base == 10 ? zero : QChar::fromLatin1('0'));
+        if (num_pad_chars > 0)
+            num_str.prepend(QString(num_pad_chars, resultZero));
     }
 
     if (flags & CapitalEorX)
-        num_str = num_str.toUpper();
+        num_str = std::move(num_str).toUpper();
 
-    if (base == 16 && (flags & Alternate || flags & ShowBase))
+    if (base == 16 && flags & ShowBase)
         num_str.prepend(QLatin1String(flags & UppercaseBase ? "0X" : "0x"));
-    else if (base == 2 && (flags & Alternate || flags & ShowBase))
+    else if (base == 2 && flags & ShowBase)
         num_str.prepend(QLatin1String(flags & UppercaseBase ? "0B" : "0b"));
 
     // add sign
@@ -3025,13 +3328,12 @@ QString QLocaleData::unsLongLongToString(const QChar zero, const QChar group,
     number. We can't detect junk here, since we don't even know the base
     of the number.
 */
-bool QLocaleData::numberToCLocale(const QChar *str, int len,
-                                            GroupSeparatorMode group_sep_mode,
-                                            CharBuff *result) const
+bool QLocaleData::numberToCLocale(QStringView s, QLocale::NumberOptions number_options,
+                                  CharBuff *result) const
 {
-    const QChar *uc = str;
-    int l = len;
-    int idx = 0;
+    const QChar *uc = s.data();
+    auto l = s.size();
+    decltype(l) idx = 0;
 
     // Skip whitespace
     while (idx < l && uc[idx].isSpace())
@@ -3049,6 +3351,7 @@ bool QLocaleData::numberToCLocale(const QChar *str, int len,
     int decpt_idx = -1;
     int last_separator_idx = -1;
     int start_of_digits_idx = -1;
+    int exponent_idx = -1;
 
     while (idx < l) {
         const QChar in = uc[idx];
@@ -3066,13 +3369,37 @@ bool QLocaleData::numberToCLocale(const QChar *str, int len,
                 out = in.toLatin1();
             else
                 break;
+        } else if (out == '.') {
+            // Fail if more than one decimal point or point after e
+            if (decpt_idx != -1 || exponent_idx != -1)
+                return false;
+            decpt_idx = idx;
+        } else if (out == 'e' || out == 'E') {
+            exponent_idx = idx;
         }
-        if (group_sep_mode == ParseGroupSeparators) {
+
+        if (number_options & QLocale::RejectLeadingZeroInExponent) {
+            if (exponent_idx != -1 && out == '0' && idx < l - 1) {
+                // After the exponent there can only be '+', '-' or digits.
+                // If we find a '0' directly after some non-digit, then that is a leading zero.
+                if (result->last() < '0' || result->last() > '9')
+                    return false;
+            }
+        }
+
+        if (number_options & QLocale::RejectTrailingZeroesAfterDot) {
+            // If we've seen a decimal point and the last character after the exponent is 0, then
+            // that is a trailing zero.
+            if (decpt_idx >= 0 && idx == exponent_idx && result->last() == '0')
+                    return false;
+        }
+
+        if (!(number_options & QLocale::RejectGroupSeparator)) {
             if (start_of_digits_idx == -1 && out >= '0' && out <= '9') {
                 start_of_digits_idx = idx;
             } else if (out == ',') {
-                // Don't allow group chars after the decimal point
-                if (decpt_idx != -1)
+                // Don't allow group chars after the decimal point or exponent
+                if (decpt_idx != -1 || exponent_idx != -1)
                     return false;
 
                 // check distance from the last separator or from the beginning of the digits
@@ -3089,12 +3416,6 @@ bool QLocaleData::numberToCLocale(const QChar *str, int len,
                 ++idx;
                 continue;
             } else if (out == '.' || out == 'e' || out == 'E') {
-                // Fail if more than one decimal point
-                if (out == '.' && decpt_idx != -1)
-                    return false;
-                if (decpt_idx == -1)
-                    decpt_idx = idx;
-
                 // check distance from the last separator
                 // ### FIXME: Some locales allow other groupings! See https://en.wikipedia.org/wiki/Thousands_separator
                 if (last_separator_idx != -1 && idx - last_separator_idx != 4)
@@ -3110,7 +3431,7 @@ bool QLocaleData::numberToCLocale(const QChar *str, int len,
         ++idx;
     }
 
-    if (group_sep_mode == ParseGroupSeparators) {
+    if (!(number_options & QLocale::RejectGroupSeparator)) {
         // group separator post-processing
         // did we end in a separator?
         if (last_separator_idx + 1 == idx)
@@ -3120,12 +3441,18 @@ bool QLocaleData::numberToCLocale(const QChar *str, int len,
             return false;
     }
 
+    if (number_options & QLocale::RejectTrailingZeroesAfterDot) {
+        // In decimal form, the last character can be a trailing zero if we've seen a decpt.
+        if (decpt_idx != -1 && exponent_idx == -1 && result->last() == '0')
+            return false;
+    }
+
     result->append('\0');
     return idx == l;
 }
 
-bool QLocaleData::validateChars(const QString &str, NumberMode numMode, QByteArray *buff,
-                                int decDigits, bool rejectGroupSeparators) const
+bool QLocaleData::validateChars(QStringView str, NumberMode numMode, QByteArray *buff,
+                                int decDigits, QLocale::NumberOptions number_options) const
 {
     buff->clear();
     buff->reserve(str.length());
@@ -3138,7 +3465,7 @@ bool QLocaleData::validateChars(const QString &str, NumberMode numMode, QByteArr
     bool dec = false;
     int decDigitCnt = 0;
 
-    for (int i = 0; i < str.length(); ++i) {
+    for (qsizetype i = 0; i < str.size(); ++i) {
         char c = digitToCLocale(str.at(i));
 
         if (c >= '0' && c <= '9') {
@@ -3147,6 +3474,13 @@ bool QLocaleData::validateChars(const QString &str, NumberMode numMode, QByteArr
                 if (dec && decDigits != -1 && decDigits < ++decDigitCnt)
                     return false;
             }
+
+            // The only non-digit character after the 'e' can be '+' or '-'.
+            // If a zero is directly after that, then the exponent is zero-padded.
+            if ((number_options & QLocale::RejectLeadingZeroInExponent) && c == '0' && eCnt > 0 &&
+                    !lastWasDigit)
+                return false;
+
             lastWasDigit = true;
         } else {
             switch (c) {
@@ -3186,7 +3520,8 @@ bool QLocaleData::validateChars(const QString &str, NumberMode numMode, QByteArr
 
                 case ',':
                     //it can only be placed after a digit which is before the decimal point
-                    if (rejectGroupSeparators || !lastWasDigit || decPointCnt > 0)
+                    if ((number_options & QLocale::RejectGroupSeparator) || !lastWasDigit ||
+                            decPointCnt > 0)
                         return false;
                     break;
 
@@ -3217,23 +3552,28 @@ bool QLocaleData::validateChars(const QString &str, NumberMode numMode, QByteArr
     return true;
 }
 
-double QLocaleData::stringToDouble(const QChar *begin, int len, bool *ok,
-                                        GroupSeparatorMode group_sep_mode) const
+double QLocaleData::stringToDouble(QStringView str, bool *ok,
+                                   QLocale::NumberOptions number_options) const
 {
     CharBuff buff;
-    if (!numberToCLocale(begin, len, group_sep_mode, &buff)) {
+    if (!numberToCLocale(str, number_options, &buff)) {
         if (ok != 0)
             *ok = false;
         return 0.0;
     }
-    return bytearrayToDouble(buff.constData(), ok);
+    int processed = 0;
+    bool nonNullOk = false;
+    double d = asciiToDouble(buff.constData(), buff.length() - 1, nonNullOk, processed);
+    if (ok)
+        *ok = nonNullOk;
+    return d;
 }
 
-qlonglong QLocaleData::stringToLongLong(const QChar *begin, int len, int base,
-                                           bool *ok, GroupSeparatorMode group_sep_mode) const
+qlonglong QLocaleData::stringToLongLong(QStringView str, int base, bool *ok,
+                                        QLocale::NumberOptions number_options) const
 {
     CharBuff buff;
-    if (!numberToCLocale(begin, len, group_sep_mode, &buff)) {
+    if (!numberToCLocale(str, number_options, &buff)) {
         if (ok != 0)
             *ok = false;
         return 0;
@@ -3242,11 +3582,11 @@ qlonglong QLocaleData::stringToLongLong(const QChar *begin, int len, int base,
     return bytearrayToLongLong(buff.constData(), base, ok);
 }
 
-qulonglong QLocaleData::stringToUnsLongLong(const QChar *begin, int len, int base,
-                                               bool *ok, GroupSeparatorMode group_sep_mode) const
+qulonglong QLocaleData::stringToUnsLongLong(QStringView str, int base, bool *ok,
+                                            QLocale::NumberOptions number_options) const
 {
     CharBuff buff;
-    if (!numberToCLocale(begin, len, group_sep_mode, &buff)) {
+    if (!numberToCLocale(str, number_options, &buff)) {
         if (ok != 0)
             *ok = false;
         return 0;
@@ -3255,59 +3595,19 @@ qulonglong QLocaleData::stringToUnsLongLong(const QChar *begin, int len, int bas
     return bytearrayToUnsLongLong(buff.constData(), base, ok);
 }
 
-double QLocaleData::bytearrayToDouble(const char *num, bool *ok, bool *overflow)
+double QLocaleData::bytearrayToDouble(const char *num, bool *ok)
 {
-    if (ok != 0)
-        *ok = true;
-    if (overflow != 0)
-        *overflow = false;
-
-    if (*num == '\0') {
-        if (ok != 0)
-            *ok = false;
-        return 0.0;
-    }
-
-    if (qstrcmp(num, "nan") == 0)
-        return qt_snan();
-
-    if (qstrcmp(num, "+inf") == 0 || qstrcmp(num, "inf") == 0)
-        return qt_inf();
-
-    if (qstrcmp(num, "-inf") == 0)
-        return -qt_inf();
-
-    bool _ok;
-    const char *endptr;
-    double d = qstrtod(num, &endptr, &_ok);
-
-    if (!_ok) {
-        // the only way strtod can fail with *endptr != '\0' on a non-empty
-        // input string is overflow
-        if (ok != 0)
-            *ok = false;
-        if (overflow != 0)
-            *overflow = *endptr != '\0';
-        return 0.0;
-    }
-
-    if (*endptr != '\0') {
-        // we stopped at a non-digit character after converting some digits
-        if (ok != 0)
-            *ok = false;
-        if (overflow != 0)
-            *overflow = false;
-        return 0.0;
-    }
-
-    if (ok != 0)
-        *ok = true;
-    if (overflow != 0)
-        *overflow = false;
+    bool nonNullOk = false;
+    int len = static_cast<int>(strlen(num));
+    Q_ASSERT(len >= 0);
+    int processed = 0;
+    double d = asciiToDouble(num, len, nonNullOk, processed);
+    if (ok)
+        *ok = nonNullOk;
     return d;
 }
 
-qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok, bool *overflow)
+qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok)
 {
     bool _ok;
     const char *endptr;
@@ -3315,8 +3615,6 @@ qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok, 
     if (*num == '\0') {
         if (ok != 0)
             *ok = false;
-        if (overflow != 0)
-            *overflow = false;
         return 0;
     }
 
@@ -3325,11 +3623,6 @@ qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok, 
     if (!_ok) {
         if (ok != 0)
             *ok = false;
-        if (overflow != 0) {
-            // the only way qstrtoll can fail with *endptr != '\0' on a non-empty
-            // input string is overflow
-            *overflow = *endptr != '\0';
-        }
         return 0;
     }
 
@@ -3337,15 +3630,11 @@ qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok, 
         // we stopped at a non-digit character after converting some digits
         if (ok != 0)
             *ok = false;
-        if (overflow != 0)
-            *overflow = false;
         return 0;
     }
 
     if (ok != 0)
         *ok = true;
-    if (overflow != 0)
-        *overflow = false;
     return l;
 }
 
@@ -3472,11 +3761,28 @@ QString QLocale::toCurrencyString(qulonglong value, const QString &symbol) const
     return format.arg(str, sym);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 /*!
     \since 4.8
     \overload
 */
 QString QLocale::toCurrencyString(double value, const QString &symbol) const
+{
+    return toCurrencyString(value, symbol, d->m_data->m_currency_digits);
+}
+#endif
+
+/*!
+    \since 5.7
+    \overload toCurrencyString()
+
+    Returns a localized string representation of \a value as a currency.
+    If the \a symbol is provided it is used instead of the default currency symbol.
+    If the \a precision is provided it is used to set the precision of the currency value.
+
+    \sa currencySymbol()
+ */
+QString QLocale::toCurrencyString(double value, const QString &symbol, int precision) const
 {
 #ifndef QT_NO_SYSTEMLOCALE
     if (d->m_data == systemData()) {
@@ -3494,12 +3800,87 @@ QString QLocale::toCurrencyString(double value, const QString &symbol) const
         size = data->m_currency_negative_format_size;
         value = -value;
     }
-    QString str = toString(value, 'f', d->m_data->m_currency_digits);
+    QString str = toString(value, 'f', precision == -1 ? d->m_data->m_currency_digits : precision);
     QString sym = symbol.isNull() ? currencySymbol() : symbol;
     if (sym.isEmpty())
         sym = currencySymbol(QLocale::CurrencyIsoCode);
     QString format = getLocaleData(currency_format_data + idx, size);
     return format.arg(str, sym);
+}
+
+/*!
+  \fn QString QLocale::toCurrencyString(float i, const QString &symbol) const
+  \fn QString QLocale::toCurrencyString(float i, const QString &symbol, int precision) const
+  \overload toCurrencyString()
+*/
+
+/*!
+    \since 5.10
+
+    \enum QLocale::DataSizeFormat
+
+    Specifies the format for representation of data quantities.
+
+    \omitvalue DataSizeBase1000
+    \omitvalue DataSizeSIQuantifiers
+    \value DataSizeIecFormat            format using base 1024 and IEC prefixes: KiB, MiB, GiB, ...
+    \value DataSizeTraditionalFormat    format using base 1024 and SI prefixes: kB, MB, GB, ...
+    \value DataSizeSIFormat             format using base 1000 and SI prefixes: kB, MB, GB, ...
+
+    \sa formattedDataSize()
+*/
+
+/*!
+    \since 5.10
+
+    Converts a size in bytes to a human-readable localized string, comprising a
+    number and a quantified unit. The quantifier is chosen such that the number
+    is at least one, and as small as possible. For example if \a bytes is
+    16384, \a precision is 2, and \a format is \l DataSizeIecFormat (the
+    default), this function returns "16.00 KiB"; for 1330409069609 bytes it
+    returns "1.21 GiB"; and so on. If \a format is \l DataSizeIecFormat or
+    \l DataSizeTraditionalFormat, the given number of bytes is divided by a
+    power of 1024, with result less than 1024; for \l DataSizeSIFormat, it is
+    divided by a power of 1000, with result less than 1000.
+    \c DataSizeIecFormat uses the new IEC standard quantifiers Ki, Mi and so on,
+    whereas \c DataSizeSIFormat uses the older SI quantifiers k, M, etc., and
+    \c DataSizeTraditionalFormat abuses them.
+*/
+QString QLocale::formattedDataSize(qint64 bytes, int precision, DataSizeFormats format)
+{
+    int power, base = 1000;
+    if (!bytes) {
+        power = 0;
+    } else if (format & DataSizeBase1000) {
+        power = int(std::log10(qAbs(bytes)) / 3);
+    } else { // Compute log2(bytes) / 10:
+        power = int((63 - qCountLeadingZeroBits(quint64(qAbs(bytes)))) / 10);
+        base = 1024;
+    }
+    // Only go to doubles if we'll be using a quantifier:
+    const QString number = power
+        ? toString(bytes / std::pow(double(base), power), 'f', qMin(precision, 3 * power))
+        : toString(bytes);
+
+    // We don't support sizes in units larger than exbibytes because
+    // the number of bytes would not fit into qint64.
+    Q_ASSERT(power <= 6 && power >= 0);
+    QString unit;
+    if (power > 0) {
+        quint16 index, size;
+        if (format & DataSizeSIQuantifiers) {
+            index = d->m_data->m_byte_si_quantified_idx;
+            size = d->m_data->m_byte_si_quantified_size;
+        } else {
+            index = d->m_data->m_byte_iec_quantified_idx;
+            size = d->m_data->m_byte_iec_quantified_size;
+        }
+        unit = getLocaleListData(byte_unit_data + index, size, power - 1);
+    } else {
+        unit = getLocaleData(byte_unit_data + d->m_data->m_byte_idx, d->m_data->m_byte_size);
+    }
+
+    return number + QLatin1Char(' ') + unit;
 }
 
 /*!
@@ -3598,3 +3979,7 @@ QDebug operator<<(QDebug dbg, const QLocale &l)
 }
 #endif
 QT_END_NAMESPACE
+
+#ifndef QT_NO_QOBJECT
+#include "moc_qlocale.cpp"
+#endif

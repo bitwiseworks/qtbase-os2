@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,7 +33,9 @@
 #include <qtextcodec.h>
 #include <qfile.h>
 #include <time.h>
-#include <qprocess.h>
+#if QT_CONFIG(process)
+# include <qprocess.h>
+#endif
 #include <QThreadPool>
 
 class tst_QTextCodec : public QObject
@@ -128,6 +126,7 @@ void tst_QTextCodec::toUnicode()
         }
         QVERIFY(!uniString.isEmpty());
         QCOMPARE( ba, c->fromUnicode( uniString ) );
+        QCOMPARE(ba, c->fromUnicode(QStringView(uniString)) );
 
         char ch = '\0';
         QVERIFY(c->toUnicode(&ch, 1).length() == 1);
@@ -156,7 +155,7 @@ void tst_QTextCodec::codecForName()
 
     QTextCodec *codec = QTextCodec::codecForName(hint.toLatin1());
     if (actualCodecName.isEmpty()) {
-        QVERIFY(codec == 0);
+        QVERIFY(!codec);
     } else {
         QVERIFY(codec != 0);
         QCOMPARE(QString(codec->name()), actualCodecName);
@@ -264,8 +263,8 @@ void tst_QTextCodec::fromUnicode()
         If the encoding is a superset of ASCII, test that the byte
         array is correct (no off by one, no trailing '\0').
     */
-    QByteArray result = codec->fromUnicode(QString("abc"));
-    if (result.startsWith("a")) {
+    QByteArray result = codec->fromUnicode(QStringViewLiteral("abc"));
+    if (result.startsWith('a')) {
         QCOMPARE(result.size(), 3);
         QCOMPARE(result, QByteArray("abc"));
     } else {
@@ -336,7 +335,8 @@ void tst_QTextCodec::codecForLocale()
 
     // find a codec that is not the codecForLocale()
     QTextCodec *codec2 = 0;
-    foreach (int mib, QTextCodec::availableMibs()) {
+    const auto availableMibs = QTextCodec::availableMibs();
+    for (int mib : availableMibs ) {
         if (mib != codec->mibEnum()) {
             codec2 = QTextCodec::codecForMib(mib);
             if (codec2)
@@ -398,6 +398,7 @@ void tst_QTextCodec::asciiToIscii() const
 
         QVERIFY2(textCodec->canEncode(ascii), qPrintable(QString::fromLatin1("Failed for full string with encoding %1")
                                                          .arg(QString::fromLatin1(textCodec->name().constData()))));
+        QVERIFY(textCodec->canEncode(QStringView(ascii)));
     }
 }
 
@@ -405,12 +406,11 @@ void tst_QTextCodec::nonFlaggedCodepointFFFF() const
 {
     //Check that the code point 0xFFFF (=non-character code 0xEFBFBF) is not flagged
     const QChar ch(0xFFFF);
-    QString input(ch);
 
     QTextCodec *const codec = QTextCodec::codecForMib(106); // UTF-8
     QVERIFY(codec);
 
-    const QByteArray asDecoded(codec->fromUnicode(input));
+    const QByteArray asDecoded = codec->fromUnicode(QStringView(&ch, 1));
     QCOMPARE(asDecoded, QByteArray("\357\277\277"));
 
     QByteArray ffff("\357\277\277");
@@ -573,7 +573,7 @@ void tst_QTextCodec::utf8Codec_data()
     str = "Prohl";
     str += QChar::ReplacementCharacter;
     str += QChar::ReplacementCharacter;
-    str += "e";
+    str += QLatin1Char('e');
     str += QChar::ReplacementCharacter;
     str += " plugin";
     str += QChar::ReplacementCharacter;
@@ -1588,10 +1588,17 @@ void tst_QTextCodec::utf8bom_data()
             << QString("a");
     }
 
-    {
+    { // test the non-SIMD code-path
         static const ushort data[] = { 0x61, 0xfeff, 0x62 };
-        QTest::newRow("middle-bom")
-            << QByteArray("a\357\273\277b", 5)
+        QTest::newRow("middle-bom (non SIMD)")
+            << QByteArray("a\357\273\277b")
+            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+    }
+
+    { // test the SIMD code-path
+        static const ushort data[] = { 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0xfeff, 0x6d };
+        QTest::newRow("middle-bom (SIMD)")
+            << QByteArray("abcdefghijkl\357\273\277m")
             << QString::fromUtf16(data, sizeof(data)/sizeof(short));
     }
 }
@@ -2075,13 +2082,13 @@ void tst_QTextCodec::codecForUtfText()
     if (detected)
         QCOMPARE(codec->mibEnum(), mib);
     else
-        QVERIFY(codec == 0);
+        QVERIFY(!codec);
 }
 
 #if defined(Q_OS_UNIX)
 void tst_QTextCodec::toLocal8Bit()
 {
-#ifdef QT_NO_PROCESS
+#if !QT_CONFIG(process)
     QSKIP("No qprocess support", SkipAll);
 #else
     QProcess process;
@@ -2145,7 +2152,7 @@ public:
 void tst_QTextCodec::threadSafety()
 {
     QList<QByteArray> codecList = QTextCodec::availableCodecs();
-    QList<int> mibList = QTextCodec::availableMibs();
+    const QVector<int> mibList = QTextCodec::availableMibs().toVector();
     QThreadPool::globalInstance()->setMaxThreadCount(12);
 
     QVector<QByteArray> res;
@@ -2164,7 +2171,7 @@ void tst_QTextCodec::threadSafety()
     QThreadPool::globalInstance()->waitForDone();
 
     QCOMPARE(res.toList(), codecList);
-    QCOMPARE(res2.toList(), mibList);
+    QCOMPARE(res2, mibList);
 }
 
 void tst_QTextCodec::invalidNames()
@@ -2186,10 +2193,9 @@ void tst_QTextCodec::invalidNames()
 void tst_QTextCodec::checkAliases_data()
 {
     QTest::addColumn<QByteArray>("codecName");
-    QList<QByteArray> codecList = QTextCodec::availableCodecs();
-    foreach (const QByteArray &a, codecList) {
+    const QList<QByteArray> codecList = QTextCodec::availableCodecs();
+    for (const QByteArray &a : codecList)
         QTest::newRow( a.constData() ) << a;
-    }
 }
 
 void tst_QTextCodec::checkAliases()
@@ -2200,7 +2206,8 @@ void tst_QTextCodec::checkAliases()
     QCOMPARE(QTextCodec::codecForName(codecName), c);
     QCOMPARE(QTextCodec::codecForName(c->name()), c);
 
-    foreach(const QByteArray &a, c->aliases()) {
+    const auto aliases = c->aliases();
+    for (const QByteArray &a : aliases) {
         QCOMPARE(QTextCodec::codecForName(a), c);
     }
 }
@@ -2399,16 +2406,16 @@ void tst_QTextCodec::shiftJis()
 struct UserCodec : public QTextCodec
 {
     // implement pure virtuals
-    QByteArray name() const Q_DECL_OVERRIDE
+    QByteArray name() const override
     { return "UserCodec"; }
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE
+    QList<QByteArray> aliases() const override
     { return QList<QByteArray>() << "usercodec" << "user-codec"; }
-    int mibEnum() const Q_DECL_OVERRIDE
+    int mibEnum() const override
     { return 5000; }
 
-    virtual QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE
+    virtual QString convertToUnicode(const char *, int, ConverterState *) const override
     { return QString(); }
-    virtual QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE
+    virtual QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const override
     { return QByteArray(); }
 };
 

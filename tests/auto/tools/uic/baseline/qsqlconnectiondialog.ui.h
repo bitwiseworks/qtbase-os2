@@ -10,16 +10,13 @@
 #define QSQLCONNECTIONDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -209,18 +206,18 @@ public:
 
     void retranslateUi(QDialog *QSqlConnectionDialogUi)
     {
-        QSqlConnectionDialogUi->setWindowTitle(QApplication::translate("QSqlConnectionDialogUi", "Connect...", 0));
-        connGroupBox->setTitle(QApplication::translate("QSqlConnectionDialogUi", "Connection settings", 0));
-        textLabel4->setText(QApplication::translate("QSqlConnectionDialogUi", "&Username:", 0));
-        textLabel2->setText(QApplication::translate("QSqlConnectionDialogUi", "D&river", 0));
-        portSpinBox->setSpecialValueText(QApplication::translate("QSqlConnectionDialogUi", "Default", 0));
-        textLabel3->setText(QApplication::translate("QSqlConnectionDialogUi", "Database Name:", 0));
-        textLabel5->setText(QApplication::translate("QSqlConnectionDialogUi", "&Hostname:", 0));
-        textLabel5_2->setText(QApplication::translate("QSqlConnectionDialogUi", "P&ort:", 0));
-        textLabel4_2->setText(QApplication::translate("QSqlConnectionDialogUi", "&Password:", 0));
-        dbCheckBox->setText(QApplication::translate("QSqlConnectionDialogUi", "Us&e predefined in-memory database", 0));
-        okButton->setText(QApplication::translate("QSqlConnectionDialogUi", "&OK", 0));
-        cancelButton->setText(QApplication::translate("QSqlConnectionDialogUi", "&Cancel", 0));
+        QSqlConnectionDialogUi->setWindowTitle(QApplication::translate("QSqlConnectionDialogUi", "Connect...", nullptr));
+        connGroupBox->setTitle(QApplication::translate("QSqlConnectionDialogUi", "Connection settings", nullptr));
+        textLabel4->setText(QApplication::translate("QSqlConnectionDialogUi", "&Username:", nullptr));
+        textLabel2->setText(QApplication::translate("QSqlConnectionDialogUi", "D&river", nullptr));
+        portSpinBox->setSpecialValueText(QApplication::translate("QSqlConnectionDialogUi", "Default", nullptr));
+        textLabel3->setText(QApplication::translate("QSqlConnectionDialogUi", "Database Name:", nullptr));
+        textLabel5->setText(QApplication::translate("QSqlConnectionDialogUi", "&Hostname:", nullptr));
+        textLabel5_2->setText(QApplication::translate("QSqlConnectionDialogUi", "P&ort:", nullptr));
+        textLabel4_2->setText(QApplication::translate("QSqlConnectionDialogUi", "&Password:", nullptr));
+        dbCheckBox->setText(QApplication::translate("QSqlConnectionDialogUi", "Us&e predefined in-memory database", nullptr));
+        okButton->setText(QApplication::translate("QSqlConnectionDialogUi", "&OK", nullptr));
+        cancelButton->setText(QApplication::translate("QSqlConnectionDialogUi", "&Cancel", nullptr));
     } // retranslateUi
 
 };

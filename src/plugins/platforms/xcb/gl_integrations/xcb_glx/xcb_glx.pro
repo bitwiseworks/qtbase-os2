@@ -1,21 +1,13 @@
 TARGET = qxcb-glx-integration
 
-PLUGIN_CLASS_NAME = QXcbGlxIntegrationPlugin
-PLUGIN_TYPE = xcbglintegrations
-
-load(qt_plugin)
-
 include(../gl_integrations_plugin_base.pri)
+QT += glx_support-private
 
-#should be removed from the sources
-DEFINES += XCB_USE_GLX XCB_USE_XLIB
+DEFINES += QT_NO_FOREACH
 
-LIBS += -lxcb
+qtConfig(xcb-glx): QMAKE_USE += xcb_glx
 
-contains(QT_CONFIG, xcb-glx) {
-    DEFINES += XCB_HAS_XCB_GLX
-    LIBS += -lxcb-glx
-}
+!static:qtConfig(dlopen): QMAKE_USE += libdl
 
 HEADERS += \
     qxcbglxintegration.h \
@@ -29,3 +21,7 @@ SOURCES += \
     qxcbglxwindow.cpp \
     qglxintegration.cpp \
     qxcbglxnativeinterfacehandler.cpp
+
+PLUGIN_CLASS_NAME = QXcbGlxIntegrationPlugin
+PLUGIN_TYPE = xcbglintegrations
+load(qt_plugin)

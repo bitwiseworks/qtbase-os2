@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -39,12 +49,8 @@
 ****************************************************************************/
 
 #include <QtWidgets>
+#include <qmath.h>
 #include <cmath>
-
-#ifndef M_PI
-#define M_PI 3.1415927
-#endif
-
 #include "pieview.h"
 
 PieView::PieView(QWidget *parent)
@@ -115,9 +121,9 @@ QModelIndex PieView::indexAt(const QPoint &point) const
             return QModelIndex();
 
         // Determine the angle of the point.
-        double angle = (180 / M_PI) * std::acos(cx / d);
-        if (cy < 0)
-            angle = 360 - angle;
+        double angle = qRadiansToDegrees(std::atan2(cy, cx));
+        if (angle < 0)
+            angle = 360 + angle;
 
         // Find the relevant slice of the pie.
         double startAngle = 0.0;

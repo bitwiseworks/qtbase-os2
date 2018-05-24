@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,8 +42,12 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QTextCodec>
 #include <QtCore/QDebug>
+#include <QtCore/QDir>
 #include <QtCore/QStringList>
 #include <QtCore/QString>
+#include <QtCore/QSaveFile>
+#include <QtCore/QStandardPaths>
+#include <private/qcore_unix_p.h>
 
 #include <algorithm>
 
@@ -48,12 +58,198 @@
 #include <strings.h> // strncasecmp
 #include <clocale> // LC_CTYPE
 
+static const quint32 SupportedCacheVersion = 1;
+
+/*
+    In short on how and why the "Compose" file is cached:
+
+    The "Compose" file is large, for en_US it's likely located at:
+    /usr/share/X11/locale/en_US.UTF-8/Compose
+    and it has about 6000 string lines.
+    Q(Gui)Applications parse this file each time they're created. On modern CPUs
+    it incurs a 4-10 ms startup penalty of each Qt gui app, on older CPUs -
+    tens of ms or more.
+    Since the "Compose" file (almost) never changes using a pre-parsed
+    cache file instead of the "Compose" file is a good idea to improve Qt5
+    application startup time by about 5+ ms (or tens of ms on older CPUs).
+
+    The cache file contains the contents of the QComposeCacheFileHeader struct at the
+    beginning followed by the pre-parsed contents of the "Compose" file.
+
+    struct QComposeCacheFileHeader stores
+    (a) The cache version - in the unlikely event that some day one might need
+    to break compatibility.
+    (b) The (cache) file size.
+    (c) The lastModified field tracks if anything changed since the last time
+    the cache file was saved.
+    If anything did change then we read the compose file and save (cache) it
+    in binary/pre-parsed format, which should happen extremely rarely if at all.
+*/
+
+struct QComposeCacheFileHeader
+{
+    quint32 cacheVersion;
+    // The compiler will add 4 padding bytes anyway.
+    // Reserve them explicitly to possibly use in the future.
+    quint32 reserved;
+    quint64 fileSize;
+    qint64 lastModified;
+};
+
+// localHostName() copied from qtbase/src/corelib/io/qlockfile_unix.cpp
+static QByteArray localHostName()
+{
+    QByteArray hostName(512, Qt::Uninitialized);
+    if (gethostname(hostName.data(), hostName.size()) == -1)
+        return QByteArray();
+    hostName.truncate(strlen(hostName.data()));
+    return hostName;
+}
+
+/*
+    Reads metadata about the Compose file. Later used to determine if the
+    compose cache should be updated. The fileSize field will be zero on failure.
+*/
+static QComposeCacheFileHeader readFileMetadata(const QString &path)
+{
+    quint64 fileSize = 0;
+    qint64 lastModified = 0;
+    const QByteArray pathBytes = QFile::encodeName(path);
+    QT_STATBUF st;
+    if (QT_STAT(pathBytes.data(), &st) == 0) {
+        lastModified = st.st_mtime;
+        fileSize = st.st_size;
+    }
+    QComposeCacheFileHeader info = { 0, 0, fileSize, lastModified };
+    return info;
+}
+
+static const QString getCacheFilePath()
+{
+    QFile machineIdFile("/var/lib/dbus/machine-id");
+    QString machineId;
+    if (machineIdFile.exists()) {
+        if (machineIdFile.open(QIODevice::ReadOnly))
+            machineId = QString::fromLatin1(machineIdFile.readAll().trimmed());
+    }
+    if (machineId.isEmpty())
+        machineId = localHostName();
+    const QString dirPath = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation);
+
+    if (QSysInfo::ByteOrder == QSysInfo::BigEndian)
+        return dirPath + QLatin1String("/qt_compose_cache_big_endian_") + machineId;
+    return dirPath + QLatin1String("/qt_compose_cache_little_endian_") + machineId;
+}
+
+// Returns empty vector on failure
+static QVector<QComposeTableElement> loadCache(const QComposeCacheFileHeader &composeInfo)
+{
+    QVector<QComposeTableElement> vec;
+    const QString cacheFilePath = getCacheFilePath();
+    QFile inputFile(cacheFilePath);
+
+    if (!inputFile.open(QIODevice::ReadOnly))
+        return vec;
+    QComposeCacheFileHeader cacheInfo;
+    // use a "buffer" variable to make the line after this one more readable.
+    char *buffer = reinterpret_cast<char*>(&cacheInfo);
+
+    if (inputFile.read(buffer, sizeof cacheInfo) != sizeof cacheInfo)
+        return vec;
+    if (cacheInfo.fileSize == 0)
+        return vec;
+    // using "!=" just in case someone replaced with a backup that existed before
+    if (cacheInfo.lastModified != composeInfo.lastModified)
+        return vec;
+    if (cacheInfo.cacheVersion != SupportedCacheVersion)
+        return vec;
+    const QByteArray pathBytes = QFile::encodeName(cacheFilePath);
+    QT_STATBUF st;
+    if (QT_STAT(pathBytes.data(), &st) != 0)
+        return vec;
+    const off_t fileSize = st.st_size;
+    if (fileSize > 1024 * 1024 * 5) {
+        // The cache file size is usually about 150KB, so if its size is over
+        // say 5MB then somebody inflated the file, abort.
+        return vec;
+    }
+    const off_t bufferSize = fileSize - (sizeof cacheInfo);
+    const size_t elemSize = sizeof (struct QComposeTableElement);
+    const int elemCount = bufferSize / elemSize;
+    const QByteArray ba = inputFile.read(bufferSize);
+    const char *data = ba.data();
+    // Since we know the number of the (many) elements and their size in
+    // advance calling vector.reserve(..) seems reasonable.
+    vec.reserve(elemCount);
+
+    for (int i = 0; i < elemCount; i++) {
+        const QComposeTableElement *elem =
+            reinterpret_cast<const QComposeTableElement*>(data + (i * elemSize));
+        vec.push_back(*elem);
+    }
+    return vec;
+}
+
+// Returns true on success, false otherwise.
+static bool saveCache(const QComposeCacheFileHeader &info, const QVector<QComposeTableElement> &vec)
+{
+    const QString filePath = getCacheFilePath();
+#if QT_CONFIG(temporaryfile)
+    QSaveFile outputFile(filePath);
+#else
+    QFile outputFile(filePath);
+#endif
+    if (!outputFile.open(QIODevice::WriteOnly))
+        return false;
+    const char *data = reinterpret_cast<const char*>(&info);
+
+    if (outputFile.write(data, sizeof info) != sizeof info)
+        return false;
+    data = reinterpret_cast<const char*>(vec.constData());
+    const qint64 size = vec.size() * (sizeof (struct QComposeTableElement));
+
+    if (outputFile.write(data, size) != size)
+        return false;
+#if QT_CONFIG(temporaryfile)
+    return outputFile.commit();
+#else
+    return true;
+#endif
+}
+
 TableGenerator::TableGenerator() : m_state(NoErrors),
     m_systemComposeDir(QString())
 {
     initPossibleLocations();
-    findComposeFile();
-    orderComposeTable();
+    QString composeFilePath = findComposeFile();
+#ifdef DEBUG_GENERATOR
+// don't use cache when in debug mode.
+    if (!composeFilePath.isEmpty())
+        qDebug() << "Using Compose file from: " << composeFilePath;
+#else
+    QComposeCacheFileHeader fileInfo = readFileMetadata(composeFilePath);
+    if (fileInfo.fileSize != 0)
+        m_composeTable = loadCache(fileInfo);
+#endif
+    if (m_composeTable.isEmpty() && cleanState()) {
+        if (composeFilePath.isEmpty()) {
+            m_state = MissingComposeFile;
+        } else {
+            QFile composeFile(composeFilePath);
+            composeFile.open(QIODevice::ReadOnly);
+            parseComposeFile(&composeFile);
+            orderComposeTable();
+            if (m_composeTable.isEmpty()) {
+                m_state = EmptyTable;
+#ifndef DEBUG_GENERATOR
+// don't save cache when in debug mode
+            } else {
+                fileInfo.cacheVersion = SupportedCacheVersion;
+                saveCache(fileInfo, m_composeTable);
+#endif
+            }
+        }
+    }
 #ifdef DEBUG_GENERATOR
     printComposeTable();
 #endif
@@ -66,6 +262,7 @@ void TableGenerator::initPossibleLocations()
     // never meant for external software to parse compose tables directly. Best we
     // can do is to hardcode search paths. To add an extra system path use
     // the QTCOMPOSE environment variable
+    m_possibleLocations.reserve(7);
     if (qEnvironmentVariableIsSet("QTCOMPOSE"))
         m_possibleLocations.append(QString::fromLocal8Bit(qgetenv("QTCOMPOSE")));
     m_possibleLocations.append(QStringLiteral("/usr/share/X11/locale"));
@@ -76,53 +273,39 @@ void TableGenerator::initPossibleLocations()
     m_possibleLocations.append(QStringLiteral(X11_PREFIX "/lib/X11/locale"));
 }
 
-void TableGenerator::findComposeFile()
+QString TableGenerator::findComposeFile()
 {
-    bool found = false;
     // check if XCOMPOSEFILE points to a Compose file
     if (qEnvironmentVariableIsSet("XCOMPOSEFILE")) {
-        QString composeFile(qgetenv("XCOMPOSEFILE"));
-        if (composeFile.endsWith(QLatin1String("Compose")))
-            found = processFile(composeFile);
+        const QString path = QFile::decodeName(qgetenv("XCOMPOSEFILE"));
+        if (QFile::exists(path))
+            return path;
         else
-            qWarning("Qt Warning: XCOMPOSEFILE doesn't point to a valid Compose file");
-#ifdef DEBUG_GENERATOR
-        if (found)
-            qDebug() << "Using Compose file from: " << composeFile;
-#endif
+            qWarning("$XCOMPOSEFILE doesn't point to an existing file");
     }
+
     // check if user’s home directory has a file named .XCompose
-    if (!found && cleanState()) {
-        QString composeFile = qgetenv("HOME") + QStringLiteral("/.XCompose");
-        if (QFile(composeFile).exists())
-            found = processFile(composeFile);
-#ifdef DEBUG_GENERATOR
-        if (found)
-            qDebug() << "Using Compose file from: " << composeFile;
-#endif
+    if (cleanState()) {
+        QString path = qgetenv("HOME") + QLatin1String("/.XCompose");
+        if (QFile::exists(path))
+            return path;
     }
+
     // check for the system provided compose files
-    if (!found && cleanState()) {
+    if (cleanState()) {
         QString table = composeTableForLocale();
         if (cleanState()) {
             if (table.isEmpty())
                 // no table mappings for the system's locale in the compose.dir
                 m_state = UnsupportedLocale;
-            else
-                found = processFile(systemComposeDir() + QLatin1Char('/') + table);
-#ifdef DEBUG_GENERATOR
-            if (found)
-                qDebug() << "Using Compose file from: " <<
-                            systemComposeDir() + QLatin1Char('/') + table;
-#endif
+            else {
+                QString path = QDir(systemComposeDir()).filePath(table);
+                if (QFile::exists(path))
+                    return path;
+            }
         }
     }
-
-    if (found && m_composeTable.isEmpty())
-        m_state = EmptyTable;
-
-    if (!found)
-        m_state = MissingComposeFile;
+    return QString();
 }
 
 QString TableGenerator::composeTableForLocale()
@@ -139,7 +322,7 @@ bool TableGenerator::findSystemComposeDir()
     bool found = false;
     for (int i = 0; i < m_possibleLocations.size(); ++i) {
         QString path = m_possibleLocations.at(i);
-        if (QFile(path + QLatin1String("/compose.dir")).exists()) {
+        if (QFile::exists(path + QLatin1String("/compose.dir"))) {
             m_systemComposeDir = path;
             found = true;
             break;
@@ -337,7 +520,7 @@ static inline int fromBase8(const char *s, const char *end)
 {
     int result = 0;
     while (*s && s != end) {
-        if (*s <= '0' && *s >= '7')
+        if (*s < '0' || *s > '7')
             return 0;
         result *= 8;
         result += *s - '0';
@@ -470,6 +653,6 @@ void TableGenerator::orderComposeTable()
     // Stable-sorting to ensure that the item that appeared before the other in the
     // original container will still appear first after the sort. This property is
     // needed to handle the cases when user re-defines already defined key sequence
-    std::stable_sort(m_composeTable.begin(), m_composeTable.end(), Compare());
+    std::stable_sort(m_composeTable.begin(), m_composeTable.end(), ByKeys());
 }
 

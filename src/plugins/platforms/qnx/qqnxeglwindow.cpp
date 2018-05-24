@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 - 2014 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -50,17 +56,11 @@ QT_BEGIN_NAMESPACE
 
 QQnxEglWindow::QQnxEglWindow(QWindow *window, screen_context_t context, bool needRootWindow) :
     QQnxWindow(window, context, needRootWindow),
-    m_platformOpenGLContext(0),
     m_newSurfaceRequested(true),
+    m_eglDisplay(EGL_NO_DISPLAY),
     m_eglSurface(EGL_NO_SURFACE)
 {
     initWindow();
-
-    // Set window usage
-    const int val = SCREEN_USAGE_OPENGL_ES2;
-    const int result = screen_set_window_property_iv(nativeHandle(), SCREEN_PROPERTY_USAGE, &val);
-    if (result != 0)
-        qFatal("QQnxEglWindow: failed to set window alpha usage, errno=%d", errno);
 
     m_requestedBufferSize = shouldMakeFullScreen() ? screen()->geometry().size() : window->geometry().size();
 }
@@ -71,13 +71,57 @@ QQnxEglWindow::~QQnxEglWindow()
     destroyEGLSurface();
 }
 
-void QQnxEglWindow::createEGLSurface()
+bool QQnxEglWindow::isInitialized() const
 {
+    return m_eglSurface != EGL_NO_SURFACE;
+}
+
+void QQnxEglWindow::ensureInitialized(QQnxGLContext* context)
+{
+    if (m_newSurfaceRequested.testAndSetOrdered(true, false)) {
+        const QMutexLocker locker(&m_mutex); // Set geomety must not reset the requestedBufferSize till
+                                             // the surface is created
+
+        if (m_requestedBufferSize != bufferSize() || m_eglSurface == EGL_NO_SURFACE) {
+            if (m_eglSurface != EGL_NO_SURFACE) {
+                context->doneCurrent();
+                destroyEGLSurface();
+            }
+            createEGLSurface(context);
+        } else {
+            // Must've been a sequence of unprocessed changes returning us to the original size.
+            resetBuffers();
+        }
+    }
+}
+
+void QQnxEglWindow::createEGLSurface(QQnxGLContext *context)
+{
+    if (context->format().renderableType() != QSurfaceFormat::OpenGLES) {
+        qFatal("QQnxEglWindow: renderable type is not OpenGLES");
+        return;
+    }
+
+    // Set window usage
+    int usage = SCREEN_USAGE_OPENGL_ES2;
+#if _SCREEN_VERSION >= _SCREEN_MAKE_VERSION(1, 0, 0)
+    if (context->format().majorVersion() == 3)
+        usage |= SCREEN_USAGE_OPENGL_ES3;
+#endif
+
+    const int result = screen_set_window_property_iv(nativeHandle(), SCREEN_PROPERTY_USAGE, &usage);
+    if (Q_UNLIKELY(result != 0))
+        qFatal("QQnxEglWindow: failed to set window usage, errno=%d", errno);
+
     if (!m_requestedBufferSize.isValid()) {
         qWarning("QQNX: Trying to create 0 size EGL surface. "
                "Please set a valid window size before calling QOpenGLContext::makeCurrent()");
         return;
     }
+
+    m_eglDisplay = context->eglDisplay();
+    m_eglConfig = context->eglConfig();
+    m_format = context->format();
 
     // update the window's buffers before we create the EGL surface
     setBufferSize(m_requestedBufferSize);
@@ -88,59 +132,36 @@ void QQnxEglWindow::createEGLSurface()
         EGL_NONE
     };
 
-    qEglWindowDebug() << "Creating EGL surface" << platformOpenGLContext()->getEglDisplay()
-                   << platformOpenGLContext()->getEglConfig();
+    qEglWindowDebug() << "Creating EGL surface from" << this << context
+        << window()->surfaceType() << window()->type();
 
     // Create EGL surface
-    m_eglSurface = eglCreateWindowSurface(platformOpenGLContext()->getEglDisplay(),
-                                          platformOpenGLContext()->getEglConfig(),
-                                          (EGLNativeWindowType) nativeHandle(), eglSurfaceAttrs);
-    if (m_eglSurface == EGL_NO_SURFACE) {
-        const EGLenum error = QQnxGLContext::checkEGLError("eglCreateWindowSurface");
-        qWarning("QQNX: failed to create EGL surface, err=%d", error);
-    }
+    EGLSurface eglSurface = eglCreateWindowSurface(
+        m_eglDisplay,
+        m_eglConfig,
+        (EGLNativeWindowType) nativeHandle(),
+        eglSurfaceAttrs);
+
+    if (eglSurface == EGL_NO_SURFACE)
+        qWarning("QQNX: failed to create EGL surface, err=%d", eglGetError());
+
+    m_eglSurface = eglSurface;
 }
 
 void QQnxEglWindow::destroyEGLSurface()
 {
     // Destroy EGL surface if it exists
     if (m_eglSurface != EGL_NO_SURFACE) {
-        EGLBoolean eglResult = eglDestroySurface(platformOpenGLContext()->getEglDisplay(), m_eglSurface);
-        if (eglResult != EGL_TRUE)
+        EGLBoolean eglResult = eglDestroySurface(m_eglDisplay, m_eglSurface);
+        if (Q_UNLIKELY(eglResult != EGL_TRUE))
             qFatal("QQNX: failed to destroy EGL surface, err=%d", eglGetError());
     }
 
     m_eglSurface = EGL_NO_SURFACE;
 }
 
-void QQnxEglWindow::swapEGLBuffers()
+EGLSurface QQnxEglWindow::surface() const
 {
-    qEglWindowDebug() << Q_FUNC_INFO;
-    // Set current rendering API
-    EGLBoolean eglResult = eglBindAPI(EGL_OPENGL_ES_API);
-    if (eglResult != EGL_TRUE)
-        qFatal("QQNX: failed to set EGL API, err=%d", eglGetError());
-
-    // Post EGL surface to window
-    eglResult = eglSwapBuffers(m_platformOpenGLContext->getEglDisplay(), m_eglSurface);
-    if (eglResult != EGL_TRUE)
-        qFatal("QQNX: failed to swap EGL buffers, err=%d", eglGetError());
-
-    windowPosted();
-}
-
-EGLSurface QQnxEglWindow::getSurface()
-{
-    if (m_newSurfaceRequested.testAndSetOrdered(true, false)) {
-        const QMutexLocker locker(&m_mutex); //Set geomety must not reset the requestedBufferSize till
-                                             //the surface is created
-        if (m_eglSurface != EGL_NO_SURFACE) {
-            platformOpenGLContext()->doneCurrent();
-            destroyEGLSurface();
-        }
-        createEGLSurface();
-    }
-
     return m_eglSurface;
 }
 
@@ -157,36 +178,25 @@ void QQnxEglWindow::setGeometry(const QRect &rect)
         // that test.
         const QMutexLocker locker(&m_mutex);
         m_requestedBufferSize = newGeometry.size();
-        if (m_platformOpenGLContext != 0 && bufferSize() != newGeometry.size())
+        if (isInitialized() && bufferSize() != newGeometry.size())
             m_newSurfaceRequested.testAndSetRelease(false, true);
     }
     QQnxWindow::setGeometry(newGeometry);
 }
 
-void QQnxEglWindow::setPlatformOpenGLContext(QQnxGLContext *platformOpenGLContext)
-{
-    // This function does not take ownership of the platform gl context.
-    // It is owned by the frontend QOpenGLContext
-    m_platformOpenGLContext = platformOpenGLContext;
-}
-
 int QQnxEglWindow::pixelFormat() const
 {
-    if (!m_platformOpenGLContext) //The platform GL context was not set yet
-        return -1;
-
-    const QSurfaceFormat format = m_platformOpenGLContext->format();
     // Extract size of color channels from window format
-    const int redSize = format.redBufferSize();
-    if (redSize == -1)
+    const int redSize = m_format.redBufferSize();
+    if (Q_UNLIKELY(redSize == -1))
         qFatal("QQnxWindow: red size not defined");
 
-    const int greenSize = format.greenBufferSize();
-    if (greenSize == -1)
+    const int greenSize = m_format.greenBufferSize();
+    if (Q_UNLIKELY(greenSize == -1))
         qFatal("QQnxWindow: green size not defined");
 
-    const int blueSize = format.blueBufferSize();
-    if (blueSize == -1)
+    const int blueSize = m_format.blueBufferSize();
+    if (Q_UNLIKELY(blueSize == -1))
         qFatal("QQnxWindow: blue size not defined");
 
     // select matching native format

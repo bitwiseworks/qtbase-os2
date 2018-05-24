@@ -1,13 +1,22 @@
-
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -200,7 +209,6 @@ void ImageWidget::openDirectory(const QString &path)
 
 QImage ImageWidget::loadImage(const QString &fileName)
 {
-    qDebug() << position << files << fileName;
     QImageReader reader(fileName);
     reader.setAutoTransform(true);
     qCDebug(lcExample) << "loading" << QDir::toNativeSeparators(fileName) << position << '/' << files.size();
@@ -230,7 +238,7 @@ void ImageWidget::goNextImage()
         prevImage = currentImage;
         currentImage = nextImage;
         if (position+1 < files.size())
-            nextImage = loadImage(path+QLatin1String("/")+files.at(position+1));
+            nextImage = loadImage(path + QLatin1Char('/') + files.at(position+1));
         else
             nextImage = QImage();
     }
@@ -247,7 +255,7 @@ void ImageWidget::goPrevImage()
         nextImage = currentImage;
         currentImage = prevImage;
         if (position > 0)
-            prevImage = loadImage(path+QLatin1String("/")+files.at(position-1));
+            prevImage = loadImage(path + QLatin1Char('/') + files.at(position-1));
         else
             prevImage = QImage();
     }
@@ -277,12 +285,12 @@ void ImageWidget::goToImage(int index)
     position = index;
 
     if (index > 0)
-        prevImage = loadImage(path+QLatin1String("/")+files.at(position-1));
+        prevImage = loadImage(path + QLatin1Char('/') + files.at(position-1));
     else
         prevImage = QImage();
-    currentImage = loadImage(path+QLatin1String("/")+files.at(position));
+    currentImage = loadImage(path + QLatin1Char('/') + files.at(position));
     if (position+1 < files.size())
-        nextImage = loadImage(path+QLatin1String("/")+files.at(position+1));
+        nextImage = loadImage(path + QLatin1Char('/') + files.at(position+1));
     else
         nextImage = QImage();
     update();

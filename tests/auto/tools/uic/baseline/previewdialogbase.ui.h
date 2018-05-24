@@ -10,9 +10,7 @@
 #define PREVIEWDIALOGBASE_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
@@ -172,11 +170,11 @@ public:
 
     void retranslateUi(QDialog *PreviewDialogBase)
     {
-        PreviewDialogBase->setWindowTitle(QApplication::translate("PreviewDialogBase", "Print Preview", 0));
-        label->setText(QApplication::translate("PreviewDialogBase", "&Paper Size:", 0));
-        label_2->setText(QApplication::translate("PreviewDialogBase", "&Orientation:", 0));
+        PreviewDialogBase->setWindowTitle(QApplication::translate("PreviewDialogBase", "Print Preview", nullptr));
+        label->setText(QApplication::translate("PreviewDialogBase", "&Paper Size:", nullptr));
+        label_2->setText(QApplication::translate("PreviewDialogBase", "&Orientation:", nullptr));
         QTreeWidgetItem *___qtreewidgetitem = pageList->headerItem();
-        ___qtreewidgetitem->setText(0, QApplication::translate("PreviewDialogBase", "1", 0));
+        ___qtreewidgetitem->setText(0, QApplication::translate("PreviewDialogBase", "1", nullptr));
     } // retranslateUi
 
 };

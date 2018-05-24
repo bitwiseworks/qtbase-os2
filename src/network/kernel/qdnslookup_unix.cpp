@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Jeremy Lainé <jeremy.laine@m4x.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,25 +39,35 @@
 
 #include "qdnslookup_p.h"
 
+#if QT_CONFIG(library)
 #include <qlibrary.h>
+#endif
+#include <qvarlengtharray.h>
 #include <qscopedpointer.h>
 #include <qurl.h>
-#include <private/qmutexpool_p.h>
+#include <private/qnativesocketengine_p.h>
 
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
-#include <arpa/nameser_compat.h>
+#if !defined(Q_OS_OPENBSD)
+#  include <arpa/nameser_compat.h>
+#endif
 #include <resolv.h>
 
 #if defined(__GNU_LIBRARY__) && !defined(__UCLIBC__)
 #  include <gnu/lib-names.h>
 #endif
 
+#include <cstring>
+
 QT_BEGIN_NAMESPACE
 
-#ifndef QT_NO_LIBRARY
+#if QT_CONFIG(library)
 
+#if defined(Q_OS_OPENBSD)
+typedef struct __res_state* res_state;
+#endif
 typedef int (*dn_expand_proto)(const unsigned char *, const unsigned char *, const unsigned char *, char *, int);
 static dn_expand_proto local_dn_expand = 0;
 typedef void (*res_nclose_proto)(res_state);
@@ -71,7 +87,7 @@ struct QDnsLookupStateDeleter
     }
 };
 
-static void resolveLibrary()
+static bool resolveLibraryInternal()
 {
     QLibrary lib;
 #ifdef LIBRESOLV_SO
@@ -81,7 +97,7 @@ static void resolveLibrary()
     {
         lib.setFileName(QLatin1String("resolv"));
         if (!lib.load())
-            return;
+            return false;
     }
 
     local_dn_expand = dn_expand_proto(lib.resolve("__dn_expand"));
@@ -105,19 +121,15 @@ static void resolveLibrary()
         local_res_nquery = res_nquery_proto(lib.resolve("res_9_nquery"));
     if (!local_res_nquery)
         local_res_nquery = res_nquery_proto(lib.resolve("res_nquery"));
+
+    return true;
 }
+Q_GLOBAL_STATIC_WITH_ARGS(bool, resolveLibrary, (resolveLibraryInternal()))
 
 void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestName, const QHostAddress &nameserver, QDnsLookupReply *reply)
 {
     // Load dn_expand, res_ninit and res_nquery on demand.
-    static QBasicAtomicInt triedResolve = Q_BASIC_ATOMIC_INITIALIZER(false);
-    if (!triedResolve.loadAcquire()) {
-        QMutexLocker locker(QMutexPool::globalInstanceGet(&local_res_ninit));
-        if (!triedResolve.load()) {
-            resolveLibrary();
-            triedResolve.storeRelease(true);
-        }
-    }
+    resolveLibrary();
 
     // If dn_expand, res_ninit or res_nquery is missing, fail.
     if (!local_dn_expand || !local_res_nclose || !local_res_ninit || !local_res_nquery) {
@@ -128,7 +140,7 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
 
     // Initialize state.
     struct __res_state state;
-    memset(&state, 0, sizeof(state));
+    std::memset(&state, 0, sizeof(state));
     if (local_res_ninit(&state) < 0) {
         reply->error = QDnsLookup::ResolverError;
         reply->errorString = tr("Resolver initialization failed");
@@ -160,15 +172,16 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
             state._u._ext.nscount6 = 1;
             ns->sin6_family = AF_INET6;
             ns->sin6_port = htons(53);
+            SetSALen::set(ns, sizeof(*ns));
 
             Q_IPV6ADDR ipv6Address = nameserver.toIPv6Address();
             for (int i=0; i<16; i++) {
                 ns->sin6_addr.s6_addr[i] = ipv6Address[i];
             }
 #else
-            qWarning() << Q_FUNC_INFO << "IPv6 addresses for nameservers is currently not supported";
+            qWarning("%s", QDnsLookupPrivate::msgNoIpV6NameServerAdresses);
             reply->error = QDnsLookup::ResolverError;
-            reply->errorString = tr("IPv6 addresses for nameservers is currently not supported");
+            reply->errorString = tr(QDnsLookupPrivate::msgNoIpV6NameServerAdresses);
             return;
 #endif
         }
@@ -179,11 +192,25 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
     QScopedPointer<struct __res_state, QDnsLookupStateDeleter> state_ptr(&state);
 
     // Perform DNS query.
-    unsigned char response[PACKETSZ];
-    memset(response, 0, sizeof(response));
-    const int responseLength = local_res_nquery(&state, requestName, C_IN, requestType, response, sizeof(response));
+    QVarLengthArray<unsigned char, PACKETSZ> buffer(PACKETSZ);
+    std::memset(buffer.data(), 0, buffer.size());
+    int responseLength = local_res_nquery(&state, requestName, C_IN, requestType, buffer.data(), buffer.size());
+    if (Q_UNLIKELY(responseLength > PACKETSZ)) {
+        buffer.resize(responseLength);
+        std::memset(buffer.data(), 0, buffer.size());
+        responseLength = local_res_nquery(&state, requestName, C_IN, requestType, buffer.data(), buffer.size());
+        if (Q_UNLIKELY(responseLength > buffer.size())) {
+            // Ok, we give up.
+            reply->error = QDnsLookup::ResolverError;
+            reply->errorString.clear(); // We cannot be more specific, alas.
+            return;
+        }
+    }
 
-    // Check the response header.
+    unsigned char *response = buffer.data();
+    // Check the response header. Though res_nquery returns -1 as a
+    // responseLength in case of error, we still can extract the
+    // exact error code from the response.
     HEADER *header = (HEADER*)response;
     const int answerCount = ntohs(header->ancount);
     switch (header->rcode) {
@@ -374,6 +401,6 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
     return;
 }
 
-#endif /* ifndef QT_NO_LIBRARY */
+#endif /* QT_CONFIG(library) */
 
 QT_END_NAMESPACE

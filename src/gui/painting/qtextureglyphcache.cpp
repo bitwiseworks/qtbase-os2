@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,22 +42,29 @@
 #include "qtextureglyphcache_p.h"
 #include "private/qfontengine_p.h"
 #include "private/qnumeric_p.h"
-#include "private/qnativeimage_p.h"
 
 QT_BEGIN_NAMESPACE
 
 // #define CACHE_DEBUG
+
+// out-of-line to avoid vtable duplication, breaking e.g. RTTI
+QTextureGlyphCache::~QTextureGlyphCache()
+{
+}
 
 int QTextureGlyphCache::calculateSubPixelPositionCount(glyph_t glyph) const
 {
     // Test 12 different subpixel positions since it factors into 3*4 so it gives
     // the coverage we need.
 
-    QList<QImage> images;
-    for (int i=0; i<12; ++i) {
+    const int NumSubpixelPositions = 12;
+
+    QImage images[NumSubpixelPositions];
+    int numImages = 0;
+    for (int i = 0; i < NumSubpixelPositions; ++i) {
         QImage img = textureMapForGlyph(glyph, QFixed::fromReal(i / 12.0));
 
-        if (images.isEmpty()) {
+        if (numImages == 0) {
             QPainterPath path;
             QFixedPoint point;
             m_current_fontengine->addGlyphsToPath(&glyph, &point, 1, &path, QTextItem::RenderFlags());
@@ -60,21 +73,21 @@ int QTextureGlyphCache::calculateSubPixelPositionCount(glyph_t glyph) const
             if (path.isEmpty())
                 break;
 
-            images.append(img);
+            images[numImages++] = qMove(img);
         } else {
             bool found = false;
-            for (int j=0; j<images.size(); ++j) {
-                if (images.at(j) == img) {
+            for (int j = 0; j < numImages; ++j) {
+                if (images[j] == img) {
                     found = true;
                     break;
                 }
             }
             if (!found)
-                images.append(img);
+                images[numImages++] = qMove(img);
         }
     }
 
-    return images.size();
+    return numImages;
 }
 
 bool QTextureGlyphCache::populate(QFontEngine *fontEngine, int numGlyphs, const glyph_t *glyphs,
@@ -233,6 +246,7 @@ void QTextureGlyphCache::fillInPendingGlyphs()
             resizeCache(qNextPowerOfTwo(requiredWidth - 1), qNextPowerOfTwo(requiredHeight - 1));
     }
 
+    beginFillTexture();
     {
         QHash<GlyphAndSubPixelPosition, Coord>::iterator iter = m_pendingGlyphs.begin();
         while (iter != m_pendingGlyphs.end()) {
@@ -242,6 +256,7 @@ void QTextureGlyphCache::fillInPendingGlyphs()
             ++iter;
         }
     }
+    endFillTexture();
 
     m_pendingGlyphs.clear();
 }
@@ -262,6 +277,11 @@ QImage QTextureGlyphCache::textureMapForGlyph(glyph_t g, QFixed subPixelPosition
  * QImageTextureGlyphCache
  */
 
+// out-of-line to avoid vtable duplication, breaking e.g. RTTI
+QImageTextureGlyphCache::~QImageTextureGlyphCache()
+{
+}
+
 void QImageTextureGlyphCache::resizeTextureData(int width, int height)
 {
     m_image = m_image.copy(0, 0, width, height);
@@ -273,9 +293,9 @@ void QImageTextureGlyphCache::createTextureData(int width, int height)
     case QFontEngine::Format_Mono:
         m_image = QImage(width, height, QImage::Format_Mono);
         break;
-    case QFontEngine::Format_A8: {
+    case QFontEngine::Format_A8:
         m_image = QImage(width, height, QImage::Format_Alpha8);
-        break;   }
+        break;
     case QFontEngine::Format_A32:
         m_image = QImage(width, height, QImage::Format_RGB32);
         break;
@@ -298,11 +318,12 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subP
         return;
     }
 #endif
+    Q_ASSERT(mask.width() <= c.w && mask.height() <= c.h);
 
     if (m_format == QFontEngine::Format_A32
         || m_format == QFontEngine::Format_ARGB) {
         QImage ref(m_image.bits() + (c.x * 4 + c.y * m_image.bytesPerLine()),
-                   qMax(mask.width(), c.w), qMax(mask.height(), c.h), m_image.bytesPerLine(),
+                   qMin(mask.width(), c.w), qMin(mask.height(), c.h), m_image.bytesPerLine(),
                    m_image.format());
         QPainter p(&ref);
         p.setCompositionMode(QPainter::CompositionMode_Source);
@@ -326,7 +347,7 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subP
             uchar *dest = d + (c.y + y) *dbpl + c.x/8;
 
             if (y < mh) {
-                uchar *src = mask.scanLine(y);
+                const uchar *src = mask.constScanLine(y);
                 for (int x = 0; x < c.w/8; ++x) {
                     if (x < (mw+7)/8)
                         dest[x] = src[x];
@@ -348,7 +369,7 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subP
             for (int y = 0; y < c.h; ++y) {
                 uchar *dest = d + (c.y + y) *dbpl + c.x;
                 if (y < mh) {
-                    uchar *src = (uchar *) mask.scanLine(y);
+                    const uchar *src = mask.constScanLine(y);
                     for (int x = 0; x < c.w; ++x) {
                         if (x < mw)
                             dest[x] = (src[x >> 3] & (1 << (7 - (x & 7)))) > 0 ? 255 : 0;
@@ -359,7 +380,7 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subP
             for (int y = 0; y < c.h; ++y) {
                 uchar *dest = d + (c.y + y) *dbpl + c.x;
                 if (y < mh) {
-                    uchar *src = (uchar *) mask.scanLine(y);
+                    const uchar *src = mask.constScanLine(y);
                     for (int x = 0; x < c.w; ++x) {
                         if (x < mw)
                             dest[x] = src[x];

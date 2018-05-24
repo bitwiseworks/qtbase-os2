@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,17 +43,16 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_LOGGING_CATEGORY(qtQpaInputMethods, "qt.qpa.input.methods")
+Q_LOGGING_CATEGORY(qtQpaInputMethodsSerialize, "qt.qpa.input.methods.serialize")
+
 QIBusSerializable::QIBusSerializable()
 {
 }
 
-QIBusSerializable::~QIBusSerializable()
+void QIBusSerializable::deserializeFrom(const QDBusArgument &argument)
 {
-}
-
-const QDBusArgument &operator>>(const QDBusArgument &argument, QIBusSerializable &object)
-{
-    argument >> object.name;
+    argument >> name;
 
     argument.beginMap();
     while (!argument.atEnd()) {
@@ -57,22 +62,18 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, QIBusSerializable
         argument >> key;
         argument >> value;
         argument.endMapEntry();
-        object.attachments[key] = value.variant().value<QDBusArgument>();
+        attachments[key] = value.variant().value<QDBusArgument>();
     }
     argument.endMap();
-    return argument;
 }
 
-QDBusArgument &operator<<(QDBusArgument &argument, const QIBusSerializable &object)
+void QIBusSerializable::serializeTo(QDBusArgument &argument) const
 {
-    argument << object.name;
+    argument << name;
 
     argument.beginMap(qMetaTypeId<QString>(), qMetaTypeId<QDBusVariant>());
 
-    QHashIterator<QString, QDBusArgument> i(object.attachments);
-    while (i.hasNext()) {
-        i.next();
-
+    for (auto i = attachments.begin(), end = attachments.end(); i != end; ++i) {
         argument.beginMapEntry();
         argument << i.key();
 
@@ -82,7 +83,6 @@ QDBusArgument &operator<<(QDBusArgument &argument, const QIBusSerializable &obje
         argument.endMapEntry();
     }
     argument.endMap();
-    return argument;
 }
 
 QIBusAttribute::QIBusAttribute()
@@ -94,43 +94,35 @@ QIBusAttribute::QIBusAttribute()
     name = "IBusAttribute";
 }
 
-QIBusAttribute::~QIBusAttribute()
-{
-}
-
-QDBusArgument &operator<<(QDBusArgument &argument, const QIBusAttribute &attribute)
+void QIBusAttribute::serializeTo(QDBusArgument &argument) const
 {
     argument.beginStructure();
 
-    argument << static_cast<const QIBusSerializable &>(attribute);
+    QIBusSerializable::serializeTo(argument);
 
-    quint32 t = (quint32) attribute.type;
+    quint32 t = (quint32) type;
     argument << t;
-    argument << attribute.value;
-    argument << attribute.start;
-    argument << attribute.end;
+    argument << value;
+    argument << start;
+    argument << end;
 
     argument.endStructure();
-
-    return argument;
 }
 
-const QDBusArgument &operator>>(const QDBusArgument &argument, QIBusAttribute &attribute)
+void QIBusAttribute::deserializeFrom(const QDBusArgument &argument)
 {
     argument.beginStructure();
 
-    argument >> static_cast<QIBusSerializable &>(attribute);
+    QIBusSerializable::deserializeFrom(argument);
 
     quint32 t;
     argument >> t;
-    attribute.type = (QIBusAttribute::Type) t;
-    argument >> attribute.value;
-    argument >> attribute.start;
-    argument >> attribute.end;
+    type = (QIBusAttribute::Type) t;
+    argument >> value;
+    argument >> start;
+    argument >> end;
 
     argument.endStructure();
-
-    return argument;
 }
 
 QTextCharFormat QIBusAttribute::format() const
@@ -178,34 +170,30 @@ QIBusAttributeList::QIBusAttributeList()
     name = "IBusAttrList";
 }
 
-QIBusAttributeList::~QIBusAttributeList()
-{
-}
-
-QDBusArgument &operator<<(QDBusArgument &argument, const QIBusAttributeList &attrList)
+void QIBusAttributeList::serializeTo(QDBusArgument &argument) const
 {
     argument.beginStructure();
 
-    argument << static_cast<const QIBusSerializable &>(attrList);
+    QIBusSerializable::serializeTo(argument);
 
     argument.beginArray(qMetaTypeId<QDBusVariant>());
-    for (int i = 0; i < attrList.attributes.size(); ++i) {
+    for (int i = 0; i < attributes.size(); ++i) {
         QVariant variant;
-        variant.setValue(attrList.attributes.at(i));
+        variant.setValue(attributes.at(i));
         argument << QDBusVariant (variant);
     }
     argument.endArray();
 
     argument.endStructure();
-    return argument;
 }
 
-const QDBusArgument &operator>>(const QDBusArgument &arg, QIBusAttributeList &attrList)
+void QIBusAttributeList::deserializeFrom(const QDBusArgument &arg)
 {
-//    qDebug() << "QIBusAttributeList::fromDBusArgument()" << arg.currentSignature();
+    qCDebug(qtQpaInputMethodsSerialize) << "QIBusAttributeList::fromDBusArgument()" << arg.currentSignature();
+
     arg.beginStructure();
 
-    arg >> static_cast<QIBusSerializable &>(attrList);
+    QIBusSerializable::deserializeFrom(arg);
 
     arg.beginArray();
     while (!arg.atEnd()) {
@@ -214,20 +202,20 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, QIBusAttributeList &at
 
         QIBusAttribute attr;
         var.variant().value<QDBusArgument>() >> attr;
-        attrList.attributes.append(attr);
+        attributes.append(std::move(attr));
     }
     arg.endArray();
 
     arg.endStructure();
-    return arg;
 }
 
 QList<QInputMethodEvent::Attribute> QIBusAttributeList::imAttributes() const
 {
     QHash<QPair<int, int>, QTextCharFormat> rangeAttrs;
+    const int numAttributes = attributes.size();
 
     // Merge text fomats for identical ranges into a single QTextFormat.
-    for (int i = 0; i < attributes.size(); ++i) {
+    for (int i = 0; i < numAttributes; ++i) {
         const QIBusAttribute &attr = attributes.at(i);
         const QTextCharFormat &format = attr.format();
 
@@ -239,8 +227,9 @@ QList<QInputMethodEvent::Attribute> QIBusAttributeList::imAttributes() const
 
     // Assemble list in original attribute order.
     QList<QInputMethodEvent::Attribute> imAttrs;
+    imAttrs.reserve(numAttributes);
 
-    for (int i = 0; i < attributes.size(); ++i) {
+    for (int i = 0; i < numAttributes; ++i) {
         const QIBusAttribute &attr = attributes.at(i);
         const QTextFormat &format = attr.format();
 
@@ -258,35 +247,115 @@ QIBusText::QIBusText()
     name = "IBusText";
 }
 
-QIBusText::~QIBusText()
-{
-}
-
-QDBusArgument &operator<<(QDBusArgument &argument, const QIBusText &text)
+void QIBusText::serializeTo(QDBusArgument &argument) const
 {
     argument.beginStructure();
 
-    argument << static_cast<const QIBusSerializable &>(text);
+    QIBusSerializable::serializeTo(argument);
 
-    argument << text.text << text.attributes;
+    argument << text << attributes;
     argument.endStructure();
-    return argument;
 }
 
-const QDBusArgument &operator>>(const QDBusArgument &argument, QIBusText &text)
+void QIBusText::deserializeFrom(const QDBusArgument &argument)
 {
-//    qDebug() << "QIBusText::fromDBusArgument()" << arg.currentSignature();
+    qCDebug(qtQpaInputMethodsSerialize) << "QIBusText::fromDBusArgument()" << argument.currentSignature();
+
     argument.beginStructure();
 
-    argument >> static_cast<QIBusSerializable &>(text);
+    QIBusSerializable::deserializeFrom(argument);
 
-    argument >> text.text;
+    argument >> text;
     QDBusVariant variant;
     argument >> variant;
-    variant.variant().value<QDBusArgument>() >> text.attributes;
+    variant.variant().value<QDBusArgument>() >> attributes;
 
     argument.endStructure();
-    return argument;
+}
+
+QIBusEngineDesc::QIBusEngineDesc()
+    : rank(0)
+{
+    name = "IBusEngineDesc";
+}
+
+void QIBusEngineDesc::serializeTo(QDBusArgument &argument) const
+{
+    argument.beginStructure();
+
+    QIBusSerializable::serializeTo(argument);
+
+    argument << engine_name;
+    argument << longname;
+    argument << description;
+    argument << language;
+    argument << license;
+    argument << author;
+    argument << icon;
+    argument << layout;
+    argument << rank;
+    argument << hotkeys;
+    argument << symbol;
+    argument << setup;
+    argument << layout_variant;
+    argument << layout_option;
+    argument << version;
+    argument << textdomain;
+    argument << iconpropkey;
+
+    argument.endStructure();
+}
+
+void QIBusEngineDesc::deserializeFrom(const QDBusArgument &argument)
+{
+    qCDebug(qtQpaInputMethodsSerialize) << "QIBusEngineDesc::fromDBusArgument()" << argument.currentSignature();
+    argument.beginStructure();
+
+    QIBusSerializable::deserializeFrom(argument);
+
+    argument >> engine_name;
+    argument >> longname;
+    argument >> description;
+    argument >> language;
+    argument >> license;
+    argument >> author;
+    argument >> icon;
+    argument >> layout;
+    argument >> rank;
+    argument >> hotkeys;
+    argument >> symbol;
+    argument >> setup;
+    // Previous IBusEngineDesc supports the arguments between engine_name
+    // and setup.
+    if (argument.currentSignature() == "")
+        goto olderThanV2;
+    argument >> layout_variant;
+    argument >> layout_option;
+    // Previous IBusEngineDesc supports the arguments between engine_name
+    // and layout_option.
+    if (argument.currentSignature() == "")
+        goto olderThanV3;
+    argument >> version;
+    if (argument.currentSignature() == "")
+        goto olderThanV4;
+    argument >> textdomain;
+    if (argument.currentSignature() == "")
+        goto olderThanV5;
+    argument >> iconpropkey;
+    // <-- insert new member streaming here (1/2)
+    goto newest;
+olderThanV2:
+    layout_variant.clear();
+    layout_option.clear();
+olderThanV3:
+    version.clear();
+olderThanV4:
+    textdomain.clear();
+olderThanV5:
+    iconpropkey.clear();
+    // <-- insert new members here (2/2)
+newest:
+    argument.endStructure();
 }
 
 QT_END_NAMESPACE

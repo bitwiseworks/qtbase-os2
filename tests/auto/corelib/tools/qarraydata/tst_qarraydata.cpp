@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -44,7 +39,7 @@ struct SharedNullVerifier
     {
         Q_ASSERT(QArrayData::shared_null[0].ref.isStatic());
         Q_ASSERT(QArrayData::shared_null[0].ref.isShared());
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         Q_ASSERT(QArrayData::shared_null[0].ref.isSharable());
 #endif
     }
@@ -70,6 +65,8 @@ private slots:
     void simpleVectorReserve();
     void allocate_data();
     void allocate();
+    void reallocate_data() { allocate_data(); }
+    void reallocate();
     void alignment_data();
     void alignment();
     void typedData();
@@ -101,7 +98,7 @@ void tst_QArrayData::referenceCounting()
         QCOMPARE(array.ref.atomic.load(), 1);
 
         QVERIFY(!array.ref.isStatic());
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         QVERIFY(array.ref.isSharable());
 #endif
 
@@ -123,7 +120,7 @@ void tst_QArrayData::referenceCounting()
         // Now would be a good time to free/release allocated data
     }
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     {
         // Reference counting initialized to 0 (non-sharable)
         QArrayData array = { { Q_BASIC_ATOMIC_INITIALIZER(0) }, 0, 0, 0, 0 };
@@ -151,7 +148,7 @@ void tst_QArrayData::referenceCounting()
         QCOMPARE(array.ref.atomic.load(), -1);
 
         QVERIFY(array.ref.isStatic());
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         QVERIFY(array.ref.isSharable());
 #endif
 
@@ -178,7 +175,7 @@ void tst_QArrayData::sharedNullEmpty()
     QCOMPARE(null->ref.atomic.load(), -1);
     QCOMPARE(empty->ref.atomic.load(), -1);
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QVERIFY(null->ref.isSharable());
     QVERIFY(empty->ref.isSharable());
 #endif
@@ -309,7 +306,7 @@ void tst_QArrayData::simpleVector()
     QVERIFY(!v7.isShared());
     QVERIFY(!v8.isShared());
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QVERIFY(v1.isSharable());
     QVERIFY(v2.isSharable());
     QVERIFY(v3.isSharable());
@@ -502,7 +499,7 @@ void tst_QArrayData::simpleVector()
     for (int i = 0; i < 120; ++i)
         QCOMPARE(v1[i], v8[i % 10]);
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     {
         v7.setSharable(true);
         QVERIFY(v7.isSharable());
@@ -672,7 +669,7 @@ void tst_QArrayData::allocate_data()
     QArrayData *shared_empty = QArrayData::allocate(0, Q_ALIGNOF(QArrayData), 0);
     QVERIFY(shared_empty);
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QArrayData *unsharable_empty = QArrayData::allocate(0, Q_ALIGNOF(QArrayData), 0, QArrayData::Unsharable);
     QVERIFY(unsharable_empty);
 #endif
@@ -686,7 +683,7 @@ void tst_QArrayData::allocate_data()
     } options[] = {
         { "Default", QArrayData::Default, false, true, shared_empty },
         { "Reserved", QArrayData::CapacityReserved, true, true, shared_empty },
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         { "Reserved | Unsharable",
             QArrayData::CapacityReserved | QArrayData::Unsharable, true, false,
             unsharable_empty },
@@ -736,7 +733,7 @@ void tst_QArrayData::allocate()
         else
             QCOMPARE(data->alloc, uint(capacity));
         QCOMPARE(data->capacityReserved, uint(isCapacityReserved));
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         QFETCH(bool, isSharable);
         QCOMPARE(data->ref.isSharable(), isSharable);
 #endif
@@ -745,6 +742,53 @@ void tst_QArrayData::allocate()
         // memory checker, such as valgrind, running.
         ::memset(data->data(), 'A', objectSize * capacity);
     }
+}
+
+void tst_QArrayData::reallocate()
+{
+    QFETCH(size_t, objectSize);
+    QFETCH(size_t, alignment);
+    QFETCH(QArrayData::AllocationOptions, allocateOptions);
+    QFETCH(bool, isCapacityReserved);
+
+    // Maximum alignment that can be requested is that of QArrayData,
+    // otherwise, we can't use reallocate().
+    Q_ASSERT(alignment <= Q_ALIGNOF(QArrayData));
+
+    // Minimum alignment that can be requested is that of QArrayData.
+    // Typically, this alignment is sizeof(void *) and ensured by malloc.
+    size_t minAlignment = qMax(alignment, Q_ALIGNOF(QArrayData));
+
+    int capacity = 10;
+    Deallocator keeper(objectSize, minAlignment);
+    QArrayData *data = QArrayData::allocate(objectSize, minAlignment, capacity,
+                                            QArrayData::AllocationOptions(allocateOptions) & ~QArrayData::Grow);
+    keeper.headers.append(data);
+
+    memset(data->data(), 'A', objectSize * capacity);
+    data->size = capacity;
+
+    // now try to reallocate
+    int newCapacity = 40;
+    data = QArrayData::reallocateUnaligned(data, objectSize, newCapacity,
+                                           QArrayData::AllocationOptions(allocateOptions));
+    QVERIFY(data);
+    keeper.headers.clear();
+    keeper.headers.append(data);
+
+    QCOMPARE(data->size, capacity);
+    if (allocateOptions & QArrayData::Grow)
+        QVERIFY(data->alloc > uint(newCapacity));
+    else
+        QCOMPARE(data->alloc, uint(newCapacity));
+    QCOMPARE(data->capacityReserved, uint(isCapacityReserved));
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
+    QFETCH(bool, isSharable);
+    QCOMPARE(data->ref.isSharable(), isSharable);
+#endif
+
+    for (int i = 0; i < capacity; ++i)
+        QCOMPARE(static_cast<char *>(data->data())[i], 'A');
 }
 
 class Unaligned
@@ -756,8 +800,8 @@ void tst_QArrayData::alignment_data()
 {
     QTest::addColumn<size_t>("alignment");
 
-    for (int i = 1; i < 10; ++i) {
-        size_t alignment = 1u << i;
+    for (size_t i = 1; i < 10; ++i) {
+        size_t alignment = size_t(1u) << i;
         QTest::newRow(qPrintable(QString::number(alignment))) << alignment;
     }
 }
@@ -1316,7 +1360,7 @@ static inline bool arrayIsFilledWith(const QArrayDataPointer<int> &array,
 
 void tst_QArrayData::setSharable_data()
 {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QTest::addColumn<QArrayDataPointer<int> >("array");
     QTest::addColumn<size_t>("size");
     QTest::addColumn<size_t>("capacity");
@@ -1362,7 +1406,7 @@ void tst_QArrayData::setSharable_data()
 
 void tst_QArrayData::setSharable()
 {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     QFETCH(QArrayDataPointer<int>, array);
     QFETCH(size_t, size);
     QFETCH(size_t, capacity);
@@ -1492,7 +1536,7 @@ void fromRawData_impl()
         QVERIFY((const T *)raw.constBegin() != array);
     }
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     {
         // Immutable, unsharable
         SimpleVector<T> raw = SimpleVector<T>::fromRawData(array,
@@ -1578,7 +1622,7 @@ void tst_QArrayData::literals()
         QVERIFY(v.isStatic());
 #endif
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         QVERIFY(v.isSharable());
 #endif
         QCOMPARE((void*)(const char*)(v.constBegin() + v.size()), (void*)(const char*)v.constEnd());
@@ -1629,7 +1673,7 @@ void tst_QArrayData::variadicLiterals()
 
         QVERIFY(v.isStatic());
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         QVERIFY(v.isSharable());
 #endif
         QCOMPARE((const int *)(v.constBegin() + v.size()), (const int *)v.constEnd());

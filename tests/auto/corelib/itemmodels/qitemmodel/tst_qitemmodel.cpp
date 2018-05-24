@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,6 +43,9 @@
 class tst_QItemModel : public QObject
 {
     Q_OBJECT
+
+public:
+    tst_QItemModel();
 
 public slots:
     void init();
@@ -123,6 +121,11 @@ private:
     // insert() recursive
     bool insertRecursively;
 };
+
+tst_QItemModel::tst_QItemModel()
+{
+    qRegisterMetaType<QAbstractItemModel::LayoutChangeHint>();
+}
 
 void tst_QItemModel::init()
 {
@@ -351,7 +354,7 @@ void tst_QItemModel::index()
     // Make sure that the same index is always returned
     QModelIndex a = currentModel->index(0,0);
     QModelIndex b = currentModel->index(0,0);
-    QVERIFY(a == b);
+    QCOMPARE(a, b);
 
     // index is tested more extensivly more later in checkChildren(),
     // but this catches the big mistakes
@@ -415,7 +418,7 @@ void checkChildren(QAbstractItemModel *currentModel, const QModelIndex &parent, 
             // Make sure we get the same index if we request it twice in a row
             QModelIndex a = currentModel->index(r, c, parent);
             QModelIndex b = currentModel->index(r, c, parent);
-            QVERIFY(a == b);
+            QCOMPARE(a, b);
 
             {
                 const QModelIndex sibling = currentModel->sibling( r, c, topLeftChild );
@@ -425,9 +428,17 @@ void checkChildren(QAbstractItemModel *currentModel, const QModelIndex &parent, 
                 const QModelIndex sibling = topLeftChild.sibling( r, c );
                 QVERIFY( index == sibling );
             }
+            if (r == topLeftChild.row()) {
+                const QModelIndex sibling = topLeftChild.siblingAtColumn( c );
+                QVERIFY( index == sibling );
+            }
+            if (c == topLeftChild.column()) {
+                const QModelIndex sibling = topLeftChild.siblingAtRow( r );
+                QVERIFY( index == sibling );
+            }
 
             // Some basic checking on the index that is returned
-            QVERIFY(index.model() == currentModel);
+            QCOMPARE(index.model(), currentModel);
             QCOMPARE(index.row(), r);
             QCOMPARE(index.column(), c);
             QCOMPARE(currentModel->data(index, Qt::DisplayRole).isValid(), true);
@@ -530,9 +541,6 @@ void tst_QItemModel::data()
     // A valid index should have a valid qvariant data
     QVERIFY(currentModel->index(0,0).isValid());
 
-    // shouldn't be able to set data on an invalid index
-    QCOMPARE(currentModel->setData(QModelIndex(), "foo", Qt::DisplayRole), false);
-
     // General Purpose roles
     QVariant variant = currentModel->data(currentModel->index(0,0), Qt::ToolTipRole);
     if (variant.isValid()) {
@@ -602,7 +610,6 @@ void tst_QItemModel::setData()
     QVERIFY(currentModel);
     QSignalSpy spy(currentModel, &QAbstractItemModel::dataChanged);
     QVERIFY(spy.isValid());
-    QCOMPARE(currentModel->setData(QModelIndex(), QVariant()), false);
     QCOMPARE(spy.count(), 0);
 
     QFETCH(bool, isEmpty);

@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -31,7 +31,7 @@
     \brief An overview of Qt's property system.
 
     \ingroup qt-basic-concepts
-    \target Qt's Property System
+    \keyword Qt's Property System
 
     Qt provides a sophisticated property system similar to the ones
     supplied by some compiler vendors. However, as a compiler- and
@@ -133,7 +133,7 @@
     editable property for (checkable) buttons. Note that QItemDelegate
     gets and sets a widget's \c USER property.
 
-    \li The presence of the \c CONSTANT attibute indicates that the property
+    \li The presence of the \c CONSTANT attribute indicates that the property
     value is constant.  For a given object instance, the READ method of a
     constant property must return the same value every time it is called.  This
     constant value may be different for different instances of the object.  A
@@ -160,13 +160,8 @@
     Because QDate is user-defined, you must include the \c{<QDate>}
     header file with the property declaration.
 
-    For QMap, QList, and QValueList properties, the property value is
-    a QVariant whose value is the entire list or map.  Note that the
-    Q_PROPERTY string cannot contain commas, because commas separate
-    macro arguments. Therefore, you must use \c QMap as the property
-    type instead of \c QMap<QString,QVariant>. For consistency, also
-    use \c QList and \c QValueList instead of \c QList<QVariant> and
-    \c QValueList<QVariant>.
+    For historical reasons, \a QMap and \a QList as property types
+    are synonym of \a QVariantMap and \a QVariantList.
 
     \section1 Reading and Writing Properties with the Meta-Object System
 

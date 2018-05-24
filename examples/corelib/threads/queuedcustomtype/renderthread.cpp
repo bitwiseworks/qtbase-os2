@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -40,6 +50,8 @@
 
 #include "renderthread.h"
 
+#include <QRandomGenerator>
+
 RenderThread::RenderThread(QObject *parent)
     : QThread(parent)
 {
@@ -72,9 +84,9 @@ void RenderThread::run()
     for (int s = size; s > 0; --s) {
         for (int c = 0; c < 400; ++c) {
 //![processing the image (start)]
-            int x1 = qMax(0, (qrand() % m_image.width()) - s/2);
+            int x1 = qMax(0, QRandomGenerator::global()->bounded(m_image.width()) - s/2);
             int x2 = qMin(x1 + s/2 + 1, m_image.width());
-            int y1 = qMax(0, (qrand() % m_image.height()) - s/2);
+            int y1 = qMax(0, QRandomGenerator::global()->bounded(m_image.height()) - s/2);
             int y2 = qMin(y1 + s/2 + 1, m_image.height());
             int n = 0;
             int red = 0;

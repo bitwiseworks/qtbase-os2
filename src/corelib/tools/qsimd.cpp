@@ -1,38 +1,45 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2012 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qsimd_p.h"
+#include "qalgorithms.h"
 #include <QByteArray>
 #include <stdio.h>
 
@@ -41,14 +48,8 @@
 #endif
 
 #if defined(Q_OS_WIN)
-#  if defined(Q_OS_WINCE)
-#    include <qt_windows.h>
-#    include <cmnintrin.h>
-#  endif
 #  if !defined(Q_CC_GNU)
-#    ifndef Q_OS_WINCE
-#      include <intrin.h>
-#    endif
+#    include <intrin.h>
 #  endif
 #elif defined(Q_OS_LINUX) && (defined(Q_PROCESSOR_ARM) || defined(Q_PROCESSOR_MIPS_32))
 #include "private/qcore_unix_p.h"
@@ -63,9 +64,18 @@
 #define HWCAP_VFPv3     8192
 #define HWCAP_VFPv3D16  16384
 
+// copied from <asm/hwcap.h> (ARM):
+#define HWCAP2_CRC32 (1 << 4)
+
+// copied from <asm/hwcap.h> (Aarch64)
+#define HWCAP_CRC32             (1 << 7)
+
 // copied from <linux/auxvec.h>
 #define AT_HWCAP  16    /* arch dependent hints at CPU capabilities */
+#define AT_HWCAP2 26    /* extension of AT_HWCAP */
 
+#elif defined(Q_CC_GHS)
+#include <INTEGRITY_types.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -75,31 +85,15 @@ static inline uint detectProcessorFeatures()
 {
     return 0;
 }
-#elif defined (Q_OS_WINCE)
-static inline uint detectProcessorFeatures()
-{
-    uint features = 0;
-
-#if defined (ARM)
-#  ifdef PF_ARM_NEON
-    if (IsProcessorFeaturePresent(PF_ARM_NEON))
-        features |= ARM_NEON;
-#  endif
-#elif defined(_X86_)
-    if (IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE))
-        features |= SSE2;
-    if (IsProcessorFeaturePresent(PF_SSE3_INSTRUCTIONS_AVAILABLE))
-        features |= SSE3;
-#endif
-    return features;
-}
-
 #elif defined(Q_PROCESSOR_ARM)
-static inline uint detectProcessorFeatures()
+static inline quint64 detectProcessorFeatures()
 {
-    uint features = 0;
+    quint64 features = 0;
 
 #if defined(Q_OS_LINUX)
+#  if defined(Q_PROCESSOR_ARM_V8) && defined(Q_PROCESSOR_ARM_64)
+    features |= Q_UINT64_C(1) << CpuFeatureNEON; // NEON is always available on ARMv8 64bit.
+#  endif
     int auxv = qt_safe_open("/proc/self/auxv", O_RDONLY);
     if (auxv != -1) {
         unsigned long vector[64];
@@ -112,12 +106,25 @@ static inline uint detectProcessorFeatures()
             }
 
             int max = nread / (sizeof vector[0]);
-            for (int i = 0; i < max; i += 2)
+            for (int i = 0; i < max; i += 2) {
                 if (vector[i] == AT_HWCAP) {
+#  if defined(Q_PROCESSOR_ARM_V8) && defined(Q_PROCESSOR_ARM_64)
+                    // For Aarch64:
+                    if (vector[i+1] & HWCAP_CRC32)
+                        features |= Q_UINT64_C(1) << CpuFeatureCRC32;
+#  endif
+                    // Aarch32, or ARMv7 or before:
                     if (vector[i+1] & HWCAP_NEON)
-                        features |= NEON;
-                    break;
+                        features |= Q_UINT64_C(1) << CpuFeatureNEON;
                 }
+#  if defined(Q_PROCESSOR_ARM_32)
+                // For Aarch32:
+                if (vector[i] == AT_HWCAP2) {
+                    if (vector[i+1] & HWCAP2_CRC32)
+                        features |= Q_UINT64_C(1) << CpuFeatureCRC32;
+                }
+#  endif
+            }
         }
 
         qt_safe_close(auxv);
@@ -127,7 +134,10 @@ static inline uint detectProcessorFeatures()
 #endif
 
 #if defined(__ARM_NEON__)
-    features = NEON;
+    features |= Q_UINT64_C(1) << CpuFeatureNEON;
+#endif
+#if defined(__ARM_FEATURE_CRC32)
+    features |= Q_UINT64_C(1) << CpuFeatureCRC32;
 #endif
 
     return features;
@@ -177,6 +187,10 @@ static int maxBasicCpuidSupported()
     int info[4];
     __cpuid(info, 0);
     return info[0];
+#elif defined(Q_CC_GHS)
+    unsigned int info[4];
+    __CPUID(0, info);
+    return info[0];
 #else
     return 0;
 #endif
@@ -196,6 +210,11 @@ static void cpuidFeatures01(uint &ecx, uint &edx)
     __cpuid(info, 1);
     ecx = info[2];
     edx = info[3];
+#elif defined(Q_CC_GHS)
+    unsigned int info[4];
+    __CPUID(1, info);
+    ecx = info[2];
+    edx = info[3];
 #endif
 }
 
@@ -203,21 +222,29 @@ static void cpuidFeatures01(uint &ecx, uint &edx)
 inline void __cpuidex(int info[4], int, __int64) { memset(info, 0, 4*sizeof(int));}
 #endif
 
-static void cpuidFeatures07_00(uint &ebx)
+static void cpuidFeatures07_00(uint &ebx, uint &ecx)
 {
 #if defined(Q_CC_GNU)
     qregisteruint rbx; // in case it's 64-bit
+    qregisteruint rcx = 0;
     asm ("xchg " PICreg", %0\n"
          "cpuid\n"
          "xchg " PICreg", %0\n"
-        : "=&r" (rbx)
-        : "a" (7), "c" (0)
+        : "=&r" (rbx), "+&c" (rcx)
+        : "a" (7)
         : "%edx");
     ebx = rbx;
+    ecx = rcx;
 #elif defined(Q_OS_WIN)
     int info[4];
     __cpuidex(info, 7, 0);
     ebx = info[1];
+    ecx = info[2];
+#elif defined(Q_CC_GHS)
+    unsigned int info[4];
+    __CPUIDEX(7, 0, info);
+    ebx = info[1];
+    ecx = info[2];
 #endif
 }
 
@@ -227,7 +254,7 @@ inline quint64 _xgetbv(__int64) { return 0; }
 #endif
 static void xgetbv(uint in, uint &eax, uint &edx)
 {
-#if defined(Q_CC_GNU)
+#if defined(Q_CC_GNU) || defined(Q_CC_GHS)
     asm (".byte 0x0F, 0x01, 0xD0" // xgetbv instruction
         : "=a" (eax), "=d" (edx)
         : "c" (in));
@@ -238,7 +265,7 @@ static void xgetbv(uint in, uint &eax, uint &edx)
 #endif
 }
 
-static inline uint detectProcessorFeatures()
+static quint64 detectProcessorFeatures()
 {
     // Flags from the CR0 / XCR0 state register
     enum XCR0Flags {
@@ -255,8 +282,15 @@ static inline uint detectProcessorFeatures()
         AVXState        = XMM0_15 | YMM0_15Hi128,
         AVX512State     = AVXState | OpMask | ZMM0_15Hi256 | ZMM16_31
     };
+    static const quint64 AllAVX512 = (Q_UINT64_C(1) << CpuFeatureAVX512F) | (Q_UINT64_C(1) << CpuFeatureAVX512CD) |
+            (Q_UINT64_C(1) << CpuFeatureAVX512ER) | (Q_UINT64_C(1) << CpuFeatureAVX512PF) |
+            (Q_UINT64_C(1) << CpuFeatureAVX512BW) | (Q_UINT64_C(1) << CpuFeatureAVX512DQ) |
+            (Q_UINT64_C(1) << CpuFeatureAVX512VL) |
+            (Q_UINT64_C(1) << CpuFeatureAVX512IFMA) | (Q_UINT64_C(1) << CpuFeatureAVX512VBMI);
+    static const quint64 AllAVX2 = (Q_UINT64_C(1) << CpuFeatureAVX2) | AllAVX512;
+    static const quint64 AllAVX = (Q_UINT64_C(1) << CpuFeatureAVX) | AllAVX2;
 
-    uint features = 0;
+    quint64 features = 0;
     int cpuidLevel = maxBasicCpuidSupported();
 #if Q_PROCESSOR_X86 < 5
     if (cpuidLevel < 1)
@@ -267,27 +301,22 @@ static inline uint detectProcessorFeatures()
 
     uint cpuid01ECX = 0, cpuid01EDX = 0;
     cpuidFeatures01(cpuid01ECX, cpuid01EDX);
+
+    // the low 32-bits of features is cpuid01ECX
+    // note: we need to check OS support for saving the AVX register state
+    features = cpuid01ECX;
+
 #if defined(Q_PROCESSOR_X86_32)
     // x86 might not have SSE2 support
     if (cpuid01EDX & (1u << 26))
-        features |= SSE2;
+        features |= Q_UINT64_C(1) << CpuFeatureSSE2;
+    else
+        features &= ~(Q_UINT64_C(1) << CpuFeatureSSE2);
     // we should verify that the OS enabled saving of the SSE state...
 #else
     // x86-64 or x32
-    features = SSE2;
+    features |= Q_UINT64_C(1) << CpuFeatureSSE2;
 #endif
-
-    // common part between 32- and 64-bit
-    if (cpuid01ECX & (1u))
-        features |= SSE3;
-    if (cpuid01ECX & (1u << 9))
-        features |= SSSE3;
-    if (cpuid01ECX & (1u << 19))
-        features |= SSE4_1;
-    if (cpuid01ECX & (1u << 20))
-        features |= SSE4_2;
-    if (cpuid01ECX & (1u << 25))
-        features |= 0; // AES, enable if needed
 
     uint xgetbvA = 0, xgetbvD = 0;
     if (cpuid01ECX & (1u << 27)) {
@@ -296,22 +325,27 @@ static inline uint detectProcessorFeatures()
     }
 
     uint cpuid0700EBX = 0;
-    if (cpuidLevel >= 7)
-        cpuidFeatures07_00(cpuid0700EBX);
+    uint cpuid0700ECX = 0;
+    if (cpuidLevel >= 7) {
+        cpuidFeatures07_00(cpuid0700EBX, cpuid0700ECX);
 
-    if ((xgetbvA & AVXState) == AVXState) {
-        // support for YMM and XMM registers is enabled
-        if (cpuid01ECX & (1u << 28))
-            features |= AVX;
-
-        if (cpuid0700EBX & (1u << 5))
-            features |= AVX2;
+        // the high 32-bits of features is cpuid0700EBX
+        features |= quint64(cpuid0700EBX) << 32;
     }
 
-    if (cpuid0700EBX & (1u << 4))
-        features |= HLE; // Hardware Lock Ellision
-    if (cpuid0700EBX & (1u << 11))
-        features |= RTM; // Restricted Transactional Memory
+    if ((xgetbvA & AVXState) != AVXState) {
+        // support for YMM registers is disabled, disable all AVX
+        features &= ~AllAVX;
+    } else if ((xgetbvA & AVX512State) != AVX512State) {
+        // support for ZMM registers or mask registers is disabled, disable all AVX512
+        features &= ~AllAVX512;
+    } else {
+        // this feature is out of order
+        if (cpuid0700ECX & (1u << 1))
+            features |= Q_UINT64_C(1) << CpuFeatureAVX512VBMI;
+        else
+            features &= ~(Q_UINT64_C(1) << CpuFeatureAVX512VBMI);
+    }
 
     return features;
 }
@@ -428,24 +462,24 @@ static bool procCpuinfoContains(const char *prefix, const char *string)
 }
 #endif
 
-static inline uint detectProcessorFeatures()
+static inline quint64 detectProcessorFeatures()
 {
     // NOTE: MIPS 74K cores are the only ones supporting DSPr2.
-    uint flags = 0;
+    quint64 flags = 0;
 
 #if defined __mips_dsp
-    flags |= DSP;
+    flags |= Q_UINT64_C(1) << CpuFeatureDSP;
 #  if defined __mips_dsp_rev && __mips_dsp_rev >= 2
-    flags |= DSPR2;
+    flags |= Q_UINT64_C(1) << CpuFeatureDSPR2;
 #  elif defined(Q_OS_LINUX)
     if (procCpuinfoContains("cpu model", "MIPS 74Kc") || procCpuinfoContains("cpu model", "MIPS 74Kf"))
-        flags |= DSPR2;
+        flags |= Q_UINT64_C(1) << CpuFeatureDSPR2;
 #  endif
 #elif defined(Q_OS_LINUX)
     if (procCpuinfoContains("ASEs implemented", "dsp")) {
-        flags |= DSP;
+        flags |= Q_UINT64_C(1) << CpuFeatureDSP;
         if (procCpuinfoContains("cpu model", "MIPS 74Kc") || procCpuinfoContains("cpu model", "MIPS 74Kf"))
-            flags |= DSPR2;
+            flags |= Q_UINT64_C(1) << CpuFeatureDSPR2;
     }
 #endif
 
@@ -460,102 +494,171 @@ static inline uint detectProcessorFeatures()
 #endif
 
 /*
- * Use kdesdk/scripts/generate_string_table.pl to update the table below.
- * Here's the data (don't forget the ONE leading space):
-
- neon
- sse2
- sse3
- ssse3
- sse4.1
- sse4.2
- avx
- avx2
- hle
- rtm
- dsp
- dspr2
-  */
+ * Use kdesdk/scripts/generate_string_table.pl to update the table below. Note
+ * that the x86 version has a lot of blanks that must be kept and that the
+ * offset table's type is changed to make the table smaller. We also remove the
+ * terminating -1 that the script adds.
+ */
 
 // begin generated
+#if defined(Q_PROCESSOR_ARM)
+/* Data:
+ neon
+ crc32
+ */
 static const char features_string[] =
-    "\0"
-    " neon\0"
-    " sse2\0"
-    " sse3\0"
-    " ssse3\0"
-    " sse4.1\0"
-    " sse4.2\0"
-    " avx\0"
-    " avx2\0"
-    " hle\0"
-    " rtm\0"
+        " neon\0"
+        " crc32\0"
+        "\0";
+static const int features_indices[] = { 0, 6 };
+#elif defined(Q_PROCESSOR_MIPS)
+/* Data:
+ dsp
+ dspr2
+*/
+static const char features_string[] =
     " dsp\0"
     " dspr2\0"
     "\0";
 
 static const int features_indices[] = {
-    0,    1,    7,   13,   19,   26,   34,   42,
-   47,   53,   58,   63,   68,   -1
+       0,    5
 };
+#elif defined(Q_PROCESSOR_X86)
+/* Data:
+ sse3
+ sse2
+ avx512vbmi
+
+
+
+
+
+
+ ssse3
+
+
+ fma
+ cmpxchg16b
+
+
+
+
+
+ sse4.1
+ sse4.2
+
+ movbe
+ popcnt
+
+ aes
+
+
+ avx
+ f16c
+ rdrand
+
+
+
+
+ bmi
+ hle
+ avx2
+
+
+ bmi2
+
+
+ rtm
+
+
+
+
+ avx512f
+ avx512dq
+ rdseed
+
+
+ avx512ifma
+
+
+
+
+ avx512pf
+ avx512er
+ avx512cd
+ sha
+ avx512bw
+ avx512vl
+ */
+static const char features_string[] =
+    " sse3\0"
+    " sse2\0"
+    " avx512vbmi\0"
+    " ssse3\0"
+    " fma\0"
+    " cmpxchg16b\0"
+    " sse4.1\0"
+    " sse4.2\0"
+    " movbe\0"
+    " popcnt\0"
+    " aes\0"
+    " avx\0"
+    " f16c\0"
+    " rdrand\0"
+    " bmi\0"
+    " hle\0"
+    " avx2\0"
+    " bmi2\0"
+    " rtm\0"
+    " avx512f\0"
+    " avx512dq\0"
+    " rdseed\0"
+    " avx512ifma\0"
+    " avx512pf\0"
+    " avx512er\0"
+    " avx512cd\0"
+    " sha\0"
+    " avx512bw\0"
+    " avx512vl\0"
+    "\0";
+
+static const quint8 features_indices[] = {
+    0,    6,   12,    5,    5,    5,    5,    5,
+    5,   24,    5,    5,   31,   36,    5,    5,
+    5,    5,    5,   48,   56,    5,   64,   71,
+    5,   79,    5,    5,   84,   89,   95,    5,
+    5,    5,    5,  103,  108,  113,    5,    5,
+  119,    5,    5,  125,    5,    5,    5,    5,
+  130,  139,  149,    5,    5,  157,    5,    5,
+    5,    5,  169,  179,  189,  199,  204,  214
+};
+#else
+static const char features_string[] = "";
+static const int features_indices[] = { };
+#endif
 // end generated
 
-static const int features_count = (sizeof features_indices - 1) / (sizeof features_indices[0]);
+static const int features_count = (sizeof features_indices) / (sizeof features_indices[0]);
 
 // record what CPU features were enabled by default in this Qt build
-static const uint minFeature = qCompilerCpuFeatures;
+static const quint64 minFeature = qCompilerCpuFeatures;
 
-#ifdef Q_OS_WIN
-#if defined(Q_CC_GNU)
-#  define ffs __builtin_ffs
+#ifdef Q_ATOMIC_INT64_IS_SUPPORTED
+Q_CORE_EXPORT QBasicAtomicInteger<quint64> qt_cpu_features[1] = { Q_BASIC_ATOMIC_INITIALIZER(0) };
 #else
-int ffs(int i)
-{
-#ifndef Q_OS_WINCE
-    unsigned long result;
-    return _BitScanForward(&result, i) ? result : 0;
-#else
-    return 0;
+Q_CORE_EXPORT QBasicAtomicInteger<unsigned> qt_cpu_features[2] = { Q_BASIC_ATOMIC_INITIALIZER(0), Q_BASIC_ATOMIC_INITIALIZER(0) };
 #endif
-}
-#endif
-#elif defined(Q_OS_ANDROID)
-# define ffs __builtin_ffs
-#endif
-
-QBasicAtomicInt qt_cpu_features = Q_BASIC_ATOMIC_INITIALIZER(0);
 
 void qDetectCpuFeatures()
 {
-#if defined(Q_CC_GNU) && !defined(Q_CC_CLANG) && !defined(Q_CC_INTEL)
-# if Q_CC_GNU < 403
-    // GCC 4.2 (at least the one that comes with Apple's XCode, on Mac) is
-    // known to be broken beyond repair in dealing with the inline assembly
-    // above. It will generate bad code that could corrupt important registers
-    // like the PIC register. The behaviour of code after this function would
-    // be totally unpredictable.
-    //
-    // For that reason, simply forego the CPUID check at all and return the set
-    // of features that we found at compile time, through the #defines from the
-    // compiler. This should at least allow code to execute, even if none of
-    // the specialized code found in Qt GUI and elsewhere will ever be enabled
-    // (it's the user's fault for using a broken compiler).
-    //
-    // This also disables the runtime checking that the processor actually
-    // contains all the features that the code required. Qt 4 ran for years
-    // like that, so it shouldn't be a problem.
-
-    qt_cpu_features.store(minFeature | QSimdInitialized);
-    return;
-# endif
-#endif
-    uint f = detectProcessorFeatures();
+    quint64 f = detectProcessorFeatures();
     QByteArray disable = qgetenv("QT_NO_CPU_FEATURE");
     if (!disable.isEmpty()) {
         disable.prepend(' ');
         for (int i = 0; i < features_count; ++i) {
             if (disable.contains(features_string + features_indices[i]))
-                f &= ~(1 << i);
+                f &= ~(Q_UINT64_C(1) << i);
         }
     }
 
@@ -564,30 +667,41 @@ void qDetectCpuFeatures()
 #else
     bool runningOnValgrind = false;
 #endif
-    if (!runningOnValgrind && (minFeature != 0 && (f & minFeature) != minFeature)) {
-        uint missing = minFeature & ~f;
+    if (Q_UNLIKELY(!runningOnValgrind && minFeature != 0 && (f & minFeature) != minFeature)) {
+        quint64 missing = minFeature & ~f;
         fprintf(stderr, "Incompatible processor. This Qt build requires the following features:\n   ");
         for (int i = 0; i < features_count; ++i) {
-            if (missing & (1 << i))
+            if (missing & (Q_UINT64_C(1) << i))
                 fprintf(stderr, "%s", features_string + features_indices[i]);
         }
         fprintf(stderr, "\n");
         fflush(stderr);
-        qFatal("Aborted. Incompatible processor: missing feature 0x%x -%s.", missing,
-               features_string + features_indices[ffs(missing) - 1]);
+        qFatal("Aborted. Incompatible processor: missing feature 0x%llx -%s.", missing,
+               features_string + features_indices[qCountTrailingZeroBits(missing)]);
     }
 
-    qt_cpu_features.store(f | QSimdInitialized);
+    qt_cpu_features[0].store(f | quint32(QSimdInitialized));
+#ifndef Q_ATOMIC_INT64_IS_SUPPORTED
+    qt_cpu_features[1].store(f >> 32);
+#endif
 }
 
 void qDumpCPUFeatures()
 {
-    uint features = qCpuFeatures();
+    quint64 features = qCpuFeatures() & ~quint64(QSimdInitialized);
     printf("Processor features: ");
     for (int i = 0; i < features_count; ++i) {
-        if (features & (1 << i))
+        if (features & (Q_UINT64_C(1) << i))
             printf("%s%s", features_string + features_indices[i],
-                   minFeature & (1 << i) ? "[required]" : "");
+                   minFeature & (Q_UINT64_C(1) << i) ? "[required]" : "");
+    }
+    if ((features = (qCompilerCpuFeatures & ~features))) {
+        printf("\n!!!!!!!!!!!!!!!!!!!!\n!!! Missing required features:");
+        for (int i = 0; i < features_count; ++i) {
+            if (features & (Q_UINT64_C(1) << i))
+                printf("%s", features_string + features_indices[i]);
+        }
+        printf("\n!!! Applications will likely crash with \"Invalid Instruction\"\n!!!!!!!!!!!!!!!!!!!!");
     }
     puts("");
 }

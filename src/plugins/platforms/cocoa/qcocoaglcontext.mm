@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,14 +39,13 @@
 
 #include "qcocoaglcontext.h"
 #include "qcocoawindow.h"
-#include "qcocoaautoreleasepool.h"
 #include "qcocoahelpers.h"
 #include <qdebug.h>
 #include <QtCore/private/qcore_mac_p.h>
-#include <QtPlatformSupport/private/cglconvenience_p.h>
 #include <QtPlatformHeaders/qcocoanativecontext.h>
+#include <dlfcn.h>
 
-#import <Cocoa/Cocoa.h>
+#import <AppKit/AppKit.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -116,7 +121,8 @@ QCocoaGLContext::QCocoaGLContext(const QSurfaceFormat &format, QPlatformOpenGLCo
                                  const QVariant &nativeHandle)
     : m_context(nil),
       m_shareContext(nil),
-      m_format(format)
+      m_format(format),
+      m_didCheckForSoftwareContext(false)
 {
     if (!nativeHandle.isNull()) {
         if (!nativeHandle.canConvert<QCocoaNativeContext>()) {
@@ -145,21 +151,50 @@ QCocoaGLContext::QCocoaGLContext(const QSurfaceFormat &format, QPlatformOpenGLCo
     if (m_format.renderableType() != QSurfaceFormat::OpenGL)
         return;
 
-    QCocoaAutoReleasePool pool; // For the SG Canvas render thread
+    QMacAutoReleasePool pool; // For the SG Canvas render thread
 
-    NSOpenGLPixelFormat *pixelFormat = static_cast <NSOpenGLPixelFormat *>(qcgl_createNSOpenGLPixelFormat(m_format));
     m_shareContext = share ? static_cast<QCocoaGLContext *>(share)->nsOpenGLContext() : nil;
 
-    m_context = [NSOpenGLContext alloc];
-    [m_context initWithFormat:pixelFormat shareContext:m_shareContext];
+    if (m_shareContext) {
+        // Allow sharing between 3.2 Core and 4.1 Core profile versions in
+        // cases where NSOpenGLContext creates a 4.1 context where a 3.2
+        // context was requested. Due to the semantics of QSurfaceFormat
+        // this 4.1 version can find its way onto the format for the new
+        // context, even though it was at no point requested by the user.
+        GLint shareContextRequestedProfile;
+        [m_shareContext.pixelFormat getValues:&shareContextRequestedProfile
+            forAttribute:NSOpenGLPFAOpenGLProfile forVirtualScreen:0];
+        auto shareContextActualProfile = share->format().version();
 
-    if (!m_context && m_shareContext) {
-        // try without shared context
-        m_shareContext = nil;
-        [m_context initWithFormat:pixelFormat shareContext:nil];
+        if (shareContextRequestedProfile == NSOpenGLProfileVersion3_2Core &&
+            shareContextActualProfile >= qMakePair(4, 1)) {
+
+            // There is a mismatch, downgrade requested format to make the
+            // NSOpenGLPFAOpenGLProfile attributes match. (NSOpenGLContext will
+            // fail to create a new context if there is a mismatch).
+            if (m_format.version() >= qMakePair(4, 1))
+                m_format.setVersion(3, 2);
+        }
     }
 
+    // create native context for the requested pixel format and share
+    NSOpenGLPixelFormat *pixelFormat = createNSOpenGLPixelFormat(m_format);
+    m_context = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:m_shareContext];
+
+    // retry without sharing on context creation failure.
+    if (!m_context && m_shareContext) {
+        m_shareContext = nil;
+        m_context = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
+        if (m_context)
+            qWarning("QCocoaGLContext: Falling back to unshared context.");
+    }
+
+    // give up if we still did not get a native context
     [pixelFormat release];
+    if (!m_context) {
+        qWarning("QCocoaGLContext: Failed to create context.");
+        return;
+    }
 
     const GLint interval = format.swapInterval() >= 0 ? format.swapInterval() : 1;
     [m_context setValues:&interval forParameter:NSOpenGLCPSwapInterval];
@@ -190,7 +225,6 @@ QVariant QCocoaGLContext::nativeHandle() const
     return QVariant::fromValue<QCocoaNativeContext>(QCocoaNativeContext(m_context));
 }
 
-// Match up with createNSOpenGLPixelFormat!
 QSurfaceFormat QCocoaGLContext::format() const
 {
     return m_format;
@@ -208,6 +242,9 @@ void QCocoaGLContext::windowWasHidden()
 
 void QCocoaGLContext::swapBuffers(QPlatformSurface *surface)
 {
+    if (surface->surface()->surfaceClass() == QSurface::Offscreen)
+        return; // Nothing to do
+
     QWindow *window = static_cast<QCocoaWindow *>(surface)->window();
     setActiveWindow(window);
 
@@ -218,12 +255,30 @@ bool QCocoaGLContext::makeCurrent(QPlatformSurface *surface)
 {
     Q_ASSERT(surface->surface()->supportsOpenGL());
 
-    QCocoaAutoReleasePool pool;
+    QMacAutoReleasePool pool;
+    [m_context makeCurrentContext];
+
+    if (surface->surface()->surfaceClass() == QSurface::Offscreen)
+        return true;
 
     QWindow *window = static_cast<QCocoaWindow *>(surface)->window();
     setActiveWindow(window);
 
-    [m_context makeCurrentContext];
+    // Disable high-resolution surfaces when using the software renderer, which has the
+    // problem that the system silently falls back to a to using a low-resolution buffer
+    // when a high-resolution buffer is requested. This is not detectable using the NSWindow
+    // convertSizeToBacking and backingScaleFactor APIs. A typical result of this is that Qt
+    // will display a quarter of the window content when running in a virtual machine.
+    if (!m_didCheckForSoftwareContext) {
+        m_didCheckForSoftwareContext = true;
+
+        const GLubyte* renderer = glGetString(GL_RENDERER);
+        if (qstrcmp((const char *)renderer, "Apple Software Renderer") == 0) {
+            NSView *view = static_cast<QCocoaWindow *>(surface)->m_view;
+            [view setWantsBestResolutionOpenGLSurface:NO];
+        }
+    }
+
     update();
     return true;
 }
@@ -243,7 +298,8 @@ void QCocoaGLContext::setActiveWindow(QWindow *window)
     QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
     cocoaWindow->setCurrentContext(this);
 
-    [(QNSView *) cocoaWindow->contentView() setQCocoaGLContext:this];
+    Q_ASSERT(!cocoaWindow->isForeignWindow());
+    [qnsview_cast(cocoaWindow->view()) setQCocoaGLContext:this];
 }
 
 void QCocoaGLContext::updateSurfaceFormat()
@@ -300,8 +356,16 @@ void QCocoaGLContext::updateSurfaceFormat()
         m_format.setSamples(samples);
 
     int doubleBuffered = -1;
+    int tripleBuffered = -1;
     [pixelFormat getValues:&doubleBuffered forAttribute:NSOpenGLPFADoubleBuffer forVirtualScreen:0];
-    m_format.setSwapBehavior(doubleBuffered == 1 ? QSurfaceFormat::DoubleBuffer : QSurfaceFormat::SingleBuffer);
+    [pixelFormat getValues:&tripleBuffered forAttribute:NSOpenGLPFATripleBuffer forVirtualScreen:0];
+
+    if (tripleBuffered == 1)
+        m_format.setSwapBehavior(QSurfaceFormat::TripleBuffer);
+    else if (doubleBuffered == 1)
+        m_format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    else
+        m_format.setSwapBehavior(QSurfaceFormat::SingleBuffer);
 
     int steroBuffers = -1;
     [pixelFormat getValues:&steroBuffers forAttribute:NSOpenGLPFAStereo forVirtualScreen:0];
@@ -309,6 +373,11 @@ void QCocoaGLContext::updateSurfaceFormat()
         m_format.setOption(QSurfaceFormat::StereoBuffers);
 
     [pixelFormat release];
+
+    GLint swapInterval = -1;
+    [m_context getValues:&swapInterval forParameter:NSOpenGLCPSwapInterval];
+    if (swapInterval >= 0)
+        m_format.setSwapInterval(swapInterval);
 
     // Restore the original context
     CGLSetCurrentContext(oldContext);
@@ -324,9 +393,9 @@ void QCocoaGLContext::doneCurrent()
     [NSOpenGLContext clearCurrentContext];
 }
 
-void (*QCocoaGLContext::getProcAddress(const QByteArray &procName))()
+QFunctionPointer QCocoaGLContext::getProcAddress(const char *procName)
 {
-    return qcgl_getProcAddress(procName);
+    return (QFunctionPointer)dlsym(RTLD_DEFAULT, procName);
 }
 
 void QCocoaGLContext::update()
@@ -336,7 +405,64 @@ void QCocoaGLContext::update()
 
 NSOpenGLPixelFormat *QCocoaGLContext::createNSOpenGLPixelFormat(const QSurfaceFormat &format)
 {
-    return static_cast<NSOpenGLPixelFormat *>(qcgl_createNSOpenGLPixelFormat(format));
+    QVector<NSOpenGLPixelFormatAttribute> attrs;
+
+    if (format.swapBehavior() == QSurfaceFormat::DoubleBuffer
+        || format.swapBehavior() == QSurfaceFormat::DefaultSwapBehavior)
+        attrs.append(NSOpenGLPFADoubleBuffer);
+    else if (format.swapBehavior() == QSurfaceFormat::TripleBuffer)
+        attrs.append(NSOpenGLPFATripleBuffer);
+
+
+    // Select OpenGL profile
+    attrs << NSOpenGLPFAOpenGLProfile;
+    if (format.profile() == QSurfaceFormat::CoreProfile) {
+        if (format.version() >= qMakePair(4, 1))
+            attrs << NSOpenGLProfileVersion4_1Core;
+        else if (format.version() >= qMakePair(3, 2))
+            attrs << NSOpenGLProfileVersion3_2Core;
+        else
+            attrs << NSOpenGLProfileVersionLegacy;
+    } else {
+        attrs << NSOpenGLProfileVersionLegacy;
+    }
+
+    if (format.depthBufferSize() > 0)
+        attrs <<  NSOpenGLPFADepthSize << format.depthBufferSize();
+    if (format.stencilBufferSize() > 0)
+        attrs << NSOpenGLPFAStencilSize << format.stencilBufferSize();
+    if (format.alphaBufferSize() > 0)
+        attrs << NSOpenGLPFAAlphaSize << format.alphaBufferSize();
+    if ((format.redBufferSize() > 0) &&
+        (format.greenBufferSize() > 0) &&
+        (format.blueBufferSize() > 0)) {
+        const int colorSize = format.redBufferSize() +
+                              format.greenBufferSize() +
+                              format.blueBufferSize();
+        attrs << NSOpenGLPFAColorSize << colorSize << NSOpenGLPFAMinimumPolicy;
+    }
+
+    if (format.samples() > 0) {
+        attrs << NSOpenGLPFAMultisample
+              << NSOpenGLPFASampleBuffers << (NSOpenGLPixelFormatAttribute) 1
+              << NSOpenGLPFASamples << (NSOpenGLPixelFormatAttribute) format.samples();
+    }
+
+    if (format.stereo())
+        attrs << NSOpenGLPFAStereo;
+
+    attrs << NSOpenGLPFAAllowOfflineRenderers;
+
+    QByteArray useLayer = qgetenv("QT_MAC_WANTS_LAYER");
+    if (!useLayer.isEmpty() && useLayer.toInt() > 0) {
+        // Disable the software rendering fallback. This makes compositing
+        // OpenGL and raster NSViews using Core Animation layers possible.
+        attrs << NSOpenGLPFANoRecovery;
+    }
+
+    attrs << 0;
+
+    return [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs.constData()];
 }
 
 NSOpenGLContext *QCocoaGLContext::nsOpenGLContext() const

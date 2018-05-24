@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -28,12 +28,12 @@
 /*!
     \example desktop/systray
     \title System Tray Icon Example
-
-
-    The System Tray Icon example shows how to add an icon with a menu
+    \ingroup examples-widgets
+    \brief The System Tray Icon example shows how to add an icon with a menu
     and popup messages to a desktop environment's system tray.
 
-    \image systemtray-example.png Screenshot of the System Tray Icon.
+    \borderedimage systemtray-example.png
+    \caption Screenshot of the System Tray Icon
 
     Modern operating systems usually provide a special area on the
     desktop, called the system tray or notification area, where
@@ -43,11 +43,11 @@
     the main application window (i.e., an editor for the system tray
     icon) and the associated icon.
 
-    \image systemtray-editor.png
+    \borderedimage systemtray-editor.png
 
     The editor allows the user to choose the preferred icon as well as
     set the balloon message's type and duration. The user can also
-    edit the message's title and body. Finally, the editor provide a
+    edit the message's title and body. Finally, the editor provides a
     checkbox controlling whether the icon is actually shown in the
     system tray, or not.
 
@@ -65,8 +65,8 @@
     check whether a system tray is present on the user's desktop, call
     the static QSystemTrayIcon::isSystemTrayAvailable()
     function. Associated with the icon, we provide a menu containing
-    the typical \gui minimize, \gui maximize, \gui restore and \gui
-    quit actions. We reimplement the QWidget::setVisible() function to
+    the typical \uicontrol minimize, \uicontrol maximize, \uicontrol restore and
+    \uicontrol quit actions. We reimplement the QWidget::setVisible() function to
     update the tray icon's menu whenever the editor's appearance
     changes, e.g., when maximizing or minimizing the main application
     window.
@@ -74,7 +74,7 @@
     Finally, we reimplement QWidget's \l {QWidget::}{closeEvent()}
     function to be able to inform the user (when closing the editor
     window) that the program will keep running in the system tray
-    until the user chooses the \gui Quit entry in the icon's context
+    until the user chooses the \uicontrol Quit entry in the icon's context
     menu.
 
     \section1 Window Class Implementation
@@ -138,7 +138,7 @@
     to show the message with the title, body, and icon for the time
     specified in milliseconds.
 
-    OS X users note: The Growl notification system must be
+    \macos users note: The Growl notification system must be
     installed for QSystemTrayIcon::showMessage() to display messages.
 
     QSystemTrayIcon also has the corresponding, \l {QSystemTrayIcon::}
@@ -173,7 +173,11 @@
 
     We have reimplemented the QWidget::closeEvent() event handler to
     receive widget close events, showing the above message to the
-    users when they are closing the editor window.
+    users when they are closing the editor window. On \macos we need to
+    avoid showing the message and accepting the close event when the
+    user really intends to quit the application, that is, when the
+    user has triggered "Quit" in the menu bar or pressed the Command+Q
+    shortcut.
 
     In addition to the functions and slots discussed above, we have
     also implemented several convenience functions to simplify the

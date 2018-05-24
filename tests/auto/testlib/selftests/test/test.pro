@@ -1,7 +1,6 @@
 CONFIG += testcase
-CONFIG += parallel_test
 SOURCES += ../tst_selftests.cpp
-QT = core xml testlib-private
+QT = core testlib-private
 
 TARGET = ../tst_selftests
 
@@ -16,5 +15,5 @@ win32 {
 RESOURCES += ../selftests.qrc
 
 include(../selftests.pri)
-for(file, SUBPROGRAMS): TEST_HELPER_INSTALLS += "../$${file}/$${file}"
+!winrt: for(file, SUBPROGRAMS): TEST_HELPER_INSTALLS += "../$${file}/$${file}"
 

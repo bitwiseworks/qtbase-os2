@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,10 +28,12 @@
 
 
 #include <QtTest/QtTest>
+#include <QtTest/private/qtesthelpers_p.h>
 
 #include <qabstractitemview.h>
 #include <qstandarditemmodel.h>
 #include <qapplication.h>
+#include <qevent.h>
 #include <qlistview.h>
 #include <qlistwidget.h>
 #include <qtableview.h>
@@ -49,26 +46,19 @@
 #include <qpushbutton.h>
 #include <qscrollbar.h>
 #include <qboxlayout.h>
+#include <qitemdelegate.h>
 #include <qlineedit.h>
 #include <qscreen.h>
 #include <qscopedpointer.h>
 #include <qstyleditemdelegate.h>
 #include <qstringlistmodel.h>
 #include <qsortfilterproxymodel.h>
+#include <qproxystyle.h>
+#include <qdialog.h>
 
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+Q_DECLARE_METATYPE(Qt::ItemFlags);
 
-static inline void centerOnScreen(QWidget *w)
-{
-    const QPoint offset = QPoint(w->width() / 2, w->height() / 2);
-    w->move(QGuiApplication::primaryScreen()->availableGeometry().center() - offset);
-}
+using namespace QTestPrivate;
 
 // Move cursor out of widget area to avoid undesired interaction on Mac.
 static inline void moveCursorAway(const QWidget *topLevel)
@@ -80,108 +70,6 @@ static inline void moveCursorAway(const QWidget *topLevel)
 #endif
 }
 
-class TestView : public QAbstractItemView
-{
-    Q_OBJECT
-public:
-    inline void tst_dataChanged(const QModelIndex &tl, const QModelIndex &br)
-        { dataChanged(tl, br); }
-    inline void tst_setHorizontalStepsPerItem(int steps)
-        { setHorizontalStepsPerItem(steps); }
-    inline int tst_horizontalStepsPerItem() const
-        { return horizontalStepsPerItem(); }
-    inline void tst_setVerticalStepsPerItem(int steps)
-        { setVerticalStepsPerItem(steps); }
-    inline int tst_verticalStepsPerItem() const
-        { return verticalStepsPerItem(); }
-
-    inline void tst_rowsInserted(const QModelIndex &parent, int start, int end)
-        { rowsInserted(parent, start, end); }
-    inline void tst_rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end)
-        { rowsAboutToBeRemoved(parent, start, end); }
-    inline void tst_selectionChanged(const QItemSelection &selected,
-                                     const QItemSelection &deselected)
-        { selectionChanged(selected, deselected); }
-    inline void tst_currentChanged(const QModelIndex &current, const QModelIndex &previous)
-        { currentChanged(current, previous); }
-    inline void tst_updateEditorData()
-        { updateEditorData(); }
-    inline void tst_updateEditorGeometries()
-        { updateEditorGeometries(); }
-    inline void tst_updateGeometries()
-        { updateGeometries(); }
-    inline void tst_verticalScrollbarAction(int action)
-        { verticalScrollbarAction(action); }
-    inline void tst_horizontalScrollbarAction(int action)
-        { horizontalScrollbarAction(action); }
-    inline void tst_verticalScrollbarValueChanged(int value)
-        { verticalScrollbarValueChanged(value); }
-    inline void tst_horizontalScrollbarValueChanged(int value)
-        { horizontalScrollbarValueChanged(value); }
-    inline void tst_closeEditor(QWidget *editor, QAbstractItemDelegate::EndEditHint hint)
-        { closeEditor(editor, hint); }
-    inline void tst_commitData(QWidget *editor)
-        { commitData(editor); }
-    inline void tst_editorDestroyed(QObject *editor)
-        { editorDestroyed(editor); }
-    enum tst_CursorAction {
-        MoveUp = QAbstractItemView::MoveUp,
-        MoveDown = QAbstractItemView::MoveDown,
-        MoveLeft = QAbstractItemView::MoveLeft,
-        MoveRight = QAbstractItemView::MoveRight,
-        MoveHome = QAbstractItemView::MoveHome,
-        MoveEnd = QAbstractItemView::MoveEnd,
-        MovePageUp = QAbstractItemView::MovePageUp,
-        MovePageDown = QAbstractItemView::MovePageDown,
-        MoveNext = QAbstractItemView::MoveNext,
-        MovePrevious = QAbstractItemView::MovePrevious
-    };
-    inline QModelIndex tst_moveCursor(tst_CursorAction cursorAction,
-                                      Qt::KeyboardModifiers modifiers)
-        { return moveCursor(QAbstractItemView::CursorAction(cursorAction), modifiers); }
-    inline int tst_horizontalOffset() const
-        { return horizontalOffset(); }
-    inline int tst_verticalOffset() const
-        { return verticalOffset(); }
-    inline bool tst_isIndexHidden(const QModelIndex &index) const
-        { return isIndexHidden(index); }
-    inline void tst_setSelection(const QRect &rect, QItemSelectionModel::SelectionFlags command)
-        { setSelection(rect, command); }
-    inline QRegion tst_visualRegionForSelection(const QItemSelection &selection) const
-        { return visualRegionForSelection(selection); }
-    inline QModelIndexList tst_selectedIndexes() const
-        { return selectedIndexes(); }
-    inline bool tst_edit(const QModelIndex &index, EditTrigger trigger, QEvent *event)
-        { return edit(index, trigger, event); }
-    inline QItemSelectionModel::SelectionFlags tst_selectionCommand(const QModelIndex &index,
-                                                                    const QEvent *event = 0) const
-        { return selectionCommand(index, event); }
-#ifndef QT_NO_DRAGANDDROP
-    inline void tst_startDrag(Qt::DropActions supportedActions)
-        { startDrag(supportedActions); }
-#endif
-    inline QStyleOptionViewItem tst_viewOptions() const
-        { return viewOptions(); }
-    enum tst_State {
-        NoState = QAbstractItemView::NoState,
-        DraggingState = QAbstractItemView::DraggingState,
-        DragSelectingState = QAbstractItemView::DragSelectingState,
-        EditingState = QAbstractItemView::EditingState,
-        ExpandingState = QAbstractItemView::ExpandingState,
-        CollapsingState = QAbstractItemView::CollapsingState
-    };
-    inline tst_State tst_state() const
-        { return (tst_State)state(); }
-    inline void tst_setState(tst_State state)
-        { setState(QAbstractItemView::State(state)); }
-    inline void tst_startAutoScroll()
-        { startAutoScroll(); }
-    inline void tst_stopAutoScroll()
-        { stopAutoScroll(); }
-    inline void tst_doAutoScroll()
-        { doAutoScroll(); }
-};
-
 class GeometriesTestView : public QTableView
 {
     Q_OBJECT
@@ -189,7 +77,7 @@ public:
     GeometriesTestView() : QTableView(), updateGeometriesCalled(false) {}
     bool updateGeometriesCalled;
 protected slots:
-    void updateGeometries() Q_DECL_OVERRIDE { updateGeometriesCalled = true; QTableView::updateGeometries(); }
+    void updateGeometries() override { updateGeometriesCalled = true; QTableView::updateGeometries(); }
 };
 
 class tst_QAbstractItemView : public QObject
@@ -197,10 +85,9 @@ class tst_QAbstractItemView : public QObject
     Q_OBJECT
 
 public:
-    void basic_tests(TestView *view);
+    void basic_tests(QAbstractItemView *view);
 
 private slots:
-    void initTestCase();
     void cleanup();
     void getSetCheck();
     void emptyModels_data();
@@ -250,6 +137,20 @@ private slots:
     void QTBUG39324_settingSameInstanceOfIndexWidget();
     void sizeHintChangeTriggersLayout();
     void shiftSelectionAfterChangingModelContents();
+    void QTBUG48968_reentrant_updateEditorGeometries();
+    void QTBUG50102_SH_ItemView_ScrollMode();
+    void QTBUG50535_update_on_new_selection_model();
+    void testSelectionModelInSyncWithView();
+    void testClickToSelect();
+    void testDialogAsEditor();
+    void QTBUG46785_mouseout_hover_state();
+    void testClearModelInClickedSignal();
+    void inputMethodEnabled_data();
+    void inputMethodEnabled();
+    void currentFollowsIndexWidget_data();
+    void currentFollowsIndexWidget();
+    void checkFocusAfterActivationChanges_data();
+    void checkFocusAfterActivationChanges();
 };
 
 class MyAbstractItemDelegate : public QAbstractItemDelegate
@@ -274,11 +175,34 @@ public:
     QSize size;
 };
 
+class DialogItemDelegate : public QStyledItemDelegate
+{
+public:
+    DialogItemDelegate() : QStyledItemDelegate() { }
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &) const
+    {
+        openedEditor = new QDialog(parent);
+        return openedEditor;
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
+    {
+        Q_UNUSED(model)
+        Q_UNUSED(index)
+
+        QDialog *dialog = qobject_cast<QDialog *>(editor);
+        result = static_cast<QDialog::DialogCode>(dialog->result());
+    }
+
+    mutable QDialog::DialogCode result;
+    mutable QDialog *openedEditor;
+};
+
 // Testing get/set functions
 void tst_QAbstractItemView::getSetCheck()
 {
     QListView view;
-    TestView *obj1 = reinterpret_cast<TestView*>(&view);
+    QAbstractItemView *obj1 = &view;
     // QAbstractItemDelegate * QAbstractItemView::itemDelegate()
     // void QAbstractItemView::setItemDelegate(QAbstractItemDelegate *)
     MyAbstractItemDelegate *var1 = new MyAbstractItemDelegate;
@@ -329,18 +253,18 @@ void tst_QAbstractItemView::getSetCheck()
 
     // State QAbstractItemView::state()
     // void QAbstractItemView::setState(State)
-    obj1->tst_setState(TestView::tst_State(TestView::NoState));
-    QCOMPARE(TestView::tst_State(TestView::NoState), obj1->tst_state());
-    obj1->tst_setState(TestView::tst_State(TestView::DraggingState));
-    QCOMPARE(TestView::tst_State(TestView::DraggingState), obj1->tst_state());
-    obj1->tst_setState(TestView::tst_State(TestView::DragSelectingState));
-    QCOMPARE(TestView::tst_State(TestView::DragSelectingState), obj1->tst_state());
-    obj1->tst_setState(TestView::tst_State(TestView::EditingState));
-    QCOMPARE(TestView::tst_State(TestView::EditingState), obj1->tst_state());
-    obj1->tst_setState(TestView::tst_State(TestView::ExpandingState));
-    QCOMPARE(TestView::tst_State(TestView::ExpandingState), obj1->tst_state());
-    obj1->tst_setState(TestView::tst_State(TestView::CollapsingState));
-    QCOMPARE(TestView::tst_State(TestView::CollapsingState), obj1->tst_state());
+    obj1->setState(QAbstractItemView::NoState);
+    QCOMPARE(QAbstractItemView::NoState, obj1->state());
+    obj1->setState(QAbstractItemView::DraggingState);
+    QCOMPARE(QAbstractItemView::DraggingState, obj1->state());
+    obj1->setState(QAbstractItemView::DragSelectingState);
+    QCOMPARE(QAbstractItemView::DragSelectingState, obj1->state());
+    obj1->setState(QAbstractItemView::EditingState);
+    QCOMPARE(QAbstractItemView::EditingState, obj1->state());
+    obj1->setState(QAbstractItemView::ExpandingState);
+    QCOMPARE(QAbstractItemView::ExpandingState, obj1->state());
+    obj1->setState(QAbstractItemView::CollapsingState);
+    QCOMPARE(QAbstractItemView::CollapsingState, obj1->state());
 
     // QWidget QAbstractScrollArea::viewport()
     // void setViewport(QWidget*)
@@ -353,13 +277,6 @@ void tst_QAbstractItemView::getSetCheck()
     QCOMPARE(20, obj1->autoScrollMargin());
     obj1->setAutoScrollMargin(16);
     QCOMPARE(16, obj1->autoScrollMargin());
-}
-
-void tst_QAbstractItemView::initTestCase()
-{
-#ifdef Q_OS_WINCE_WM
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
 }
 
 void tst_QAbstractItemView::cleanup()
@@ -401,7 +318,7 @@ void tst_QAbstractItemView::emptyModels()
     QVERIFY(!view->selectionModel());
     //QVERIFY(view->itemDelegate() != 0);
 
-    basic_tests(reinterpret_cast<TestView*>(view.data()));
+    basic_tests(view.data());
 }
 
 void tst_QAbstractItemView::setModel_data()
@@ -438,10 +355,10 @@ void tst_QAbstractItemView::setModel()
     QStandardItemModel model(20,20);
     view->setModel(0);
     view->setModel(&model);
-    basic_tests(reinterpret_cast<TestView*>(view.data()));
+    basic_tests(view.data());
 }
 
-void tst_QAbstractItemView::basic_tests(TestView *view)
+void tst_QAbstractItemView::basic_tests(QAbstractItemView *view)
 {
     // setSelectionModel
     // Will assert as it should
@@ -566,73 +483,73 @@ void tst_QAbstractItemView::basic_tests(TestView *view)
     view->setCurrentIndex(QModelIndex());
 
     // protected methods
-    view->tst_dataChanged(QModelIndex(), QModelIndex());
-    view->tst_rowsInserted(QModelIndex(), -1, -1);
-    view->tst_rowsAboutToBeRemoved(QModelIndex(), -1, -1);
-    view->tst_selectionChanged(QItemSelection(), QItemSelection());
+    view->dataChanged(QModelIndex(), QModelIndex());
+    view->rowsInserted(QModelIndex(), -1, -1);
+    view->rowsAboutToBeRemoved(QModelIndex(), -1, -1);
+    view->selectionChanged(QItemSelection(), QItemSelection());
     if (view->model()){
-        view->tst_currentChanged(QModelIndex(), QModelIndex());
-        view->tst_currentChanged(QModelIndex(), view->model()->index(0,0));
+        view->currentChanged(QModelIndex(), QModelIndex());
+        view->currentChanged(QModelIndex(), view->model()->index(0,0));
     }
-    view->tst_updateEditorData();
-    view->tst_updateEditorGeometries();
-    view->tst_updateGeometries();
-    view->tst_verticalScrollbarAction(QAbstractSlider::SliderSingleStepAdd);
-    view->tst_horizontalScrollbarAction(QAbstractSlider::SliderSingleStepAdd);
-    view->tst_verticalScrollbarValueChanged(10);
-    view->tst_horizontalScrollbarValueChanged(10);
-    view->tst_closeEditor(0, QAbstractItemDelegate::NoHint);
-    view->tst_commitData(0);
-    view->tst_editorDestroyed(0);
+    view->updateEditorData();
+    view->updateEditorGeometries();
+    view->updateGeometries();
+    view->verticalScrollbarAction(QAbstractSlider::SliderSingleStepAdd);
+    view->horizontalScrollbarAction(QAbstractSlider::SliderSingleStepAdd);
+    view->verticalScrollbarValueChanged(10);
+    view->horizontalScrollbarValueChanged(10);
+    view->closeEditor(0, QAbstractItemDelegate::NoHint);
+    view->commitData(0);
+    view->editorDestroyed(0);
 
-    view->tst_setHorizontalStepsPerItem(2);
-    view->tst_horizontalStepsPerItem();
-    view->tst_setVerticalStepsPerItem(2);
-    view->tst_verticalStepsPerItem();
+    view->setHorizontalStepsPerItem(2);
+    view->horizontalStepsPerItem();
+    view->setVerticalStepsPerItem(2);
+    view->verticalStepsPerItem();
 
     // Will assert as it should
     // view->setIndexWidget(QModelIndex(), 0);
 
-    view->tst_moveCursor(TestView::MoveUp, Qt::NoModifier);
-    view->tst_horizontalOffset();
-    view->tst_verticalOffset();
+    view->moveCursor(QAbstractItemView::MoveUp, Qt::NoModifier);
+    view->horizontalOffset();
+    view->verticalOffset();
 
-//    view->tst_isIndexHidden(QModelIndex()); // will (correctly) assert
+//    view->isIndexHidden(QModelIndex()); // will (correctly) assert
     if(view->model())
-        view->tst_isIndexHidden(view->model()->index(0,0));
+        view->isIndexHidden(view->model()->index(0,0));
 
-    view->tst_setSelection(QRect(0, 0, 10, 10), QItemSelectionModel::ClearAndSelect);
-    view->tst_setSelection(QRect(-1, -1, -1, -1), QItemSelectionModel::ClearAndSelect);
-    view->tst_visualRegionForSelection(QItemSelection());
-    view->tst_selectedIndexes();
+    view->setSelection(QRect(0, 0, 10, 10), QItemSelectionModel::ClearAndSelect);
+    view->setSelection(QRect(-1, -1, -1, -1), QItemSelectionModel::ClearAndSelect);
+    view->visualRegionForSelection(QItemSelection());
+    view->selectedIndexes();
 
-    view->tst_edit(QModelIndex(), QAbstractItemView::NoEditTriggers, 0);
+    view->edit(QModelIndex(), QAbstractItemView::NoEditTriggers, 0);
 
-    view->tst_selectionCommand(QModelIndex(), 0);
+    view->selectionCommand(QModelIndex(), 0);
 
 #ifndef QT_NO_DRAGANDDROP
     if (!view->model())
-        view->tst_startDrag(Qt::CopyAction);
+        view->startDrag(Qt::CopyAction);
 
-    view->tst_viewOptions();
+    view->viewOptions();
 
-    view->tst_setState(TestView::NoState);
-    QVERIFY(view->tst_state()==TestView::NoState);
-    view->tst_setState(TestView::DraggingState);
-    QVERIFY(view->tst_state()==TestView::DraggingState);
-    view->tst_setState(TestView::DragSelectingState);
-    QVERIFY(view->tst_state()==TestView::DragSelectingState);
-    view->tst_setState(TestView::EditingState);
-    QVERIFY(view->tst_state()==TestView::EditingState);
-    view->tst_setState(TestView::ExpandingState);
-    QVERIFY(view->tst_state()==TestView::ExpandingState);
-    view->tst_setState(TestView::CollapsingState);
-    QVERIFY(view->tst_state()==TestView::CollapsingState);
+    view->setState(QAbstractItemView::NoState);
+    QVERIFY(view->state()==QAbstractItemView::NoState);
+    view->setState(QAbstractItemView::DraggingState);
+    QVERIFY(view->state()==QAbstractItemView::DraggingState);
+    view->setState(QAbstractItemView::DragSelectingState);
+    QVERIFY(view->state()==QAbstractItemView::DragSelectingState);
+    view->setState(QAbstractItemView::EditingState);
+    QVERIFY(view->state()==QAbstractItemView::EditingState);
+    view->setState(QAbstractItemView::ExpandingState);
+    QVERIFY(view->state()==QAbstractItemView::ExpandingState);
+    view->setState(QAbstractItemView::CollapsingState);
+    QVERIFY(view->state()==QAbstractItemView::CollapsingState);
 #endif
 
-    view->tst_startAutoScroll();
-    view->tst_stopAutoScroll();
-    view->tst_doAutoScroll();
+    view->startAutoScroll();
+    view->stopAutoScroll();
+    view->doAutoScroll();
 
     // testing mouseFoo and key functions
 //     QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, QPoint(0,0));
@@ -666,7 +583,7 @@ void tst_QAbstractItemView::noModel()
     view.setModel(0);
     // Due to the model is removed, this will generate a valueChanged signal on both scrollbars. (value to 0)
     QApplication::processEvents();
-    QCOMPARE(view.model(), (QAbstractItemModel*)0);
+    QCOMPARE(view.model(), nullptr);
 }
 
 void tst_QAbstractItemView::dragSelect()
@@ -707,7 +624,9 @@ void tst_QAbstractItemView::rowDelegate()
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
     QModelIndex index = model.index(3, 0);
+    QVERIFY(!view.isPersistentEditorOpen(index));
     view.openPersistentEditor(index);
+    QVERIFY(view.isPersistentEditorOpen(index));
     QWidget *w = view.indexWidget(index);
     QVERIFY(w);
     QCOMPARE(w->metaObject()->className(), "QWidget");
@@ -727,7 +646,9 @@ void tst_QAbstractItemView::columnDelegate()
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
     QModelIndex index = model.index(0, 3);
+    QVERIFY(!view.isPersistentEditorOpen(index));
     view.openPersistentEditor(index);
+    QVERIFY(view.isPersistentEditorOpen(index));
     QWidget *w = view.indexWidget(index);
     QVERIFY(w);
     QCOMPARE(w->metaObject()->className(), "QWidget");
@@ -767,11 +688,11 @@ void tst_QAbstractItemView::selectAll()
     QTableView view;
     view.setModel(&model);
 
-    TestView *tst_view = (TestView*)&view;
+    QAbstractItemView *tst_view = &view;
 
-    QCOMPARE(tst_view->tst_selectedIndexes().count(), 0);
+    QCOMPARE(tst_view->selectedIndexes().count(), 0);
     view.selectAll();
-    QCOMPARE(tst_view->tst_selectedIndexes().count(), 4*4);
+    QCOMPARE(tst_view->selectedIndexes().count(), 4*4);
 }
 
 void tst_QAbstractItemView::ctrlA()
@@ -780,11 +701,11 @@ void tst_QAbstractItemView::ctrlA()
     QTableView view;
     view.setModel(&model);
 
-    TestView *tst_view = (TestView*)&view;
+    QAbstractItemView *tst_view = &view;
 
-    QCOMPARE(tst_view->tst_selectedIndexes().count(), 0);
+    QCOMPARE(tst_view->selectedIndexes().count(), 0);
     QTest::keyClick(&view, Qt::Key_A, Qt::ControlModifier);
-    QCOMPARE(tst_view->tst_selectedIndexes().count(), 4*4);
+    QCOMPARE(tst_view->selectedIndexes().count(), 4*4);
 }
 
 void tst_QAbstractItemView::persistentEditorFocus()
@@ -871,7 +792,7 @@ class DnDTestModel : public QStandardItemModel
 public:
     DnDTestModel() : QStandardItemModel(20, 20), dropAction_result(Qt::IgnoreAction) {
         for (int i = 0; i < rowCount(); ++i)
-            setData(index(i, 0), QString("%1").arg(i));
+            setData(index(i, 0), QString::number(i));
     }
     Qt::DropAction dropAction() const { return dropAction_result; }
 };
@@ -1036,7 +957,7 @@ void tst_QAbstractItemView::dragAndDropOnChild()
             ++successes;
     }
 
-    QVERIFY(successes == 0);
+    QCOMPARE(successes, 0);
 }
 
 #endif // 0
@@ -1108,7 +1029,7 @@ void tst_QAbstractItemView::setItemDelegate()
     centerOnScreen(&v);
     moveCursorAway(&v);
     v.show();
-#ifdef Q_DEAD_CODE_FROM_QT4_X11
+#if 0 // Used to be included in Qt4 for Q_WS_X11
     QCursor::setPos(v.geometry().center());
 #endif
     QApplication::setActiveWindow(&v);
@@ -1214,7 +1135,7 @@ void tst_QAbstractItemView::setCurrentIndex()
     view->setModel(model);
 
     view->setCurrentIndex(model->index(0,0));
-    QVERIFY(view->currentIndex() == model->index(0,0));
+    QCOMPARE(view->currentIndex(), model->index(0,0));
     view->setCurrentIndex(model->index(1,0));
     QVERIFY(view->currentIndex() == model->index(result ? 1 : 0,0));
 }
@@ -1276,9 +1197,9 @@ void tst_QAbstractItemView::task250754_fontChange()
 
     QStandardItemModel *m = new QStandardItemModel(this);
     for (int i=0; i<20; ++i) {
-        QStandardItem *item = new QStandardItem(QString("Item number %1").arg(i));
+        QStandardItem *item = new QStandardItem(QStringLiteral("Item number ") + QString::number(i));
         for (int j=0; j<5; ++j) {
-            QStandardItem *child = new QStandardItem(QString("Child Item number %1").arg(j));
+            QStandardItem *child = new QStandardItem(QStringLiteral("Child Item number ") + QString::number(j));
             item->setChild(j, 0, child);
         }
         m->setItem(i, 0, item);
@@ -1306,9 +1227,6 @@ void tst_QAbstractItemView::task250754_fontChange()
 
 void tst_QAbstractItemView::task200665_itemEntered()
 {
-#ifdef Q_OS_WINCE_WM
-    QSKIP("On Windows Mobile the mouse tracking is unavailable at the moment");
-#endif
     //we test that view will emit entered
     //when the scrollbar move but not the mouse itself
     QStandardItemModel model(1000,1);
@@ -1318,8 +1236,8 @@ void tst_QAbstractItemView::task200665_itemEntered()
     moveCursorAway(&view);
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
-    QCursor::setPos( view.geometry().center() );
-    QCoreApplication::processEvents();
+    QCursor::setPos(view.geometry().center());
+    QTRY_COMPARE(QCursor::pos(), view.geometry().center());
     QSignalSpy spy(&view, SIGNAL(entered(QModelIndex)));
     view.verticalScrollBar()->setValue(view.verticalScrollBar()->maximum());
 
@@ -1368,7 +1286,7 @@ void tst_QAbstractItemView::shiftArrowSelectionAfterScrolling()
 {
     QStandardItemModel model;
     for (int i=0; i<10; ++i) {
-        QStandardItem *item = new QStandardItem(QString("%1").arg(i));
+        QStandardItem *item = new QStandardItem(QString::number(i));
         model.setItem(i, 0, item);
     }
 
@@ -1405,7 +1323,7 @@ void tst_QAbstractItemView::shiftSelectionAfterRubberbandSelection()
 {
     QStandardItemModel model;
     for (int i=0; i<3; ++i) {
-        QStandardItem *item = new QStandardItem(QString("%1").arg(i));
+        QStandardItem *item = new QStandardItem(QString::number(i));
         model.setItem(i, 0, item);
     }
 
@@ -1482,7 +1400,7 @@ void tst_QAbstractItemView::ctrlRubberbandSelection()
 {
     QStandardItemModel model;
     for (int i=0; i<3; ++i) {
-        QStandardItem *item = new QStandardItem(QString("%1").arg(i));
+        QStandardItem *item = new QStandardItem(QString::number(i));
         model.setItem(i, 0, item);
     }
 
@@ -1600,19 +1518,14 @@ void tst_QAbstractItemView::testDelegateDestroyEditor()
     MyAbstractItemDelegate delegate;
     table.setItemDelegate(&delegate);
     table.edit(table.model()->index(1, 1));
-    TestView *tv = reinterpret_cast<TestView*>(&table);
+    QAbstractItemView *tv = &table;
     QVERIFY(!delegate.calledVirtualDtor);
-    tv->tst_closeEditor(delegate.openedEditor, QAbstractItemDelegate::NoHint);
+    tv->closeEditor(delegate.openedEditor, QAbstractItemDelegate::NoHint);
     QVERIFY(delegate.calledVirtualDtor);
 }
 
 void tst_QAbstractItemView::testClickedSignal()
 {
-#if defined Q_OS_BLACKBERRY
-    QWidget rootWindow;
-    rootWindow.show();
-    QTest::qWaitForWindowExposed(&rootWindow);
-#endif
     QTableWidget view(5, 5);
 
     centerOnScreen(&view);
@@ -1646,7 +1559,7 @@ public:
     QItemDelegate(parent)
   {}
 
-  void setEditorData(QWidget *editor, const QModelIndex &index) const Q_DECL_OVERRIDE {
+  void setEditorData(QWidget *editor, const QModelIndex &index) const override {
       Q_UNUSED(index);
       static bool w = true;
       editor->setEnabled(w);
@@ -1683,7 +1596,7 @@ void tst_QAbstractItemView::testChangeEditorState()
 
     QTableView view;
     view.setEditTriggers(QAbstractItemView::CurrentChanged);
-    view.setItemDelegate(new StateChangeDelegate);
+    view.setItemDelegate(new StateChangeDelegate(&view));
     view.setModel(&model);
     centerOnScreen(&view);
     moveCursorAway(&view);
@@ -1895,7 +1808,7 @@ void tst_QAbstractItemView::shiftSelectionAfterChangingModelContents()
     view.setModel(&proxyModel);
     view.setSelectionMode(QAbstractItemView::ExtendedSelection);
     view.show();
-    QTest::qWaitForWindowExposed(&view);
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
 
     // Click "C"
     QTest::mouseClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.visualRect(indexC).center());
@@ -1988,6 +1901,624 @@ void tst_QAbstractItemView::shiftSelectionAfterChangingModelContents()
     QCOMPARE(selected.count(), 2);
     QVERIFY(selected.contains(indexD));
     QVERIFY(selected.contains(indexE));
+}
+
+void tst_QAbstractItemView::QTBUG48968_reentrant_updateEditorGeometries()
+{
+
+    QStandardItemModel *m = new QStandardItemModel(this);
+    for (int i=0; i<10; ++i) {
+        QStandardItem *item = new QStandardItem(QString("Item number %1").arg(i));
+        item->setEditable(true);
+        for (int j=0; j<5; ++j) {
+            QStandardItem *child = new QStandardItem(QString("Child Item number %1").arg(j));
+            item->setChild(j, 0, child);
+        }
+        m->setItem(i, 0, item);
+    }
+
+    QTreeView tree;
+    tree.setModel(m);
+    tree.setRootIsDecorated(false);
+    QObject::connect(&tree, SIGNAL(doubleClicked(QModelIndex)), &tree, SLOT(setRootIndex(QModelIndex)));
+    tree.show();
+    QVERIFY(QTest::qWaitForWindowActive(&tree));
+
+    // Trigger editing idx
+    QModelIndex idx = m->index(1, 0);
+    const QPoint pos = tree.visualRect(idx).center();
+    QTest::mouseClick(tree.viewport(), Qt::LeftButton, Qt::NoModifier, pos);
+    QTest::mouseDClick(tree.viewport(), Qt::LeftButton, Qt::NoModifier, pos);
+
+    // Add more children to idx
+    QStandardItem *item = m->itemFromIndex(idx);
+    for (int j=5; j<10; ++j) {
+        QStandardItem *child = new QStandardItem(QString("Child Item number %1").arg(j));
+        item->setChild(j, 0, child);
+    }
+
+    // No crash, all fine.
+}
+
+class ScrollModeProxyStyle: public QProxyStyle
+{
+public:
+    ScrollModeProxyStyle(QAbstractItemView::ScrollMode sm, QStyle *style = 0)
+        : QProxyStyle(style)
+        , scrollMode(sm == QAbstractItemView::ScrollPerItem ?
+                     QAbstractItemView::ScrollPerPixel : QAbstractItemView::ScrollPerItem)
+    { }
+
+    int styleHint(QStyle::StyleHint hint, const QStyleOption *opt, const QWidget *w, QStyleHintReturn *returnData) const override
+    {
+        if (hint == SH_ItemView_ScrollMode)
+            return scrollMode;
+
+        return baseStyle()->styleHint(hint, opt, w, returnData);
+    }
+
+    QAbstractItemView::ScrollMode scrollMode;
+};
+
+void tst_QAbstractItemView::QTBUG50102_SH_ItemView_ScrollMode()
+{
+    QListView view;
+
+    // Default comes from the style
+    auto styleScrollMode = static_cast<QAbstractItemView::ScrollMode>(view.style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, &view, 0));
+    QCOMPARE(view.verticalScrollMode(), styleScrollMode);
+    QCOMPARE(view.horizontalScrollMode(), styleScrollMode);
+
+    // Change style, get new value
+    ScrollModeProxyStyle proxyStyle1(styleScrollMode);
+    view.setStyle(&proxyStyle1);
+    auto proxyScrollMode = static_cast<QAbstractItemView::ScrollMode>(view.style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, &view, 0));
+    QVERIFY(styleScrollMode != proxyScrollMode);
+    QCOMPARE(view.verticalScrollMode(), proxyScrollMode);
+    QCOMPARE(view.horizontalScrollMode(), proxyScrollMode);
+
+    // Explicitly set vertical, same value
+    view.setVerticalScrollMode(proxyScrollMode);
+    QCOMPARE(view.verticalScrollMode(), proxyScrollMode);
+    QCOMPARE(view.horizontalScrollMode(), proxyScrollMode);
+
+    // Change style, won't change value for vertical, will change for horizontal
+    ScrollModeProxyStyle proxyStyle2(proxyScrollMode);
+    view.setStyle(&proxyStyle2);
+    QCOMPARE(view.verticalScrollMode(), proxyScrollMode);
+    QCOMPARE(view.horizontalScrollMode(), styleScrollMode);
+}
+
+void tst_QAbstractItemView::QTBUG50535_update_on_new_selection_model()
+{
+    QStandardItemModel model;
+    for (int i = 0; i < 10; ++i)
+        model.appendRow(new QStandardItem(QStringLiteral("%1").arg(i)));
+
+    class ListView : public QListView
+    {
+    public:
+        ListView()
+            : m_paintEventsCount(0), m_deselectedMustBeEmpty(false), m_selectionChangedOk(true)
+        {
+        }
+
+        void setSelectionModel(QItemSelectionModel *model) override
+        {
+            m_deselectedMustBeEmpty = !selectionModel() || !model || selectionModel()->model() != model->model();
+            QListView::setSelectionModel(model);
+            m_deselectedMustBeEmpty = false;
+        }
+        int m_paintEventsCount;
+        bool selectionChangedOk() const { return m_selectionChangedOk; }
+
+    protected:
+        bool viewportEvent(QEvent *event) override
+        {
+            if (event->type() == QEvent::Paint)
+                ++m_paintEventsCount;
+            return QListView::viewportEvent(event);
+        }
+
+        void selectionChanged(const QItemSelection &selected,
+                              const QItemSelection &deselected) override
+        {
+            if (m_deselectedMustBeEmpty && !deselected.isEmpty())
+                m_selectionChangedOk = false;
+
+            // Make sure both selections belong to the same model
+            foreach (const QModelIndex &nmi, selected.indexes()) {
+                foreach (const QModelIndex &omi, deselected.indexes()) {
+                    m_selectionChangedOk = m_selectionChangedOk && (nmi.model() == omi.model());
+                }
+            }
+            QListView::selectionChanged(selected, deselected);
+        }
+    private:
+        bool m_deselectedMustBeEmpty;
+        bool m_selectionChangedOk;
+    };
+
+    // keep the current/selected row in the "low range", i.e. be sure it's visible, otherwise we
+    // don't get updates and the test fails.
+
+    ListView view;
+    view.setModel(&model);
+    view.selectionModel()->setCurrentIndex(model.index(1, 0), QItemSelectionModel::SelectCurrent);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QVERIFY(view.selectionChangedOk());
+
+    QItemSelectionModel selectionModel(&model);
+    selectionModel.setCurrentIndex(model.index(2, 0), QItemSelectionModel::Current);
+
+    int oldPaintEventsCount = view.m_paintEventsCount;
+    view.setSelectionModel(&selectionModel);
+    QTRY_VERIFY(view.m_paintEventsCount > oldPaintEventsCount);
+    QVERIFY(view.selectionChangedOk());
+
+
+    QItemSelectionModel selectionModel2(&model);
+    selectionModel2.select(model.index(0, 0), QItemSelectionModel::ClearAndSelect);
+    selectionModel2.setCurrentIndex(model.index(1, 0), QItemSelectionModel::Current);
+
+    oldPaintEventsCount = view.m_paintEventsCount;
+    view.setSelectionModel(&selectionModel2);
+    QTRY_VERIFY(view.m_paintEventsCount > oldPaintEventsCount);
+    QVERIFY(view.selectionChangedOk());
+
+    // Tests QAbstractItemView::selectionChanged
+    QStandardItemModel model1;
+    for (int i = 0; i < 10; ++i)
+        model1.appendRow(new QStandardItem(QString::number(i)));
+    view.setModel(&model1);
+
+    QItemSelectionModel selectionModel1(&model1);
+    selectionModel1.select(model1.index(0, 0), QItemSelectionModel::ClearAndSelect);
+    selectionModel1.setCurrentIndex(model1.index(1, 0), QItemSelectionModel::Current);
+    view.setSelectionModel(&selectionModel1);
+    QVERIFY(view.selectionChangedOk());
+}
+
+void tst_QAbstractItemView::testSelectionModelInSyncWithView()
+{
+    QStandardItemModel model;
+    for (int i = 0; i < 10; ++i)
+        model.appendRow(new QStandardItem(QStringLiteral("%1").arg(i)));
+
+    class ListView : public QListView
+    {
+    public:
+        using QListView::selectedIndexes;
+    };
+
+    ListView view;
+    QVERIFY(!view.selectionModel());
+
+    view.setModel(&model);
+    QVERIFY(view.selectionModel());
+    QVERIFY(view.selectedIndexes().isEmpty());
+    QVERIFY(view.selectionModel()->selection().isEmpty());
+
+    view.setCurrentIndex(model.index(0, 0));
+    QCOMPARE(view.currentIndex(), model.index(0, 0));
+    QCOMPARE(view.selectionModel()->currentIndex(), model.index(0, 0));
+
+    view.selectionModel()->setCurrentIndex(model.index(1, 0), QItemSelectionModel::SelectCurrent);
+    QCOMPARE(view.currentIndex(), model.index(1, 0));
+    QCOMPARE(view.selectedIndexes(), QModelIndexList() << model.index(1, 0));
+    QCOMPARE(view.selectionModel()->currentIndex(), model.index(1, 0));
+    QCOMPARE(view.selectionModel()->selection().indexes(), QModelIndexList() << model.index(1, 0));
+
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QItemSelectionModel selectionModel(&model);
+    selectionModel.setCurrentIndex(model.index(2, 0), QItemSelectionModel::Current);
+
+    view.setSelectionModel(&selectionModel);
+    QCOMPARE(view.currentIndex(), model.index(2, 0));
+    QCOMPARE(view.selectedIndexes(), QModelIndexList());
+    QCOMPARE(view.selectionModel()->currentIndex(), model.index(2, 0));
+    QCOMPARE(view.selectionModel()->selection().indexes(),  QModelIndexList());
+
+
+    QItemSelectionModel selectionModel2(&model);
+    selectionModel2.select(model.index(0, 0), QItemSelectionModel::ClearAndSelect);
+    selectionModel2.setCurrentIndex(model.index(1, 0), QItemSelectionModel::Current);
+
+    view.setSelectionModel(&selectionModel2);
+    QCOMPARE(view.currentIndex(), model.index(1, 0));
+    QCOMPARE(view.selectedIndexes(), QModelIndexList() << model.index(0, 0));
+    QCOMPARE(view.selectionModel()->currentIndex(), model.index(1, 0));
+    QCOMPARE(view.selectionModel()->selection().indexes(),  QModelIndexList() << model.index(0, 0));
+}
+
+class SetSelectionTestView : public QListView
+{
+    Q_OBJECT
+public:
+    SetSelectionTestView() : QListView() {}
+
+signals:
+    void setSelectionCalled(const QRect &rect);
+
+protected:
+    void setSelection(const QRect &rect, QItemSelectionModel::SelectionFlags flags) override
+    {
+        emit setSelectionCalled(rect);
+        QListView::setSelection(rect, flags);
+    }
+};
+
+void tst_QAbstractItemView::testClickToSelect()
+{
+    // This test verifies that the QRect that is passed from QAbstractItemView::mousePressEvent
+    // to the virtual method QAbstractItemView::setSelection(const QRect &, SelectionFlags)
+    // is the 1x1 rect which conains exactly the clicked pixel if no modifiers are pressed.
+
+    QStringList list;
+    list << "A" << "B" << "C";
+    QStringListModel model(list);
+
+    SetSelectionTestView view;
+    view.setModel(&model);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QSignalSpy spy(&view, &SetSelectionTestView::setSelectionCalled);
+
+    const QModelIndex indexA(model.index(0, 0));
+    const QRect visualRectA = view.visualRect(indexA);
+    const QPoint centerA = visualRectA.center();
+
+    // Click the center of the visualRect of item "A"
+    QTest::mouseClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, centerA);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.back().front().value<QRect>(), QRect(centerA, QSize(1, 1)));
+
+    // Click a point slightly away from the center
+    const QPoint nearCenterA = centerA + QPoint(1, 1);
+    QVERIFY(visualRectA.contains(nearCenterA));
+    QTest::mouseClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, nearCenterA);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.back().front().value<QRect>(), QRect(nearCenterA, QSize(1, 1)));
+}
+
+void tst_QAbstractItemView::testDialogAsEditor()
+{
+    DialogItemDelegate delegate;
+
+    QStandardItemModel model;
+    model.appendRow(new QStandardItem(QStringLiteral("editme")));
+
+    QListView view;
+    view.setItemDelegate(&delegate);
+    view.setModel(&model);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    view.edit(model.index(0,0));
+
+    QVERIFY(QTest::qWaitForWindowExposed(delegate.openedEditor));
+
+    delegate.openedEditor->reject();
+    QApplication::processEvents();
+
+    QCOMPARE(delegate.result, QDialog::Rejected);
+
+    view.edit(model.index(0,0));
+
+    QVERIFY(QTest::qWaitForWindowExposed(delegate.openedEditor));
+
+    delegate.openedEditor->accept();
+    QApplication::processEvents();
+
+    QCOMPARE(delegate.result, QDialog::Accepted);
+}
+
+class HoverItemDelegate : public QItemDelegate
+{
+public:
+    HoverItemDelegate()
+        : QItemDelegate()
+        , m_paintedWithoutHover(false)
+    { }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &opt, const QModelIndex &index) const override
+    {
+        Q_UNUSED(painter);
+
+        if (!(opt.state & QStyle::State_MouseOver)) {
+
+            // We don't want to set m_paintedWithoutHover for any item so check for the item at 0,0
+            if (index.row() == 0 && index.column() == 0) {
+                m_paintedWithoutHover = true;
+            }
+        }
+    }
+
+    mutable bool m_paintedWithoutHover;
+};
+
+void tst_QAbstractItemView::QTBUG46785_mouseout_hover_state()
+{
+    HoverItemDelegate delegate;
+
+    QTableWidget table(5, 5);
+    table.verticalHeader()->hide();
+    table.horizontalHeader()->hide();
+    table.setMouseTracking(true);
+    table.setItemDelegate(&delegate);
+    centerOnScreen(&table);
+    table.show();
+    QVERIFY(QTest::qWaitForWindowActive(&table));
+
+    QModelIndex item = table.model()->index(0, 0);
+    QRect itemRect = table.visualRect(item);
+
+    // Move the mouse into the center of the item at 0,0 to cause a paint event to occur
+    QTest::mouseMove(table.viewport(), itemRect.center());
+    QTest::mouseClick(table.viewport(), Qt::LeftButton, 0, itemRect.center());
+
+    delegate.m_paintedWithoutHover = false;
+
+    QTest::mouseMove(table.viewport(), QPoint(-50, 0));
+
+    QTRY_VERIFY(delegate.m_paintedWithoutHover);
+}
+
+void tst_QAbstractItemView::testClearModelInClickedSignal()
+{
+    QStringList list{"A", "B"};
+    QStringListModel model(list);
+
+    QListView view;
+    view.setModel(&model);
+    view.show();
+
+    QWidget::connect(&view, &QListView::clicked, [&view](const QModelIndex &index)
+    {
+        view.setModel(nullptr);
+        QCOMPARE(index.data().toString(), QStringLiteral("B"));
+    });
+
+    QModelIndex index = view.model()->index(1, 0);
+    QVERIFY(index.isValid());
+    QPoint p = view.visualRect(index).center();
+
+    QTest::mouseClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, p);
+
+    QCOMPARE(view.model(), nullptr);
+}
+
+void tst_QAbstractItemView::inputMethodEnabled_data()
+{
+    QTest::addColumn<QByteArray>("viewType");
+    QTest::addColumn<Qt::ItemFlags>("itemFlags");
+    QTest::addColumn<bool>("result");
+
+    QList<QByteArray> widgets;
+    widgets << "QListView" << "QTreeView" << "QTableView";
+
+    for (const QByteArray &widget : qAsConst(widgets)) {
+        QTest::newRow(widget + ": no flags") << widget << Qt::ItemFlags(Qt::NoItemFlags) << false;
+        QTest::newRow(widget + ": checkable") << widget << Qt::ItemFlags(Qt::ItemIsUserCheckable) << false;
+        QTest::newRow(widget + ": selectable") << widget << Qt::ItemFlags(Qt::ItemIsSelectable) << false;
+        QTest::newRow(widget + ": enabled") << widget << Qt::ItemFlags(Qt::ItemIsEnabled) << false;
+        QTest::newRow(widget + ": selectable|enabled")
+            << widget << Qt::ItemFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled) << false;
+        QTest::newRow(widget + ": editable|enabled")
+            << widget << Qt::ItemFlags(Qt::ItemIsEditable | Qt::ItemIsEnabled) << true;
+        QTest::newRow(widget + ": editable|enabled|selectable")
+            << widget << Qt::ItemFlags(Qt::ItemIsEditable | Qt::ItemIsEnabled | Qt::ItemIsSelectable) << true;
+    }
+}
+
+void tst_QAbstractItemView::inputMethodEnabled()
+{
+    QFETCH(QByteArray, viewType);
+    QFETCH(Qt::ItemFlags, itemFlags);
+    QFETCH(bool, result);
+
+    QScopedPointer<QAbstractItemView> view;
+    if (viewType == "QListView")
+        view.reset(new QListView());
+    else if (viewType == "QTableView")
+        view.reset(new QTableView());
+    else if (viewType == "QTreeView")
+        view.reset(new QTreeView());
+    else
+        QVERIFY(0);
+
+    centerOnScreen(view.data());
+    view->show();
+    QVERIFY(QTest::qWaitForWindowExposed(view.data()));
+
+    QStandardItemModel *model = new QStandardItemModel(view.data());
+    QStandardItem *item = new QStandardItem("first item");
+    item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+    model->appendRow(item);
+
+    QStandardItem *secondItem = new QStandardItem("test item");
+    secondItem->setFlags(Qt::ItemFlags(itemFlags));
+    model->appendRow(secondItem);
+
+    view->setModel(model);
+
+    // Check current changed
+    view->setCurrentIndex(model->index(0, 0));
+    QVERIFY(!view->testAttribute(Qt::WA_InputMethodEnabled));
+    view->setCurrentIndex(model->index(1, 0));
+    QCOMPARE(view->testAttribute(Qt::WA_InputMethodEnabled), result);
+    view->setCurrentIndex(model->index(0, 0));
+    QVERIFY(!view->testAttribute(Qt::WA_InputMethodEnabled));
+
+    // Check focus by switching the activation of the window to force a focus in
+    view->setCurrentIndex(model->index(1, 0));
+    QApplication::setActiveWindow(0);
+    QApplication::setActiveWindow(view.data());
+    QVERIFY(QTest::qWaitForWindowActive(view.data()));
+    QCOMPARE(view->testAttribute(Qt::WA_InputMethodEnabled), result);
+
+    view->setCurrentIndex(QModelIndex());
+    QVERIFY(!view->testAttribute(Qt::WA_InputMethodEnabled));
+    QApplication::setActiveWindow(0);
+    QApplication::setActiveWindow(view.data());
+    QVERIFY(QTest::qWaitForWindowActive(view.data()));
+    QModelIndex index = model->index(1, 0);
+    QPoint p = view->visualRect(index).center();
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, p);
+    if (itemFlags & Qt::ItemIsEnabled)
+        QCOMPARE(view->currentIndex(), index);
+    QCOMPARE(view->testAttribute(Qt::WA_InputMethodEnabled), result);
+
+    index = model->index(0, 0);
+    QApplication::setActiveWindow(0);
+    QApplication::setActiveWindow(view.data());
+    QVERIFY(QTest::qWaitForWindowActive(view.data()));
+    p = view->visualRect(index).center();
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, p);
+    QCOMPARE(view->currentIndex(), index);
+    QVERIFY(!view->testAttribute(Qt::WA_InputMethodEnabled));
+
+    // There is a case when it goes to the first visible item so we
+    // make the flags of the first item match the ones we are testing
+    // to check the attribute correctly
+    QApplication::setActiveWindow(0);
+    view->setCurrentIndex(QModelIndex());
+    view->reset();
+    item->setFlags(Qt::ItemFlags(itemFlags));
+    QApplication::setActiveWindow(view.data());
+    QVERIFY(QTest::qWaitForWindowActive(view.data()));
+    QCOMPARE(view->testAttribute(Qt::WA_InputMethodEnabled), result);
+}
+
+void tst_QAbstractItemView::currentFollowsIndexWidget_data()
+{
+    QTest::addColumn<QByteArray>("viewType");
+
+    QList<QByteArray> widgets;
+    widgets << "QListView" << "QTreeView" << "QTableView";
+    for (const QByteArray &widget : qAsConst(widgets))
+        QTest::newRow(widget) << widget;
+}
+
+void tst_QAbstractItemView::currentFollowsIndexWidget()
+{
+    QFETCH(QByteArray, viewType);
+
+    QScopedPointer<QAbstractItemView> view;
+    if (viewType == "QListView")
+        view.reset(new QListView());
+    else if (viewType == "QTableView")
+        view.reset(new QTableView());
+    else if (viewType == "QTreeView")
+        view.reset(new QTreeView());
+    else
+        QVERIFY(0);
+
+    centerOnScreen(view.data());
+    view->show();
+    QVERIFY(QTest::qWaitForWindowExposed(view.data()));
+
+    QStandardItemModel *model = new QStandardItemModel(view.data());
+    QStandardItem *item1 = new QStandardItem("first item");
+    item1->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+    model->appendRow(item1);
+
+    QStandardItem *item2 = new QStandardItem("test item");
+    item2->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+    model->appendRow(item2);
+
+    view->setModel(model);
+    QLineEdit *lineEdit1 = new QLineEdit;
+    QLineEdit *lineEdit2 = new QLineEdit;
+    view->setIndexWidget(item1->index(), lineEdit1);
+    view->setIndexWidget(item2->index(), lineEdit2);
+
+    lineEdit2->setFocus();
+    QTRY_VERIFY(lineEdit2->hasFocus());
+    QCOMPARE(view->currentIndex(), item2->index());
+    lineEdit1->setFocus();
+    QTRY_VERIFY(lineEdit1->hasFocus());
+    QCOMPARE(view->currentIndex(), item1->index());
+}
+
+class EditorItemDelegate : public QItemDelegate
+{
+public:
+    EditorItemDelegate() : QItemDelegate(), openedEditor(nullptr) { }
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        openedEditor = new QLineEdit(parent);
+        return openedEditor;
+    }
+    mutable QPointer<QWidget> openedEditor;
+};
+
+// Testing the case reported in QTBUG-62253.
+// When an itemview with an editor that has focus loses focus
+// due to a change in the active window then we need to check
+// that the itemview gets focus once the activation is back
+// on the original window.
+void tst_QAbstractItemView::checkFocusAfterActivationChanges_data()
+{
+    QTest::addColumn<QString>("viewType");
+
+    QTest::newRow("QListView") << "QListView";
+    QTest::newRow("QTableView") << "QTableView";
+    QTest::newRow("QTreeView") << "QTreeView";
+}
+
+void tst_QAbstractItemView::checkFocusAfterActivationChanges()
+{
+    QFETCH(QString, viewType);
+
+    const QRect availableGeo = qApp->primaryScreen()->availableGeometry();
+    const int halfWidth = availableGeo.width() / 2;
+    QWidget otherTopLevel;
+    otherTopLevel.setGeometry(availableGeo.x(), availableGeo.y(),
+                              halfWidth, availableGeo.height());
+    otherTopLevel.show();
+
+    QWidget w;
+    w.setGeometry(availableGeo.x() + halfWidth, availableGeo.y(),
+                              halfWidth, availableGeo.height());
+    QLineEdit *le = new QLineEdit(&w);
+    QAbstractItemView *view = 0;
+    if (viewType == "QListView")
+        view = new QListView(&w);
+    else if (viewType == "QTableView")
+        view = new QTableView(&w);
+    else if (viewType == "QTreeView")
+        view = new QTreeView(&w);
+
+    QStandardItemModel model(5, 5);
+    view->setModel(&model);
+    view->move(0, 50);
+    EditorItemDelegate delegate;
+    view->setItemDelegate(&delegate);
+    w.show();
+
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+    QVERIFY(le->hasFocus());
+
+    view->setFocus();
+    QVERIFY(view->hasFocus());
+
+    view->edit(model.index(0,0));
+    QVERIFY(QTest::qWaitForWindowExposed(delegate.openedEditor));
+    QVERIFY(delegate.openedEditor->hasFocus());
+
+    QApplication::setActiveWindow(&otherTopLevel);
+    otherTopLevel.setFocus();
+    QTRY_VERIFY(!delegate.openedEditor);
+
+    QApplication::setActiveWindow(&w);
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+    QVERIFY(view->hasFocus());
 }
 
 QTEST_MAIN(tst_QAbstractItemView)

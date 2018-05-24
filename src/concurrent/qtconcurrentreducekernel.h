@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +42,7 @@
 
 #include <QtConcurrent/qtconcurrent_global.h>
 
-#ifndef QT_NO_CONCURRENT
+#if !defined(QT_NO_CONCURRENT) || defined(Q_CLANG_QDOC)
 
 #include <QtCore/qatomic.h>
 #include <QtCore/qlist.h>
@@ -51,8 +57,6 @@ QT_BEGIN_NAMESPACE
 
 namespace QtConcurrent {
 
-#ifndef Q_QDOC
-
 /*
     The ReduceQueueStartLimit and ReduceQueueThrottleLimit constants
     limit the reduce queue size for MapReduce. When the number of
@@ -60,10 +64,17 @@ namespace QtConcurrent {
     MapReduce won't start any new threads, and when it exceeds
     ReduceQueueThrottleLimit running threads will be stopped.
 */
+#ifdef Q_CLANG_QDOC
+enum ReduceQueueLimits {
+    ReduceQueueStartLimit = 20,
+    ReduceQueueThrottleLimit = 30
+};
+#else
 enum {
     ReduceQueueStartLimit = 20,
     ReduceQueueThrottleLimit = 30
 };
+#endif
 
 // IntermediateResults holds a block of intermediate results from a
 // map or filter functor. The begin/end offsets indicates the origin
@@ -76,8 +87,6 @@ public:
     QVector<T> vector;
 };
 
-#endif // Q_QDOC
-
 enum ReduceOption {
     UnorderedReduce = 0x1,
     OrderedReduce = 0x2,
@@ -85,10 +94,9 @@ enum ReduceOption {
     // ParallelReduce = 0x8
 };
 Q_DECLARE_FLAGS(ReduceOptions, ReduceOption)
+#ifndef Q_CLANG_QDOC
 Q_DECLARE_OPERATORS_FOR_FLAGS(ReduceOptions)
-
-#ifndef Q_QDOC
-
+#endif
 // supports both ordered and out-of-order reduction
 template <typename ReduceFunctor, typename ReduceResultType, typename T>
 class ReduceKernel
@@ -224,7 +232,7 @@ struct SequenceHolder2 : public Base
 
     Sequence sequence;
 
-    void finish()
+    void finish() override
     {
         Base::finish();
         // Clear the sequence to make sure all temporaries are destroyed
@@ -232,8 +240,6 @@ struct SequenceHolder2 : public Base
         sequence = Sequence();
     }
 };
-
-#endif //Q_QDOC
 
 } // namespace QtConcurrent
 

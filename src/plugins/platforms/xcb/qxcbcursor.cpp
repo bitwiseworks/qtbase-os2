@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,7 +43,9 @@
 #include "qxcbimage.h"
 #include "qxcbxsettings.h"
 
+#if QT_CONFIG(library)
 #include <QtCore/QLibrary>
+#endif
 #include <QtGui/QWindow>
 #include <QtGui/QBitmap>
 #include <QtGui/private/qguiapplication_p.h>
@@ -52,7 +60,7 @@ typedef char *(*PtrXcursorLibraryGetTheme)(void *);
 typedef int (*PtrXcursorLibrarySetTheme)(void *, const char *);
 typedef int (*PtrXcursorLibraryGetDefaultSize)(void *);
 
-#ifdef XCB_USE_XLIB
+#if QT_CONFIG(xcb_xlib) && QT_CONFIG(library)
 #include <X11/Xlib.h>
 enum {
     XCursorShape = CursorShape
@@ -67,6 +75,8 @@ static PtrXcursorLibraryGetDefaultSize ptrXcursorLibraryGetDefaultSize = 0;
 
 static xcb_font_t cursorFont = 0;
 static int cursorCount = 0;
+
+#ifndef QT_NO_CURSOR
 
 static uint8_t cur_blank_bits[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -245,32 +255,30 @@ static const uint8_t * const cursor_bits20[] = {
     forbidden_bits, forbiddenm_bits
 };
 
-static const char * const cursorNames[] = {
-    "left_ptr",
-    "up_arrow",
-    "cross",
-    "wait",
-    "ibeam",
-    "size_ver",
-    "size_hor",
-    "size_bdiag",
-    "size_fdiag",
-    "size_all",
-    "blank",
-    "split_v",
-    "split_h",
-    "pointing_hand",
-    "forbidden",
-    "whats_this",
-    "left_ptr_watch",
-    "openhand",
-    "closedhand",
-    "copy",
-    "move",
-    "link"
+static const std::vector<const char *> cursorNames[] = {
+    { "left_ptr", "default", "top_left_arrow", "left_arrow" },
+    { "up_arrow" },
+    { "cross" },
+    { "wait", "watch", "0426c94ea35c87780ff01dc239897213" },
+    { "ibeam", "text", "xterm" },
+    { "size_ver", "ns-resize", "v_double_arrow", "00008160000006810000408080010102" },
+    { "size_hor", "ew-resize", "h_double_arrow", "028006030e0e7ebffc7f7070c0600140" },
+    { "size_bdiag", "nesw-resize", "50585d75b494802d0151028115016902", "fcf1c3c7cd4491d801f1e1c78f100000" },
+    { "size_fdiag", "nwse-resize", "38c5dff7c7b8962045400281044508d2", "c7088f0f3e6c8088236ef8e1e3e70000" },
+    { "size_all" },
+    { "blank" },
+    { "split_v", "row-resize", "sb_v_double_arrow", "2870a09082c103050810ffdffffe0204", "c07385c7190e701020ff7ffffd08103c" },
+    { "split_h", "col-resize", "sb_h_double_arrow", "043a9f68147c53184671403ffa811cc5", "14fef782d02440884392942c11205230" },
+    { "pointing_hand", "pointer", "hand1", "e29285e634086352946a0e7090d73106" },
+    { "forbidden", "not-allowed", "crossed_circle", "circle", "03b6e0fcb3499374a867c041f52298f0" },
+    { "whats_this", "help", "question_arrow", "5c6cd98b3f3ebcb1f9c7f1c204630408", "d9ce0ab605698f320427677b458ad60b" },
+    { "left_ptr_watch", "half-busy", "progress", "00000000000000020006000e7e9ffc3f", "08e8e1c95fe2fc01f976f1e063a24ccd" },
+    { "openhand", "fleur", "5aca4d189052212118709018842178c0", "9d800788f1b08800ae810202380a0822" },
+    { "closedhand", "grabbing", "208530c400c041818281048008011002" },
+    { "dnd-copy", "copy" },
+    { "dnd-move", "move" },
+    { "dnd-link", "link" }
 };
-
-#ifndef QT_NO_CURSOR
 
 QXcbCursorCacheKey::QXcbCursorCacheKey(const QCursor &c)
     : shape(c.shape()), bitmapCacheKey(0), maskCacheKey(0)
@@ -293,6 +301,9 @@ QXcbCursorCacheKey::QXcbCursorCacheKey(const QCursor &c)
 QXcbCursor::QXcbCursor(QXcbConnection *conn, QXcbScreen *screen)
     : QXcbObject(conn), m_screen(screen), m_gtkCursorThemeInitialized(false)
 {
+    // see NUM_BITMAPS in libXcursor/src/xcursorint.h
+    m_bitmapCache.setMaxCost(8);
+
     if (cursorCount++)
         return;
 
@@ -300,7 +311,7 @@ QXcbCursor::QXcbCursor(QXcbConnection *conn, QXcbScreen *screen)
     const char *cursorStr = "cursor";
     xcb_open_font(xcb_connection(), cursorFont, strlen(cursorStr), cursorStr);
 
-#ifdef XCB_USE_XLIB
+#if QT_CONFIG(xcb_xlib) && QT_CONFIG(library)
     static bool function_ptrs_not_initialized = true;
     if (function_ptrs_not_initialized) {
         QLibrary xcursorLib(QLatin1String("Xcursor"), 1);
@@ -337,33 +348,44 @@ QXcbCursor::~QXcbCursor()
         xcb_close_font(conn, cursorFont);
 
 #ifndef QT_NO_CURSOR
-    foreach (xcb_cursor_t cursor, m_cursorHash)
+    for (xcb_cursor_t cursor : qAsConst(m_cursorHash))
         xcb_free_cursor(conn, cursor);
 #endif
 }
 
 #ifndef QT_NO_CURSOR
-void QXcbCursor::changeCursor(QCursor *cursor, QWindow *widget)
+void QXcbCursor::changeCursor(QCursor *cursor, QWindow *window)
 {
-    QXcbWindow *w = 0;
-    if (widget && widget->handle())
-        w = static_cast<QXcbWindow *>(widget->handle());
-    else
-        // No X11 cursor control when there is no widget under the cursor
+    if (!window || !window->handle())
         return;
 
     xcb_cursor_t c = XCB_CURSOR_NONE;
     if (cursor) {
         const QXcbCursorCacheKey key(*cursor);
-        CursorHash::iterator it = m_cursorHash.find(key);
-        if (it == m_cursorHash.end()) {
-            const Qt::CursorShape shape = cursor->shape();
-            it = m_cursorHash.insert(key, shape == Qt::BitmapCursor ? createBitmapCursor(cursor) : createFontCursor(shape));
+        const Qt::CursorShape shape = cursor->shape();
+
+        if (shape == Qt::BitmapCursor) {
+            auto *bitmap = m_bitmapCache.object(key);
+            if (bitmap) {
+                c = bitmap->cursor;
+            } else {
+                c = createBitmapCursor(cursor);
+                m_bitmapCache.insert(key, new CachedCursor(xcb_connection(), c));
+            }
+        } else {
+            auto it = m_cursorHash.find(key);
+            if (it == m_cursorHash.end()) {
+                c = createFontCursor(shape);
+                m_cursorHash.insert(key, c);
+            } else {
+                c = it.value();
+            }
         }
-        c = it.value();
     }
 
-    w->setCursor(c);
+    auto *w = static_cast<QXcbWindow *>(window->handle());
+    xcb_change_window_attributes(xcb_connection(), w->xcb_window(), XCB_CW_CURSOR, &c);
+    xcb_flush(xcb_connection());
 }
 
 static int cursorIdForShape(int cshape)
@@ -491,7 +513,7 @@ xcb_cursor_t QXcbCursor::createNonStandardCursor(int cshape)
     return cursor;
 }
 
-#ifdef XCB_USE_XLIB
+#if QT_CONFIG(xcb_xlib) && QT_CONFIG(library)
 bool updateCursorTheme(void *dpy, const QByteArray &theme) {
     if (!ptrXcursorLibraryGetTheme
             || !ptrXcursorLibrarySetTheme)
@@ -517,25 +539,16 @@ static xcb_cursor_t loadCursor(void *dpy, int cshape)
     xcb_cursor_t cursor = XCB_NONE;
     if (!ptrXcursorLibraryLoadCursor || !dpy)
         return cursor;
-    switch (cshape) {
-    case Qt::DragCopyCursor:
-        cursor = ptrXcursorLibraryLoadCursor(dpy, "dnd-copy");
-        break;
-    case Qt::DragMoveCursor:
-        cursor = ptrXcursorLibraryLoadCursor(dpy, "dnd-move");
-        break;
-    case Qt::DragLinkCursor:
-        cursor = ptrXcursorLibraryLoadCursor(dpy, "dnd-link");
-        break;
-    default:
-        break;
+
+    for (const char *cursorName: cursorNames[cshape]) {
+        cursor = ptrXcursorLibraryLoadCursor(dpy, cursorName);
+        if (cursor != XCB_NONE)
+            break;
     }
-    if (!cursor) {
-        cursor = ptrXcursorLibraryLoadCursor(dpy, cursorNames[cshape]);
-    }
+
     return cursor;
 }
-#endif //XCB_USE_XLIB
+#endif // QT_CONFIG(xcb_xlib) / QT_CONFIG(library)
 
 xcb_cursor_t QXcbCursor::createFontCursor(int cshape)
 {
@@ -544,10 +557,9 @@ xcb_cursor_t QXcbCursor::createFontCursor(int cshape)
     xcb_cursor_t cursor = XCB_NONE;
 
     // Try Xcursor first
-#ifdef XCB_USE_XLIB
+#if QT_CONFIG(xcb_xlib) && QT_CONFIG(library)
     if (cshape >= 0 && cshape <= Qt::LastCursor) {
         void *dpy = connection()->xlib_display();
-        // special case for non-standard dnd-* cursors
         cursor = loadCursor(dpy, cshape);
         if (!cursor && !m_gtkCursorThemeInitialized && m_screen->xSettings()->initialized()) {
             QByteArray gtkCursorTheme = m_screen->xSettings()->setting("Gtk/CursorThemeName").toByteArray();
@@ -561,7 +573,7 @@ xcb_cursor_t QXcbCursor::createFontCursor(int cshape)
     if (cursor)
         return cursor;
     if (!cursor && cursorId) {
-        cursor = XCreateFontCursor(DISPLAY_FROM_XCB(this), cursorId);
+        cursor = XCreateFontCursor(static_cast<Display *>(connection()->xlib_display()), cursorId);
         if (cursor)
             return cursor;
     }
@@ -580,7 +592,7 @@ xcb_cursor_t QXcbCursor::createFontCursor(int cshape)
     }
 
     if (cursor && cshape >= 0 && cshape < Qt::LastCursor && connection()->hasXFixes()) {
-        const char *name = cursorNames[cshape];
+        const char *name = cursorNames[cshape].front();
         xcb_xfixes_set_cursor_name(conn, cursor, strlen(name), name);
     }
 
@@ -589,12 +601,19 @@ xcb_cursor_t QXcbCursor::createFontCursor(int cshape)
 
 xcb_cursor_t QXcbCursor::createBitmapCursor(QCursor *cursor)
 {
-    xcb_connection_t *conn = xcb_connection();
     QPoint spot = cursor->hotSpot();
     xcb_cursor_t c = XCB_NONE;
-    if (cursor->pixmap().depth() > 1)
-        c = qt_xcb_createCursorXRender(m_screen, cursor->pixmap().toImage(), spot);
-    if (!c) {
+    if (cursor->pixmap().depth() > 1) {
+#if QT_CONFIG(xcb_render)
+        if (connection()->hasXRender(0, 5))
+            c = qt_xcb_createCursorXRender(m_screen, cursor->pixmap().toImage(), spot);
+        else
+            qCWarning(lcQpaXcb, "xrender >= 0.5 required to create pixmap cursors");
+#else
+        qCWarning(lcQpaXcb, "This build of Qt does not support pixmap cursors");
+#endif
+    } else {
+        xcb_connection_t *conn = xcb_connection();
         xcb_pixmap_t cp = qt_xcb_XPixmapFromBitmap(m_screen, cursor->bitmap()->toImage());
         xcb_pixmap_t mp = qt_xcb_XPixmapFromBitmap(m_screen, cursor->mask()->toImage());
         c = xcb_generate_id(conn);
@@ -607,29 +626,29 @@ xcb_cursor_t QXcbCursor::createBitmapCursor(QCursor *cursor)
 }
 #endif
 
-void QXcbCursor::queryPointer(QXcbConnection *c, xcb_window_t *rootWin, QPoint *pos, int *keybMask)
+void QXcbCursor::queryPointer(QXcbConnection *c, QXcbVirtualDesktop **virtualDesktop, QPoint *pos, int *keybMask)
 {
     if (pos)
         *pos = QPoint();
-    xcb_screen_iterator_t it = xcb_setup_roots_iterator(c->setup());
-    while (it.rem) {
-        xcb_window_t root = it.data->root;
-        xcb_query_pointer_cookie_t cookie = xcb_query_pointer(c->xcb_connection(), root);
-        xcb_generic_error_t *err = 0;
-        xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(c->xcb_connection(), cookie, &err);
-        if (!err && reply) {
-            if (pos)
-                *pos = QPoint(reply->root_x, reply->root_y);
-            if (rootWin)
-                *rootWin = root;
-            if (keybMask)
-                *keybMask = reply->mask;
-            free(reply);
-            return;
+
+    xcb_window_t root = c->primaryVirtualDesktop()->root();
+
+    auto reply = Q_XCB_REPLY(xcb_query_pointer, c->xcb_connection(), root);
+    if (reply) {
+        if (virtualDesktop) {
+            const auto virtualDesktops = c->virtualDesktops();
+            for (QXcbVirtualDesktop *vd : virtualDesktops) {
+                if (vd->root() == reply->root) {
+                    *virtualDesktop = vd;
+                    break;
+                }
+            }
         }
-        free(err);
-        free(reply);
-        xcb_screen_next(&it);
+        if (pos)
+            *pos = QPoint(reply->root_x, reply->root_y);
+        if (keybMask)
+            *keybMask = reply->mask;
+        return;
     }
 }
 
@@ -637,15 +656,14 @@ QPoint QXcbCursor::pos() const
 {
     QPoint p;
     queryPointer(connection(), 0, &p);
-    return m_screen->mapFromNative(p);
+    return p;
 }
 
 void QXcbCursor::setPos(const QPoint &pos)
 {
-    const QPoint xPos = m_screen->mapToNative(pos);
-    xcb_window_t root = 0;
-    queryPointer(connection(), &root, 0);
-    xcb_warp_pointer(xcb_connection(), XCB_NONE, root, 0, 0, 0, 0, xPos.x(), xPos.y());
+    QXcbVirtualDesktop *virtualDesktop = nullptr;
+    queryPointer(connection(), &virtualDesktop, 0);
+    xcb_warp_pointer(xcb_connection(), XCB_NONE, virtualDesktop->root(), 0, 0, 0, 0, pos.x(), pos.y());
     xcb_flush(xcb_connection());
 }
 

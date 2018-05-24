@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,9 +44,10 @@
 #include <QScreen>
 #include <QLoggingCategory>
 #include <qpa/qwindowsysteminterface.h>
-#include <QtPlatformSupport/private/qdevicediscovery_p.h>
+#include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
 #include <private/qguiapplication_p.h>
 #include <private/qinputdevicemanager_p_p.h>
+#include <private/qhighdpiscaling_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -83,18 +90,23 @@ QEvdevMouseManager::QEvdevMouseManager(const QString &key, const QString &specif
         m_deviceDiscovery = QDeviceDiscovery::create(QDeviceDiscovery::Device_Mouse | QDeviceDiscovery::Device_Touchpad, this);
         if (m_deviceDiscovery) {
             // scan and add already connected keyboards
-            QStringList devices = m_deviceDiscovery->scanConnectedDevices();
-            foreach (const QString &device, devices) {
+            const QStringList devices = m_deviceDiscovery->scanConnectedDevices();
+            for (const QString &device : devices)
                 addMouse(device);
-            }
 
-            connect(m_deviceDiscovery, SIGNAL(deviceDetected(QString)), this, SLOT(addMouse(QString)));
-            connect(m_deviceDiscovery, SIGNAL(deviceRemoved(QString)), this, SLOT(removeMouse(QString)));
+            connect(m_deviceDiscovery, &QDeviceDiscovery::deviceDetected,
+                    this, &QEvdevMouseManager::addMouse);
+            connect(m_deviceDiscovery, &QDeviceDiscovery::deviceRemoved,
+                    this, &QEvdevMouseManager::removeMouse);
         }
     }
 
-    connect(QGuiApplicationPrivate::inputDeviceManager(), SIGNAL(cursorPositionChangeRequested(QPoint)),
-            this, SLOT(handleCursorPositionChange(QPoint)));
+    QInputDeviceManager *manager = QGuiApplicationPrivate::inputDeviceManager();
+    connect(manager, &QInputDeviceManager::cursorPositionChangeRequested, [=](const QPoint &pos) {
+        m_x = pos.x();
+        m_y = pos.y();
+        clampPosition();
+    });
 }
 
 QEvdevMouseManager::~QEvdevMouseManager()
@@ -106,7 +118,8 @@ QEvdevMouseManager::~QEvdevMouseManager()
 void QEvdevMouseManager::clampPosition()
 {
     // clamp to screen geometry
-    QRect g = QGuiApplication::primaryScreen()->virtualGeometry();
+    QScreen *primaryScreen = QGuiApplication::primaryScreen();
+    QRect g = QHighDpi::toNativePixels(primaryScreen->virtualGeometry(), primaryScreen);
     if (m_x + m_xoffset < g.left())
         m_x = g.left() - m_xoffset;
     else if (m_x + m_xoffset > g.right())
@@ -118,7 +131,8 @@ void QEvdevMouseManager::clampPosition()
         m_y = g.bottom() - m_yoffset;
 }
 
-void QEvdevMouseManager::handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons)
+void QEvdevMouseManager::handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons,
+                                          Qt::MouseButton button, QEvent::Type type)
 {
     // update current absolute coordinates
     if (!abs) {
@@ -134,23 +148,25 @@ void QEvdevMouseManager::handleMouseEvent(int x, int y, bool abs, Qt::MouseButto
     QPoint pos(m_x + m_xoffset, m_y + m_yoffset);
     // Cannot track the keyboard modifiers ourselves here. Instead, report the
     // modifiers from the last key event that has been seen by QGuiApplication.
-    QWindowSystemInterface::handleMouseEvent(0, pos, pos, buttons, QGuiApplication::keyboardModifiers());
+    Qt::KeyboardModifiers mods = QGuiApplication::keyboardModifiers();
+    QWindowSystemInterface::handleMouseEvent(0, pos, pos, buttons, button, type, mods);
 }
 
-void QEvdevMouseManager::handleWheelEvent(int delta, Qt::Orientation orientation)
+void QEvdevMouseManager::handleWheelEvent(QPoint delta)
 {
     QPoint pos(m_x + m_xoffset, m_y + m_yoffset);
-    QWindowSystemInterface::handleWheelEvent(0, pos, pos, delta, orientation, QGuiApplication::keyboardModifiers());
+    QWindowSystemInterface::handleWheelEvent(0, pos, pos, QPoint(), delta, QGuiApplication::keyboardModifiers());
 }
 
 void QEvdevMouseManager::addMouse(const QString &deviceNode)
 {
     qCDebug(qLcEvdevMouse) << "Adding mouse at" << deviceNode;
-    QEvdevMouseHandler *handler;
-    handler = QEvdevMouseHandler::create(deviceNode, m_spec);
+    QEvdevMouseHandler *handler = QEvdevMouseHandler::create(deviceNode, m_spec);
     if (handler) {
-        connect(handler, SIGNAL(handleMouseEvent(int,int,bool,Qt::MouseButtons)), this, SLOT(handleMouseEvent(int,int,bool,Qt::MouseButtons)));
-        connect(handler, SIGNAL(handleWheelEvent(int,Qt::Orientation)), this, SLOT(handleWheelEvent(int,Qt::Orientation)));
+        connect(handler, &QEvdevMouseHandler::handleMouseEvent,
+                this, &QEvdevMouseManager::handleMouseEvent);
+        connect(handler, &QEvdevMouseHandler::handleWheelEvent,
+                this, &QEvdevMouseManager::handleWheelEvent);
         m_mice.insert(deviceNode, handler);
         QInputDeviceManagerPrivate::get(QGuiApplicationPrivate::inputDeviceManager())->setDeviceCount(
             QInputDeviceManager::DeviceTypePointer, m_mice.count());
@@ -169,13 +185,6 @@ void QEvdevMouseManager::removeMouse(const QString &deviceNode)
             QInputDeviceManager::DeviceTypePointer, m_mice.count());
         delete handler;
     }
-}
-
-void QEvdevMouseManager::handleCursorPositionChange(const QPoint &pos)
-{
-    m_x = pos.x();
-    m_y = pos.y();
-    clampPosition();
 }
 
 QT_END_NAMESPACE

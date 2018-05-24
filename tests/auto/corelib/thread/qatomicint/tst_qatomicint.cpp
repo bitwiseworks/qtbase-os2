@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -479,34 +475,34 @@ void tst_QAtomicInt::testAndSet_data()
     QTest::addColumn<int>("value");
     QTest::addColumn<int>("expected");
     QTest::addColumn<int>("newval");
-    QTest::addColumn<int>("result");
+    QTest::addColumn<bool>("result");
 
     // these should succeed
-    QTest::newRow("success0") <<         0 <<         0 <<         0 << 1;
-    QTest::newRow("success1") <<         0 <<         0 <<         1 << 1;
-    QTest::newRow("success2") <<         0 <<         0 <<        -1 << 1;
-    QTest::newRow("success3") <<         1 <<         1 <<         0 << 1;
-    QTest::newRow("success4") <<         1 <<         1 <<         1 << 1;
-    QTest::newRow("success5") <<         1 <<         1 <<        -1 << 1;
-    QTest::newRow("success6") <<        -1 <<        -1 <<         0 << 1;
-    QTest::newRow("success7") <<        -1 <<        -1 <<         1 << 1;
-    QTest::newRow("success8") <<        -1 <<        -1 <<        -1 << 1;
-    QTest::newRow("success9") << INT_MIN+1 << INT_MIN+1 << INT_MIN+1 << 1;
-    QTest::newRow("successA") << INT_MIN+1 << INT_MIN+1 <<         1 << 1;
-    QTest::newRow("successB") << INT_MIN+1 << INT_MIN+1 <<        -1 << 1;
-    QTest::newRow("successC") << INT_MAX   << INT_MAX   << INT_MAX   << 1;
-    QTest::newRow("successD") << INT_MAX   << INT_MAX   <<         1 << 1;
-    QTest::newRow("successE") << INT_MAX   << INT_MAX   <<        -1 << 1;
+    QTest::newRow("success0") <<         0 <<         0 <<         0 << true;
+    QTest::newRow("success1") <<         0 <<         0 <<         1 << true;
+    QTest::newRow("success2") <<         0 <<         0 <<        -1 << true;
+    QTest::newRow("success3") <<         1 <<         1 <<         0 << true;
+    QTest::newRow("success4") <<         1 <<         1 <<         1 << true;
+    QTest::newRow("success5") <<         1 <<         1 <<        -1 << true;
+    QTest::newRow("success6") <<        -1 <<        -1 <<         0 << true;
+    QTest::newRow("success7") <<        -1 <<        -1 <<         1 << true;
+    QTest::newRow("success8") <<        -1 <<        -1 <<        -1 << true;
+    QTest::newRow("success9") << INT_MIN+1 << INT_MIN+1 << INT_MIN+1 << true;
+    QTest::newRow("successA") << INT_MIN+1 << INT_MIN+1 <<         1 << true;
+    QTest::newRow("successB") << INT_MIN+1 << INT_MIN+1 <<        -1 << true;
+    QTest::newRow("successC") << INT_MAX   << INT_MAX   << INT_MAX   << true;
+    QTest::newRow("successD") << INT_MAX   << INT_MAX   <<         1 << true;
+    QTest::newRow("successE") << INT_MAX   << INT_MAX   <<        -1 << true;
 
     // these should fail
-    QTest::newRow("failure0") <<       0   <<       1   <<        ~0 << 0;
-    QTest::newRow("failure1") <<       0   <<      -1   <<        ~0 << 0;
-    QTest::newRow("failure2") <<       1   <<       0   <<        ~0 << 0;
-    QTest::newRow("failure3") <<      -1   <<       0   <<        ~0 << 0;
-    QTest::newRow("failure4") <<       1   <<      -1   <<        ~0 << 0;
-    QTest::newRow("failure5") <<      -1   <<       1   <<        ~0 << 0;
-    QTest::newRow("failure6") << INT_MIN+1 << INT_MAX   <<        ~0 << 0;
-    QTest::newRow("failure7") << INT_MAX   << INT_MIN+1 <<        ~0 << 0;
+    QTest::newRow("failure0") <<       0   <<       1   <<        ~0 << false;
+    QTest::newRow("failure1") <<       0   <<      -1   <<        ~0 << false;
+    QTest::newRow("failure2") <<       1   <<       0   <<        ~0 << false;
+    QTest::newRow("failure3") <<      -1   <<       0   <<        ~0 << false;
+    QTest::newRow("failure4") <<       1   <<      -1   <<        ~0 << false;
+    QTest::newRow("failure5") <<      -1   <<       1   <<        ~0 << false;
+    QTest::newRow("failure6") << INT_MIN+1 << INT_MAX   <<        ~0 << false;
+    QTest::newRow("failure7") << INT_MAX   << INT_MIN+1 <<        ~0 << false;
 }
 
 void tst_QAtomicInt::testAndSet()
@@ -517,26 +513,26 @@ void tst_QAtomicInt::testAndSet()
 
     {
         QAtomicInt atomic = value;
-        QTEST(atomic.testAndSetRelaxed(expected, newval) ? 1 : 0, "result");
+        QTEST(atomic.testAndSetRelaxed(expected, newval), "result");
     }
 
     {
         QAtomicInt atomic = value;
-        QTEST(atomic.testAndSetAcquire(expected, newval) ? 1 : 0, "result");
+        QTEST(atomic.testAndSetAcquire(expected, newval), "result");
     }
 
     {
         QAtomicInt atomic = value;
-        QTEST(atomic.testAndSetRelease(expected, newval) ? 1 : 0, "result");
+        QTEST(atomic.testAndSetRelease(expected, newval), "result");
     }
 
     {
         QAtomicInt atomic = value;
-        QTEST(atomic.testAndSetOrdered(expected, newval) ? 1 : 0, "result");
+        QTEST(atomic.testAndSetOrdered(expected, newval), "result");
     }
 
 #ifdef Q_ATOMIC_INT32_IS_SUPPORTED
-    QFETCH(int, result);
+    QFETCH(bool, result);
     // the new implementation has the version that loads the current value
 
     {

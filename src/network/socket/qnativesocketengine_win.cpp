@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2015 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,7 @@
 #include <qdebug.h>
 #include <qdatetime.h>
 #include <qnetworkinterface.h>
+#include <qoperatingsystemversion.h>
 
 //#define QNATIVESOCKETENGINE_DEBUG
 #if defined(QNATIVESOCKETENGINE_DEBUG)
@@ -58,6 +65,9 @@ QT_BEGIN_NAMESPACE
 //Also microsoft headers don't include it when building on XP and earlier.
 #ifndef IPV6_V6ONLY
 #define IPV6_V6ONLY 27
+#endif
+#ifndef IP_HOPLIMIT
+#define IP_HOPLIMIT               21 // Receive packet hop limit.
 #endif
 
 #if defined(QNATIVESOCKETENGINE_DEBUG)
@@ -168,10 +178,10 @@ static QByteArray qt_prettyDebug(const char *data, int len, int maxLength)
 static inline void qt_socket_getPortAndAddress(SOCKET socketDescriptor, const qt_sockaddr *sa, quint16 *port, QHostAddress *address)
 {
     if (sa->a.sa_family == AF_INET6) {
-        const qt_sockaddr_in6 *sa6 = &sa->a6;
+        const sockaddr_in6 *sa6 = &sa->a6;
         Q_IPV6ADDR tmp;
         for (int i = 0; i < 16; ++i)
-            tmp.c[i] = sa6->sin6_addr.qt_s6_addr[i];
+            tmp.c[i] = sa6->sin6_addr.s6_addr[i];
         if (address) {
             QHostAddress a;
             a.setAddress(tmp);
@@ -199,12 +209,13 @@ static inline void qt_socket_getPortAndAddress(SOCKET socketDescriptor, const qt
 static void convertToLevelAndOption(QNativeSocketEngine::SocketOption opt,
                                     QAbstractSocket::NetworkLayerProtocol socketProtocol, int &level, int &n)
 {
-    n = 0;
+    n = -1;
     level = SOL_SOCKET; // default
 
     switch (opt) {
     case QNativeSocketEngine::NonBlockingSocketOption:      // WSAIoctl
     case QNativeSocketEngine::TypeOfServiceOption:          // not supported
+    case QNativeSocketEngine::MaxStreamsSocketOption:
         Q_UNREACHABLE();
 
     case QNativeSocketEngine::ReceiveBufferSocketOption:
@@ -252,40 +263,27 @@ static void convertToLevelAndOption(QNativeSocketEngine::SocketOption opt,
             n = IP_MULTICAST_LOOP;
         }
         break;
-    }
-}
+    case QNativeSocketEngine::ReceivePacketInformation:
+        if (socketProtocol == QAbstractSocket::IPv6Protocol || socketProtocol == QAbstractSocket::AnyIPProtocol) {
+            level = IPPROTO_IPV6;
+            n = IPV6_PKTINFO;
+        } else if (socketProtocol == QAbstractSocket::IPv4Protocol) {
+            level = IPPROTO_IP;
+            n = IP_PKTINFO;
+        }
+        break;
+    case QNativeSocketEngine::ReceiveHopLimit:
+        if (socketProtocol == QAbstractSocket::IPv6Protocol || socketProtocol == QAbstractSocket::AnyIPProtocol) {
+            level = IPPROTO_IPV6;
+            n = IPV6_HOPLIMIT;
+        } else if (socketProtocol == QAbstractSocket::IPv4Protocol) {
+            level = IPPROTO_IP;
+            n = IP_HOPLIMIT;
+        }
+        break;
 
-/*! \internal
-
-    Sets the port and address to a sockaddr. Requires that sa point to the IPv6 struct if the address is IPv6.
-*/
-void QNativeSocketEnginePrivate::setPortAndAddress(sockaddr_in * sockAddrIPv4, qt_sockaddr_in6 * sockAddrIPv6,
-                                               quint16 port, const QHostAddress & address, sockaddr ** sockAddrPtr, QT_SOCKLEN_T *sockAddrSize)
-{
-    if (address.protocol() == QAbstractSocket::IPv6Protocol
-        || address.protocol() == QAbstractSocket::AnyIPProtocol
-        || socketProtocol == QAbstractSocket::IPv6Protocol
-        || socketProtocol == QAbstractSocket::AnyIPProtocol) {
-        memset(sockAddrIPv6, 0, sizeof(qt_sockaddr_in6));
-        sockAddrIPv6->sin6_family = AF_INET6;
-        sockAddrIPv6->sin6_scope_id = address.scopeId().toUInt();
-        WSAHtons(socketDescriptor, port, &(sockAddrIPv6->sin6_port));
-        Q_IPV6ADDR tmp = address.toIPv6Address();
-        memcpy(&(sockAddrIPv6->sin6_addr.qt_s6_addr), &tmp, sizeof(tmp));
-        *sockAddrSize = sizeof(qt_sockaddr_in6);
-        *sockAddrPtr = (struct sockaddr *) sockAddrIPv6;
-    } else
-
-    if (address.protocol() == QAbstractSocket::IPv4Protocol
-        || address.protocol() == QAbstractSocket::UnknownNetworkLayerProtocol) {
-        memset(sockAddrIPv4, 0, sizeof(sockaddr_in));
-        sockAddrIPv4->sin_family = AF_INET;
-        WSAHtons(socketDescriptor, port, &(sockAddrIPv4->sin_port));
-        WSAHtonl(socketDescriptor, address.toIPv4Address(), &(sockAddrIPv4->sin_addr.s_addr));
-        *sockAddrSize = sizeof(sockaddr_in);
-        *sockAddrPtr = (struct sockaddr *) sockAddrIPv4;
-    } else {
-        // unreachable
+    case QAbstractSocketEngine::PathMtuInformation:
+        break;          // not supported on Windows
     }
 }
 
@@ -305,38 +303,6 @@ static inline QAbstractSocket::SocketType qt_socket_getType(qintptr socketDescri
             return QAbstractSocket::UdpSocket;
     }
     return QAbstractSocket::UnknownSocketType;
-}
-
-/*! \internal
-
-*/
-static inline int qt_socket_getMaxMsgSize(qintptr socketDescriptor)
-{
-    int value = 0;
-    QT_SOCKLEN_T valueSize = sizeof(value);
-    if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_MAX_MSG_SIZE, (char *) &value, &valueSize) != 0) {
-        WS_ERROR_DEBUG(WSAGetLastError());
-    }
-    return value;
-}
-
-QWindowsSockInit::QWindowsSockInit()
-:   version(0)
-{
-    //### should we try for 2.2 on all platforms ??
-    WSAData wsadata;
-
-    // IPv6 requires Winsock v2.0 or better.
-    if (WSAStartup(MAKEWORD(2,0), &wsadata) != 0) {
-        qWarning("QTcpSocketAPI: WinSock v2.0 initialization failed.");
-    } else {
-        version = 0x20;
-    }
-}
-
-QWindowsSockInit::~QWindowsSockInit()
-{
-    WSACleanup();
 }
 
 // MS Transport Provider IOCTL to control
@@ -364,11 +330,17 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
         return -1;
     }
     */
-    QSysInfo::WinVersion osver = QSysInfo::windowsVersion();
+
+    //### SCTP not implemented
+    if (socketType == QAbstractSocket::SctpSocket) {
+        setError(QAbstractSocket::UnsupportedSocketOperationError,
+                 ProtocolUnsupportedErrorString);
+        return false;
+    }
 
     //Windows XP and 2003 support IPv6 but not dual stack sockets
     int protocol = (socketProtocol == QAbstractSocket::IPv6Protocol
-        || (socketProtocol == QAbstractSocket::AnyIPProtocol && osver >= QSysInfo::WV_6_0)) ? AF_INET6 : AF_INET;
+        || (socketProtocol == QAbstractSocket::AnyIPProtocol)) ? AF_INET6 : AF_INET;
     int type = (socketType == QAbstractSocket::UdpSocket) ? SOCK_DGRAM : SOCK_STREAM;
 
     // MSDN KB179942 states that on winnt 4 WSA_FLAG_OVERLAPPED is needed if socket is to be non blocking
@@ -380,14 +352,11 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
 #endif
 
-    SOCKET socket = INVALID_SOCKET;
-    // Windows 7 or later, try the new API
-    if ((osver & QSysInfo::WV_NT_based) >= QSysInfo::WV_6_1)
-        socket = ::WSASocket(protocol, type, 0, NULL, 0, WSA_FLAG_NO_HANDLE_INHERIT | WSA_FLAG_OVERLAPPED);
+    SOCKET socket = ::WSASocket(protocol, type, 0, NULL, 0, WSA_FLAG_NO_HANDLE_INHERIT | WSA_FLAG_OVERLAPPED);
     // previous call fails if the windows 7 service pack 1 or hot fix isn't installed.
 
-    // Try the old API if the new one failed on Windows 7, or always on earlier versions
-    if (socket == INVALID_SOCKET && ((osver & QSysInfo::WV_NT_based) <= QSysInfo::WV_6_1)) {
+    // Try the old API if the new one failed on Windows 7
+    if (socket == INVALID_SOCKET && QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows8) {
         socket = ::WSASocket(protocol, type, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 #ifdef HANDLE_FLAG_INHERIT
         if (socket != INVALID_SOCKET) {
@@ -426,7 +395,6 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
         return false;
     }
 
-#if !defined(Q_OS_WINCE)
     if (socketType == QAbstractSocket::UdpSocket) {
         // enable new behavior using
         // SIO_UDP_CONNRESET
@@ -439,9 +407,26 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
             WS_ERROR_DEBUG(err);
         }
     }
-#endif
+
+    // get the pointer to sendmsg and recvmsg
+    DWORD bytesReturned;
+    GUID recvmsgguid = WSAID_WSARECVMSG;
+    if (WSAIoctl(socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                 &recvmsgguid, sizeof(recvmsgguid),
+                 &recvmsg, sizeof(recvmsg), &bytesReturned, NULL, NULL) == SOCKET_ERROR)
+        recvmsg = 0;
+
+    GUID sendmsgguid = WSAID_WSASENDMSG;
+    if (WSAIoctl(socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                 &sendmsgguid, sizeof(sendmsgguid),
+                 &sendmsg, sizeof(sendmsg), &bytesReturned, NULL, NULL) == SOCKET_ERROR)
+        sendmsg = 0;
 
     socketDescriptor = socket;
+    if (socket != INVALID_SOCKET) {
+        this->socketProtocol = socketProtocol;
+        this->socketType = socketType;
+    }
 
     // Make the socket nonblocking.
     if (!setOption(QAbstractSocketEngine::NonBlockingSocketOption, 1)) {
@@ -474,6 +459,7 @@ int QNativeSocketEnginePrivate::option(QNativeSocketEngine::SocketOption opt) co
         break;
     }
     case QNativeSocketEngine::TypeOfServiceOption:
+    case QNativeSocketEngine::MaxStreamsSocketOption:
         return -1;
 
     default:
@@ -488,9 +474,11 @@ int QNativeSocketEnginePrivate::option(QNativeSocketEngine::SocketOption opt) co
     QT_SOCKOPTLEN_T len = sizeof(v);
 
     convertToLevelAndOption(opt, socketProtocol, level, n);
-    if (getsockopt(socketDescriptor, level, n, (char *) &v, &len) == 0)
-        return v;
-    WS_ERROR_DEBUG(WSAGetLastError());
+    if (n != -1) {
+        if (getsockopt(socketDescriptor, level, n, (char *) &v, &len) == 0)
+            return v;
+        WS_ERROR_DEBUG(WSAGetLastError());
+    }
     return -1;
 }
 
@@ -508,9 +496,7 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
     switch (opt) {
     case QNativeSocketEngine::SendBufferSocketOption:
         // see QTBUG-30478 SO_SNDBUF should not be used on Vista or later
-        if (QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
-            return false;
-        break;
+        return false;
     case QNativeSocketEngine::NonBlockingSocketOption:
         {
         unsigned long buf = v;
@@ -524,6 +510,7 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
         break;
         }
     case QNativeSocketEngine::TypeOfServiceOption:
+    case QNativeSocketEngine::MaxStreamsSocketOption:
         return false;
 
     default:
@@ -532,6 +519,8 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
 
     int n, level;
     convertToLevelAndOption(opt, socketProtocol, level, n);
+    if (n == -1)
+        return false;
     if (::setsockopt(socketDescriptor, level, n, (char*)&v, sizeof(v)) != 0) {
         WS_ERROR_DEBUG(WSAGetLastError());
         return false;
@@ -549,6 +538,7 @@ bool QNativeSocketEnginePrivate::fetchConnectionParameters()
     localAddress.clear();
     peerPort = 0;
     peerAddress.clear();
+    inboundStreamCount = outboundStreamCount = 0;
 
     if (socketDescriptor == -1)
        return false;
@@ -586,7 +576,6 @@ bool QNativeSocketEnginePrivate::fetchConnectionParameters()
     DWORD ipv6only = 0;
     QT_SOCKOPTLEN_T optlen = sizeof(ipv6only);
     if (localAddress == QHostAddress::AnyIPv6
-        && QSysInfo::windowsVersion() >= QSysInfo::WV_6_0
         && !getsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, &optlen )) {
             if (!ipv6only) {
                 socketProtocol = QAbstractSocket::AnyIPProtocol;
@@ -594,9 +583,23 @@ bool QNativeSocketEnginePrivate::fetchConnectionParameters()
             }
     }
 
+    // Some Windows kernels return a v4-mapped QHostAddress::AnyIPv4 as a
+    // local address of the socket which bound on both IPv4 and IPv6 interfaces.
+    // This address does not match to any special address and should not be used
+    // to send the data. So, replace it with QHostAddress::Any.
+    if (socketProtocol == QAbstractSocket::IPv6Protocol) {
+        bool ok = false;
+        const quint32 localIPv4 = localAddress.toIPv4Address(&ok);
+        if (ok && localIPv4 == INADDR_ANY) {
+            socketProtocol = QAbstractSocket::AnyIPProtocol;
+            localAddress = QHostAddress::Any;
+        }
+    }
+
     memset(&sa, 0, sizeof(sa));
     if (::getpeername(socketDescriptor, &sa.a, &sockAddrSize) == 0) {
         qt_socket_getPortAndAddress(socketDescriptor, &sa, &peerPort, &peerAddress);
+        inboundStreamCount = outboundStreamCount = 1;
     } else {
         WS_ERROR_DEBUG(WSAGetLastError());
     }
@@ -626,23 +629,19 @@ bool QNativeSocketEnginePrivate::nativeConnect(const QHostAddress &address, quin
     qDebug("QNativeSocketEnginePrivate::nativeConnect() to %s :: %i", address.toString().toLatin1().constData(), port);
 #endif
 
-    struct sockaddr_in sockAddrIPv4;
-    qt_sockaddr_in6 sockAddrIPv6;
-    struct sockaddr *sockAddrPtr = 0;
+    qt_sockaddr aa;
     QT_SOCKLEN_T sockAddrSize = 0;
 
-    setPortAndAddress(&sockAddrIPv4, &sockAddrIPv6, port, address, &sockAddrPtr, &sockAddrSize);
+    setPortAndAddress(port, address, &aa, &sockAddrSize);
 
     if ((socketProtocol == QAbstractSocket::IPv6Protocol || socketProtocol == QAbstractSocket::AnyIPProtocol) && address.toIPv4Address()) {
         //IPV6_V6ONLY option must be cleared to connect to a V4 mapped address
-        if (QSysInfo::windowsVersion() >= QSysInfo::WV_6_0) {
-            DWORD ipv6only = 0;
-            ipv6only = ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, sizeof(ipv6only) );
-        }
+        DWORD ipv6only = 0;
+        ipv6only = ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, sizeof(ipv6only) );
     }
 
     forever {
-        int connectResult = ::WSAConnect(socketDescriptor, sockAddrPtr, sockAddrSize, 0,0,0,0);
+        int connectResult = ::WSAConnect(socketDescriptor, &aa.a, sockAddrSize, 0,0,0,0);
         if (connectResult == SOCKET_ERROR) {
             int err = WSAGetLastError();
             WS_ERROR_DEBUG(err);
@@ -667,6 +666,13 @@ bool QNativeSocketEnginePrivate::nativeConnect(const QHostAddress &address, quin
                 int tries = 0;
                 do {
                     if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
+                        if (value != NOERROR) {
+                            // MSDN says getsockopt with SO_ERROR clears the error, but it's not actually cleared
+                            // and this can affect all subsequent WSAConnect attempts, so clear it now.
+                            const int val = NO_ERROR;
+                            ::setsockopt(socketDescriptor, SOL_SOCKET, SO_ERROR, reinterpret_cast<const char*>(&val), sizeof val);
+                        }
+
                         if (value == WSAECONNREFUSED) {
                             setError(QAbstractSocket::ConnectionRefusedError, ConnectionRefusedErrorString);
                             socketState = QAbstractSocket::UnconnectedState;
@@ -704,7 +710,7 @@ bool QNativeSocketEnginePrivate::nativeConnect(const QHostAddress &address, quin
 
                 if (errorDetected)
                     break;
-                // fall through
+                Q_FALLTHROUGH();
             }
             case WSAEINPROGRESS:
                 setError(QAbstractSocket::UnfinishedSocketOperationError, InvalidSocketErrorString);
@@ -765,46 +771,36 @@ bool QNativeSocketEnginePrivate::nativeConnect(const QHostAddress &address, quin
 bool QNativeSocketEnginePrivate::nativeBind(const QHostAddress &a, quint16 port)
 {
     QHostAddress address = a;
-    DWORD ipv6only = 0;
-    switch (address.protocol()) {
-    case QAbstractSocket::IPv6Protocol:
-        if (address.toIPv6Address()[0] == 0xff) {
-            // binding to a multicast address
-            address = QHostAddress(QHostAddress::AnyIPv6);
-        }
-        //This is default in current windows versions, it may change in future so set it explicitly
-        if (QSysInfo::windowsVersion() >= QSysInfo::WV_6_0) {
-            ipv6only = 1;
-            ipv6only = ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, sizeof(ipv6only) );
-        }
-        break;
-    case QAbstractSocket::IPv4Protocol:
+    if (address.protocol() == QAbstractSocket::IPv4Protocol) {
         if ((address.toIPv4Address() & 0xffff0000) == 0xefff0000) {
             // binding to a multicast address
             address = QHostAddress(QHostAddress::AnyIPv4);
         }
-        break;
-    case QAbstractSocket::AnyIPProtocol:
-        if (QSysInfo::windowsVersion() >= QSysInfo::WV_6_0) {
-            ipv6only = ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, sizeof(ipv6only) );
-        } else {
-            address = QHostAddress(QHostAddress::AnyIPv4); //xp/WS2003 and earlier don't support dual stack, so bind to IPv4
-            socketProtocol = QAbstractSocket::IPv4Protocol;
-        }
-        break;
-    default:
-        break;
     }
 
-    struct sockaddr_in sockAddrIPv4;
-    qt_sockaddr_in6 sockAddrIPv6;
-    struct sockaddr *sockAddrPtr = 0;
+    qt_sockaddr aa;
     QT_SOCKLEN_T sockAddrSize = 0;
+    setPortAndAddress(port, address, &aa, &sockAddrSize);
 
-    setPortAndAddress(&sockAddrIPv4, &sockAddrIPv6, port, address, &sockAddrPtr, &sockAddrSize);
+    if (aa.a.sa_family == AF_INET6) {
+        // The default may change in future, so set it explicitly
+        int ipv6only = 0;
+        if (address.protocol() == QAbstractSocket::IPv6Protocol)
+            ipv6only = 1;
+        ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&ipv6only, sizeof(ipv6only) );
+    }
 
 
-    int bindResult = ::bind(socketDescriptor, sockAddrPtr, sockAddrSize);
+    int bindResult = ::bind(socketDescriptor, &aa.a, sockAddrSize);
+    if (bindResult == SOCKET_ERROR && WSAGetLastError() == WSAEAFNOSUPPORT
+            && address.protocol() == QAbstractSocket::AnyIPProtocol) {
+        // retry with v4
+        aa.a4.sin_family = AF_INET;
+        aa.a4.sin_port = htons(port);
+        aa.a4.sin_addr.s_addr = htonl(address.toIPv4Address());
+        sockAddrSize = sizeof(aa.a4);
+        bindResult = ::bind(socketDescriptor, &aa.a, sockAddrSize);
+    }
     if (bindResult == SOCKET_ERROR) {
         int err = WSAGetLastError();
         WS_ERROR_DEBUG(err);
@@ -892,6 +888,7 @@ int QNativeSocketEnginePrivate::nativeAccept()
             break;
         case WSAENETDOWN:
             setError(QAbstractSocket::NetworkError, NetworkUnreachableErrorString);
+            break;
         case WSAENOTSOCK:
             setError(QAbstractSocket::SocketResourceError, NotSocketErrorString);
             break;
@@ -949,9 +946,7 @@ static bool multicastMembershipHelper(QNativeSocketEnginePrivate *d,
         Q_IPV6ADDR ip6 = groupAddress.toIPv6Address();
         memcpy(&mreq6.ipv6mr_multiaddr, &ip6, sizeof(ip6));
         mreq6.ipv6mr_interface = iface.index();
-    } else
-
-    if (groupAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+    } else if (groupAddress.protocol() == QAbstractSocket::IPv4Protocol) {
         level = IPPROTO_IP;
         sockOpt = how4;
         sockArg = reinterpret_cast<char *>(&mreq4);
@@ -960,11 +955,17 @@ static bool multicastMembershipHelper(QNativeSocketEnginePrivate *d,
         mreq4.imr_multiaddr.s_addr = htonl(groupAddress.toIPv4Address());
 
         if (iface.isValid()) {
-            QList<QNetworkAddressEntry> addressEntries = iface.addressEntries();
-            if (!addressEntries.isEmpty()) {
-                QHostAddress firstIP = addressEntries.first().ip();
-                mreq4.imr_interface.s_addr = htonl(firstIP.toIPv4Address());
-            } else {
+            const QList<QNetworkAddressEntry> addressEntries = iface.addressEntries();
+            bool found = false;
+            for (const QNetworkAddressEntry &entry : addressEntries) {
+                const QHostAddress ip = entry.ip();
+                if (ip.protocol() == QAbstractSocket::IPv4Protocol) {
+                    mreq4.imr_interface.s_addr = htonl(ip.toIPv4Address());
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
                 d->setError(QAbstractSocket::NetworkError,
                             QNativeSocketEnginePrivate::NetworkUnreachableErrorString);
                 return false;
@@ -1089,11 +1090,14 @@ qint64 QNativeSocketEnginePrivate::nativeBytesAvailable() const
         WSABUF buf;
         buf.buf = &c;
         buf.len = sizeof(c);
+        DWORD bytesReceived;
         DWORD flags = MSG_PEEK;
-        if (::WSARecvFrom(socketDescriptor, &buf, 1, 0, &flags, 0,0,0,0) == SOCKET_ERROR) {
+        if (::WSARecvFrom(socketDescriptor, &buf, 1, &bytesReceived, &flags, 0,0,0,0) == SOCKET_ERROR) {
             int err = WSAGetLastError();
             if (err != WSAECONNRESET && err != WSAENETRESET)
                 return 0;
+        } else {
+            return bytesReceived;
         }
     }
     return nbytes;
@@ -1102,7 +1106,6 @@ qint64 QNativeSocketEnginePrivate::nativeBytesAvailable() const
 
 bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 {
-#if !defined(Q_OS_WINCE)
     // Create a sockaddr struct and reset its port number.
     qt_sockaddr storage;
     QT_SOCKLEN_T storageSize = sizeof(storage);
@@ -1129,18 +1132,6 @@ bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
         result = true;
     }
 
-#else // Q_OS_WINCE
-    bool result = false;
-    fd_set readS;
-    FD_ZERO(&readS);
-    FD_SET((SOCKET)socketDescriptor, &readS);
-    timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 5000;
-    int available = ::select(1, &readS, 0, 0, &timeout);
-    result = available > 0;
-#endif
-
 #if defined (QNATIVESOCKETENGINE_DEBUG)
     qDebug("QNativeSocketEnginePrivate::nativeHasPendingDatagrams() == %s",
            result ? "true" : "false");
@@ -1152,16 +1143,15 @@ bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
 {
     qint64 ret = -1;
-#if !defined(Q_OS_WINCE)
     int recvResult = 0;
     DWORD flags;
     DWORD bufferCount = 5;
     WSABUF * buf = 0;
     for (;;) {
-        // the data written to udpMessagePeekBuffer is discarded, so
-        // this function is still reentrant although it might not look
-        // so.
-        static char udpMessagePeekBuffer[8192];
+        // We start at 1500 bytes (the MTU for Ethernet V2), which should catch
+        // almost all uses (effective MTU for UDP under IPv4 is 1468), except
+        // for localhost datagrams and those reassembled by the IP layer.
+        char udpMessagePeekBuffer[1500];
 
         buf = new WSABUF[bufferCount];
         for (DWORD i=0; i<bufferCount; i++) {
@@ -1197,52 +1187,46 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
     if (buf)
         delete[] buf;
 
-#else // Q_OS_WINCE
-    DWORD size = -1;
-    DWORD bytesReturned;
-    int ioResult = WSAIoctl(socketDescriptor, FIONREAD, 0,0, &size, sizeof(size), &bytesReturned, 0, 0);
-    if (ioResult == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        WS_ERROR_DEBUG(err);
-    } else {
-        ret = qint64(size);
-    }
-#endif
-
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %li", ret);
+    qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %lli", ret);
 #endif
 
     return ret;
 }
 
-
-qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxLength,
-                                                      QHostAddress *address, quint16 *port)
+qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxLength, QIpPacketHeader *header,
+                                                         QAbstractSocketEngine::PacketHeaderOptions options)
 {
-    qint64 ret = 0;
-
-    qt_sockaddr aa;
-    memset(&aa, 0, sizeof(aa));
-    QT_SOCKLEN_T sz;
-    sz = sizeof(aa);
-
+    union {
+        char cbuf[WSA_CMSG_SPACE(sizeof(struct in6_pktinfo)) + WSA_CMSG_SPACE(sizeof(int))];
+        WSACMSGHDR align;    // only to ensure alignment
+    };
+    WSAMSG msg;
     WSABUF buf;
-    buf.buf = data;
-    buf.len = maxLength;
-#if !defined(Q_OS_WINCE)
-    buf.buf = data;
-    buf.len = maxLength;
-#else
-    char tmpChar;
-    buf.buf = data ? data : &tmpChar;
-    buf.len = maxLength;
-#endif
+    qt_sockaddr aa;
+    char c;
+    memset(&msg, 0, sizeof(msg));
+    memset(&aa, 0, sizeof(aa));
+
+    // we need to receive at least one byte, even if our user isn't interested in it
+    buf.buf = maxLength ? data : &c;
+    buf.len = maxLength ? maxLength : 1;
+    msg.lpBuffers = &buf;
+    msg.dwBufferCount = 1;
+    msg.name = reinterpret_cast<LPSOCKADDR>(&aa);
+    msg.namelen = sizeof(aa);
+    msg.Control.buf = cbuf;
+    msg.Control.len = sizeof(cbuf);
 
     DWORD flags = 0;
     DWORD bytesRead = 0;
-    int wsaRet = ::WSARecvFrom(socketDescriptor, &buf, 1, &bytesRead, &flags, &aa.a, &sz,0,0);
-    if (wsaRet == SOCKET_ERROR) {
+    qint64 ret;
+
+    if (recvmsg)
+        ret = recvmsg(socketDescriptor, &msg, &bytesRead, 0,0);
+    else
+        ret = ::WSARecvFrom(socketDescriptor, &buf, 1, &bytesRead, &flags, msg.name, &msg.namelen,0,0);
+    if (ret == SOCKET_ERROR) {
         int err = WSAGetLastError();
         if (err == WSAEMSGSIZE) {
             // it is ok the buffer was to small if bytesRead is larger than
@@ -1250,20 +1234,65 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxL
             ret = qint64(bytesRead) > maxLength ? maxLength : qint64(bytesRead);
         } else {
             WS_ERROR_DEBUG(err);
-            setError(QAbstractSocket::NetworkError, ReceiveDatagramErrorString);
+            switch (err) {
+            case WSAENETRESET:
+                setError(QAbstractSocket::NetworkError, NetworkDroppedConnectionErrorString);
+                break;
+            case WSAECONNRESET:
+                setError(QAbstractSocket::ConnectionRefusedError, ConnectionResetErrorString);
+                break;
+            default:
+                setError(QAbstractSocket::NetworkError, ReceiveDatagramErrorString);
+                break;
+            }
             ret = -1;
+            if (header)
+                header->clear();
         }
     } else {
         ret = qint64(bytesRead);
+        if (options & QNativeSocketEngine::WantDatagramSender)
+            qt_socket_getPortAndAddress(socketDescriptor, &aa, &header->senderPort, &header->senderAddress);
     }
 
-    qt_socket_getPortAndAddress(socketDescriptor, &aa, port, address);
+    if (ret != -1 && recvmsg && options != QAbstractSocketEngine::WantNone) {
+        // get the ancillary data
+        header->destinationPort = localPort;
+        WSACMSGHDR *cmsgptr;
+        for (cmsgptr = WSA_CMSG_FIRSTHDR(&msg); cmsgptr != NULL;
+             cmsgptr = WSA_CMSG_NXTHDR(&msg, cmsgptr)) {
+            if (cmsgptr->cmsg_level == IPPROTO_IPV6 && cmsgptr->cmsg_type == IPV6_PKTINFO
+                    && cmsgptr->cmsg_len >= WSA_CMSG_LEN(sizeof(in6_pktinfo))) {
+                in6_pktinfo *info = reinterpret_cast<in6_pktinfo *>(WSA_CMSG_DATA(cmsgptr));
+
+                header->destinationAddress.setAddress(reinterpret_cast<quint8 *>(&info->ipi6_addr));
+                header->ifindex = info->ipi6_ifindex;
+                if (header->ifindex)
+                    header->destinationAddress.setScopeId(QString::number(info->ipi6_ifindex));
+            }
+            if (cmsgptr->cmsg_level == IPPROTO_IP && cmsgptr->cmsg_type == IP_PKTINFO
+                    && cmsgptr->cmsg_len >= WSA_CMSG_LEN(sizeof(in_pktinfo))) {
+                in_pktinfo *info = reinterpret_cast<in_pktinfo *>(WSA_CMSG_DATA(cmsgptr));
+                u_long addr;
+                WSANtohl(socketDescriptor, info->ipi_addr.s_addr, &addr);
+                header->destinationAddress.setAddress(addr);
+                header->ifindex = info->ipi_ifindex;
+            }
+
+            if (cmsgptr->cmsg_len == WSA_CMSG_LEN(sizeof(int))
+                    && ((cmsgptr->cmsg_level == IPPROTO_IPV6 && cmsgptr->cmsg_type == IPV6_HOPLIMIT)
+                        || (cmsgptr->cmsg_level == IPPROTO_IP && cmsgptr->cmsg_type == IP_TTL))) {
+                header->hopLimit = *reinterpret_cast<int *>(WSA_CMSG_DATA(cmsgptr));
+            }
+        }
+    }
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativeReceiveDatagram(%p \"%s\", %li, %s, %i) == %li",
+    bool printSender = (ret != -1 && (options & QNativeSocketEngine::WantDatagramSender) != 0);
+    qDebug("QNativeSocketEnginePrivate::nativeReceiveDatagram(%p \"%s\", %lli, %s, %i) == %lli",
            data, qt_prettyDebug(data, qMin<qint64>(ret, 16), ret).data(), maxLength,
-           address ? address->toString().toLatin1().constData() : "(nil)",
-           port ? *port : 0, ret);
+           printSender ? header->senderAddress.toString().toLatin1().constData() : "(unknown)",
+           printSender ? header->senderPort : 0, ret);
 #endif
 
     return ret;
@@ -1271,27 +1300,107 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxL
 
 
 qint64 QNativeSocketEnginePrivate::nativeSendDatagram(const char *data, qint64 len,
-                                                   const QHostAddress &address, quint16 port)
+                                                      const QIpPacketHeader &header)
 {
-    qint64 ret = -1;
-    struct sockaddr_in sockAddrIPv4;
-    qt_sockaddr_in6 sockAddrIPv6;
-    struct sockaddr *sockAddrPtr = 0;
-    QT_SOCKLEN_T sockAddrSize = 0;
-
-    setPortAndAddress(&sockAddrIPv4, &sockAddrIPv6, port, address, &sockAddrPtr, &sockAddrSize);
-
+    union {
+        char cbuf[WSA_CMSG_SPACE(sizeof(struct in6_pktinfo)) + WSA_CMSG_SPACE(sizeof(int))];
+        WSACMSGHDR align;    // ensures alignment
+    };
+    WSACMSGHDR *cmsgptr = &align;
+    WSAMSG msg;
     WSABUF buf;
-#if !defined(Q_OS_WINCE)
+    qt_sockaddr aa;
+
+    memset(&msg, 0, sizeof(msg));
+    memset(&aa, 0, sizeof(aa));
     buf.buf = len ? (char*)data : 0;
-#else
-    char tmp;
-    buf.buf = len ? (char*)data : &tmp;
-#endif
+    msg.lpBuffers = &buf;
+    msg.dwBufferCount = 1;
+    msg.name = &aa.a;
     buf.len = len;
+
+    setPortAndAddress(header.destinationPort, header.destinationAddress, &aa, &msg.namelen);
+
+    uint oldIfIndex = 0;
+    bool mustSetIpv6MulticastIf = false;
+
+    if (msg.namelen == sizeof(aa.a6)) {
+        // sending IPv6
+        if (header.hopLimit != -1) {
+            msg.Control.len += WSA_CMSG_SPACE(sizeof(int));
+            cmsgptr->cmsg_len = WSA_CMSG_LEN(sizeof(int));
+            cmsgptr->cmsg_level = IPPROTO_IPV6;
+            cmsgptr->cmsg_type = IPV6_HOPLIMIT;
+            memcpy(WSA_CMSG_DATA(cmsgptr), &header.hopLimit, sizeof(int));
+            cmsgptr = reinterpret_cast<WSACMSGHDR *>(reinterpret_cast<char *>(cmsgptr)
+                                                     + WSA_CMSG_SPACE(sizeof(int)));
+        }
+        if (!header.senderAddress.isNull()) {
+            struct in6_pktinfo *data = reinterpret_cast<in6_pktinfo *>(WSA_CMSG_DATA(cmsgptr));
+            memset(data, 0, sizeof(*data));
+            msg.Control.len += WSA_CMSG_SPACE(sizeof(*data));
+            cmsgptr->cmsg_len = WSA_CMSG_LEN(sizeof(*data));
+            cmsgptr->cmsg_level = IPPROTO_IPV6;
+            cmsgptr->cmsg_type = IPV6_PKTINFO;
+            data->ipi6_ifindex = header.ifindex;
+
+            Q_IPV6ADDR tmp = header.senderAddress.toIPv6Address();
+            memcpy(&data->ipi6_addr, &tmp, sizeof(tmp));
+            cmsgptr = reinterpret_cast<WSACMSGHDR *>(reinterpret_cast<char *>(cmsgptr)
+                                                     + WSA_CMSG_SPACE(sizeof(*data)));
+        } else if (header.ifindex != 0) {
+            // Unlike other operating systems, setting the interface index in the in6_pktinfo
+            // structure above and leaving the ipi6_addr set to :: will cause the packets to be
+            // sent with source address ::. So we have to use IPV6_MULTICAST_IF, which MSDN is
+            // quite clear that "This option does not change the default interface for receiving
+            // IPv6 multicast traffic."
+            QT_SOCKOPTLEN_T len = sizeof(oldIfIndex);
+            if (::getsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                             reinterpret_cast<char *>(&oldIfIndex), &len) == -1
+                    || ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                                    reinterpret_cast<const char *>(&header.ifindex), sizeof(header.ifindex)) == -1) {
+                setError(QAbstractSocket::NetworkError, SendDatagramErrorString);
+                return -1;
+            }
+            mustSetIpv6MulticastIf = true;
+        }
+    } else {
+        // sending IPv4
+        if (header.hopLimit != -1) {
+            msg.Control.len += WSA_CMSG_SPACE(sizeof(int));
+            cmsgptr->cmsg_len = WSA_CMSG_LEN(sizeof(int));
+            cmsgptr->cmsg_level = IPPROTO_IP;
+            cmsgptr->cmsg_type = IP_TTL;
+            memcpy(WSA_CMSG_DATA(cmsgptr), &header.hopLimit, sizeof(int));
+            cmsgptr = reinterpret_cast<WSACMSGHDR *>(reinterpret_cast<char *>(cmsgptr)
+                                                     + WSA_CMSG_SPACE(sizeof(int)));
+        }
+        if (header.ifindex != 0 || !header.senderAddress.isNull()) {
+            struct in_pktinfo *data = reinterpret_cast<in_pktinfo *>(WSA_CMSG_DATA(cmsgptr));
+            memset(data, 0, sizeof(*data));
+            msg.Control.len += WSA_CMSG_SPACE(sizeof(*data));
+            cmsgptr->cmsg_len = WSA_CMSG_LEN(sizeof(*data));
+            cmsgptr->cmsg_level = IPPROTO_IP;
+            cmsgptr->cmsg_type = IP_PKTINFO;
+            data->ipi_ifindex = header.ifindex;
+            WSAHtonl(socketDescriptor, header.senderAddress.toIPv4Address(), &data->ipi_addr.s_addr);
+            cmsgptr = reinterpret_cast<WSACMSGHDR *>(reinterpret_cast<char *>(cmsgptr)
+                                                     + WSA_CMSG_SPACE(sizeof(*data)));
+        }
+    }
+
+    if (msg.Control.len != 0)
+        msg.Control.buf = cbuf;
+
     DWORD flags = 0;
     DWORD bytesSent = 0;
-    if (::WSASendTo(socketDescriptor, &buf, 1, &bytesSent, flags, sockAddrPtr, sockAddrSize, 0,0) ==  SOCKET_ERROR) {
+    qint64 ret = -1;
+    if (sendmsg) {
+        ret = sendmsg(socketDescriptor, &msg, flags, &bytesSent, 0,0);
+    } else {
+        ret = ::WSASendTo(socketDescriptor, &buf, 1, &bytesSent, flags, msg.name, msg.namelen, 0,0);
+    }
+    if (ret == SOCKET_ERROR) {
         int err = WSAGetLastError();
         WS_ERROR_DEBUG(err);
         switch (err) {
@@ -1307,10 +1416,17 @@ qint64 QNativeSocketEnginePrivate::nativeSendDatagram(const char *data, qint64 l
         ret = qint64(bytesSent);
     }
 
+    if (mustSetIpv6MulticastIf) {
+        // undo what we did above
+        ::setsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                     reinterpret_cast<char *>(&oldIfIndex), sizeof(oldIfIndex));
+    }
+
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativeSendDatagram(%p \"%s\", %li, \"%s\", %i) == %li", data,
-           qt_prettyDebug(data, qMin<qint64>(len, 16), len).data(), 0, address.toString().toLatin1().constData(),
-           port, ret);
+    qDebug("QNativeSocketEnginePrivate::nativeSendDatagram(%p \"%s\", %lli, \"%s\", %i) == %lli", data,
+           qt_prettyDebug(data, qMin<qint64>(len, 16), len).data(), len,
+           header.destinationAddress.toString().toLatin1().constData(),
+           header.destinationPort, ret);
 #endif
 
     return ret;
@@ -1383,9 +1499,6 @@ qint64 QNativeSocketEnginePrivate::nativeRead(char *data, qint64 maxLength)
     buf.len = maxLength;
     DWORD flags = 0;
     DWORD bytesRead = 0;
-#if defined(Q_OS_WINCE)
-    WSASetLastError(0);
-#endif
     if (::WSARecv(socketDescriptor, &buf, 1, &bytesRead, &flags, 0,0) ==  SOCKET_ERROR) {
         int err = WSAGetLastError();
         WS_ERROR_DEBUG(err);
@@ -1499,11 +1612,7 @@ int QNativeSocketEnginePrivate::nativeSelect(int timeout,
     tv.tv_sec = timeout / 1000;
     tv.tv_usec = (timeout % 1000) * 1000;
 
-#if !defined(Q_OS_WINCE)
     ret = select(socketDescriptor + 1, &fdread, &fdwrite, &fdexception, timeout < 0 ? 0 : &tv);
-#else
-    ret = select(1, &fdread, &fdwrite, &fdexception, timeout < 0 ? 0 : &tv);
-#endif
 
      //... but if it is actually set, pretend it did not happen
     if (ret > 0 && FD_ISSET((SOCKET)socketDescriptor, &fdexception))

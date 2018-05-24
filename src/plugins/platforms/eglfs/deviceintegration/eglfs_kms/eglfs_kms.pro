@@ -1,31 +1,31 @@
 TARGET = qeglfs-kms-integration
 
 PLUGIN_TYPE = egldeviceintegrations
-PLUGIN_CLASS_NAME = QEglFSKmsIntegrationPlugin
+PLUGIN_CLASS_NAME = QEglFSKmsGbmIntegrationPlugin
 load(qt_plugin)
 
-QT += core-private gui-private platformsupport-private eglfs_device_lib-private
+QT += core-private gui-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private edid_support-private
 
-INCLUDEPATH += $$PWD/../..
+INCLUDEPATH += $$PWD/../../api $$PWD/../eglfs_kms_support
 
-# Avoid X11 header collision
-DEFINES += MESA_EGL_NO_X11_HEADERS
+# Avoid X11 header collision, use generic EGL native types
+DEFINES += QT_EGL_NO_X11
 
-CONFIG += link_pkgconfig
-PKGCONFIG += libdrm gbm
-
+QMAKE_USE += gbm drm
 CONFIG += egl
 QMAKE_LFLAGS += $$QMAKE_LFLAGS_NOUNDEF
 
-SOURCES += $$PWD/qeglfskmsmain.cpp \
-           $$PWD/qeglfskmsintegration.cpp \
-           $$PWD/qeglfskmsdevice.cpp \
-           $$PWD/qeglfskmsscreen.cpp \
-           $$PWD/qeglfskmscursor.cpp
+SOURCES += $$PWD/qeglfskmsgbmmain.cpp \
+           $$PWD/qeglfskmsgbmintegration.cpp \
+           $$PWD/qeglfskmsgbmdevice.cpp \
+           $$PWD/qeglfskmsgbmscreen.cpp \
+           $$PWD/qeglfskmsgbmcursor.cpp \
+           $$PWD/qeglfskmsgbmwindow.cpp
 
-HEADERS += $$PWD/qeglfskmsintegration.h \
-           $$PWD/qeglfskmsdevice.h \
-           $$PWD/qeglfskmsscreen.h \
-           $$PWD/qeglfskmscursor.h
+HEADERS += $$PWD/qeglfskmsgbmintegration.h \
+           $$PWD/qeglfskmsgbmdevice.h \
+           $$PWD/qeglfskmsgbmscreen.h \
+           $$PWD/qeglfskmsgbmcursor.h \
+           $$PWD/qeglfskmsgbmwindow.h
 
 OTHER_FILES += $$PWD/eglfs_kms.json

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -65,6 +60,7 @@ private slots:
     void begin();
     void end();
     void insert();
+    void reverseIterators();
     void setOperations();
     void stlIterator();
     void stlMutableIterator();
@@ -73,6 +69,7 @@ private slots:
     void makeSureTheComfortFunctionsCompile();
     void initializerList();
     void qhash();
+    void intersects();
 };
 
 struct IdentityTracker {
@@ -554,6 +551,21 @@ void tst_QSet::insert()
     }
 }
 
+void tst_QSet::reverseIterators()
+{
+    QSet<int> s;
+    s << 1 << 17 << 61 << 127 << 911;
+    std::vector<int> v(s.begin(), s.end());
+    std::reverse(v.begin(), v.end());
+    const QSet<int> &cs = s;
+    QVERIFY(std::equal(v.begin(), v.end(), s.rbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), s.crbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), cs.rbegin()));
+    QVERIFY(std::equal(s.rbegin(), s.rend(), v.begin()));
+    QVERIFY(std::equal(s.crbegin(), s.crend(), v.begin()));
+    QVERIFY(std::equal(cs.rbegin(), cs.rend(), v.begin()));
+}
+
 void tst_QSet::setOperations()
 {
     QSet<QString> set1, set2;
@@ -736,7 +748,7 @@ void tst_QSet::stlMutableIterator()
         QSet<QString>::const_iterator k = set2.insert("foo");
         i = reinterpret_cast<QSet<QString>::iterator &>(k);
 // #endif
-        QVERIFY(*i == "foo");
+        QCOMPARE(*i, QLatin1String("foo"));
     }
 }
 
@@ -969,24 +981,6 @@ void tst_QSet::initializerList()
 #endif
 }
 
-QT_BEGIN_NAMESPACE
-extern Q_CORE_EXPORT QBasicAtomicInt qt_qhash_seed; // from qhash.cpp
-QT_END_NAMESPACE
-
-class QtQHashSeedSaver {
-    int oldSeed, newSeed;
-public:
-    explicit QtQHashSeedSaver(int seed)
-        : oldSeed(qt_qhash_seed.fetchAndStoreRelaxed(seed)),
-          newSeed(seed)
-    {}
-    ~QtQHashSeedSaver()
-    {
-        // only restore when no-one else changed the seed in the meantime:
-        qt_qhash_seed.testAndSetRelaxed(newSeed, oldSeed);
-    }
-};
-
 void tst_QSet::qhash()
 {
     //
@@ -994,14 +988,14 @@ void tst_QSet::qhash()
     //
     {
         // create some deterministic initial state:
-        const QtQHashSeedSaver seed1(0);
+        qSetGlobalQHashSeed(0);
 
         QSet<int> s1;
         s1.reserve(4);
         s1 << 400 << 300 << 200 << 100;
 
         // also change the seed:
-        const QtQHashSeedSaver seed2(0x10101010);
+        qSetGlobalQHashSeed(0x10101010);
 
         QSet<int> s2;
         s2.reserve(100); // provoke different bucket counts
@@ -1028,6 +1022,32 @@ void tst_QSet::qhash()
 #endif
         QCOMPARE(intSetSet.size(), 3);
     }
+}
+
+void tst_QSet::intersects()
+{
+    QSet<int> s1;
+    QSet<int> s2;
+
+    QVERIFY(!s1.intersects(s1));
+    QVERIFY(!s1.intersects(s2));
+
+    s1 << 100;
+    QVERIFY(s1.intersects(s1));
+    QVERIFY(!s1.intersects(s2));
+
+    s2 << 200;
+    QVERIFY(!s1.intersects(s2));
+
+    s1 << 200;
+    QVERIFY(s1.intersects(s2));
+
+    qSetGlobalQHashSeed(0x10101010);
+    QSet<int> s3;
+    s3 << 500;
+    QVERIFY(!s1.intersects(s3));
+    s3 << 200;
+    QVERIFY(s1.intersects(s3));
 }
 
 QTEST_APPLESS_MAIN(tst_QSet)

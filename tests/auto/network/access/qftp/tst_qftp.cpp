@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +41,9 @@
 #include <qnetworkconfigmanager.h>
 #include <QNetworkSession>
 #include <QtNetwork/private/qnetworksession_p.h>
+#include <QTcpServer>
+#include <QHostInfo>
+#include <QTcpSocket>
 
 #include "../../../network-settings.h"
 
@@ -63,16 +61,13 @@ class tst_QFtp : public QObject
 
 public:
     tst_QFtp();
-    virtual ~tst_QFtp();
 
-
-public slots:
+private slots:
     void initTestCase_data();
     void initTestCase();
     void cleanupTestCase();
     void init();
     void cleanup();
-private slots:
     void connectToHost_data();
     void connectToHost();
     void connectToUnresponsiveHost();
@@ -116,6 +111,9 @@ private slots:
 
     void qtbug7359Crash();
 
+    void loginURL_data();
+    void loginURL();
+
 protected slots:
     void stateChanged( int );
     void listInfo( const QUrlInfo & );
@@ -132,7 +130,7 @@ protected slots:
 private:
     QFtp *newFtp();
     void addCommand( QFtp::Command, int );
-    bool fileExists( const QString &host, quint16 port, const QString &user, const QString &password, const QString &file, const QString &cdDir = QString::null );
+    bool fileExists( const QString &host, quint16 port, const QString &user, const QString &password, const QString &file, const QString &cdDir = QString() );
     bool dirExists( const QString &host, quint16 port, const QString &user, const QString &password, const QString &cdDir, const QString &dirToCreate );
 
     void renameInit( const QString &host, const QString &user, const QString &password, const QString &createFile );
@@ -187,10 +185,6 @@ tst_QFtp::tst_QFtp() :
 {
 }
 
-tst_QFtp::~tst_QFtp()
-{
-}
-
 void tst_QFtp::initTestCase_data()
 {
     QTest::addColumn<bool>("setProxy");
@@ -198,7 +192,7 @@ void tst_QFtp::initTestCase_data()
     QTest::addColumn<bool>("setSession");
 
     QTest::newRow("WithoutProxy") << false << 0 << false;
-#ifndef QT_NO_SOCKS5
+#if QT_CONFIG(socks5)
     QTest::newRow("WithSocks5Proxy") << true << int(QNetworkProxy::Socks5Proxy) << false;
 #endif
     //### doesn't work well yet.
@@ -206,7 +200,7 @@ void tst_QFtp::initTestCase_data()
 
 #ifndef QT_NO_BEARERMANAGEMENT
     QTest::newRow("WithoutProxyWithSession") << false << 0 << true;
-#ifndef QT_NO_SOCKS5
+#if QT_CONFIG(socks5)
     QTest::newRow("WithSocks5ProxyAndSession") << true << int(QNetworkProxy::Socks5Proxy) << true;
 #endif
 #endif
@@ -217,7 +211,7 @@ void tst_QFtp::initTestCase()
     QVERIFY(QtNetworkSettings::verifyTestNetworkSettings());
 #ifndef QT_NO_BEARERMANAGEMENT
     QNetworkConfigurationManager manager;
-    networkSessionImplicit = QSharedPointer<QNetworkSession>(new QNetworkSession(manager.defaultConfiguration()));
+    networkSessionImplicit = QSharedPointer<QNetworkSession>::create(manager.defaultConfiguration());
     networkSessionImplicit->open();
     QVERIFY(networkSessionImplicit->waitForOpened(60000)); //there may be user prompt on 1st connect
 #endif
@@ -260,6 +254,8 @@ void tst_QFtp::init()
     } else {
         networkSessionExplicit.clear();
     }
+#else
+    Q_UNUSED(setSession);
 #endif
 
     delete ftp;
@@ -288,13 +284,8 @@ void tst_QFtp::init()
 
     inFileDirExistsFunction = false;
 
-#if !defined(Q_OS_WINCE)
-    srand(time(0));
-    uniqueExtension = QString("%1%2%3").arg((qulonglong)this).arg(rand()).arg((qulonglong)time(0));
-#else
-    srand(0);
-    uniqueExtension = QString("%1%2%3").arg((qulonglong)this).arg(rand()).arg((qulonglong)(0));
-#endif
+    uniqueExtension = QString::number((quintptr)this) + QString::number(QRandomGenerator::global()->generate())
+        + QString::number((qulonglong)time(0));
 }
 
 void tst_QFtp::cleanup()
@@ -390,8 +381,7 @@ void tst_QFtp::connectToUnresponsiveHost()
     a lot of other stuff in QFtp, so we just expect this test to fail on Windows.
     */
     QEXPECT_FAIL("", "timeout not working due to strange Windows socket behaviour (see source file of this test for explanation)", Abort);
-#else
-    QEXPECT_FAIL("", "QTBUG-20687", Abort);
+
 #endif
     QVERIFY2(! QTestEventLoop::instance().timeout(), "Network timeout longer than expected (should have been 60 seconds)");
 
@@ -413,11 +403,11 @@ void tst_QFtp::login_data()
     QTest::addColumn<int>("success");
 
     QTest::newRow( "ok01" ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString() << 1;
-    QTest::newRow( "ok02" ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftp") << QString() << 1;
+    QTest::newRow( "ok02" ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftp") << QString("") << 1;
     QTest::newRow( "ok03" ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftp") << QString("foo") << 1;
     QTest::newRow( "ok04" ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest") << QString("password") << 1;
 
-    QTest::newRow( "error01" ) << QtNetworkSettings::serverName() << (uint)21 << QString("foo") << QString() << 0;
+    QTest::newRow( "error01" ) << QtNetworkSettings::serverName() << (uint)21 << QString("foo") << QString("") << 0;
     QTest::newRow( "error02" ) << QtNetworkSettings::serverName() << (uint)21 << QString("foo") << QString("bar") << 0;
 }
 
@@ -644,19 +634,20 @@ void tst_QFtp::get_data()
 
     // test the two get() overloads in one routine
     for ( int i=0; i<2; i++ ) {
-        QTest::newRow( QString("relPath01_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
+        const QByteArray iB = QByteArray::number(i);
+        QTest::newRow(("relPath01_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
                 << "qtest/rfc3252" << 1 << rfc3252 << (bool)(i==1);
-        QTest::newRow( QString("relPath02_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest")     << QString("password")
+        QTest::newRow(("relPath02_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest")     << QString("password")
                 << "qtest/rfc3252" << 1 << rfc3252 << (bool)(i==1);
 
-        QTest::newRow( QString("absPath01_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
+        QTest::newRow(("absPath01_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
                 << "/qtest/rfc3252" << 1 << rfc3252 << (bool)(i==1);
-        QTest::newRow( QString("absPath02_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest")     << QString("password")
+        QTest::newRow(("absPath02_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest")     << QString("password")
                 << "/var/ftp/qtest/rfc3252" << 1 << rfc3252 << (bool)(i==1);
 
-        QTest::newRow( QString("nonExist01_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
+        QTest::newRow(("nonExist01_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
                 << QString("foo")  << 0 << QByteArray() << (bool)(i==1);
-        QTest::newRow( QString("nonExist02_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
+        QTest::newRow(("nonExist02_" + iB).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
                 << QString("/foo") << 0 << QByteArray() << (bool)(i==1);
     }
 }
@@ -733,10 +724,11 @@ void tst_QFtp::put_data()
     QByteArray bigData( 10*1024*1024, 0 );
     bigData.fill( 'A' );
 
-    // test the two put() overloads in one routine
+    // test the two put() overloads in one routine with a file name containing
+    // U+0x00FC (latin small letter u with diaeresis) for QTBUG-52303, testing UTF-8
     for ( int i=0; i<2; i++ ) {
-        QTest::newRow( QString("relPath01_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
-                << QString("qtest/upload/rel01_%1") << rfc3252
+        QTest::newRow(("relPath01_" + QByteArray::number(i)).constData()) << QtNetworkSettings::serverName() << (uint)21 << QString() << QString()
+                << (QLatin1String("qtest/upload/rel01_") + QChar(0xfc) + QLatin1String("%1")) << rfc3252
                 << (bool)(i==1) << 1;
         /*
     QTest::newRow( QString("relPath02_%1").arg(i).toLatin1().constData() ) << QtNetworkSettings::serverName() << (uint)21 << QString("ftptest")     << QString("password")
@@ -1363,11 +1355,7 @@ void tst_QFtp::abort_data()
     QTest::newRow( "get_fluke02" ) << QtNetworkSettings::serverName() << (uint)21 << QString("qtest/rfc3252") << QByteArray();
 
     // Qt/CE test environment has too little memory for this test
-#if !defined(Q_OS_WINCE)
     QByteArray bigData( 10*1024*1024, 0 );
-#else
-    QByteArray bigData( 1*1024*1024, 0 );
-#endif
     bigData.fill( 'B' );
     QTest::newRow( "put_fluke01" ) << QtNetworkSettings::serverName() << (uint)21 << QString("qtest/upload/abort_put") << bigData;
 }
@@ -2049,10 +2037,10 @@ bool tst_QFtp::dirExists( const QString &host, quint16 port, const QString &user
 
     addCommand( QFtp::ConnectToHost, ftp->connectToHost( host, port ) );
     addCommand( QFtp::Login, ftp->login( user, password ) );
-    if ( dirToCreate.startsWith( "/" ) )
+    if ( dirToCreate.startsWith( QLatin1Char('/') ) )
         addCommand( QFtp::Cd, ftp->cd( dirToCreate ) );
     else
-        addCommand( QFtp::Cd, ftp->cd( cdDir + "/" + dirToCreate ) );
+        addCommand( QFtp::Cd, ftp->cd( cdDir + QLatin1Char('/') + dirToCreate ) );
     addCommand( QFtp::Close, ftp->close() );
 
     inFileDirExistsFunction = true;
@@ -2168,6 +2156,206 @@ void tst_QFtp::qtbug7359Crash()
     t.restart();
     while ((elapsed = t.elapsed()) < 2000)
         QCoreApplication::processEvents(QEventLoop::AllEvents, 2000 - elapsed);
+}
+
+class FtpLocalServer : public QTcpServer
+{
+    Q_OBJECT
+
+public:
+    explicit FtpLocalServer(QObject *parent = 0) : QTcpServer(parent) {}
+    virtual ~FtpLocalServer() { delete mSocket; }
+    void startServer(qint16 port = 0);
+    void stopServer();
+
+    enum class ReplyCodes {
+        ServiceReady = 220,
+        ServiceClose = 221,
+        NeedPassword = 331,
+        LoginFailed  = 530,
+        RequestDeny  = 550
+    };
+
+    void sendResponse(ReplyCodes code);
+
+    inline QString getRawUser() { return rawUser; }
+    inline QString getRawPassword() { return rawPass; }
+
+signals:
+    void onStarted();
+    void onStopped();
+
+public slots:
+    void socketReadyRead();
+    void socketDisconnected();
+
+protected:
+    virtual void incomingConnection(qintptr handle);
+
+private:
+    QTcpSocket *mSocket = nullptr;
+    QString rawUser;
+    QString rawPass;
+};
+
+void FtpLocalServer::startServer(qint16 port)
+{
+    if (listen(QHostAddress::Any, port))
+        emit onStarted(); // Notify connected objects
+    else
+        qDebug("Could not start FTP server");
+}
+
+void FtpLocalServer::stopServer()
+{
+    close();
+    emit onStopped(); // Notify connected objects
+}
+
+void FtpLocalServer::sendResponse(ReplyCodes code)
+{
+    if (mSocket)
+    {
+        QString response;
+        switch (code) {
+        case ReplyCodes::ServiceReady:
+            response = QString("220 Service ready for new user.\r\n");
+            break;
+        case ReplyCodes::ServiceClose:
+            response = QString("221 Service closing control connection.\r\n");
+            break;
+        case ReplyCodes::NeedPassword:
+            response = QString("331 User name okay, need password.\r\n");
+            break;
+        case ReplyCodes::LoginFailed:
+            response = QString("530 Not logged in.\r\n");
+            break;
+        case ReplyCodes::RequestDeny:
+            response = QString("550 Requested action not taken.\r\n");
+            break;
+        default:
+            qDebug("Unimplemented response code: %u", static_cast<uint>(code));
+            break;
+        }
+
+        if (!response.isEmpty())
+            mSocket->write(response.toLatin1());
+    }
+}
+
+void FtpLocalServer::incomingConnection(qintptr handle)
+{
+    mSocket = new QTcpSocket(this);
+    if (mSocket == nullptr || !mSocket->setSocketDescriptor(handle))
+    {
+        delete mSocket;
+        mSocket = nullptr;
+        qDebug() << handle << " Error binding socket";
+        return;
+    }
+
+    connect(mSocket, SIGNAL(readyRead()), this, SLOT(socketReadyRead()));
+    connect(mSocket, SIGNAL(disconnected()), this, SLOT(socketDisconnected()));
+
+    // Accept client connection
+    sendResponse(ReplyCodes::ServiceReady);
+}
+
+void FtpLocalServer::socketReadyRead()
+{
+    QString data;
+    if (mSocket)
+        data.append(mSocket->readAll());
+
+    // RFC959 Upper and lower case alphabetic characters are to be treated identically.
+    if (data.startsWith("USER", Qt::CaseInsensitive)) {
+        rawUser = data;
+        sendResponse(ReplyCodes::NeedPassword);
+    } else if (data.startsWith("PASS", Qt::CaseInsensitive)) {
+        rawPass = data;
+        sendResponse(ReplyCodes::LoginFailed);
+    } else {
+        sendResponse(ReplyCodes::RequestDeny);
+    }
+}
+
+void FtpLocalServer::socketDisconnected()
+{
+    // Cleanup
+    if (mSocket)
+        mSocket->deleteLater();
+    deleteLater();
+}
+
+void tst_QFtp::loginURL_data()
+{
+    QTest::addColumn<QString>("user");
+    QTest::addColumn<QString>("password");
+    QTest::addColumn<QString>("rawUser");
+    QTest::addColumn<QString>("rawPass");
+
+    QTest::newRow("no username, no password")
+        << QString() << QString()
+        << QString("USER anonymous\r\n") << QString("PASS anonymous@\r\n");
+
+    QTest::newRow("username, no password")
+        << QString("someone") << QString()
+        << QString("USER someone\r\n") << QString();
+
+    QTest::newRow("username, empty password")
+        << QString("someone") << QString("")
+        << QString("USER someone\r\n") << QString("PASS \r\n");
+
+    QTest::newRow("username, password")
+        << QString("someone") << QString("nonsense")
+        << QString("USER someone\r\n") << QString("PASS nonsense\r\n");
+
+    QTest::newRow("anonymous, no password")
+        << QString("anonymous") << QString()
+        << QString("USER anonymous\r\n") << QString("PASS anonymous@\r\n");
+
+    QTest::newRow("Anonymous, no password")
+        << QString("Anonymous") << QString()
+        << QString("USER Anonymous\r\n") << QString("PASS anonymous@\r\n");
+
+    QTest::newRow("anonymous, empty password")
+        << QString("anonymous") << QString("")
+        << QString("USER anonymous\r\n") << QString("PASS \r\n");
+
+    QTest::newRow("ANONYMOUS, password")
+        << QString("ANONYMOUS") << QString("nonsense")
+        << QString("USER ANONYMOUS\r\n") << QString("PASS nonsense\r\n");
+}
+
+void tst_QFtp::loginURL()
+{
+    QFETCH_GLOBAL(bool, setProxy);
+    if (setProxy)
+        QSKIP("This test should be verified on the local machine without proxies");
+
+    QFETCH(QString, user);
+    QFETCH(QString, password);
+    QFETCH(QString, rawUser);
+    QFETCH(QString, rawPass);
+
+    FtpLocalServer server;
+    server.startServer();
+    uint port = server.serverPort();
+
+    ftp = newFtp();
+    addCommand(QFtp::ConnectToHost,
+               ftp->connectToHost(QHostInfo::localHostName(), port));
+    addCommand(QFtp::Login, ftp->login(user, password));
+
+    QTestEventLoop::instance().enterLoop(5);
+    delete ftp;
+    ftp = nullptr;
+    server.stopServer();
+    if (QTestEventLoop::instance().timeout())
+        QFAIL(msgTimedOut(QHostInfo::localHostName(), port));
+
+    QCOMPARE(server.getRawUser(), rawUser);
+    QCOMPARE(server.getRawPassword(), rawPass);
 }
 
 QTEST_MAIN(tst_QFtp)

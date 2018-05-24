@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,7 +47,7 @@
 #include "qimage.h"
 #include "qbitmap.h"
 
-#include <qdebug.h>
+#include <private/qdebug_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -75,7 +81,8 @@ QT_BEGIN_NAMESPACE
     contains() a QPoint or QRect. The bounding rectangle can be found
     with boundingRect().
 
-    The function rects() gives a decomposition of the region into
+    Iteration over the region (with begin(), end(), or C++11
+    ranged-for loops) gives a decomposition of the region into
     rectangles.
 
     Example of using complex regions:
@@ -83,7 +90,7 @@ QT_BEGIN_NAMESPACE
 
     \section1 Additional License Information
 
-    On Embedded Linux, Windows CE and X11 platforms, parts of this class rely on
+    On Embedded Linux and X11 platforms, parts of this class rely on
     code obtained under the following licenses:
 
     \legalese
@@ -201,6 +208,16 @@ QT_BEGIN_NAMESPACE
     \fn QRegion::QRegion(const QRegion &r)
 
     Constructs a new region which is equal to region \a r.
+*/
+
+/*!
+    \fn QRegion::QRegion(QRegion &&other)
+    \since 5.7
+
+    Move-constructs a new region from region \a other.
+    After the call, \a other is null.
+
+    \sa isNull()
 */
 
 /*!
@@ -379,23 +396,24 @@ void QRegion::exec(const QByteArray &buffer, int ver, QDataStream::ByteOrder byt
 
 QDataStream &operator<<(QDataStream &s, const QRegion &r)
 {
-    QVector<QRect> a = r.rects();
-    if (a.isEmpty()) {
+    auto b = r.begin(), e = r.end();
+    if (b == e) {
         s << (quint32)0;
     } else {
+        const auto size = e - b;
         if (s.version() == 1) {
-            int i;
-            for (i = a.size() - 1; i > 0; --i) {
+            for (auto i = size - 1; i > 0; --i) {
                 s << (quint32)(12 + i * 24);
                 s << (int)QRGN_OR;
             }
-            for (i = 0; i < a.size(); ++i) {
-                s << (quint32)(4+8) << (int)QRGN_SETRECT << a[i];
-            }
+            for (auto it = b; it != e; ++it)
+                s << (quint32)(4+8) << (int)QRGN_SETRECT << *it;
         } else {
-            s << (quint32)(4 + 4 + 16 * a.size()); // 16: storage size of QRect
+            s << quint32(4 + 4 + 16 * size); // 16: storage size of QRect
             s << (qint32)QRGN_RECTS;
-            s << a;
+            s << quint32(size);
+            for (auto it = b; it != e; ++it)
+                s << *it;
         }
     }
     return s;
@@ -422,11 +440,33 @@ QDataStream &operator>>(QDataStream &s, QRegion &r)
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug s, const QRegion &r)
 {
-    QVector<QRect> rects = r.rects();
-    s.nospace() << "QRegion(size=" << rects.size() << "), "
-                << "bounds = " << r.boundingRect() << '\n';
-    for (int i=0; i<rects.size(); ++i)
-        s << "- " << i << rects.at(i) << '\n';
+    QDebugStateSaver saver(s);
+    s.nospace();
+    s << "QRegion(";
+    if (r.isNull()) {
+        s << "null";
+    } else if (r.isEmpty()) {
+        s << "empty";
+    } else {
+        const int count = r.rectCount();
+        if (count > 1)
+            s << "size=" << count << ", bounds=(";
+        QtDebugUtils::formatQRect(s, r.boundingRect());
+        if (count > 1) {
+            s << ") - [";
+            bool first = true;
+            for (const QRect &rect : r) {
+                if (!first)
+                    s << ", ";
+                s << '(';
+                QtDebugUtils::formatQRect(s, rect);
+                s << ')';
+                first = false;
+            }
+            s << ']';
+        }
+    }
+    s << ')';
     return s;
 }
 #endif
@@ -685,12 +725,9 @@ bool QRegion::intersects(const QRegion &region) const
     if (rectCount() == 1 && region.rectCount() == 1)
         return true;
 
-    const QVector<QRect> myRects = rects();
-    const QVector<QRect> otherRects = region.rects();
-
-    for (QVector<QRect>::const_iterator i1 = myRects.constBegin(); i1 < myRects.constEnd(); ++i1)
-        for (QVector<QRect>::const_iterator i2 = otherRects.constBegin(); i2 < otherRects.constEnd(); ++i2)
-            if (rect_intersects(*i1, *i2))
+    for (const QRect &myRect : *this)
+        for (const QRect &otherRect : region)
+            if (rect_intersects(myRect, otherRect))
                 return true;
     return false;
 }
@@ -704,8 +741,8 @@ bool QRegion::intersects(const QRegion &region) const
 */
 
 
-#if !defined (Q_OS_UNIX) && !defined (Q_OS_WIN)
-/*!
+#if !defined (Q_OS_UNIX) && !defined (Q_OS_WIN) || defined(Q_CLANG_QDOC)
+/*
     \overload
     \since 4.4
 */
@@ -719,7 +756,8 @@ QRegion QRegion::intersect(const QRect &r) const
     \fn int QRegion::rectCount() const
     \since 4.6
 
-    Returns the number of rectangles that will be returned in rects().
+    Returns the number of rectangles that this region is composed of.
+    Same as \c{end() - begin()}.
 */
 
 /*!
@@ -881,13 +919,122 @@ QRegion QRegion::intersect(const QRect &r) const
     gives a rectangle that is QRect::isNull().
 */
 
+#if QT_DEPRECATED_SINCE(5, 11)
 /*!
     \fn QVector<QRect> QRegion::rects() const
+    \obsolete
+
+    Use begin() and end() instead.
 
     Returns an array of non-overlapping rectangles that make up the
     region.
 
     The union of all the rectangles is equal to the original region.
+*/
+#endif
+
+/*!
+    \typedef QRegion::const_iterator
+    \since 5.8
+
+    An iterator over the non-overlapping rectangles that make up the
+    region.
+
+    The union of all the rectangles is equal to the original region.
+
+    QRegion does not offer mutable iterators.
+
+    \sa begin(), end()
+*/
+
+/*!
+    \typedef QRegion::const_reverse_iterator
+    \since 5.8
+
+    A reverse iterator over the non-overlapping rectangles that make up the
+    region.
+
+    The union of all the rectangles is equal to the original region.
+
+    QRegion does not offer mutable iterators.
+
+    \sa rbegin(), rend()
+*/
+
+/*!
+    \fn QRegion::begin() const
+    \since 5.8
+
+    Returns a const_iterator pointing to the beginning of the range of
+    non-overlapping rectangles that make up the region.
+
+    The union of all the rectangles is equal to the original region.
+
+    \sa rbegin(), cbegin(), end()
+*/
+
+/*!
+    \fn QRegion::cbegin() const
+    \since 5.8
+
+    Same as begin().
+*/
+
+/*!
+    \fn QRegion::end() const
+    \since 5.8
+
+    Returns a const_iterator pointing to one past the end of
+    non-overlapping rectangles that make up the region.
+
+    The union of all the rectangles is equal to the original region.
+
+    \sa rend(), cend(), begin()
+*/
+
+/*!
+    \fn QRegion::cend() const
+    \since 5.8
+
+    Same as end().
+*/
+
+/*!
+    \fn QRegion::rbegin() const
+    \since 5.8
+
+    Returns a const_reverse_iterator pointing to the beginning of the
+    range of non-overlapping rectangles that make up the region.
+
+    The union of all the rectangles is equal to the original region.
+
+    \sa begin(), crbegin(), rend()
+*/
+
+/*!
+    \fn QRegion::crbegin() const
+    \since 5.8
+
+    Same as rbegin().
+*/
+
+/*!
+    \fn QRegion::rend() const
+    \since 5.8
+
+    Returns a const_reverse_iterator pointing to one past the end of
+    the range of non-overlapping rectangles that make up the region.
+
+    The union of all the rectangles is equal to the original region.
+
+    \sa end(), crend(), rbegin()
+*/
+
+/*!
+    \fn QRegion::crend() const
+    \since 5.8
+
+    Same as rend().
 */
 
 /*!
@@ -906,7 +1053,7 @@ QRegion QRegion::intersect(const QRect &r) const
        sort key and X as the minor sort key.
     \endlist
     \omit
-    Only some platforms have these restrictions (Qt for Embedded Linux, X11 and OS X).
+    Only some platforms have these restrictions (Qt for Embedded Linux, X11 and \macos).
     \endomit
 */
 
@@ -1010,7 +1157,15 @@ void addSegmentsToPath(Segment *segment, QPainterPath &path)
     }
 }
 
-}
+} // unnamed namespace
+
+// the following is really a lie, because Segments cannot be relocated, as they
+// reference each other by address. For the same reason, they aren't even copyable,
+// but the code works with the compiler-generated (wrong) copy and move special
+// members, so use this as an optimization. The only container these are used in
+// (a QVarLengthArray in qt_regionToPath()) is resized once up-front, so doesn't
+// have a problem with this, but benefits from not having to run Segment ctors:
+Q_DECLARE_TYPEINFO(Segment, Q_PRIMITIVE_TYPE);
 
 Q_GUI_EXPORT QPainterPath qt_regionToPath(const QRegion &region)
 {
@@ -1020,13 +1175,11 @@ Q_GUI_EXPORT QPainterPath qt_regionToPath(const QRegion &region)
         return result;
     }
 
-    const QVector<QRect> rects = region.rects();
+    auto rect = region.begin();
+    const auto end = region.end();
 
     QVarLengthArray<Segment> segments;
-    segments.resize(4 * rects.size());
-
-    const QRect *rect = rects.constData();
-    const QRect *end = rect + rects.size();
+    segments.resize(4 * (end - rect));
 
     int lastRowSegmentCount = 0;
     Segment *lastRowSegments = 0;
@@ -1133,6 +1286,12 @@ struct QRegionPrivate {
             rects[0] = extents;
         }
     }
+
+    const QRect *begin() const Q_DECL_NOTHROW
+    { return numRects == 1 ? &extents : rects.data(); } // avoid vectorize()
+
+    const QRect *end() const Q_DECL_NOTHROW
+    { return begin() + numRects; }
 
     inline void append(const QRect *r);
     void append(const QRegionPrivate *r);
@@ -2140,7 +2299,14 @@ static void miRegionOp(QRegionPrivate &dest,
 
     dest.vectorize();
 
-    QVector<QRect> oldRects = dest.rects;
+    /*
+     * The following calls are going to detach dest.rects. Since dest might be
+     * aliasing *reg1 and/or *reg2, and we could have active iterators on
+     * reg1->rects and reg2->rects (if the regions have more than 1 rectangle),
+     * take a copy of dest.rects to keep those iteractors valid.
+     */
+    const QVector<QRect> destRectsCopy = dest.rects;
+    Q_UNUSED(destRectsCopy);
 
     dest.numRects = 0;
 
@@ -3472,7 +3638,7 @@ static void PtsToRegion(int numFullPtBlocks, int iCurPtBlock,
                 }
 
                 if (rowSize) {
-                    QPoint *next = i ? &pts[2] : (numFullPtBlocks && iCurPtBlock ? CurPtBlock->next->pts : Q_NULLPTR);
+                    QPoint *next = i ? &pts[2] : (numFullPtBlocks && iCurPtBlock ? CurPtBlock->next->pts : nullptr);
 
                     if (!next || next->y() != pts[0].y()) {
                         flushRow(row.data(), pts[0].y(), rowSize, reg, &lastRow, &extendTo, &needsExtend);
@@ -3714,7 +3880,7 @@ static QRegionPrivate *PolygonRegion(const QPoint *Pts, int Count, int rule)
 
 QRegionPrivate *qt_bitmapToRegion(const QBitmap& bitmap)
 {
-    QImage image = bitmap.toImage();
+    const QImage image = bitmap.toImage();
 
     QRegionPrivate *region = new QRegionPrivate;
 
@@ -3732,7 +3898,7 @@ QRegionPrivate *qt_bitmapToRegion(const QBitmap& bitmap)
     int x,
         y;
     for (y = 0; y < image.height(); ++y) {
-        uchar *line = image.scanLine(y);
+        const uchar *line = image.constScanLine(y);
         int w = image.width();
         uchar all = zero;
         int prev1 = -1;
@@ -4155,7 +4321,7 @@ QRegion QRegion::xored(const QRegion &r) const
     }
 }
 
-QRect QRegion::boundingRect() const
+QRect QRegion::boundingRect() const Q_DECL_NOTHROW
 {
     if (isEmpty())
         return QRect();
@@ -4199,6 +4365,7 @@ bool qt_region_strictContains(const QRegion &region, const QRect &rect)
             && rect.top() >= r1.top() && rect.bottom() <= r1.bottom());
 }
 
+#if QT_DEPRECATED_SINCE(5, 11)
 QVector<QRect> QRegion::rects() const
 {
     if (d->qt_rgn) {
@@ -4209,6 +4376,17 @@ QVector<QRect> QRegion::rects() const
     } else {
         return QVector<QRect>();
     }
+}
+#endif
+
+QRegion::const_iterator QRegion::begin() const Q_DECL_NOTHROW
+{
+    return d->qt_rgn ? d->qt_rgn->begin() : nullptr;
+}
+
+QRegion::const_iterator QRegion::end() const Q_DECL_NOTHROW
+{
+    return d->qt_rgn ? d->qt_rgn->end() : nullptr;
 }
 
 void QRegion::setRects(const QRect *rects, int num)
@@ -4243,7 +4421,7 @@ void QRegion::setRects(const QRect *rects, int num)
     }
 }
 
-int QRegion::rectCount() const
+int QRegion::rectCount() const Q_DECL_NOTHROW
 {
     return (d->qt_rgn ? d->qt_rgn->numRects : 0);
 }
@@ -4273,10 +4451,10 @@ bool QRegion::intersects(const QRect &rect) const
     if (d->qt_rgn->numRects == 1)
         return true;
 
-    const QVector<QRect> myRects = rects();
-    for (QVector<QRect>::const_iterator it = myRects.constBegin(); it < myRects.constEnd(); ++it)
-        if (rect_intersects(r, *it))
+    for (const QRect &rect : *this) {
+        if (rect_intersects(r, rect))
             return true;
+    }
     return false;
 }
 

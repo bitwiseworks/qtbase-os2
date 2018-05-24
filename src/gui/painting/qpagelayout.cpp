@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -117,7 +123,6 @@ class QPageLayoutPrivate : public QSharedData
 {
 public:
 
-    QPageLayoutPrivate();
     QPageLayoutPrivate(const QPageSize &pageSize, QPageLayout::Orientation orientation,
                        const QMarginsF &margins, QPageLayout::Unit units,
                        const QMarginsF &minMargins);
@@ -159,12 +164,6 @@ private:
     QMarginsF m_minMargins;
     QMarginsF m_maxMargins;
 };
-
-QPageLayoutPrivate::QPageLayoutPrivate()
-    : m_orientation(QPageLayout::Landscape),
-      m_mode(QPageLayout::StandardMode)
-{
-}
 
 QPageLayoutPrivate::QPageLayoutPrivate(const QPageSize &pageSize, QPageLayout::Orientation orientation,
                                        const QMarginsF &margins, QPageLayout::Unit units,
@@ -350,7 +349,7 @@ QRectF QPageLayoutPrivate::paintRect() const
 */
 
 QPageLayout::QPageLayout()
-    : d(new QPageLayoutPrivate())
+    : QPageLayout(QPageSize(), QPageLayout::Landscape, QMarginsF())
 {
 }
 
@@ -943,40 +942,37 @@ QRect QPageLayout::paintRectPixels(int resolution) const
 QDebug operator<<(QDebug dbg, const QPageLayout &layout)
 {
     QDebugStateSaver saver(dbg);
+    dbg.nospace();
+    dbg.noquote();
+    dbg << "QPageLayout(";
     if (layout.isValid()) {
-        QString output = QStringLiteral("QPageLayout(%1, %2, l:%3 r:%4 t:%5 b:%6 %7)");
-        QString units;
+        const QMarginsF margins = layout.margins();
+        dbg << '"' << layout.pageSize().name() << "\", "
+            << (layout.orientation() == QPageLayout::Portrait ? "Portrait" : "Landscape")
+            << ", l:" << margins.left() << " r:" << margins.right() << " t:"
+            << margins.top() << " b:" << margins.bottom() << ' ';
         switch (layout.units()) {
         case QPageLayout::Millimeter:
-            units = QStringLiteral("mm");
+            dbg << "mm";
             break;
         case QPageLayout::Point:
-            units = QStringLiteral("pt");
+            dbg << "pt";
             break;
         case QPageLayout::Inch:
-            units = QStringLiteral("in");
+            dbg << "in";
             break;
         case QPageLayout::Pica:
-            units = QStringLiteral("pc");
+            dbg << "pc";
             break;
         case QPageLayout::Didot:
-            units = QStringLiteral("DD");
+            dbg << "DD";
             break;
         case QPageLayout::Cicero:
-            units = QStringLiteral("CC");
+            dbg << "CC";
             break;
         }
-        output = output.arg(layout.pageSize().name())
-                       .arg(layout.orientation() == QPageLayout::Portrait ? QStringLiteral("Portrait") : QStringLiteral("Landscape"))
-                       .arg(layout.margins().left())
-                       .arg(layout.margins().right())
-                       .arg(layout.margins().top())
-                       .arg(layout.margins().bottom())
-                       .arg(units);
-        dbg.nospace() << output;
-    } else {
-        dbg.nospace() << "QPageLayout()";
     }
+    dbg << ')';
     return dbg;
 }
 #endif

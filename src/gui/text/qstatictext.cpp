@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,10 @@
 
 QT_BEGIN_NAMESPACE
 
+QStaticTextUserData::~QStaticTextUserData()
+{
+}
+
 /*!
     \class QStaticText
     \brief The QStaticText class enables optimized drawing of text when the text and its layout
@@ -49,7 +59,6 @@ QT_BEGIN_NAMESPACE
     \ingroup multimedia
     \ingroup text
     \ingroup shared
-    \mainclass
 
     QStaticText provides a way to cache layout data for a block of text so that it can be drawn
     more efficiently than by using QPainter::drawText() in which the layout information is
@@ -426,11 +435,11 @@ namespace {
     public:
         DrawTextItemRecorder(bool untransformedCoordinates, bool useBackendOptimizations)
                 : m_dirtyPen(false), m_useBackendOptimizations(useBackendOptimizations),
-                  m_untransformedCoordinates(untransformedCoordinates), m_currentColor(Qt::black)
+                  m_untransformedCoordinates(untransformedCoordinates), m_currentColor(0, 0, 0, 0)
         {
         }
 
-        virtual void updateState(const QPaintEngineState &newState) Q_DECL_OVERRIDE
+        virtual void updateState(const QPaintEngineState &newState) override
         {
             if (newState.state() & QPaintEngine::DirtyPen
                 && newState.pen().color() != m_currentColor) {
@@ -439,7 +448,7 @@ namespace {
             }
         }
 
-        virtual void drawTextItem(const QPointF &position, const QTextItem &textItem) Q_DECL_OVERRIDE
+        virtual void drawTextItem(const QPointF &position, const QTextItem &textItem) override
         {
             const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
 
@@ -475,15 +484,15 @@ namespace {
             m_items.append(currentItem);
         }
 
-        virtual void drawPolygon(const QPointF *, int , PolygonDrawMode ) Q_DECL_OVERRIDE
+        virtual void drawPolygon(const QPointF *, int , PolygonDrawMode ) override
         {
             /* intentionally empty */
         }
 
-        virtual bool begin(QPaintDevice *) Q_DECL_OVERRIDE  { return true; }
-        virtual bool end() Q_DECL_OVERRIDE { return true; }
-        virtual void drawPixmap(const QRectF &, const QPixmap &, const QRectF &) Q_DECL_OVERRIDE {}
-        virtual Type type() const Q_DECL_OVERRIDE
+        virtual bool begin(QPaintDevice *) override  { return true; }
+        virtual bool end() override { return true; }
+        virtual void drawPixmap(const QRectF &, const QPixmap &, const QRectF &) override {}
+        virtual Type type() const override
         {
             return User;
         }
@@ -528,7 +537,7 @@ namespace {
             delete m_paintEngine;
         }
 
-        int metric(PaintDeviceMetric m) const Q_DECL_OVERRIDE
+        int metric(PaintDeviceMetric m) const override
         {
             int val;
             switch (m) {
@@ -555,6 +564,9 @@ namespace {
             case PdmDevicePixelRatio:
                 val = 1;
                 break;
+            case PdmDevicePixelRatioScaled:
+                val = devicePixelRatioFScale();
+                break;
             default:
                 val = 0;
                 qWarning("DrawTextItemDevice::metric: Invalid metric command");
@@ -562,7 +574,7 @@ namespace {
             return val;
         }
 
-        virtual QPaintEngine *paintEngine() const Q_DECL_OVERRIDE
+        virtual QPaintEngine *paintEngine() const override
         {
             return m_paintEngine;
         }
@@ -587,7 +599,7 @@ namespace {
     };
 }
 
-void QStaticTextPrivate::paintText(const QPointF &topLeftPosition, QPainter *p)
+void QStaticTextPrivate::paintText(const QPointF &topLeftPosition, QPainter *p, const QColor &pen)
 {
     bool preferRichText = textFormat == Qt::RichText
                           || (textFormat == Qt::AutoText && Qt::mightBeRichText(text));
@@ -610,6 +622,8 @@ void QStaticTextPrivate::paintText(const QPointF &topLeftPosition, QPainter *p)
 
             if (textWidth >= 0.0)
                 line.setLineWidth(textWidth);
+            else
+                line.setLineWidth(QFIXED_MAX);
             height += leading;
             line.setPosition(QPointF(0.0, height));
             height += line.height();
@@ -617,15 +631,16 @@ void QStaticTextPrivate::paintText(const QPointF &topLeftPosition, QPainter *p)
         textLayout.endLayout();
 
         actualSize = textLayout.boundingRect().size();
+        p->setPen(pen);
         textLayout.draw(p, topLeftPosition);
     } else {
         QTextDocument document;
 #ifndef QT_NO_CSSPARSER
-        QColor color = p->pen().color();
-        document.setDefaultStyleSheet(QString::fromLatin1("body { color: #%1%2%3 }")
-                                      .arg(QString::number(color.red(), 16), 2, QLatin1Char('0'))
-                                      .arg(QString::number(color.green(), 16), 2, QLatin1Char('0'))
-                                      .arg(QString::number(color.blue(), 16), 2, QLatin1Char('0')));
+        document.setDefaultStyleSheet(QString::fromLatin1("body { color: rgba(%1, %2, %3, %4%) }")
+                                      .arg(QString::number(pen.red()))
+                                      .arg(QString::number(pen.green()))
+                                      .arg(QString::number(pen.blue()))
+                                      .arg(QString::number(pen.alpha())));
 #endif
         document.setDefaultFont(font);
         document.setDocumentMargin(0.0);
@@ -643,12 +658,9 @@ void QStaticTextPrivate::paintText(const QPointF &topLeftPosition, QPainter *p)
         p->save();
         p->translate(topLeftPosition);
         QAbstractTextDocumentLayout::PaintContext ctx;
-        ctx.palette.setColor(QPalette::Text, p->pen().color());
+        ctx.palette.setColor(QPalette::Text, pen);
         document.documentLayout()->draw(p, ctx);
         p->restore();
-
-        if (textWidth >= 0.0)
-            document.adjustSize(); // Find optimal size
 
         actualSize = document.size();
     }
@@ -668,7 +680,7 @@ void QStaticTextPrivate::init()
         painter.setFont(font);
         painter.setTransform(matrix);
 
-        paintText(QPointF(0, 0), &painter);
+        paintText(QPointF(0, 0), &painter, QColor(0, 0, 0, 0));
     }
 
     QVector<QStaticTextItem> deviceItems = device.items();
@@ -692,27 +704,6 @@ void QStaticTextPrivate::init()
     }
 
     needsRelayout = false;
-}
-
-QStaticTextItem::~QStaticTextItem()
-{
-    if (m_userData != 0 && !m_userData->ref.deref())
-        delete m_userData;
-    setFontEngine(0);
-}
-
-void QStaticTextItem::setFontEngine(QFontEngine *fe)
-{
-    if (m_fontEngine == fe)
-        return;
-
-    if (m_fontEngine != 0 && !m_fontEngine->ref.deref())
-        delete m_fontEngine;
-
-    m_fontEngine = fe;
-
-    if (m_fontEngine != 0)
-        m_fontEngine->ref.ref();
 }
 
 QT_END_NAMESPACE

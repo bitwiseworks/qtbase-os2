@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,7 @@
 // We mean it.
 //
 
+#include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include <QtWidgets/qaccessiblewidget.h>
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -78,40 +85,40 @@ class QAccessibleTextWidget : public QAccessibleWidget,
 public:
     QAccessibleTextWidget(QWidget *o, QAccessible::Role r = QAccessible::EditableText, const QString &name = QString());
 
-    QAccessible::State state() const Q_DECL_OVERRIDE;
+    QAccessible::State state() const override;
 
     // QAccessibleTextInterface
     //  selection
-    void selection(int selectionIndex, int *startOffset, int *endOffset) const Q_DECL_OVERRIDE;
-    int selectionCount() const Q_DECL_OVERRIDE;
-    void addSelection(int startOffset, int endOffset) Q_DECL_OVERRIDE;
-    void removeSelection(int selectionIndex) Q_DECL_OVERRIDE;
-    void setSelection(int selectionIndex, int startOffset, int endOffset) Q_DECL_OVERRIDE;
+    void selection(int selectionIndex, int *startOffset, int *endOffset) const override;
+    int selectionCount() const override;
+    void addSelection(int startOffset, int endOffset) override;
+    void removeSelection(int selectionIndex) override;
+    void setSelection(int selectionIndex, int startOffset, int endOffset) override;
 
     // cursor
-    int cursorPosition() const Q_DECL_OVERRIDE;
-    void setCursorPosition(int position) Q_DECL_OVERRIDE;
+    int cursorPosition() const override;
+    void setCursorPosition(int position) override;
 
     // text
-    QString text(int startOffset, int endOffset) const Q_DECL_OVERRIDE;
+    QString text(int startOffset, int endOffset) const override;
     QString textBeforeOffset(int offset, QAccessible::TextBoundaryType boundaryType,
-                             int *startOffset, int *endOffset) const Q_DECL_OVERRIDE;
+                             int *startOffset, int *endOffset) const override;
     QString textAfterOffset(int offset, QAccessible::TextBoundaryType boundaryType,
-                            int *startOffset, int *endOffset) const Q_DECL_OVERRIDE;
+                            int *startOffset, int *endOffset) const override;
     QString textAtOffset(int offset, QAccessible::TextBoundaryType boundaryType,
-                         int *startOffset, int *endOffset) const Q_DECL_OVERRIDE;
-    int characterCount() const Q_DECL_OVERRIDE;
+                         int *startOffset, int *endOffset) const override;
+    int characterCount() const override;
 
     // character <-> geometry
-    QRect characterRect(int offset) const Q_DECL_OVERRIDE;
-    int offsetAtPoint(const QPoint &point) const Q_DECL_OVERRIDE;
+    QRect characterRect(int offset) const override;
+    int offsetAtPoint(const QPoint &point) const override;
 
-    QString attributes(int offset, int *startOffset, int *endOffset) const Q_DECL_OVERRIDE;
+    QString attributes(int offset, int *startOffset, int *endOffset) const override;
 
     // QAccessibleEditableTextInterface
-    void deleteText(int startOffset, int endOffset) Q_DECL_OVERRIDE;
-    void insertText(int offset, const QString &text) Q_DECL_OVERRIDE;
-    void replaceText(int startOffset, int endOffset, const QString &text) Q_DECL_OVERRIDE;
+    void deleteText(int startOffset, int endOffset) override;
+    void insertText(int offset, const QString &text) override;
+    void replaceText(int startOffset, int endOffset, const QString &text) override;
 
     using QAccessibleWidget::text;
 
@@ -125,31 +132,31 @@ protected:
     virtual QWidget *viewport() const = 0;
 };
 
-#ifndef QT_NO_TEXTEDIT
+#if QT_CONFIG(textedit)
 class QAccessiblePlainTextEdit : public QAccessibleTextWidget
 {
 public:
     explicit QAccessiblePlainTextEdit(QWidget *o);
 
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
-    void setText(QAccessible::Text t, const QString &text) Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
+    QString text(QAccessible::Text t) const override;
+    void setText(QAccessible::Text t, const QString &text) override;
+    QAccessible::State state() const override;
 
-    void *interface_cast(QAccessible::InterfaceType t) Q_DECL_OVERRIDE;
+    void *interface_cast(QAccessible::InterfaceType t) override;
 
     // QAccessibleTextInterface
-    void scrollToSubstring(int startIndex, int endIndex) Q_DECL_OVERRIDE;
+    void scrollToSubstring(int startIndex, int endIndex) override;
 
     using QAccessibleTextWidget::text;
 
 protected:
     QPlainTextEdit *plainTextEdit() const;
 
-    QPoint scrollBarPosition() const Q_DECL_OVERRIDE;
-    QTextCursor textCursor() const Q_DECL_OVERRIDE;
-    void setTextCursor(const QTextCursor &textCursor) Q_DECL_OVERRIDE;
-    QTextDocument *textDocument() const Q_DECL_OVERRIDE;
-    QWidget *viewport() const Q_DECL_OVERRIDE;
+    QPoint scrollBarPosition() const override;
+    QTextCursor textCursor() const override;
+    void setTextCursor(const QTextCursor &textCursor) override;
+    QTextDocument *textDocument() const override;
+    QWidget *viewport() const override;
 };
 
 class QAccessibleTextEdit : public QAccessibleTextWidget
@@ -157,27 +164,27 @@ class QAccessibleTextEdit : public QAccessibleTextWidget
 public:
     explicit QAccessibleTextEdit(QWidget *o);
 
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
-    void setText(QAccessible::Text t, const QString &text) Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
+    QString text(QAccessible::Text t) const override;
+    void setText(QAccessible::Text t, const QString &text) override;
+    QAccessible::State state() const override;
 
-    void *interface_cast(QAccessible::InterfaceType t) Q_DECL_OVERRIDE;
+    void *interface_cast(QAccessible::InterfaceType t) override;
 
     // QAccessibleTextInterface
-    void scrollToSubstring(int startIndex, int endIndex) Q_DECL_OVERRIDE;
+    void scrollToSubstring(int startIndex, int endIndex) override;
 
     using QAccessibleTextWidget::text;
 
 protected:
     QTextEdit *textEdit() const;
 
-    QPoint scrollBarPosition() const Q_DECL_OVERRIDE;
-    QTextCursor textCursor() const Q_DECL_OVERRIDE;
-    void setTextCursor(const QTextCursor &textCursor) Q_DECL_OVERRIDE;
-    QTextDocument *textDocument() const Q_DECL_OVERRIDE;
-    QWidget *viewport() const Q_DECL_OVERRIDE;
+    QPoint scrollBarPosition() const override;
+    QTextCursor textCursor() const override;
+    void setTextCursor(const QTextCursor &textCursor) override;
+    QTextDocument *textDocument() const override;
+    QWidget *viewport() const override;
 };
-#endif // QT_NO_TEXTEDIT
+#endif // QT_CONFIG(textedit)
 #endif  //QT_NO_CURSOR
 
 class QAccessibleStackedWidget : public QAccessibleWidget
@@ -185,10 +192,10 @@ class QAccessibleStackedWidget : public QAccessibleWidget
 public:
     explicit QAccessibleStackedWidget(QWidget *widget);
 
-    QAccessibleInterface *childAt(int x, int y) const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *child) const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *childAt(int x, int y) const override;
+    int childCount() const override;
+    int indexOfChild(const QAccessibleInterface *child) const override;
+    QAccessibleInterface *child(int index) const override;
 
 protected:
     QStackedWidget *stackedWidget() const;
@@ -209,15 +216,15 @@ protected:
     QToolBox *toolBox() const;
 };
 
-#ifndef QT_NO_MDIAREA
+#if QT_CONFIG(mdiarea)
 class QAccessibleMdiArea : public QAccessibleWidget
 {
 public:
     explicit QAccessibleMdiArea(QWidget *widget);
 
-    int childCount() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *child) const Q_DECL_OVERRIDE;
+    int childCount() const override;
+    QAccessibleInterface *child(int index) const override;
+    int indexOfChild(const QAccessibleInterface *child) const override;
 
 protected:
     QMdiArea *mdiArea() const;
@@ -228,45 +235,47 @@ class QAccessibleMdiSubWindow : public QAccessibleWidget
 public:
     explicit QAccessibleMdiSubWindow(QWidget *widget);
 
-    QString text(QAccessible::Text textType) const Q_DECL_OVERRIDE;
-    void setText(QAccessible::Text textType, const QString &text) Q_DECL_OVERRIDE;
-    QAccessible::State state() const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *child) const Q_DECL_OVERRIDE;
-    QRect rect() const Q_DECL_OVERRIDE;
+    QString text(QAccessible::Text textType) const override;
+    void setText(QAccessible::Text textType, const QString &text) override;
+    QAccessible::State state() const override;
+    int childCount() const override;
+    QAccessibleInterface *child(int index) const override;
+    int indexOfChild(const QAccessibleInterface *child) const override;
+    QRect rect() const override;
 
 protected:
     QMdiSubWindow *mdiSubWindow() const;
 };
-#endif // QT_NO_MDIAREA
+#endif // QT_CONFIG(mdiarea)
 
+#if QT_CONFIG(dialogbuttonbox)
 class QAccessibleDialogButtonBox : public QAccessibleWidget
 {
 public:
     explicit QAccessibleDialogButtonBox(QWidget *widget);
 };
+#endif
 
-#if !defined(QT_NO_TEXTBROWSER) && !defined(QT_NO_CURSOR)
+#if QT_CONFIG(textbrowser) && !defined(QT_NO_CURSOR)
 class QAccessibleTextBrowser : public QAccessibleTextEdit
 {
 public:
     explicit QAccessibleTextBrowser(QWidget *widget);
 
-    QAccessible::Role role() const Q_DECL_OVERRIDE;
+    QAccessible::Role role() const override;
 };
-#endif // QT_NO_TEXTBROWSER && QT_NO_CURSOR
+#endif // QT_CONFIG(textbrowser) && QT_NO_CURSOR
 
-#ifndef QT_NO_CALENDARWIDGET
+#if QT_CONFIG(calendarwidget)
 class QAccessibleCalendarWidget : public QAccessibleWidget
 {
 public:
     explicit QAccessibleCalendarWidget(QWidget *widget);
 
-    int childCount() const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *child) const Q_DECL_OVERRIDE;
+    int childCount() const override;
+    int indexOfChild(const QAccessibleInterface *child) const override;
 
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *child(int index) const override;
 
 protected:
     QCalendarWidget *calendarWidget() const;
@@ -275,40 +284,40 @@ private:
     QAbstractItemView *calendarView() const;
     QWidget *navigationBar() const;
 };
-#endif // QT_NO_CALENDARWIDGET
+#endif // QT_CONFIG(calendarwidget)
 
-#ifndef QT_NO_DOCKWIDGET
+#if QT_CONFIG(dockwidget)
 class QAccessibleDockWidget: public QAccessibleWidget
 {
 public:
     explicit QAccessibleDockWidget(QWidget *widget);
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *child) const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    QRect rect () const Q_DECL_OVERRIDE;
-    QString text(QAccessible::Text t) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *child(int index) const override;
+    int indexOfChild(const QAccessibleInterface *child) const override;
+    int childCount() const override;
+    QRect rect () const override;
+    QString text(QAccessible::Text t) const override;
 
     QDockWidget *dockWidget() const;
 protected:
     QDockWidgetLayout *dockWidgetLayout() const;
 };
 
-#endif // QT_NO_DOCKWIDGET
+#endif // QT_CONFIG(dockwidget)
 
-#ifndef QT_NO_MAINWINDOW
+#if QT_CONFIG(mainwindow)
 class QAccessibleMainWindow : public QAccessibleWidget
 {
 public:
     explicit QAccessibleMainWindow(QWidget *widget);
 
-    QAccessibleInterface *child(int index) const Q_DECL_OVERRIDE;
-    int childCount() const Q_DECL_OVERRIDE;
-    int indexOfChild(const QAccessibleInterface *iface) const Q_DECL_OVERRIDE;
-    QAccessibleInterface *childAt(int x, int y) const Q_DECL_OVERRIDE;
+    QAccessibleInterface *child(int index) const override;
+    int childCount() const override;
+    int indexOfChild(const QAccessibleInterface *iface) const override;
+    QAccessibleInterface *childAt(int x, int y) const override;
     QMainWindow *mainWindow() const;
 
 };
-#endif //QT_NO_MAINWINDOW
+#endif // QT_CONFIG(mainwindow)
 
 #endif // QT_NO_ACCESSIBILITY
 

@@ -1,7 +1,6 @@
 CONFIG += testcase
-CONFIG += parallel_test
 TARGET = tst_qboxlayout
-QT += widgets testlib
+QT += widgets testlib testlib-private
 SOURCES  += tst_qboxlayout.cpp
 
 

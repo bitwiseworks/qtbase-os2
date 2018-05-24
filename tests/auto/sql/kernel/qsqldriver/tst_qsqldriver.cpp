@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -77,9 +72,17 @@ void tst_QSqlDriver::recreateTestTables(QSqlDatabase db)
         QVERIFY_SQL( q, exec("set client_min_messages='warning'"));
 
     tst_Databases::safeDropTable( db, relTEST1 );
-    QString doubleField = (dbType == QSqlDriver::SQLite) ? "more_data double" : "more_data double(8,7)";
+    QString doubleField;
+    if (dbType == QSqlDriver::SQLite)
+        doubleField = "more_data double";
+    else if (dbType == QSqlDriver::Oracle)
+        doubleField = "more_data number(8,7)";
+    else if (dbType == QSqlDriver::PostgreSQL)
+        doubleField = "more_data double precision";
+    else
+        doubleField = "more_data double(8,7)";
     QVERIFY_SQL( q, exec("create table " + relTEST1 +
-            " (id int not null primary key, name varchar(20), title_key int, another_title_key int, " + doubleField + ")"));
+            " (id int not null primary key, name varchar(20), title_key int, another_title_key int, " + doubleField + QLatin1Char(')')));
     QVERIFY_SQL( q, exec("insert into " + relTEST1 + " values(1, 'harry', 1, 2, 1.234567)"));
     QVERIFY_SQL( q, exec("insert into " + relTEST1 + " values(2, 'trond', 2, 1, 8.901234)"));
     QVERIFY_SQL( q, exec("insert into " + relTEST1 + " values(3, 'vohi', 1, 2, 5.678901)"));
@@ -97,6 +100,9 @@ void tst_QSqlDriver::cleanupTestCase()
     foreach (const QString &dbName, dbs.dbNames) {
         QSqlDatabase db = QSqlDatabase::database(dbName);
         tst_Databases::safeDropTable(db, qTableName("relTEST1", __FILE__, db));
+        const QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
+        if (dbType == QSqlDriver::Oracle)
+            tst_Databases::safeDropTable(db, qTableName("clobTable", __FILE__, db));
     }
     dbs.close();
 }
@@ -211,6 +217,20 @@ void tst_QSqlDriver::primaryIndex()
         QCOMPARE(index.count(), 1); //mysql will always find the table name regardless of casing
     else
         QCOMPARE(index.count(), 0);
+
+    // Test getting a primary index for a table with a clob in it - QTBUG-64427
+    if (dbType == QSqlDriver::Oracle) {
+        const QString clobTable(qTableName("clobTable", __FILE__, db));
+        QSqlQuery qry(db);
+        QVERIFY_SQL(qry, exec("CREATE TABLE " + clobTable + " (id INTEGER, clobField CLOB)"));
+        QVERIFY_SQL(qry, exec("CREATE UNIQUE INDEX " + clobTable + "IDX ON " + clobTable + " (id)"));
+        QVERIFY_SQL(qry, exec("ALTER TABLE " + clobTable + " ADD CONSTRAINT " + clobTable +
+                              "PK PRIMARY KEY(id)"));
+        QVERIFY_SQL(qry, exec("ALTER TABLE " + clobTable + " MODIFY (id NOT NULL ENABLE)"));
+        const QSqlIndex primaryIndex = db.driver()->primaryIndex(clobTable);
+        QCOMPARE(primaryIndex.count(), 1);
+        QCOMPARE(primaryIndex.fieldName(0), QStringLiteral("ID"));
+    }
 }
 
 void tst_QSqlDriver::formatValue()

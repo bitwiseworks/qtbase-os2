@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,6 +36,11 @@
 #include <QtDBus/private/qdbusutil_p.h>
 #include <QtDBus/private/qdbusconnection_p.h>
 #include <QtDBus/private/qdbus_symbols_p.h>
+
+#ifndef DBUS_TYPE_UNIX_FD
+#  define DBUS_TYPE_UNIX_FD int('h')
+#  define DBUS_TYPE_UNIX_FD_AS_STRING "h"
+#endif
 
 static const char serviceName[] = "org.qtproject.autotests.qpong";
 static const char objectPath[] = "/org/qtproject/qpong";
@@ -150,7 +151,11 @@ int tst_QDBusMarshall::fileDescriptorForTest()
 {
     if (!tempFile.isOpen()) {
         tempFile.setFileTemplate(QDir::tempPath() + "/qdbusmarshalltestXXXXXX.tmp");
-        tempFile.open();
+        if (!tempFile.open()) {
+            qWarning("%s: Cannot create temporary file: %s", Q_FUNC_INFO,
+                     qPrintable(tempFile.errorString()));
+            return 0;
+        }
     }
     return tempFile.handle();
 }
@@ -869,7 +874,7 @@ void tst_QDBusMarshall::sendSignalErrors()
                                                   "signalName");
     msg << QVariant::fromValue(QDBusObjectPath());
 
-    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid object path passed in arguments");
+    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal to service \"\" path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid object path passed in arguments");
     QVERIFY(!con.send(msg));
 
     msg.setArguments(QVariantList());
@@ -879,19 +884,19 @@ void tst_QDBusMarshall::sendSignalErrors()
     path.setPath("abc");
     msg << QVariant::fromValue(path);
 
-    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid object path passed in arguments");
+    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal to service \"\" path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid object path passed in arguments");
     QVERIFY(!con.send(msg));
 
     QDBusSignature sig;
     msg.setArguments(QVariantList() << QVariant::fromValue(sig));
-    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid signature passed in arguments");
+    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal to service \"\" path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid signature passed in arguments");
     QVERIFY(!con.send(msg));
 
     QTest::ignoreMessage(QtWarningMsg, "QDBusSignature: invalid signature \"a\"");
     sig.setSignature("a");
     msg.setArguments(QVariantList());
     msg << QVariant::fromValue(sig);
-    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid signature passed in arguments");
+    QTest::ignoreMessage(QtWarningMsg, "QDBusConnection: error: could not send signal to service \"\" path \"/foo\" interface \"local.interfaceName\" member \"signalName\": Marshalling failed: Invalid signature passed in arguments");
     QVERIFY(!con.send(msg));
 }
 
@@ -1079,14 +1084,11 @@ static bool canSendUnixFd(DBusConnection *connection)
 # if DBUS_VERSION-0 >= 0x010400
     can_send_type = dbus_connection_can_send_type;
 # endif
-#else
+#elif QT_CONFIG(library)
     // run-time check if the next functions are available
     can_send_type = (can_send_type_t)qdbus_resolve_conditionally("dbus_connection_can_send_type");
 #endif
 
-#ifndef DBUS_TYPE_UNIX_FD
-# define DBUS_TYPE_UNIX_FD int('h')
-#endif
     return can_send_type && can_send_type(connection, DBUS_TYPE_UNIX_FD);
 }
 

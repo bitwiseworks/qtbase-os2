@@ -1,12 +1,22 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 The Qt Company Ltd.
- ** Contact: http://www.qt.io/licensing/
+ ** Copyright (C) 2016 The Qt Company Ltd.
+ ** Contact: https://www.qt.io/licensing/
  **
  ** This file is part of the examples of the Qt Toolkit.
  **
  ** $QT_BEGIN_LICENSE:BSD$
- ** You may use this file under the terms of the BSD license as follows:
+ ** Commercial License Usage
+ ** Licensees holding valid commercial Qt licenses may use this file in
+ ** accordance with the commercial license agreement provided with the
+ ** Software or, alternatively, in accordance with the terms contained in
+ ** a written agreement between you and The Qt Company. For licensing terms
+ ** and conditions see https://www.qt.io/terms-conditions. For further
+ ** information use the contact form at https://www.qt.io/contact-us.
+ **
+ ** BSD License Usage
+ ** Alternatively, you may use this file under the terms of the BSD license
+ ** as follows:
  **
  ** "Redistribution and use in source and binary forms, with or without
  ** modification, are permitted provided that the following conditions are
@@ -43,13 +53,18 @@
 #include <QPaintEngine>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
+#include <QRandomGenerator>
 #include <QCoreApplication>
-#include <math.h>
+#include <qmath.h>
 
 #include "mainwindow.h"
 #include "bubble.h"
 
 const int bubbleNum = 8;
+
+#ifndef GL_SRGB8_ALPHA8
+#define GL_SRGB8_ALPHA8 0x8C43
+#endif
 
 GLWidget::GLWidget(MainWindow *mw, bool button, const QColor &background)
     : m_mainWindow(mw),
@@ -65,6 +80,8 @@ GLWidget::GLWidget(MainWindow *mw, bool button, const QColor &background)
       m_background(background)
 {
     setMinimumSize(300, 250);
+    if (QCoreApplication::arguments().contains(QStringLiteral("--srgb")))
+        setTextureFormat(GL_SRGB8_ALPHA8);
 }
 
 GLWidget::~GLWidget()
@@ -404,11 +421,11 @@ void GLWidget::paintGL()
 void GLWidget::createBubbles(int number)
 {
     for (int i = 0; i < number; ++i) {
-        QPointF position(width()*(0.1 + (0.8*qrand()/(RAND_MAX+1.0))),
-                         height()*(0.1 + (0.8*qrand()/(RAND_MAX+1.0))));
-        qreal radius = qMin(width(), height())*(0.0175 + 0.0875*qrand()/(RAND_MAX+1.0));
-        QPointF velocity(width()*0.0175*(-0.5 + qrand()/(RAND_MAX+1.0)),
-                         height()*0.0175*(-0.5 + qrand()/(RAND_MAX+1.0)));
+        QPointF position(width()*(0.1 + QRandomGenerator::global()->bounded(0.8)),
+                         height()*(0.1 + QRandomGenerator::global()->bounded(0.8)));
+        qreal radius = qMin(width(), height())*(0.0175 + QRandomGenerator::global()->bounded(0.0875));
+        QPointF velocity(width()*0.0175*(-0.5 + QRandomGenerator::global()->bounded(1.0)),
+                         height()*0.0175*(-0.5 + QRandomGenerator::global()->bounded(1.0)));
 
         m_bubbles.append(new Bubble(position, radius, velocity));
     }
@@ -439,21 +456,21 @@ void GLWidget::createGeometry()
     extrude(x4, y4, y4, x4);
     extrude(y4, x4, y3, x3);
 
-    const qreal Pi = 3.14159f;
     const int NumSectors = 100;
+    const qreal sectorAngle = 2 * qreal(M_PI) / NumSectors;
 
     for (int i = 0; i < NumSectors; ++i) {
-        qreal angle1 = (i * 2 * Pi) / NumSectors;
-        qreal x5 = 0.30 * sin(angle1);
-        qreal y5 = 0.30 * cos(angle1);
-        qreal x6 = 0.20 * sin(angle1);
-        qreal y6 = 0.20 * cos(angle1);
+        qreal angle = i * sectorAngle;
+        qreal x5 = 0.30 * sin(angle);
+        qreal y5 = 0.30 * cos(angle);
+        qreal x6 = 0.20 * sin(angle);
+        qreal y6 = 0.20 * cos(angle);
 
-        qreal angle2 = ((i + 1) * 2 * Pi) / NumSectors;
-        qreal x7 = 0.20 * sin(angle2);
-        qreal y7 = 0.20 * cos(angle2);
-        qreal x8 = 0.30 * sin(angle2);
-        qreal y8 = 0.30 * cos(angle2);
+        angle += sectorAngle;
+        qreal x7 = 0.20 * sin(angle);
+        qreal y7 = 0.20 * cos(angle);
+        qreal x8 = 0.30 * sin(angle);
+        qreal y8 = 0.30 * cos(angle);
 
         quad(x5, y5, x6, y6, x7, y7, x8, y8);
 

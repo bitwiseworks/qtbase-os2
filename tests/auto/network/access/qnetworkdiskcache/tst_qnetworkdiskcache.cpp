@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,6 +30,7 @@
 #include <QtTest/QtTest>
 #include <QtNetwork/QtNetwork>
 #include <qnetworkdiskcache.h>
+#include <qrandom.h>
 
 #include <algorithm>
 
@@ -50,14 +46,12 @@ public:
     tst_QNetworkDiskCache();
 
 public slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void init();
-    void cleanup();
     void accessAfterRemoveReadyReadSlot();
     void setCookieHeaderMetaDataChangedSlot();
 
 private slots:
+    void initTestCase();
+    void cleanupTestCase();
     void qnetworkdiskcache_data();
     void qnetworkdiskcache();
 
@@ -202,16 +196,6 @@ void tst_QNetworkDiskCache::cleanupTestCase()
         workingDir.removeRecursively();
 }
 
-// This will be called before each test function is executed.
-void tst_QNetworkDiskCache::init()
-{
-}
-
-// This will be called after every test function.
-void tst_QNetworkDiskCache::cleanup()
-{
-}
-
 void tst_QNetworkDiskCache::qnetworkdiskcache_data()
 {
 }
@@ -298,6 +282,7 @@ void tst_QNetworkDiskCache::clear()
     // don't delete files that it didn't create
     QTemporaryFile file(cacheDirectory + "/XXXXXX");
     if (file.open()) {
+        file.fileName();    // make sure it exists with a name
         QCOMPARE(countFiles(cacheDirectory).count(), NUM_SUBDIRECTORIES + 3);
         cache.clear();
         QCOMPARE(countFiles(cacheDirectory).count(), NUM_SUBDIRECTORIES + 3);
@@ -540,7 +525,7 @@ void tst_QNetworkDiskCache::expire()
     std::sort(cacheList.begin(), cacheList.end());
     for (int i = 0; i < cacheList.count(); ++i) {
         QString fileName = cacheList[i];
-        QCOMPARE(fileName, QString("http://localhost:4/%1").arg(i + 6));
+        QCOMPARE(fileName, QLatin1String("http://localhost:4/") + QString::number(i + 6));
     }
 }
 
@@ -563,7 +548,7 @@ void tst_QNetworkDiskCache::oldCacheVersionFile()
         {
         QTemporaryFile file(cache.cacheDirectory() + "/XXXXXX.d");
         file.setAutoRemove(false);
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QDataStream out(&file);
         out << qint32(0xe8);
         out << qint32(2);
@@ -709,25 +694,25 @@ public:
 
             if (write) {
                 QNetworkCacheMetaData m;
-                if (qrand() % 2 == 0)
+                if (QRandomGenerator::global()->bounded(2) == 0)
                     m = metaData;
                 else
                     m = metaData2;
 
-                if (qrand() % 20 == 1) {
+                if (QRandomGenerator::global()->bounded(20) == 1) {
                     //qDebug() << "write update";
                     cache.updateMetaData(m);
                     continue;
                 }
 
                 QIODevice *device = cache.prepare(m);
-                if (qrand() % 20 == 1) {
+                if (QRandomGenerator::global()->bounded(20) == 1) {
                     //qDebug() << "write remove";
                     cache.remove(url);
                     continue;
                 }
                 QVERIFY(device);
-                if (qrand() % 2 == 0)
+                if (QRandomGenerator::global()->bounded(2) == 0)
                     device->write(longString);
                 else
                     device->write(longString2);
@@ -756,9 +741,9 @@ public:
                     delete d;
                 }
             }
-            if (qrand() % 5 == 1)
+            if (QRandomGenerator::global()->bounded(5) == 1)
                 cache.remove(url);
-            if (qrand() % 5 == 1)
+            if (QRandomGenerator::global()->bounded(5) == 1)
                 cache.clear();
             sleep(0);
         }
@@ -782,7 +767,10 @@ void tst_QNetworkDiskCache::crashWhenParentingCache()
     QNetworkAccessManager *manager = new QNetworkAccessManager();
     QNetworkDiskCache *diskCache = new QNetworkDiskCache(manager); // parent to qnam!
     // we expect the temp dir to be cleaned at some point anyway
-    diskCache->setCacheDirectory(QString("%1/cacheDir_%2").arg(QDir::tempPath()).arg(QCoreApplication::applicationPid()));
+
+    const QString diskCachePath = QDir::tempPath() + QLatin1String("/cacheDir_")
+        + QString::number(QCoreApplication::applicationPid());
+    diskCache->setCacheDirectory(diskCachePath);
     manager->setCache(diskCache);
 
     QUrl url("http://127.0.0.1:" + QString::number(server.serverPort()));
@@ -804,7 +792,6 @@ void tst_QNetworkDiskCache::sync()
     return;
 
     QTime midnight(0, 0, 0);
-    qsrand(midnight.secsTo(QTime::currentTime()));
     Runner reader(tempDir.path());
     reader.dt = QDateTime::currentDateTime();
     reader.write = false;

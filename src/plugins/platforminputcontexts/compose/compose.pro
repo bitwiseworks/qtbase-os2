@@ -1,13 +1,6 @@
 TARGET = composeplatforminputcontextplugin
 
-PLUGIN_TYPE = platforminputcontexts
-PLUGIN_EXTENDS = -
-PLUGIN_CLASS_NAME = QComposePlatformInputContextPlugin
-load(qt_plugin)
-
-QT += gui-private
-
-DEFINES += X11_PREFIX='\\"$$QMAKE_X11_PREFIX\\"'
+QT += core-private gui-private
 
 SOURCES += $$PWD/qcomposeplatforminputcontextmain.cpp \
            $$PWD/qcomposeplatforminputcontext.cpp \
@@ -17,13 +10,19 @@ HEADERS += $$PWD/qcomposeplatforminputcontext.h \
            $$PWD/generator/qtablegenerator.h \
 
 # libxkbcommon
-contains(QT_CONFIG, xkbcommon-qt): {
-    # dont't need x11 dependency for compose key plugin
-    QT_CONFIG -= use-xkbcommon-x11support
+!qtConfig(xkbcommon-system) {
     include(../../../3rdparty/xkbcommon.pri)
 } else {
-    LIBS += $$QMAKE_LIBS_XKBCOMMON
-    QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_XKBCOMMON
+    QMAKE_USE += xkbcommon
 }
 
+include($$OUT_PWD/../../../gui/qtgui-config.pri)
+
+DEFINES += X11_PREFIX='\\"$$QMAKE_X11_PREFIX\\"'
+
 OTHER_FILES += $$PWD/compose.json
+
+PLUGIN_TYPE = platforminputcontexts
+PLUGIN_EXTENDS = -
+PLUGIN_CLASS_NAME = QComposePlatformInputContextPlugin
+load(qt_plugin)

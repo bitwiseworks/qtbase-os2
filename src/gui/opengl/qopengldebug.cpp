@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,6 +42,7 @@
 #include <QtCore/qvarlengtharray.h>
 #include <QtGui/qopengl.h>
 #include <QtGui/qopenglfunctions.h>
+#include <QtGui/qoffscreensurface.h>
 
 #include "qopengldebug.h"
 
@@ -170,8 +177,8 @@ QT_BEGIN_NAMESPACE
 
     \code
 
-    QList<QOpenGLDebugMessage> messages = logger->loggedMessages();
-    foreach (const QOpenGLDebugMessage &message, messages)
+    const QList<QOpenGLDebugMessage> messages = logger->loggedMessages();
+    for (const QOpenGLDebugMessage &message : messages)
         qDebug() << message;
 
     \endcode
@@ -1270,9 +1277,9 @@ void QOpenGLDebugLoggerPrivate::controlDebugMessages(QOpenGLDebugMessage::Source
     // Unfortunately, some bugged drivers do NOT ignore it, so pass NULL in case.
     const GLuint * const idPtr = idCount ? ids.constData() : 0;
 
-    foreach (GLenum source, glSources)
-        foreach (GLenum type, glTypes)
-            foreach (GLenum severity, glSeverities)
+    for (GLenum source : glSources)
+        for (GLenum type : glTypes)
+            for (GLenum severity : glSeverities)
                 glDebugMessageControl(source, type, severity, idCount, idPtr, GLboolean(enable));
 }
 
@@ -1281,8 +1288,41 @@ void QOpenGLDebugLoggerPrivate::controlDebugMessages(QOpenGLDebugMessage::Source
 */
 void QOpenGLDebugLoggerPrivate::_q_contextAboutToBeDestroyed()
 {
+    Q_ASSERT(context);
+
+    // Re-make our context current somehow, otherwise stopLogging will fail.
+
+    // Save the current context and its surface in case we need to set them back
+    QOpenGLContext *currentContext = QOpenGLContext::currentContext();
+    QSurface *currentSurface = 0;
+
+    QScopedPointer<QOffscreenSurface> offscreenSurface;
+
+    if (context != currentContext) {
+        // Make our old context current on a temporary surface
+        if (currentContext)
+            currentSurface = currentContext->surface();
+
+        offscreenSurface.reset(new QOffscreenSurface);
+        offscreenSurface->setFormat(context->format());
+        offscreenSurface->create();
+        if (!context->makeCurrent(offscreenSurface.data()))
+            qWarning("QOpenGLDebugLoggerPrivate::_q_contextAboutToBeDestroyed(): could not make the owning GL context current for cleanup");
+    }
+
     Q_Q(QOpenGLDebugLogger);
     q->stopLogging();
+
+    if (offscreenSurface) {
+        // We did change the current context: set it back
+        if (currentContext)
+            currentContext->makeCurrent(currentSurface);
+        else
+            context->doneCurrent();
+    }
+
+    QObject::disconnect(context, SIGNAL(aboutToBeDestroyed()), q, SLOT(_q_contextAboutToBeDestroyed()));
+    context = 0;
     initialized = false;
 }
 
@@ -1373,7 +1413,7 @@ bool QOpenGLDebugLogger::initialize()
 
 #define GET_DEBUG_PROC_ADDRESS(procName) \
     d->procName = reinterpret_cast< qt_ ## procName ## _t >( \
-        d->context->getProcAddress(QByteArrayLiteral( #procName )) \
+        d->context->getProcAddress(#procName) \
     );
 
     GET_DEBUG_PROC_ADDRESS(glDebugMessageControl);
@@ -1382,19 +1422,7 @@ bool QOpenGLDebugLogger::initialize()
     GET_DEBUG_PROC_ADDRESS(glGetDebugMessageLog);
     GET_DEBUG_PROC_ADDRESS(glPushDebugGroup);
     GET_DEBUG_PROC_ADDRESS(glPopDebugGroup);
-
-    // Windows' Desktop GL doesn't allow resolution of "basic GL entry points"
-    // through wglGetProcAddress
-#if defined(Q_OS_WIN) && !defined(QT_OPENGL_ES_2)
-    {
-        HMODULE handle = static_cast<HMODULE>(QOpenGLContext::openGLModuleHandle());
-        if (!handle)
-            handle = GetModuleHandleA("opengl32.dll");
-        d->glGetPointerv = reinterpret_cast<qt_glGetPointerv_t>(GetProcAddress(handle, QByteArrayLiteral("glGetPointerv")));
-    }
-#else
     GET_DEBUG_PROC_ADDRESS(glGetPointerv)
-#endif
 
 #undef GET_DEBUG_PROC_ADDRESS
 
@@ -1499,6 +1527,12 @@ void QOpenGLDebugLogger::stopLogging()
     Q_D(QOpenGLDebugLogger);
     if (!d->isLogging)
         return;
+
+    QOpenGLContext *currentContext = QOpenGLContext::currentContext();
+    if (!currentContext || currentContext != d->context) {
+        qWarning("QOpenGLDebugLogger::stopLogging(): attempting to stop logging with the wrong OpenGL context current");
+        return;
+    }
 
     d->isLogging = false;
 

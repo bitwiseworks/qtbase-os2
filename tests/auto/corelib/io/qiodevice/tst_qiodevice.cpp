@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,6 +38,7 @@ class tst_QIODevice : public QObject
 
 private slots:
     void initTestCase();
+    void cleanupTestCase();
     void getSetCheck();
     void constructing_QTcpSocket();
     void constructing_QFile();
@@ -57,16 +53,36 @@ private slots:
     void readLine2_data();
     void readLine2();
 
-    void peekBug();
     void readAllKeepPosition();
+    void writeInTextMode();
+    void skip_data();
+    void skip();
+    void skipAfterPeek_data();
+    void skipAfterPeek();
+
+    void transaction_data();
+    void transaction();
+
+private:
+    QSharedPointer<QTemporaryDir> m_tempDir;
+    QString m_previousCurrent;
 };
 
 void tst_QIODevice::initTestCase()
 {
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     QVERIFY(QFileInfo(QStringLiteral("./tst_qiodevice.cpp")).exists()
             || QFile::copy(QStringLiteral(":/tst_qiodevice.cpp"), QStringLiteral("./tst_qiodevice.cpp")));
 #endif
+    m_previousCurrent = QDir::currentPath();
+    m_tempDir = QSharedPointer<QTemporaryDir>::create();
+    QVERIFY2(!m_tempDir.isNull(), qPrintable("Could not create temporary directory."));
+    QVERIFY2(QDir::setCurrent(m_tempDir->path()), qPrintable("Could not switch current directory"));
+}
+
+void tst_QIODevice::cleanupTestCase()
+{
+    QDir::setCurrent(m_previousCurrent);
 }
 
 // Testing get/set functions
@@ -74,24 +90,20 @@ void tst_QIODevice::getSetCheck()
 {
     // OpenMode QIODevice::openMode()
     // void QIODevice::setOpenMode(OpenMode)
-    class MyIODevice : public QIODevice {
+    class MyIODevice : public QTcpSocket {
     public:
-        void setOpenMode(OpenMode openMode) { QIODevice::setOpenMode(openMode); }
+        using QTcpSocket::setOpenMode;
     };
-    QTcpSocket var1;
-    MyIODevice *obj1 = reinterpret_cast<MyIODevice*>(&var1);
-    obj1->setOpenMode(QIODevice::OpenMode(QIODevice::NotOpen));
-    QCOMPARE(QIODevice::OpenMode(QIODevice::NotOpen), obj1->openMode());
-    obj1->setOpenMode(QIODevice::OpenMode(QIODevice::ReadWrite));
-    QCOMPARE(QIODevice::OpenMode(QIODevice::ReadWrite), obj1->openMode());
+    MyIODevice var1;
+    var1.setOpenMode(QIODevice::OpenMode(QIODevice::NotOpen));
+    QCOMPARE(QIODevice::OpenMode(QIODevice::NotOpen), var1.openMode());
+    var1.setOpenMode(QIODevice::OpenMode(QIODevice::ReadWrite));
+    QCOMPARE(QIODevice::OpenMode(QIODevice::ReadWrite), var1.openMode());
 }
 
 //----------------------------------------------------------------------------------
 void tst_QIODevice::constructing_QTcpSocket()
 {
-#if defined(Q_OS_WINCE) && defined(WINCE_EMULATOR_TEST)
-    QSKIP("Networking tests in a WinCE emulator are unstable");
-#endif
     if (!QtNetworkSettings::verifyTestNetworkSettings())
         QSKIP("No network test server available");
 
@@ -103,6 +115,8 @@ void tst_QIODevice::constructing_QTcpSocket()
     socket.connectToHost(QtNetworkSettings::serverName(), 143);
     QVERIFY(socket.waitForConnected(30000));
     QVERIFY(device->isOpen());
+    QCOMPARE(device->readChannelCount(), 1);
+    QCOMPARE(device->writeChannelCount(), 1);
 
     while (!device->canReadLine())
         QVERIFY(device->waitForReadyRead(30000));
@@ -114,6 +128,8 @@ void tst_QIODevice::constructing_QTcpSocket()
     QCOMPARE(socket.pos(), qlonglong(0));
 
     socket.close();
+    QCOMPARE(socket.readChannelCount(), 0);
+    QCOMPARE(socket.writeChannelCount(), 0);
     socket.connectToHost(QtNetworkSettings::serverName(), 143);
     QVERIFY(socket.waitForConnected(30000));
     QVERIFY(device->isOpen());
@@ -147,6 +163,8 @@ void tst_QIODevice::constructing_QFile()
     QVERIFY(file.open(QFile::ReadOnly));
     QVERIFY(device->isOpen());
     QCOMPARE((int) device->openMode(), (int) QFile::ReadOnly);
+    QCOMPARE(device->readChannelCount(), 1);
+    QCOMPARE(device->writeChannelCount(), 0);
 
     char buf[1024];
     memset(buf, 0, sizeof(buf));
@@ -188,9 +206,6 @@ void tst_QIODevice::read_QByteArray()
 //--------------------------------------------------------------------
 void tst_QIODevice::unget()
 {
-#if defined(Q_OS_WINCE) && defined(WINCE_EMULATOR_TEST)
-    QSKIP("Networking tests in a WinCE emulator are unstable");
-#endif
 #if defined(Q_OS_MAC)
     QSKIP("The unget network test is unstable on Mac. See QTBUG-39983.");
 #endif
@@ -527,88 +542,35 @@ void tst_QIODevice::readLine2()
     }
 }
 
-
-class PeekBug : public QIODevice {
-    Q_OBJECT
-public:
-    char alphabet[27];
-    qint64 counter;
-    PeekBug() : QIODevice(), counter(0) {
-        memcpy(alphabet,"abcdefghijklmnopqrstuvqxyz",27);
-    };
-    qint64 readData(char *data, qint64 maxlen) {
-        qint64 pos = 0;
-        while (pos < maxlen) {
-            *(data + pos) = alphabet[counter];
-            pos++;
-            counter++;
-            if (counter == 26)
-                counter = 0;
-        }
-        return maxlen;
-    }
-    qint64 writeData(const char * /* data */, qint64 /* maxlen */) {
-        return -1;
-    }
-
-};
-
-// This is a regression test for an old bug where peeking at
-// more than one character failed to put them back.
-void tst_QIODevice::peekBug()
-{
-    PeekBug peekBug;
-    peekBug.open(QIODevice::ReadOnly | QIODevice::Unbuffered);
-
-    char onetwo[2];
-    peekBug.peek(onetwo, 2);
-    QCOMPARE(onetwo[0], 'a');
-    QCOMPARE(onetwo[1], 'b');
-
-    peekBug.read(onetwo, 1);
-    QCOMPARE(onetwo[0], 'a');
-
-    peekBug.peek(onetwo, 2);
-    QCOMPARE(onetwo[0], 'b');
-    QCOMPARE(onetwo[1], 'c');
-
-    peekBug.read(onetwo, 1);
-    QCOMPARE(onetwo[0], 'b');
-    peekBug.read(onetwo, 1);
-    QCOMPARE(onetwo[0], 'c');
-    peekBug.read(onetwo, 1);
-    QCOMPARE(onetwo[0], 'd');
-
-    peekBug.peek(onetwo, 2);
-    QCOMPARE(onetwo[0], 'e');
-    QCOMPARE(onetwo[1], 'f');
-
-}
-
 class SequentialReadBuffer : public QIODevice
 {
 public:
-    SequentialReadBuffer(const char *data) : QIODevice(), buf(data), offset(0) { }
+    SequentialReadBuffer(const char *data)
+        : QIODevice(), buf(new QByteArray(data)), offset(0), ownbuf(true) { }
+    SequentialReadBuffer(QByteArray *byteArray)
+        : QIODevice(), buf(byteArray), offset(0), ownbuf(false) { }
+    virtual ~SequentialReadBuffer() { if (ownbuf) delete buf; }
 
-    bool isSequential() const Q_DECL_OVERRIDE { return true; }
-    const QByteArray &buffer() const { return buf; }
+    bool isSequential() const override { return true; }
+    const QByteArray &buffer() const { return *buf; }
 
 protected:
-    qint64 readData(char *data, qint64 maxSize) Q_DECL_OVERRIDE
+    qint64 readData(char *data, qint64 maxSize) override
     {
-        maxSize = qMin(maxSize, qint64(buf.size() - offset));
-        memcpy(data, buf.constData() + offset, maxSize);
+        maxSize = qMin(maxSize, qint64(buf->size() - offset));
+        memcpy(data, buf->constData() + offset, maxSize);
         offset += maxSize;
         return maxSize;
     }
-    qint64 writeData(const char * /* data */, qint64 /* maxSize */) Q_DECL_OVERRIDE
+    qint64 writeData(const char * /* data */, qint64 /* maxSize */) override
     {
         return -1;
     }
 
 private:
-    QByteArray buf;
+    QByteArray *buf;
     int offset;
+    bool ownbuf;
 };
 
 // Test readAll() on position change for sequential device
@@ -618,6 +580,8 @@ void tst_QIODevice::readAllKeepPosition()
     buffer.open(QIODevice::ReadOnly);
     char c;
 
+    QCOMPARE(buffer.readChannelCount(), 1);
+    QCOMPARE(buffer.writeChannelCount(), 0);
     QVERIFY(buffer.getChar(&c));
     QCOMPARE(buffer.pos(), qint64(0));
     buffer.ungetChar(c);
@@ -626,6 +590,245 @@ void tst_QIODevice::readAllKeepPosition()
     QByteArray resultArray = buffer.readAll();
     QCOMPARE(buffer.pos(), qint64(0));
     QCOMPARE(resultArray, buffer.buffer());
+}
+
+class RandomAccessBuffer : public QIODevice
+{
+public:
+    RandomAccessBuffer(const char *data) : QIODevice(), buf(data) { }
+
+protected:
+    qint64 readData(char *data, qint64 maxSize) override
+    {
+        maxSize = qMin(maxSize, qint64(buf.size() - pos()));
+        memcpy(data, buf.constData() + pos(), maxSize);
+        return maxSize;
+    }
+    qint64 writeData(const char *data, qint64 maxSize) override
+    {
+        maxSize = qMin(maxSize, qint64(buf.size() - pos()));
+        memcpy(buf.data() + pos(), data, maxSize);
+        return maxSize;
+    }
+
+private:
+    QByteArray buf;
+};
+
+// Test write() on skipping correct number of bytes in read buffer
+void tst_QIODevice::writeInTextMode()
+{
+    // Unlike other platforms, Windows implementation expands '\n' into
+    // "\r\n" sequence in write(). Ensure that write() properly works with
+    // a read buffer on random-access devices.
+#ifndef Q_OS_WIN
+    QSKIP("This is a Windows-only test");
+#else
+    RandomAccessBuffer buffer("one\r\ntwo\r\nthree\r\n");
+    buffer.open(QBuffer::ReadWrite | QBuffer::Text);
+    QCOMPARE(buffer.readLine(), QByteArray("one\n"));
+    QCOMPARE(buffer.write("two\n"), 4);
+    QCOMPARE(buffer.readLine(), QByteArray("three\n"));
+#endif
+}
+
+void tst_QIODevice::skip_data()
+{
+    QTest::addColumn<bool>("sequential");
+    QTest::addColumn<QByteArray>("data");
+    QTest::addColumn<int>("read");
+    QTest::addColumn<int>("skip");
+    QTest::addColumn<int>("skipped");
+    QTest::addColumn<char>("expect");
+
+    QByteArray bigData;
+    bigData.fill('a', 20000);
+    bigData[10001] = 'x';
+
+    bool sequential = true;
+    do {
+        QByteArray devName(sequential ? "sequential" : "random-access");
+
+        QTest::newRow(qPrintable(devName + "-small_data")) << true  << QByteArray("abcdefghij")
+                                                           << 3 << 6 << 6 << 'j';
+        QTest::newRow(qPrintable(devName + "-big_data")) << true  << bigData
+                                                         << 1 << 10000 << 10000 << 'x';
+        QTest::newRow(qPrintable(devName + "-beyond_the_end")) << true  << bigData
+                                                               << 1 << 20000 << 19999 << '\0';
+
+        sequential = !sequential;
+    } while (!sequential);
+}
+
+void tst_QIODevice::skip()
+{
+    QFETCH(bool, sequential);
+    QFETCH(QByteArray, data);
+    QFETCH(int, read);
+    QFETCH(int, skip);
+    QFETCH(int, skipped);
+    QFETCH(char, expect);
+    char lastChar = 0;
+
+    QScopedPointer<QIODevice> dev(sequential ? (QIODevice *) new SequentialReadBuffer(&data)
+                                             : (QIODevice *) new QBuffer(&data));
+    dev->open(QIODevice::ReadOnly);
+
+    for (int i = 0; i < read; ++i)
+        dev->getChar(nullptr);
+
+    QCOMPARE(dev->skip(skip), skipped);
+    dev->getChar(&lastChar);
+    QCOMPARE(lastChar, expect);
+}
+
+void tst_QIODevice::skipAfterPeek_data()
+{
+    QTest::addColumn<bool>("sequential");
+    QTest::addColumn<QByteArray>("data");
+
+    QByteArray bigData;
+    for (int i = 0; i < 1000; ++i)
+        bigData += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    QTest::newRow("sequential") << true  << bigData;
+    QTest::newRow("random-access") << false << bigData;
+}
+
+void tst_QIODevice::skipAfterPeek()
+{
+    QFETCH(bool, sequential);
+    QFETCH(QByteArray, data);
+
+    QScopedPointer<QIODevice> dev(sequential ? (QIODevice *) new SequentialReadBuffer(&data)
+                                             : (QIODevice *) new QBuffer(&data));
+    int readSoFar = 0;
+    qint64 bytesToSkip = 1;
+
+    dev->open(QIODevice::ReadOnly);
+    forever {
+        QByteArray chunk = dev->peek(bytesToSkip);
+        if (chunk.isEmpty())
+            break;
+
+        QCOMPARE(dev->skip(bytesToSkip), qint64(chunk.size()));
+        QCOMPARE(chunk, data.mid(readSoFar, chunk.size()));
+        readSoFar += chunk.size();
+        bytesToSkip <<= 1;
+    }
+    QCOMPARE(readSoFar, data.size());
+}
+
+void tst_QIODevice::transaction_data()
+{
+    QTest::addColumn<bool>("sequential");
+    QTest::addColumn<qint8>("i8Data");
+    QTest::addColumn<qint16>("i16Data");
+    QTest::addColumn<qint32>("i32Data");
+    QTest::addColumn<qint64>("i64Data");
+    QTest::addColumn<bool>("bData");
+    QTest::addColumn<float>("fData");
+    QTest::addColumn<double>("dData");
+    QTest::addColumn<QByteArray>("strData");
+
+    bool sequential = true;
+    do {
+        QByteArray devName(sequential ? "sequential" : "random-access");
+
+        QTest::newRow(qPrintable(devName + '1')) << sequential << qint8(1) << qint16(2)
+                                                 << qint32(3) << qint64(4) << true
+                                                 << 5.0f << double(6.0)
+                                                 << QByteArray("Hello world!");
+        QTest::newRow(qPrintable(devName + '2')) << sequential << qint8(1 << 6) << qint16(1 << 14)
+                                                 << qint32(1 << 30) << (qint64(1) << 62) << false
+                                                 << 123.0f << double(234.0)
+                                                 << QByteArray("abcdefghijklmnopqrstuvwxyz");
+        QTest::newRow(qPrintable(devName + '3')) << sequential << qint8(-1) << qint16(-2)
+                                                 << qint32(-3) << qint64(-4) << true
+                                                 << -123.0f << double(-234.0)
+                                                 << QByteArray("Qt rocks!");
+        sequential = !sequential;
+    } while (!sequential);
+}
+
+// Test transaction integrity
+void tst_QIODevice::transaction()
+{
+    QByteArray testBuffer;
+
+    QFETCH(bool, sequential);
+    QFETCH(qint8, i8Data);
+    QFETCH(qint16, i16Data);
+    QFETCH(qint32, i32Data);
+    QFETCH(qint64, i64Data);
+    QFETCH(bool, bData);
+    QFETCH(float, fData);
+    QFETCH(double, dData);
+    QFETCH(QByteArray, strData);
+
+    {
+        QDataStream stream(&testBuffer, QIODevice::WriteOnly);
+
+        stream << i8Data << i16Data << i32Data << i64Data
+               << bData << fData << dData << strData.constData();
+    }
+
+    for (int splitPos = 0; splitPos <= testBuffer.size(); ++splitPos) {
+        QByteArray readBuffer(testBuffer.left(splitPos));
+        QIODevice *dev = sequential ? (QIODevice *) new SequentialReadBuffer(&readBuffer)
+                                    : (QIODevice *) new QBuffer(&readBuffer);
+        dev->open(QIODevice::ReadOnly);
+        QDataStream stream(dev);
+
+        qint8 i8;
+        qint16 i16;
+        qint32 i32;
+        qint64 i64;
+        bool b;
+        float f;
+        double d;
+        char *str;
+
+        forever {
+            QVERIFY(!dev->isTransactionStarted());
+            dev->startTransaction();
+            QVERIFY(dev->isTransactionStarted());
+
+            // Try to read all data in one go. If the status of the data stream
+            // indicates an unsuccessful operation, restart a read transaction
+            // on the completed buffer.
+            stream >> i8 >> i16 >> i32 >> i64 >> b >> f >> d >> str;
+
+            QVERIFY(stream.atEnd());
+            if (stream.status() == QDataStream::Ok) {
+                dev->commitTransaction();
+                break;
+            }
+
+            dev->rollbackTransaction();
+            QVERIFY(splitPos == 0 || !stream.atEnd());
+            QCOMPARE(dev->pos(), Q_INT64_C(0));
+            QCOMPARE(dev->bytesAvailable(), qint64(readBuffer.size()));
+            QVERIFY(readBuffer.size() < testBuffer.size());
+            delete [] str;
+            readBuffer.append(testBuffer.right(testBuffer.size() - splitPos));
+            stream.resetStatus();
+        }
+
+        QVERIFY(!dev->isTransactionStarted());
+        QVERIFY(stream.atEnd());
+        QCOMPARE(i8, i8Data);
+        QCOMPARE(i16, i16Data);
+        QCOMPARE(i32, i32Data);
+        QCOMPARE(i64, i64Data);
+        QCOMPARE(b, bData);
+        QCOMPARE(f, fData);
+        QCOMPARE(d, dData);
+        QVERIFY(strData == str);
+        delete [] str;
+        stream.setDevice(0);
+        delete dev;
+    }
 }
 
 QTEST_MAIN(tst_QIODevice)

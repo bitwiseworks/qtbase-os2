@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,6 @@
 
 #include "qtablewidget.h"
 
-#ifndef QT_NO_TABLEWIDGET
 #include <qitemdelegate.h>
 #include <qpainter.h>
 #include <private/qtablewidget_p.h>
@@ -507,11 +512,15 @@ void QTableModel::sort(int column, Qt::SortOrder order)
     QVector<QTableWidgetItem*> sorted_table(tableItems.count());
     QModelIndexList from;
     QModelIndexList to;
-    for (int i = 0; i < rowCount(); ++i) {
+    const int numRows = rowCount();
+    const int numColumns = columnCount();
+    from.reserve(numRows * numColumns);
+    to.reserve(numRows * numColumns);
+    for (int i = 0; i < numRows; ++i) {
         int r = (i < sortable.count()
                  ? sortable.at(i).second
                  : unsortable.at(i - sortable.count()));
-        for (int c = 0; c < columnCount(); ++c) {
+        for (int c = 0; c < numColumns; ++c) {
             sorted_table[tableIndex(i, c)] = item(r, c);
             from.append(createIndex(r, c));
             to.append(createIndex(i, c));
@@ -551,9 +560,7 @@ void QTableModel::ensureSorted(int column, Qt::SortOrder order,
 
     LessThan compare = (order == Qt::AscendingOrder ? &itemLessThan : &itemGreaterThan);
     std::stable_sort(sorting.begin(), sorting.end(), compare);
-
-    QModelIndexList oldPersistentIndexes = persistentIndexList();
-    QModelIndexList newPersistentIndexes = oldPersistentIndexes;
+    QModelIndexList oldPersistentIndexes, newPersistentIndexes;
     QVector<QTableWidgetItem*> newTable = tableItems;
     QVector<QTableWidgetItem*> newVertical = verticalHeaderItems;
     QVector<QTableWidgetItem*> colItems = columnItems(column);
@@ -569,7 +576,12 @@ void QTableModel::ensureSorted(int column, Qt::SortOrder order,
             newRow = oldRow;
         vit = colItems.insert(vit, item);
         if (newRow != oldRow) {
-            changed = true;
+            if (!changed) {
+                emit layoutAboutToBeChanged();
+                oldPersistentIndexes = persistentIndexList();
+                newPersistentIndexes = oldPersistentIndexes;
+                changed = true;
+            }
             // move the items @ oldRow to newRow
             int cc = columnCount();
             QVector<QTableWidgetItem*> rowItems(cc);
@@ -596,7 +608,6 @@ void QTableModel::ensureSorted(int column, Qt::SortOrder order,
     }
 
     if (changed) {
-        emit layoutAboutToBeChanged();
         tableItems = newTable;
         verticalHeaderItems = newVertical;
         changePersistentIndexList(oldPersistentIndexes,
@@ -812,7 +823,9 @@ QMimeData *QTableModel::internalMimeData()  const
 QMimeData *QTableModel::mimeData(const QModelIndexList &indexes) const
 {
     QList<QTableWidgetItem*> items;
-    for (int i = 0; i < indexes.count(); ++i)
+    const int indexesCount = indexes.count();
+    items.reserve(indexesCount);
+    for (int i = 0; i < indexesCount; ++i)
         items << item(indexes.at(i));
     const QTableWidget *view = qobject_cast<const QTableWidget*>(QObject::parent());
 
@@ -1352,6 +1365,9 @@ QTableWidgetItem *QTableWidgetItem::clone() const
 /*!
     Sets the item's data for the given \a role to the specified \a value.
 
+    \note The default implementation treats Qt::EditRole and Qt::DisplayRole as
+    referring to the same data.
+
     \sa Qt::ItemDataRole, data()
 */
 void QTableWidgetItem::setData(int role, const QVariant &value)
@@ -1380,9 +1396,10 @@ void QTableWidgetItem::setData(int role, const QVariant &value)
 QVariant QTableWidgetItem::data(int role) const
 {
     role = (role == Qt::EditRole ? Qt::DisplayRole : role);
-    for (int i = 0; i < values.count(); ++i)
-        if (values.at(i).role == role)
-            return values.at(i).value;
+    for (const auto &value : values) {
+        if (value.role == role)
+            return value.value;
+    }
     return QVariant();
 }
 
@@ -1489,6 +1506,8 @@ QTableWidgetItem &QTableWidgetItem::operator=(const QTableWidgetItem &other)
     \ingroup model-view
     \inmodule QtWidgets
 
+    \image windows-tableview.png
+
     Table widgets provide standard table display facilities for applications.
     The items in a QTableWidget are provided by QTableWidgetItem.
 
@@ -1506,7 +1525,7 @@ QTableWidgetItem &QTableWidgetItem::operator=(const QTableWidgetItem &other)
     \snippet qtablewidget-resizing/mainwindow.cpp 0
     \snippet qtablewidget-resizing/mainwindow.cpp 1
 
-    Items are created ouside the table (with no parent widget) and inserted
+    Items are created outside the table (with no parent widget) and inserted
     into the table with setItem():
 
     \snippet qtablewidget-resizing/mainwindow.cpp 2
@@ -1529,15 +1548,6 @@ QTableWidgetItem &QTableWidgetItem::operator=(const QTableWidgetItem &other)
     The number of rows in the table can be found with rowCount(), and the
     number of columns with columnCount(). The table can be cleared with the
     clear() function.
-
-    \table 100%
-    \row \li \inlineimage windowsvista-tableview.png Screenshot of a Windows Vista style table widget
-         \li \inlineimage macintosh-tableview.png Screenshot of a Macintosh style table widget
-         \li \inlineimage fusion-tableview.png Screenshot of a Fusion style table widget
-    \row \li A \l{Windows Vista Style Widget Gallery}{Windows Vista style} table widget.
-         \li A \l{Macintosh Style Widget Gallery}{Macintosh style} table widget.
-         \li A \l{Fusion Style Widget Gallery}{Fusion style} table widget.
-    \endtable
 
     \sa QTableWidgetItem, QTableView, {Model/View Programming}
 */
@@ -1950,7 +1960,7 @@ void QTableWidget::setItem(int row, int column, QTableWidgetItem *item)
 {
     Q_D(QTableWidget);
     if (item) {
-        if (item->view != 0) {
+        if (Q_UNLIKELY(item->view)) {
             qWarning("QTableWidget: cannot insert an item that is already owned by another QTableWidget");
         } else {
             item->view = this;
@@ -2021,6 +2031,8 @@ QTableWidgetItem *QTableWidget::horizontalHeaderItem(int column) const
 
 /*!
   Sets the horizontal header item for column \a column to \a item.
+  If necessary, the column count is increased to fit the item.
+  The previous header item (if there was one) is deleted.
 */
 void QTableWidget::setHorizontalHeaderItem(int column, QTableWidgetItem *item)
 {
@@ -2211,7 +2223,7 @@ void QTableWidget::editItem(QTableWidgetItem *item)
 /*!
   Opens an editor for the give \a item. The editor remains open after editing.
 
-  \sa closePersistentEditor()
+  \sa closePersistentEditor(), isPersistentEditorOpen()
 */
 void QTableWidget::openPersistentEditor(QTableWidgetItem *item)
 {
@@ -2225,7 +2237,7 @@ void QTableWidget::openPersistentEditor(QTableWidgetItem *item)
 /*!
   Closes the persistent editor for \a item.
 
-  \sa openPersistentEditor()
+  \sa openPersistentEditor(), isPersistentEditorOpen()
 */
 void QTableWidget::closePersistentEditor(QTableWidgetItem *item)
 {
@@ -2234,6 +2246,20 @@ void QTableWidget::closePersistentEditor(QTableWidgetItem *item)
         return;
     QModelIndex index = d->tableModel()->index(item);
     QAbstractItemView::closePersistentEditor(index);
+}
+
+/*!
+    \since 5.10
+
+    Returns whether a persistent editor is open for item \a item.
+
+    \sa openPersistentEditor(), closePersistentEditor()
+*/
+bool QTableWidget::isPersistentEditorOpen(QTableWidgetItem *item) const
+{
+    Q_D(const QTableWidget);
+    const QModelIndex index = d->tableModel()->index(item);
+    return QAbstractItemView::isPersistentEditorOpen(index);
 }
 
 /*!
@@ -2326,7 +2352,9 @@ QList<QTableWidgetSelectionRange> QTableWidget::selectedRanges() const
 {
     const QList<QItemSelectionRange> ranges = selectionModel()->selection();
     QList<QTableWidgetSelectionRange> result;
-    for (int i = 0; i < ranges.count(); ++i)
+    const int rangesCount = ranges.count();
+    result.reserve(rangesCount);
+    for (int i = 0; i < rangesCount; ++i)
         result.append(QTableWidgetSelectionRange(ranges.at(i).top(),
                                                  ranges.at(i).left(),
                                                  ranges.at(i).bottom(),
@@ -2347,10 +2375,9 @@ QList<QTableWidgetSelectionRange> QTableWidget::selectedRanges() const
 QList<QTableWidgetItem*> QTableWidget::selectedItems() const
 {
     Q_D(const QTableWidget);
-    QModelIndexList indexes = selectionModel()->selectedIndexes();
+    const QModelIndexList indexes = selectionModel()->selectedIndexes();
     QList<QTableWidgetItem*> items;
-    for (int i = 0; i < indexes.count(); ++i) {
-        QModelIndex index = indexes.at(i);
+    for (const auto &index : indexes) {
         if (isIndexHidden(index))
             continue;
         QTableWidgetItem *item = d->tableModel()->item(index);
@@ -2372,7 +2399,9 @@ QList<QTableWidgetItem*> QTableWidget::findItems(const QString &text, Qt::MatchF
         indexes += d->model->match(model()->index(0, column, QModelIndex()),
                                      Qt::DisplayRole, text, -1, flags);
     QList<QTableWidgetItem*> items;
-    for (int i = 0; i < indexes.size(); ++i)
+    const int indexCount = indexes.size();
+    items.reserve(indexCount);
+    for (int i = 0; i < indexCount; ++i)
         items.append(d->tableModel()->item(indexes.at(i)));
     return items;
 }
@@ -2565,6 +2594,7 @@ QMimeData *QTableWidget::mimeData(const QList<QTableWidgetItem*> items) const
 
     // if non empty, it's called from the model's own mimeData
     if (cachedIndexes.isEmpty()) {
+        cachedIndexes.reserve(items.count());
         foreach (QTableWidgetItem *item, items)
             cachedIndexes << indexFromItem(item);
 
@@ -2624,17 +2654,31 @@ QList<QTableWidgetItem*> QTableWidget::items(const QMimeData *data) const
 }
 
 /*!
-  Returns the QModelIndex assocated with the given \a item.
+  Returns the QModelIndex associated with the given \a item.
+
+  \note In Qt versions prior to 5.10, this function took a non-\c{const} \a item.
 */
 
-QModelIndex QTableWidget::indexFromItem(QTableWidgetItem *item) const
+QModelIndex QTableWidget::indexFromItem(const QTableWidgetItem *item) const
 {
     Q_D(const QTableWidget);
     return d->tableModel()->index(item);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
-  Returns a pointer to the QTableWidgetItem assocated with the given \a index.
+  \internal
+  \obsolete
+  \overload
+*/
+QModelIndex QTableWidget::indexFromItem(QTableWidgetItem *item) const
+{
+    return indexFromItem(const_cast<const QTableWidgetItem *>(item));
+}
+#endif
+
+/*!
+  Returns a pointer to the QTableWidgetItem associated with the given \a index.
 */
 
 QTableWidgetItem *QTableWidget::itemFromIndex(const QModelIndex &index) const
@@ -2667,20 +2711,21 @@ void QTableWidget::dropEvent(QDropEvent *event) {
         int col = -1;
         int row = -1;
         if (d->dropOn(event, &row, &col, &topIndex)) {
-            QModelIndexList indexes = selectedIndexes();
+            const QModelIndexList indexes = selectedIndexes();
             int top = INT_MAX;
             int left = INT_MAX;
-            for (int i = 0; i < indexes.count(); ++i) {
-                top = qMin(indexes.at(i).row(), top);
-                left = qMin(indexes.at(i).column(), left);
+            for (const auto &index : indexes) {
+                top = qMin(index.row(), top);
+                left = qMin(index.column(), left);
             }
 
             QList<QTableWidgetItem *> taken;
-            for (int i = 0; i < indexes.count(); ++i)
-                taken.append(takeItem(indexes.at(i).row(), indexes.at(i).column()));
+            const int indexesCount = indexes.count();
+            taken.reserve(indexesCount);
+            for (const auto &index : indexes)
+                taken.append(takeItem(index.row(), index.column()));
 
-            for (int i = 0; i < indexes.count(); ++i) {
-                QModelIndex index = indexes.at(i);
+            for (const auto &index : indexes) {
                 int r = index.row() - top + topIndex.row();
                 int c = index.column() - left + topIndex.column();
                 setItem(r, c, taken.takeFirst());
@@ -2699,5 +2744,4 @@ void QTableWidget::dropEvent(QDropEvent *event) {
 QT_END_NAMESPACE
 
 #include "moc_qtablewidget.cpp"
-
-#endif // QT_NO_TABLEWIDGET
+#include "moc_qtablewidget_p.cpp"

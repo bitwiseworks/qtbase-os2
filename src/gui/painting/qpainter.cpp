@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -219,18 +225,18 @@ QTransform QPainterPrivate::viewTransform() const
     return QTransform();
 }
 
-int QPainterPrivate::effectiveDevicePixelRatio() const
+qreal QPainterPrivate::effectiveDevicePixelRatio() const
 {
     // Special cases for devices that does not support PdmDevicePixelRatio go here:
     if (device->devType() == QInternal::Printer)
-        return 1;
+        return qreal(1);
 
-    return qMax(1, device->metric(QPaintDevice::PdmDevicePixelRatio));
+    return qMax(qreal(1), device->devicePixelRatioF());
 }
 
 QTransform QPainterPrivate::hidpiScaleTransform() const
 {
-    int devicePixelRatio = effectiveDevicePixelRatio();
+    const qreal devicePixelRatio = effectiveDevicePixelRatio();
     return QTransform::fromScale(devicePixelRatio, devicePixelRatio);
 }
 
@@ -397,8 +403,7 @@ void QPainterPrivate::draw_helper(const QPainterPath &originalPath, DrawOperatio
 
     if (q->hasClipping()) {
         bool hasPerspectiveTransform = false;
-        for (int i = 0; i < state->clipInfo.size(); ++i) {
-            const QPainterClipInfo &info = state->clipInfo.at(i);
+        for (const QPainterClipInfo &info : qAsConst(state->clipInfo)) {
             if (info.matrix.type() == QTransform::TxProject) {
                 hasPerspectiveTransform = true;
                 break;
@@ -1629,8 +1634,7 @@ void QPainter::restore()
         tmp->clipPath = QPainterPath();
         d->engine->updateState(*tmp);
         // replay the list of clip states,
-        for (int i=0; i<d->state->clipInfo.size(); ++i) {
-            const QPainterClipInfo &info = d->state->clipInfo.at(i);
+        for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
             tmp->matrix = info.matrix;
             tmp->matrix *= d->state->redirectionMatrix;
             tmp->clipOperation = info.operation;
@@ -2182,11 +2186,10 @@ void QPainter::setBrushOrigin(const QPointF &p)
     destination pixel in such a way that the alpha component of the
     source defines the translucency of the pixel.
 
-    When the paint device is a QImage, the image format must be set to
-    \l {QImage::Format}{Format_ARGB32_Premultiplied} or
-    \l {QImage::Format}{Format_ARGB32} for the composition modes to have
-    any effect. For performance the premultiplied version is the preferred
-    format.
+    Several composition modes require an alpha channel in the source or
+    target images to have an effect. For optimal performance the
+    image format \l {QImage::Format}{Format_ARGB32_Premultiplied} is
+    preferred.
 
     When a composition mode is set it applies to all painting
     operator, pens, brushes, gradients and pixmap/image drawing.
@@ -2465,7 +2468,7 @@ void QPainter::setClipping(bool enable)
 
     // we can't enable clipping if we don't have a clip
     if (enable
-        && (d->state->clipInfo.isEmpty() || d->state->clipInfo.last().operation == Qt::NoClip))
+        && (d->state->clipInfo.isEmpty() || d->state->clipInfo.constLast().operation == Qt::NoClip))
         return;
     d->state->clipEnabled = enable;
 
@@ -2506,8 +2509,7 @@ QRegion QPainter::clipRegion() const
         const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
 
     // ### Falcon: Use QPainterPath
-    for (int i=0; i<d->state->clipInfo.size(); ++i) {
-        const QPainterClipInfo &info = d->state->clipInfo.at(i);
+    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
         switch (info.clipType) {
 
         case QPainterClipInfo::RegionClip: {
@@ -2621,7 +2623,7 @@ QPainterPath QPainter::clipPath() const
     }
 
     // No clip, return empty
-    if (d->state->clipInfo.size() == 0) {
+    if (d->state->clipInfo.isEmpty()) {
         return QPainterPath();
     } else {
 
@@ -2673,9 +2675,9 @@ QRectF QPainter::clipBoundingRect() const
     // precise, but it fits within the guarantee and it is reasonably
     // fast.
     QRectF bounds;
-    for (int i=0; i<d->state->clipInfo.size(); ++i) {
+    bool first = true;
+    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
          QRectF r;
-         const QPainterClipInfo &info = d->state->clipInfo.at(i);
 
          if (info.clipType == QPainterClipInfo::RectClip)
              r = info.rect;
@@ -2688,10 +2690,11 @@ QRectF QPainter::clipBoundingRect() const
 
          r = info.matrix.mapRect(r);
 
-         if (i == 0)
+         if (first)
              bounds = r;
          else if (info.operation == Qt::IntersectClip)
              bounds &= r;
+         first = false;
     }
 
 
@@ -2739,7 +2742,7 @@ void QPainter::setClipRect(const QRectF &rect, Qt::ClipOperation op)
         d->extended->clip(vp, op);
         if (op == Qt::ReplaceClip || op == Qt::NoClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2788,7 +2791,7 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
         d->extended->clip(rect, op);
         if (op == Qt::ReplaceClip || op == Qt::NoClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2800,7 +2803,7 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -2831,7 +2834,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
     QRect rect = r.boundingRect();
     if (qt_show_painter_debug_output)
         printf("QPainter::setClipRegion(), size=%d, [%d,%d,%d,%d]\n",
-           r.rects().size(), rect.x(), rect.y(), rect.width(), rect.height());
+           r.rectCount(), rect.x(), rect.y(), rect.width(), rect.height());
 #endif
     if (!d->engine) {
         qWarning("QPainter::setClipRegion: Painter not active");
@@ -2847,7 +2850,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
         d->extended->clip(r, op);
         if (op == Qt::NoClip || op == Qt::ReplaceClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(r, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2859,7 +2862,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(r, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -3154,7 +3157,7 @@ void QPainter::shear(qreal sh, qreal sv)
 /*!
     \fn void QPainter::rotate(qreal angle)
 
-    Rotates the coordinate system clockwise. The given \a angle parameter uses degree unit.
+    Rotates the coordinate system clockwise. The given \a angle parameter is in degrees.
 
     \sa setWorldTransform(), {QPainter#Coordinate Transformations}{Coordinate Transformations}
 */
@@ -3251,7 +3254,7 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
         d->extended->clip(path, op);
         if (op == Qt::NoClip || op == Qt::ReplaceClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(path, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -3263,7 +3266,7 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(path, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -4253,7 +4256,7 @@ void QPainter::drawEllipse(const QRectF &r)
 }
 
 /*!
-    \fn QPainter::drawEllipse(const QRect &rectangle)
+    \fn void QPainter::drawEllipse(const QRect &rectangle)
 
     \overload
 
@@ -4295,7 +4298,7 @@ void QPainter::drawEllipse(const QRect &r)
 }
 
 /*!
-    \fn QPainter::drawEllipse(int x, int y, int width, int height)
+    \fn void QPainter::drawEllipse(int x, int y, int width, int height)
 
     \overload
 
@@ -4306,7 +4309,7 @@ void QPainter::drawEllipse(const QRect &r)
 /*!
     \since 4.4
 
-    \fn QPainter::drawEllipse(const QPointF &center, qreal rx, qreal ry)
+    \fn void QPainter::drawEllipse(const QPointF &center, qreal rx, qreal ry)
 
     \overload
 
@@ -4316,7 +4319,7 @@ void QPainter::drawEllipse(const QRect &r)
 /*!
     \since 4.4
 
-    \fn QPainter::drawEllipse(const QPoint &center, int rx, int ry)
+    \fn void QPainter::drawEllipse(const QPoint &center, int rx, int ry)
 
     \overload
 
@@ -5110,7 +5113,7 @@ void QPainter::drawPixmap(const QPointF &p, const QPixmap &pm)
             x += d->state->matrix.dx();
             y += d->state->matrix.dy();
         }
-        int scale = pm.devicePixelRatio();
+        qreal scale = pm.devicePixelRatio();
         d->engine->drawPixmap(QRectF(x, y, w / scale, h / scale), pm, QRectF(0, 0, w, h));
     }
 }
@@ -5619,8 +5622,8 @@ void QPainterPrivate::drawGlyphs(const quint32 *glyphArray, QFixedPoint *positio
         QVarLengthArray<QGlyphJustification, 128> glyphJustifications(glyphCount);
         QVarLengthArray<QGlyphAttributes, 128> glyphAttributes(glyphCount);
         memset(glyphAttributes.data(), 0, glyphAttributes.size() * sizeof(QGlyphAttributes));
-        memset(advances.data(), 0, advances.size() * sizeof(QFixed));
-        memset(glyphJustifications.data(), 0, glyphJustifications.size() * sizeof(QGlyphJustification));
+        memset(static_cast<void *>(advances.data()), 0, advances.size() * sizeof(QFixed));
+        memset(static_cast<void *>(glyphJustifications.data()), 0, glyphJustifications.size() * sizeof(QGlyphJustification));
 
         textItem.glyphs.numGlyphs = glyphCount;
         textItem.glyphs.glyphs = const_cast<glyph_t *>(glyphArray);
@@ -5741,7 +5744,7 @@ void QPainter::drawStaticText(const QPointF &topLeftPosition, const QStaticText 
     if (d->extended == 0
             || !d->state->matrix.isAffine()
             || !fe->supportsTransformation(d->state->matrix)) {
-        staticText_d->paintText(topLeftPosition, this);
+        staticText_d->paintText(topLeftPosition, this, pen().color());
         return;
     }
 
@@ -5813,11 +5816,16 @@ void QPainter::drawStaticText(const QPointF &topLeftPosition, const QStaticText 
 
     QPen oldPen = d->state->pen;
     QColor currentColor = oldPen.color();
+    static const QColor bodyIndicator(0, 0, 0, 0);
     for (int i=0; i<staticText_d->itemCount; ++i) {
         QStaticTextItem *item = staticText_d->items + i;
-        if (item->color.isValid() && currentColor != item->color) {
-            setPen(item->color);
-            currentColor = item->color;
+        if (item->color.isValid() && currentColor != item->color
+            && item->color != bodyIndicator) {
+                setPen(item->color);
+                currentColor = item->color;
+        } else if (item->color == bodyIndicator) {
+            setPen(oldPen);
+            currentColor = oldPen.color();
         }
         d->extended->drawStaticTextItem(item);
 
@@ -5847,6 +5855,7 @@ void QPainter::drawText(const QPointF &p, const QString &str, int tf, int justif
     if (!d->engine || str.isEmpty() || pen().style() == Qt::NoPen)
         return;
 
+#if QT_DEPRECATED_SINCE(5, 11) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (tf & Qt::TextBypassShaping) {
         // Skip complex shaping, shape using glyph advances only
         int len = str.length();
@@ -5860,6 +5869,7 @@ void QPainter::drawText(const QPointF &p, const QString &str, int tf, int justif
         drawTextItem(p, gf);
         return;
     }
+#endif
 
     QStackTextEngine engine(str, d->state->font);
     engine.option.setTextDirection(d->state->layoutDirection);
@@ -5965,7 +5975,7 @@ void QPainter::drawText(const QRect &r, int flags, const QString &str, QRect *br
     \snippet code/src_gui_painting_qpainter.cpp 17
     \endtable
 
-    The \a boundingRect (if not null) is set to the what the bounding rectangle
+    The \a boundingRect (if not null) is set to what the bounding rectangle
     should be in order to enclose the whole text. For example, in the following
     image, the dotted line represents \a boundingRect as calculated by the
     function, and the dashed line represents \a rectangle:
@@ -6179,7 +6189,8 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
 
     QString key = QLatin1String("WaveUnderline-")
                   % pen.color().name()
-                  % HexString<qreal>(radiusBase);
+                  % HexString<qreal>(radiusBase)
+                  % HexString<qreal>(pen.widthF());
 
     QPixmap pixmap;
     if (QPixmapCache::find(key, pixmap))
@@ -6187,7 +6198,7 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
 
     const qreal halfPeriod = qMax(qreal(2), qreal(radiusBase * 1.61803399)); // the golden ratio
     const int width = qCeil(100 / (2 * halfPeriod)) * (2 * halfPeriod);
-    const int radius = qFloor(radiusBase);
+    const qreal radius = qFloor(radiusBase * 2) / 2.;
 
     QPainterPath path;
 
@@ -6210,7 +6221,7 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
         // due to it having a rather thick width for the regular underline.
         const qreal maxPenWidth = .8 * radius;
         if (wavePen.widthF() > maxPenWidth)
-            wavePen.setWidth(maxPenWidth);
+            wavePen.setWidthF(maxPenWidth);
 
         QPainter imgPainter(&pixmap);
         imgPainter.setPen(wavePen);
@@ -6250,32 +6261,38 @@ static void drawTextItemDecoration(QPainter *painter, const QPointF &pos, const 
         painter->setRenderHint(QPainter::Qt4CompatiblePainting, false);
 
     const qreal underlineOffset = fe->underlinePosition().toReal();
-    // deliberately ceil the offset to avoid the underline coming too close to
-    // the text above it.
-    const qreal underlinePos = pos.y() + qCeil(underlineOffset) + 0.5;
 
     if (underlineStyle == QTextCharFormat::SpellCheckUnderline) {
         QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme();
         if (theme)
             underlineStyle = QTextCharFormat::UnderlineStyle(theme->themeHint(QPlatformTheme::SpellCheckUnderlineStyle).toInt());
+        if (underlineStyle == QTextCharFormat::SpellCheckUnderline) // still not resolved
+            underlineStyle = QTextCharFormat::WaveUnderline;
     }
 
     if (underlineStyle == QTextCharFormat::WaveUnderline) {
         painter->save();
         painter->translate(0, pos.y() + 1);
+        qreal maxHeight = fe->descent().toReal() - qreal(1);
 
         QColor uc = charFormat.underlineColor();
         if (uc.isValid())
             pen.setColor(uc);
 
         // Adapt wave to underlineOffset or pen width, whatever is larger, to make it work on all platforms
-        const QPixmap wave = generateWavyPixmap(qMax(underlineOffset, pen.widthF()), pen);
-        const int descent = (int) fe->descent().toReal();
+        const QPixmap wave = generateWavyPixmap(qMin(qMax(underlineOffset, pen.widthF()), maxHeight / qreal(2.)), pen);
+        const int descent = qFloor(maxHeight);
 
         painter->setBrushOrigin(painter->brushOrigin().x(), 0);
         painter->fillRect(pos.x(), 0, qCeil(width), qMin(wave.height(), descent), wave);
         painter->restore();
     } else if (underlineStyle != QTextCharFormat::NoUnderline) {
+        // Deliberately ceil the offset to avoid the underline coming too close to
+        // the text above it, but limit it to stay within descent.
+        qreal adjustedUnderlineOffset = std::ceil(underlineOffset) + 0.5;
+        if (underlineOffset <= fe->descent().toReal())
+            adjustedUnderlineOffset = qMin(adjustedUnderlineOffset, fe->descent().toReal() - qreal(0.5));
+        const qreal underlinePos = pos.y() + adjustedUnderlineOffset;
         QColor uc = charFormat.underlineColor();
         if (uc.isValid())
             pen.setColor(uc);
@@ -6431,7 +6448,8 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
         updateState(state);
 
     if (!ti.glyphs.numGlyphs) {
-        // nothing to do
+        drawTextItemDecoration(q, p, ti.fontEngine, textEngine, ti.underlineStyle,
+            ti.flags, ti.width.toReal(), ti.charFormat);
     } else if (ti.fontEngine->type() == QFontEngine::Multi) {
         QFontEngineMulti *multi = static_cast<QFontEngineMulti *>(ti.fontEngine);
 
@@ -6469,6 +6487,8 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
                 extended->drawTextItem(QPointF(x, y), ti2);
             else
                 engine->drawTextItem(QPointF(x, y), ti2);
+            drawTextItemDecoration(q, QPointF(x, y), ti2.fontEngine, textEngine, ti2.underlineStyle,
+                                   ti2.flags, ti2.width.toReal(), ti2.charFormat);
 
             if (!rtl)
                 x += ti2.width.toReal();
@@ -6500,6 +6520,8 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
             extended->drawTextItem(QPointF(x, y), ti2);
         else
             engine->drawTextItem(QPointF(x,y), ti2);
+        drawTextItemDecoration(q, QPointF(x, y), ti2.fontEngine, textEngine, ti2.underlineStyle,
+                               ti2.flags, ti2.width.toReal(), ti2.charFormat);
 
         // reset the high byte for all glyphs
         const int hi = which << 24;
@@ -6511,9 +6533,9 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
             extended->drawTextItem(p, ti);
         else
             engine->drawTextItem(p, ti);
+        drawTextItemDecoration(q, p, ti.fontEngine, textEngine, ti.underlineStyle,
+                               ti.flags, ti.width.toReal(), ti.charFormat);
     }
-    drawTextItemDecoration(q, p, ti.fontEngine, textEngine, ti.underlineStyle,
-                           ti.flags, ti.width.toReal(), ti.charFormat);
 
     if (state->renderHints != oldRenderHints) {
         state->renderHints = oldRenderHints;
@@ -6720,7 +6742,7 @@ void QPainter::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, const QPo
 }
 
 /*!
-    \fn QPainter::drawTiledPixmap(const QRect &rectangle, const QPixmap &pixmap,
+    \fn void QPainter::drawTiledPixmap(const QRect &rectangle, const QPixmap &pixmap,
                                   const QPoint &position = QPoint())
     \overload
 
@@ -7404,7 +7426,7 @@ void qt_format_text(const QFont &fnt, const QRectF &_r,
         if (option->flags() & QTextOption::IncludeTrailingSpaces)
             tf |= Qt::TextIncludeTrailingSpaces;
 
-        if (option->tabStop() >= 0 || !option->tabArray().isEmpty())
+        if (option->tabStopDistance() >= 0 || !option->tabArray().isEmpty())
             tf |= Qt::TextExpandTabs;
     }
 
@@ -7461,7 +7483,7 @@ start_lengthVariant:
             if (!expandtabs) {
                 text[offset] = QLatin1Char(' ');
             } else if (!tabarraylen && !tabstops) {
-                tabstops = qRound(fm.width(QLatin1Char('x'))*8);
+                tabstops = qRound(fm.horizontalAdvance(QLatin1Char('x'))*8);
             }
         } else if (chr == QChar(ushort(0x9c))) {
             // string with multiple length variants
@@ -7470,7 +7492,7 @@ start_lengthVariant:
         }
     }
 
-    QList<QTextLayout::FormatRange> underlineFormats;
+    QVector<QTextLayout::FormatRange> underlineFormats;
     int length = offset - old_offset;
     if ((hidemnmemonic || showmnemonic) && maxUnderlines > 0) {
         QChar *cout = text.data() + old_offset;
@@ -7521,11 +7543,12 @@ start_lengthVariant:
         engine.option = *option;
     }
 
-    if (engine.option.tabStop() < 0 && tabstops > 0)
-        engine.option.setTabStop(tabstops);
+    if (engine.option.tabStopDistance() < 0 && tabstops > 0)
+        engine.option.setTabStopDistance(tabstops);
 
     if (engine.option.tabs().isEmpty() && ta) {
         QList<qreal> tabs;
+        tabs.reserve(tabarraylen);
         for (int i = 0; i < tabarraylen; i++)
             tabs.append(qreal(ta[i]));
         engine.option.setTabArray(tabs);
@@ -7544,7 +7567,7 @@ start_lengthVariant:
         engine.forceJustification = true;
     QTextLayout textLayout(&engine);
     textLayout.setCacheEnabled(true);
-    textLayout.setAdditionalFormats(underlineFormats);
+    textLayout.setFormats(underlineFormats);
 
     if (finalText.isEmpty()) {
         height = fm.height();
@@ -7556,7 +7579,6 @@ start_lengthVariant:
             lineWidth = qMax<qreal>(0, r.width());
         if(!wordwrap)
             tf |= Qt::TextIncludeTrailingSpaces;
-        textLayout.engine()->ignoreBidi = bool(tf & Qt::TextDontPrint);
         textLayout.beginLayout();
 
         qreal leading = fm.leading();

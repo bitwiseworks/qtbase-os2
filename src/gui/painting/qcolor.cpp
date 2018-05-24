@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,11 +43,328 @@
 #include "qdatastream.h"
 #include "qvariant.h"
 #include "qdebug.h"
+#include "private/qtools_p.h"
+
+#include <algorithm>
 
 #include <stdio.h>
 #include <limits.h>
 
 QT_BEGIN_NAMESPACE
+
+/*!
+    \internal
+    If s[0..1] is a valid hex number, returns its integer value,
+    otherwise returns -1.
+ */
+static inline int hex2int(const char *s)
+{
+    const int hi = QtMiscUtils::fromHex(s[0]);
+    if (hi < 0)
+        return -1;
+    const int lo = QtMiscUtils::fromHex(s[1]);
+    if (lo < 0)
+        return -1;
+    return (hi << 4) | lo;
+}
+
+/*!
+    \internal
+    If s is a valid hex digit, returns its integer value,
+    multiplied by 0x11, otherwise returns -1.
+ */
+static inline int hex2int(char s)
+{
+    const int h = QtMiscUtils::fromHex(s);
+    return h < 0 ? h : (h << 4) | h;
+}
+
+static bool get_hex_rgb(const char *name, size_t len, QRgb *rgb)
+{
+    if (name[0] != '#')
+        return false;
+    name++;
+    --len;
+    int a, r, g, b;
+    a = 255;
+    if (len == 12) {
+        r = hex2int(name);
+        g = hex2int(name + 4);
+        b = hex2int(name + 8);
+    } else if (len == 9) {
+        r = hex2int(name);
+        g = hex2int(name + 3);
+        b = hex2int(name + 6);
+    } else if (len == 8) {
+        a = hex2int(name);
+        r = hex2int(name + 2);
+        g = hex2int(name + 4);
+        b = hex2int(name + 6);
+    } else if (len == 6) {
+        r = hex2int(name);
+        g = hex2int(name + 2);
+        b = hex2int(name + 4);
+    } else if (len == 3) {
+        r = hex2int(name[0]);
+        g = hex2int(name[1]);
+        b = hex2int(name[2]);
+    } else {
+        r = g = b = -1;
+    }
+    if ((uint)r > 255 || (uint)g > 255 || (uint)b > 255 || (uint)a > 255) {
+        *rgb = 0;
+        return false;
+    }
+    *rgb = qRgba(r, g ,b, a);
+    return true;
+}
+
+bool qt_get_hex_rgb(const char *name, QRgb *rgb)
+{
+    return get_hex_rgb(name, qstrlen(name), rgb);
+}
+
+static bool get_hex_rgb(const QChar *str, size_t len, QRgb *rgb)
+{
+    if (len > 13)
+        return false;
+    char tmp[16];
+    for (size_t i = 0; i < len; ++i)
+        tmp[i] = str[i].toLatin1();
+    tmp[len] = 0;
+    return get_hex_rgb(tmp, len, rgb);
+}
+
+#ifndef QT_NO_COLORNAMES
+
+/*
+  CSS color names = SVG 1.0 color names + transparent (rgba(0,0,0,0))
+*/
+
+#ifdef rgb
+#  undef rgb
+#endif
+#define rgb(r,g,b) (0xff000000 | (r << 16) |  (g << 8) | b)
+
+static const struct RGBData {
+    const char name[21];
+    uint  value;
+} rgbTbl[] = {
+    { "aliceblue", rgb(240, 248, 255) },
+    { "antiquewhite", rgb(250, 235, 215) },
+    { "aqua", rgb( 0, 255, 255) },
+    { "aquamarine", rgb(127, 255, 212) },
+    { "azure", rgb(240, 255, 255) },
+    { "beige", rgb(245, 245, 220) },
+    { "bisque", rgb(255, 228, 196) },
+    { "black", rgb( 0, 0, 0) },
+    { "blanchedalmond", rgb(255, 235, 205) },
+    { "blue", rgb( 0, 0, 255) },
+    { "blueviolet", rgb(138, 43, 226) },
+    { "brown", rgb(165, 42, 42) },
+    { "burlywood", rgb(222, 184, 135) },
+    { "cadetblue", rgb( 95, 158, 160) },
+    { "chartreuse", rgb(127, 255, 0) },
+    { "chocolate", rgb(210, 105, 30) },
+    { "coral", rgb(255, 127, 80) },
+    { "cornflowerblue", rgb(100, 149, 237) },
+    { "cornsilk", rgb(255, 248, 220) },
+    { "crimson", rgb(220, 20, 60) },
+    { "cyan", rgb( 0, 255, 255) },
+    { "darkblue", rgb( 0, 0, 139) },
+    { "darkcyan", rgb( 0, 139, 139) },
+    { "darkgoldenrod", rgb(184, 134, 11) },
+    { "darkgray", rgb(169, 169, 169) },
+    { "darkgreen", rgb( 0, 100, 0) },
+    { "darkgrey", rgb(169, 169, 169) },
+    { "darkkhaki", rgb(189, 183, 107) },
+    { "darkmagenta", rgb(139, 0, 139) },
+    { "darkolivegreen", rgb( 85, 107, 47) },
+    { "darkorange", rgb(255, 140, 0) },
+    { "darkorchid", rgb(153, 50, 204) },
+    { "darkred", rgb(139, 0, 0) },
+    { "darksalmon", rgb(233, 150, 122) },
+    { "darkseagreen", rgb(143, 188, 143) },
+    { "darkslateblue", rgb( 72, 61, 139) },
+    { "darkslategray", rgb( 47, 79, 79) },
+    { "darkslategrey", rgb( 47, 79, 79) },
+    { "darkturquoise", rgb( 0, 206, 209) },
+    { "darkviolet", rgb(148, 0, 211) },
+    { "deeppink", rgb(255, 20, 147) },
+    { "deepskyblue", rgb( 0, 191, 255) },
+    { "dimgray", rgb(105, 105, 105) },
+    { "dimgrey", rgb(105, 105, 105) },
+    { "dodgerblue", rgb( 30, 144, 255) },
+    { "firebrick", rgb(178, 34, 34) },
+    { "floralwhite", rgb(255, 250, 240) },
+    { "forestgreen", rgb( 34, 139, 34) },
+    { "fuchsia", rgb(255, 0, 255) },
+    { "gainsboro", rgb(220, 220, 220) },
+    { "ghostwhite", rgb(248, 248, 255) },
+    { "gold", rgb(255, 215, 0) },
+    { "goldenrod", rgb(218, 165, 32) },
+    { "gray", rgb(128, 128, 128) },
+    { "green", rgb( 0, 128, 0) },
+    { "greenyellow", rgb(173, 255, 47) },
+    { "grey", rgb(128, 128, 128) },
+    { "honeydew", rgb(240, 255, 240) },
+    { "hotpink", rgb(255, 105, 180) },
+    { "indianred", rgb(205, 92, 92) },
+    { "indigo", rgb( 75, 0, 130) },
+    { "ivory", rgb(255, 255, 240) },
+    { "khaki", rgb(240, 230, 140) },
+    { "lavender", rgb(230, 230, 250) },
+    { "lavenderblush", rgb(255, 240, 245) },
+    { "lawngreen", rgb(124, 252, 0) },
+    { "lemonchiffon", rgb(255, 250, 205) },
+    { "lightblue", rgb(173, 216, 230) },
+    { "lightcoral", rgb(240, 128, 128) },
+    { "lightcyan", rgb(224, 255, 255) },
+    { "lightgoldenrodyellow", rgb(250, 250, 210) },
+    { "lightgray", rgb(211, 211, 211) },
+    { "lightgreen", rgb(144, 238, 144) },
+    { "lightgrey", rgb(211, 211, 211) },
+    { "lightpink", rgb(255, 182, 193) },
+    { "lightsalmon", rgb(255, 160, 122) },
+    { "lightseagreen", rgb( 32, 178, 170) },
+    { "lightskyblue", rgb(135, 206, 250) },
+    { "lightslategray", rgb(119, 136, 153) },
+    { "lightslategrey", rgb(119, 136, 153) },
+    { "lightsteelblue", rgb(176, 196, 222) },
+    { "lightyellow", rgb(255, 255, 224) },
+    { "lime", rgb( 0, 255, 0) },
+    { "limegreen", rgb( 50, 205, 50) },
+    { "linen", rgb(250, 240, 230) },
+    { "magenta", rgb(255, 0, 255) },
+    { "maroon", rgb(128, 0, 0) },
+    { "mediumaquamarine", rgb(102, 205, 170) },
+    { "mediumblue", rgb( 0, 0, 205) },
+    { "mediumorchid", rgb(186, 85, 211) },
+    { "mediumpurple", rgb(147, 112, 219) },
+    { "mediumseagreen", rgb( 60, 179, 113) },
+    { "mediumslateblue", rgb(123, 104, 238) },
+    { "mediumspringgreen", rgb( 0, 250, 154) },
+    { "mediumturquoise", rgb( 72, 209, 204) },
+    { "mediumvioletred", rgb(199, 21, 133) },
+    { "midnightblue", rgb( 25, 25, 112) },
+    { "mintcream", rgb(245, 255, 250) },
+    { "mistyrose", rgb(255, 228, 225) },
+    { "moccasin", rgb(255, 228, 181) },
+    { "navajowhite", rgb(255, 222, 173) },
+    { "navy", rgb( 0, 0, 128) },
+    { "oldlace", rgb(253, 245, 230) },
+    { "olive", rgb(128, 128, 0) },
+    { "olivedrab", rgb(107, 142, 35) },
+    { "orange", rgb(255, 165, 0) },
+    { "orangered", rgb(255, 69, 0) },
+    { "orchid", rgb(218, 112, 214) },
+    { "palegoldenrod", rgb(238, 232, 170) },
+    { "palegreen", rgb(152, 251, 152) },
+    { "paleturquoise", rgb(175, 238, 238) },
+    { "palevioletred", rgb(219, 112, 147) },
+    { "papayawhip", rgb(255, 239, 213) },
+    { "peachpuff", rgb(255, 218, 185) },
+    { "peru", rgb(205, 133, 63) },
+    { "pink", rgb(255, 192, 203) },
+    { "plum", rgb(221, 160, 221) },
+    { "powderblue", rgb(176, 224, 230) },
+    { "purple", rgb(128, 0, 128) },
+    { "red", rgb(255, 0, 0) },
+    { "rosybrown", rgb(188, 143, 143) },
+    { "royalblue", rgb( 65, 105, 225) },
+    { "saddlebrown", rgb(139, 69, 19) },
+    { "salmon", rgb(250, 128, 114) },
+    { "sandybrown", rgb(244, 164, 96) },
+    { "seagreen", rgb( 46, 139, 87) },
+    { "seashell", rgb(255, 245, 238) },
+    { "sienna", rgb(160, 82, 45) },
+    { "silver", rgb(192, 192, 192) },
+    { "skyblue", rgb(135, 206, 235) },
+    { "slateblue", rgb(106, 90, 205) },
+    { "slategray", rgb(112, 128, 144) },
+    { "slategrey", rgb(112, 128, 144) },
+    { "snow", rgb(255, 250, 250) },
+    { "springgreen", rgb( 0, 255, 127) },
+    { "steelblue", rgb( 70, 130, 180) },
+    { "tan", rgb(210, 180, 140) },
+    { "teal", rgb( 0, 128, 128) },
+    { "thistle", rgb(216, 191, 216) },
+    { "tomato", rgb(255, 99, 71) },
+    { "transparent", 0 },
+    { "turquoise", rgb( 64, 224, 208) },
+    { "violet", rgb(238, 130, 238) },
+    { "wheat", rgb(245, 222, 179) },
+    { "white", rgb(255, 255, 255) },
+    { "whitesmoke", rgb(245, 245, 245) },
+    { "yellow", rgb(255, 255, 0) },
+    { "yellowgreen", rgb(154, 205, 50) }
+};
+
+static const int rgbTblSize = sizeof(rgbTbl) / sizeof(RGBData);
+
+#undef rgb
+
+#if defined(Q_CC_MSVC) && _MSC_VER < 1600
+inline bool operator<(const RGBData &data1, const RGBData &data2)
+{ return qstrcmp(data1.name, data2.name) < 0; }
+#endif
+
+inline bool operator<(const char *name, const RGBData &data)
+{ return qstrcmp(name, data.name) < 0; }
+inline bool operator<(const RGBData &data, const char *name)
+{ return qstrcmp(data.name, name) < 0; }
+
+static bool get_named_rgb_no_space(const char *name_no_space, QRgb *rgb)
+{
+    const RGBData *r = std::lower_bound(rgbTbl, rgbTbl + rgbTblSize, name_no_space);
+    if ((r != rgbTbl + rgbTblSize) && !(name_no_space < *r)) {
+        *rgb = r->value;
+        return true;
+    }
+    return false;
+}
+
+static bool get_named_rgb(const char *name, int len, QRgb* rgb)
+{
+    if (len > 255)
+        return false;
+    char name_no_space[256];
+    int pos = 0;
+    for (int i = 0; i < len; i++) {
+        if (name[i] != '\t' && name[i] != ' ')
+            name_no_space[pos++] = QChar::toLower(name[i]);
+    }
+    name_no_space[pos] = 0;
+
+    return get_named_rgb_no_space(name_no_space, rgb);
+}
+
+static bool get_named_rgb(const QChar *name, int len, QRgb *rgb)
+{
+    if (len > 255)
+        return false;
+    char name_no_space[256];
+    int pos = 0;
+    for (int i = 0; i < len; i++) {
+        if (name[i] != QLatin1Char('\t') && name[i] != QLatin1Char(' '))
+            name_no_space[pos++] = name[i].toLower().toLatin1();
+    }
+    name_no_space[pos] = 0;
+    return get_named_rgb_no_space(name_no_space, rgb);
+}
+
+#endif // QT_NO_COLORNAMES
+
+static QStringList get_colornames()
+{
+    QStringList lst;
+#ifndef QT_NO_COLORNAMES
+    lst.reserve(rgbTblSize);
+    for (int i = 0; i < rgbTblSize; i++)
+        lst << QLatin1String(rgbTbl[i].name);
+#endif
+    return lst;
+}
 
 /*!
     \class QColor
@@ -222,12 +545,8 @@ QT_BEGIN_NAMESPACE
 
     \section1 The HSL Color Model
 
-    HSL is similar to HSV. Instead of value parameter from HSV,
-    HSL has the lightness parameter.
-    The lightness parameter goes from black to color and from color to white.
-    If you go outside at the night its black or dark gray. At day its colorful but
-    if you look in a really strong light a things they are going to white and
-    wash out.
+    HSL is similar to HSV, however instead of the Value parameter, HSL
+    specifies a Lightness parameter.
 
     \section1 The CMYK Color Model
 
@@ -255,7 +574,7 @@ QT_BEGIN_NAMESPACE
     alpha-channel to feature \l {QColor#Alpha-Blended
     Drawing}{alpha-blended drawing}.
 
-    \sa QPalette, QBrush, QApplication::setColorSpec()
+    \sa QPalette, QBrush
 */
 
 #define QCOLOR_INT_RANGE_CHECK(fn, var) \
@@ -331,7 +650,7 @@ QT_BEGIN_NAMESPACE
 
     \sa isValid(), {QColor#Predefined Colors}{Predefined Colors}
  */
-QColor::QColor(Qt::GlobalColor color)
+QColor::QColor(Qt::GlobalColor color) Q_DECL_NOTHROW
 {
 #define QRGB(r, g, b) \
     QRgb(((0xffu << 24) | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff)))
@@ -406,7 +725,7 @@ QColor::QColor(Qt::GlobalColor color)
     \sa fromRgb(), isValid()
 */
 
-QColor::QColor(QRgb color)
+QColor::QColor(QRgb color) Q_DECL_NOTHROW
 {
     cspec = Rgb;
     ct.argb.alpha = 0xffff;
@@ -416,6 +735,18 @@ QColor::QColor(QRgb color)
     ct.argb.pad   = 0;
 }
 
+/*!
+    \since 5.6
+
+    Constructs a color with the value \a rgba64.
+
+    \sa fromRgba64()
+*/
+
+QColor::QColor(QRgba64 rgba64) Q_DECL_NOTHROW
+{
+    setRgba64(rgba64);
+}
 
 /*!
     \internal
@@ -426,7 +757,7 @@ QColor::QColor(QRgb color)
     becomes a valid color by accident.
 */
 
-QColor::QColor(Spec spec)
+QColor::QColor(Spec spec) Q_DECL_NOTHROW
 {
     switch (spec) {
     case Invalid:
@@ -464,11 +795,22 @@ QColor::QColor(Spec spec)
     Constructs a named color in the same way as setNamedColor() using
     the given \a name.
 
-    The color is left invalid if the \a name cannot be parsed.
-
+    \overload
     \sa setNamedColor(), name(), isValid()
 */
 
+/*!
+    \fn QColor::QColor(QLatin1String name)
+
+    Constructs a named color in the same way as setNamedColor() using
+    the given \a name.
+
+    \overload
+    \since 5.8
+    \sa setNamedColor(), name(), isValid()
+*/
+
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 /*!
     \fn QColor::QColor(const QColor &color)
 
@@ -476,6 +818,7 @@ QColor::QColor(Spec spec)
 
     \sa isValid()
 */
+#endif
 
 /*!
     \fn bool QColor::isValid() const
@@ -507,13 +850,15 @@ QString QColor::name(NameFormat format) const
 {
     switch (format) {
     case HexRgb:
-        return QString::asprintf("#%02x%02x%02x", red(), green(), blue());
+        return QLatin1Char('#') + QString::number(rgba() | 0x1000000, 16).rightRef(6);
     case HexArgb:
-        return QString::asprintf("#%02x%02x%02x%02x", alpha(), red(), green(), blue());
+        // it's called rgba() but it does return AARRGGBB
+        return QLatin1Char('#') + QString::number(rgba() | Q_INT64_C(0x100000000), 16).rightRef(8);
     }
     return QString();
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Sets the RGB value of this QColor to \a name, which may be in one
     of these formats:
@@ -539,9 +884,31 @@ QString QColor::name(NameFormat format) const
 
 void QColor::setNamedColor(const QString &name)
 {
+    setColorFromString(qToStringViewIgnoringNull(name));
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+*/
+
+void QColor::setNamedColor(QStringView name)
+{
     setColorFromString(name);
 }
 
+/*!
+    \overload
+    \since 5.8
+*/
+
+void QColor::setNamedColor(QLatin1String name)
+{
+    setColorFromString(name);
+}
+
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
    \since 4.7
 
@@ -555,19 +922,39 @@ void QColor::setNamedColor(const QString &name)
 */
 bool QColor::isValidColor(const QString &name)
 {
-    return !name.isEmpty() && QColor().setColorFromString(name);
+    return isValidColor(qToStringViewIgnoringNull(name));
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+*/
+bool QColor::isValidColor(QStringView name) Q_DECL_NOTHROW
+{
+    return name.size() && QColor().setColorFromString(name);
 }
 
-bool QColor::setColorFromString(const QString &name)
+/*!
+    \overload
+    \since 5.8
+*/
+bool QColor::isValidColor(QLatin1String name) Q_DECL_NOTHROW
 {
-    if (name.isEmpty()) {
+    return name.size() && QColor().setColorFromString(name);
+}
+
+template <typename String>
+bool QColor::setColorFromString(String name)
+{
+    if (!name.size()) {
         invalidate();
         return true;
     }
 
-    if (name.startsWith(QLatin1Char('#'))) {
+    if (name[0] == QLatin1Char('#')) {
         QRgb rgba;
-        if (qt_get_hex_rgb(name.constData(), name.length(), &rgba)) {
+        if (get_hex_rgb(name.data(), name.size(), &rgba)) {
             setRgba(rgba);
             return true;
         } else {
@@ -578,7 +965,7 @@ bool QColor::setColorFromString(const QString &name)
 
 #ifndef QT_NO_COLORNAMES
     QRgb rgb;
-    if (qt_get_named_rgb(name.constData(), name.length(), &rgb)) {
+    if (get_named_rgb(name.data(), name.size(), &rgb)) {
         setRgba(rgb);
         return true;
     } else
@@ -596,11 +983,7 @@ bool QColor::setColorFromString(const QString &name)
 */
 QStringList QColor::colorNames()
 {
-#ifndef QT_NO_COLORNAMES
-    return qt_get_colornames();
-#else
-    return QStringList();
-#endif
+    return get_colornames();
 }
 
 /*!
@@ -941,10 +1324,10 @@ void QColor::setRgb(int r, int g, int b, int a)
 
     For an invalid color, the alpha value of the returned color is unspecified.
 
-    \sa setRgba(), rgb()
+    \sa setRgba(), rgb(), rgba64()
 */
 
-QRgb QColor::rgba() const
+QRgb QColor::rgba() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().rgba();
@@ -954,9 +1337,9 @@ QRgb QColor::rgba() const
 /*!
     Sets the RGB value to \a rgba, including its alpha.
 
-    \sa rgba(), rgb()
+    \sa rgba(), rgb(), setRgba64()
 */
-void QColor::setRgba(QRgb rgba)
+void QColor::setRgba(QRgb rgba) Q_DECL_NOTHROW
 {
     cspec = Rgb;
     ct.argb.alpha = qAlpha(rgba) * 0x101;
@@ -967,13 +1350,47 @@ void QColor::setRgba(QRgb rgba)
 }
 
 /*!
+    \since 5.6
+
+    Returns the RGB64 value of the color, including its alpha.
+
+    For an invalid color, the alpha value of the returned color is unspecified.
+
+    \sa setRgba64(), rgba(), rgb()
+*/
+
+QRgba64 QColor::rgba64() const Q_DECL_NOTHROW
+{
+    if (cspec != Invalid && cspec != Rgb)
+        return toRgb().rgba64();
+    return qRgba64(ct.argb.red, ct.argb.green, ct.argb.blue, ct.argb.alpha);
+}
+
+/*!
+    \since 5.6
+
+    Sets the RGB64 value to \a rgba, including its alpha.
+
+    \sa \setRgba(), rgba64()
+*/
+void QColor::setRgba64(QRgba64 rgba) Q_DECL_NOTHROW
+{
+    cspec = Rgb;
+    ct.argb.alpha = rgba.alpha();
+    ct.argb.red   = rgba.red();
+    ct.argb.green = rgba.green();
+    ct.argb.blue  = rgba.blue();
+    ct.argb.pad   = 0;
+}
+
+/*!
     \fn QRgb QColor::rgb() const
 
     Returns the RGB value of the color. The alpha value is opaque.
 
     \sa getRgb(), rgba()
 */
-QRgb QColor::rgb() const
+QRgb QColor::rgb() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().rgb();
@@ -985,7 +1402,7 @@ QRgb QColor::rgb() const
 
     Sets the RGB value to \a rgb. The alpha value is set to opaque.
 */
-void QColor::setRgb(QRgb rgb)
+void QColor::setRgb(QRgb rgb) Q_DECL_NOTHROW
 {
     cspec = Rgb;
     ct.argb.alpha = 0xffff;
@@ -1000,7 +1417,7 @@ void QColor::setRgb(QRgb rgb)
 
     \sa setAlpha(), alphaF(), {QColor#Alpha-Blended Drawing}{Alpha-Blended Drawing}
 */
-int QColor::alpha() const
+int QColor::alpha() const Q_DECL_NOTHROW
 { return ct.argb.alpha >> 8; }
 
 
@@ -1022,7 +1439,7 @@ void QColor::setAlpha(int alpha)
 
     \sa setAlphaF(), alpha(), {QColor#Alpha-Blended Drawing}{Alpha-Blended Drawing}
 */
-qreal QColor::alphaF() const
+qreal QColor::alphaF() const Q_DECL_NOTHROW
 { return ct.argb.alpha / qreal(USHRT_MAX); }
 
 /*!
@@ -1045,7 +1462,7 @@ void QColor::setAlphaF(qreal alpha)
 
     \sa setRed(), redF(), getRgb()
 */
-int QColor::red() const
+int QColor::red() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().red();
@@ -1072,7 +1489,7 @@ void QColor::setRed(int red)
 
     \sa setGreen(), greenF(), getRgb()
 */
-int QColor::green() const
+int QColor::green() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().green();
@@ -1100,7 +1517,7 @@ void QColor::setGreen(int green)
 
     \sa setBlue(), blueF(), getRgb()
 */
-int QColor::blue() const
+int QColor::blue() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().blue();
@@ -1128,7 +1545,7 @@ void QColor::setBlue(int blue)
 
     \sa setRedF(), red(), getRgbF()
 */
-qreal QColor::redF() const
+qreal QColor::redF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().redF();
@@ -1156,7 +1573,7 @@ void QColor::setRedF(qreal red)
 
     \sa setGreenF(), green(), getRgbF()
 */
-qreal QColor::greenF() const
+qreal QColor::greenF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().greenF();
@@ -1184,7 +1601,7 @@ void QColor::setGreenF(qreal green)
 
      \sa setBlueF(), blue(), getRgbF()
 */
-qreal QColor::blueF() const
+qreal QColor::blueF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Rgb)
         return toRgb().blueF();
@@ -1214,7 +1631,7 @@ void QColor::setBlueF(qreal blue)
     \sa hsvHue(), hueF(), getHsv(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
 
-int QColor::hue() const
+int QColor::hue() const Q_DECL_NOTHROW
 {
     return hsvHue();
 }
@@ -1224,7 +1641,7 @@ int QColor::hue() const
 
     \sa hueF(), getHsv(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-int QColor::hsvHue() const
+int QColor::hsvHue() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().hue();
@@ -1240,7 +1657,7 @@ int QColor::hsvHue() const
     Model}
 */
 
-int QColor::saturation() const
+int QColor::saturation() const Q_DECL_NOTHROW
 {
     return hsvSaturation();
 }
@@ -1250,7 +1667,7 @@ int QColor::saturation() const
 
     \sa saturationF(), getHsv(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-int QColor::hsvSaturation() const
+int QColor::hsvSaturation() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().saturation();
@@ -1262,7 +1679,7 @@ int QColor::hsvSaturation() const
 
     \sa valueF(), getHsv(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-int QColor::value() const
+int QColor::value() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().value();
@@ -1276,7 +1693,7 @@ int QColor::value() const
 
     \sa hsvHueF(), hue(), getHsvF(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-qreal QColor::hueF() const
+qreal QColor::hueF() const Q_DECL_NOTHROW
 {
     return hsvHueF();
 }
@@ -1287,7 +1704,7 @@ qreal QColor::hueF() const
     \sa hue(), getHsvF(), {QColor#The HSV Color Model}{The HSV Color
     Model}
 */
-qreal QColor::hsvHueF() const
+qreal QColor::hsvHueF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().hueF();
@@ -1302,7 +1719,7 @@ qreal QColor::hsvHueF() const
     \sa hsvSaturationF(), saturation(), getHsvF(), {QColor#The HSV Color Model}{The HSV Color
     Model}
 */
-qreal QColor::saturationF() const
+qreal QColor::saturationF() const Q_DECL_NOTHROW
 {
     return hsvSaturationF();
 }
@@ -1312,7 +1729,7 @@ qreal QColor::saturationF() const
 
     \sa saturation(), getHsvF(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-qreal QColor::hsvSaturationF() const
+qreal QColor::hsvSaturationF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().saturationF();
@@ -1324,7 +1741,7 @@ qreal QColor::hsvSaturationF() const
 
     \sa value(), getHsvF(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-qreal QColor::valueF() const
+qreal QColor::valueF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsv)
         return toHsv().valueF();
@@ -1338,7 +1755,7 @@ qreal QColor::valueF() const
 
     \sa getHslF(), getHsl()
 */
-int QColor::hslHue() const
+int QColor::hslHue() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().hslHue();
@@ -1352,7 +1769,7 @@ int QColor::hslHue() const
 
     \sa saturationF(), getHsv(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-int QColor::hslSaturation() const
+int QColor::hslSaturation() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().hslSaturation();
@@ -1366,7 +1783,7 @@ int QColor::hslSaturation() const
 
     \sa lightnessF(), getHsl()
 */
-int QColor::lightness() const
+int QColor::lightness() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().lightness();
@@ -1380,7 +1797,7 @@ int QColor::lightness() const
 
     \sa hue(), getHslF()
 */
-qreal QColor::hslHueF() const
+qreal QColor::hslHueF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().hslHueF();
@@ -1394,7 +1811,7 @@ qreal QColor::hslHueF() const
 
     \sa saturationF(), getHslF()
 */
-qreal QColor::hslSaturationF() const
+qreal QColor::hslSaturationF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().hslSaturationF();
@@ -1408,7 +1825,7 @@ qreal QColor::hslSaturationF() const
 
     \sa value(), getHslF()
 */
-qreal QColor::lightnessF() const
+qreal QColor::lightnessF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Hsl)
         return toHsl().lightnessF();
@@ -1420,7 +1837,7 @@ qreal QColor::lightnessF() const
 
     \sa cyanF(), getCmyk(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-int QColor::cyan() const
+int QColor::cyan() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().cyan();
@@ -1432,7 +1849,7 @@ int QColor::cyan() const
 
     \sa magentaF(), getCmyk(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-int QColor::magenta() const
+int QColor::magenta() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().magenta();
@@ -1444,7 +1861,7 @@ int QColor::magenta() const
 
     \sa yellowF(), getCmyk(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-int QColor::yellow() const
+int QColor::yellow() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().yellow();
@@ -1457,7 +1874,7 @@ int QColor::yellow() const
     \sa blackF(), getCmyk(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 
 */
-int QColor::black() const
+int QColor::black() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().black();
@@ -1469,7 +1886,7 @@ int QColor::black() const
 
     \sa cyan(), getCmykF(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-qreal QColor::cyanF() const
+qreal QColor::cyanF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().cyanF();
@@ -1481,7 +1898,7 @@ qreal QColor::cyanF() const
 
     \sa magenta(), getCmykF(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-qreal QColor::magentaF() const
+qreal QColor::magentaF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().magentaF();
@@ -1493,7 +1910,7 @@ qreal QColor::magentaF() const
 
      \sa yellow(), getCmykF(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-qreal QColor::yellowF() const
+qreal QColor::yellowF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().yellowF();
@@ -1505,7 +1922,7 @@ qreal QColor::yellowF() const
 
     \sa black(), getCmykF(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-qreal QColor::blackF() const
+qreal QColor::blackF() const Q_DECL_NOTHROW
 {
     if (cspec != Invalid && cspec != Cmyk)
         return toCmyk().blackF();
@@ -1517,7 +1934,7 @@ qreal QColor::blackF() const
 
     \sa fromRgb(), convertTo(), isValid()
 */
-QColor QColor::toRgb() const
+QColor QColor::toRgb() const Q_DECL_NOTHROW
 {
     if (!isValid() || cspec == Rgb)
         return *this;
@@ -1663,7 +2080,7 @@ QColor QColor::toRgb() const
 
     \sa fromHsv(), convertTo(), isValid(), {QColor#The HSV Color Model}{The HSV Color Model}
 */
-QColor QColor::toHsv() const
+QColor QColor::toHsv() const Q_DECL_NOTHROW
 {
     if (!isValid() || cspec == Hsv)
         return *this;
@@ -1714,7 +2131,7 @@ QColor QColor::toHsv() const
 
     \sa fromHsl(), convertTo(), isValid()
 */
-QColor QColor::toHsl() const
+QColor QColor::toHsl() const Q_DECL_NOTHROW
 {
     if (!isValid() || cspec == Hsl)
         return *this;
@@ -1770,7 +2187,7 @@ QColor QColor::toHsl() const
 
     \sa fromCmyk(), convertTo(), isValid(), {QColor#The CMYK Color Model}{The CMYK Color Model}
 */
-QColor QColor::toCmyk() const
+QColor QColor::toCmyk() const Q_DECL_NOTHROW
 {
     if (!isValid() || cspec == Cmyk)
         return *this;
@@ -1806,7 +2223,7 @@ QColor QColor::toCmyk() const
     return color;
 }
 
-QColor QColor::convertTo(QColor::Spec colorSpec) const
+QColor QColor::convertTo(QColor::Spec colorSpec) const Q_DECL_NOTHROW
 {
     if (colorSpec == cspec)
         return *this;
@@ -1837,7 +2254,7 @@ QColor QColor::convertTo(QColor::Spec colorSpec) const
     \sa fromRgba(), fromRgbF(), toRgb(), isValid()
 */
 
-QColor QColor::fromRgb(QRgb rgb)
+QColor QColor::fromRgb(QRgb rgb) Q_DECL_NOTHROW
 {
     return fromRgb(qRed(rgb), qGreen(rgb), qBlue(rgb));
 }
@@ -1850,10 +2267,10 @@ QColor QColor::fromRgb(QRgb rgb)
     Unlike the fromRgb() function, the alpha-channel specified by the given
     QRgb value is included.
 
-    \sa fromRgb(), isValid()
+    \sa fromRgb(), fromRgba64(), isValid()
 */
 
-QColor QColor::fromRgba(QRgb rgba)
+QColor QColor::fromRgba(QRgb rgba) Q_DECL_NOTHROW
 {
     return fromRgb(qRed(rgba), qGreen(rgba), qBlue(rgba), qAlpha(rgba));
 }
@@ -1865,7 +2282,7 @@ QColor QColor::fromRgba(QRgb rgba)
 
     All the values must be in the range 0-255.
 
-    \sa toRgb(), fromRgbF(), isValid()
+    \sa toRgb(), fromRgba64(), fromRgbF(), isValid()
 */
 QColor QColor::fromRgb(int r, int g, int b, int a)
 {
@@ -1894,7 +2311,7 @@ QColor QColor::fromRgb(int r, int g, int b, int a)
 
     All the values must be in the range 0.0-1.0.
 
-    \sa fromRgb(), toRgb(), isValid()
+    \sa fromRgb(), fromRgba64(), toRgb(), isValid()
 */
 QColor QColor::fromRgbF(qreal r, qreal g, qreal b, qreal a)
 {
@@ -1913,6 +2330,38 @@ QColor QColor::fromRgbF(qreal r, qreal g, qreal b, qreal a)
     color.ct.argb.green = qRound(g * USHRT_MAX);
     color.ct.argb.blue  = qRound(b * USHRT_MAX);
     color.ct.argb.pad   = 0;
+    return color;
+}
+
+
+/*!
+    \since 5.6
+
+    Static convenience function that returns a QColor constructed from the RGBA64
+    color values, \a r (red), \a g (green), \a b (blue), and \a a
+    (alpha-channel, i.e. transparency).
+
+    \sa fromRgb(), fromRgbF(), toRgb(), isValid()
+*/
+QColor QColor::fromRgba64(ushort r, ushort g, ushort b, ushort a) Q_DECL_NOTHROW
+{
+    QColor color;
+    color.setRgba64(qRgba64(r, g, b, a));
+    return color;
+}
+
+/*!
+    \since 5.6
+
+    Static convenience function that returns a QColor constructed from the
+    given QRgba64 value \a rgba64.
+
+    \sa fromRgb(), fromRgbF(), toRgb(), isValid()
+*/
+QColor QColor::fromRgba64(QRgba64 rgba64) Q_DECL_NOTHROW
+{
+    QColor color;
+    color.setRgba64(rgba64);
     return color;
 }
 
@@ -1995,7 +2444,7 @@ QColor QColor::fromHsl(int h, int s, int l, int a)
         || s < 0 || s > 255
         || l < 0 || l > 255
         || a < 0 || a > 255) {
-        qWarning("QColor::fromHsv: HSV parameters out of range");
+        qWarning("QColor::fromHsl: HSL parameters out of range");
         return QColor();
     }
 
@@ -2027,7 +2476,7 @@ QColor QColor::fromHslF(qreal h, qreal s, qreal l, qreal a)
         || (s < qreal(0.0) || s > qreal(1.0))
         || (l < qreal(0.0) || l > qreal(1.0))
         || (a < qreal(0.0) || a > qreal(1.0))) {
-        qWarning("QColor::fromHsvF: HSV parameters out of range");
+        qWarning("QColor::fromHslF: HSL parameters out of range");
         return QColor();
     }
 
@@ -2243,7 +2692,7 @@ QColor QColor::fromCmykF(qreal c, qreal m, qreal y, qreal k, qreal a)
 
     Use lighter(\a factor) instead.
 */
-QColor QColor::light(int factor) const
+QColor QColor::light(int factor) const Q_DECL_NOTHROW
 {
     if (factor <= 0)                                // invalid lightness factor
         return *this;
@@ -2293,7 +2742,7 @@ QColor QColor::light(int factor) const
 
     Use darker(\a factor) instead.
 */
-QColor QColor::dark(int factor) const
+QColor QColor::dark(int factor) const Q_DECL_NOTHROW
 {
     if (factor <= 0)                                // invalid darkness factor
         return *this;
@@ -2307,20 +2756,22 @@ QColor QColor::dark(int factor) const
     return hsv.convertTo(cspec);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 /*!
     Assigns a copy of \a color to this color, and returns a reference to it.
 */
-QColor &QColor::operator=(const QColor &color)
+QColor &QColor::operator=(const QColor &color) Q_DECL_NOTHROW
 {
     cspec = color.cspec;
     ct.argb = color.ct.argb;
     return *this;
 }
+#endif
 
 /*! \overload
     Assigns a copy of \a color and returns a reference to this color.
  */
-QColor &QColor::operator=(Qt::GlobalColor color)
+QColor &QColor::operator=(Qt::GlobalColor color) Q_DECL_NOTHROW
 {
     return operator=(QColor(color));
 }
@@ -2329,12 +2780,11 @@ QColor &QColor::operator=(Qt::GlobalColor color)
     Returns \c true if this color has the same RGB and alpha values as \a color;
     otherwise returns \c false.
 */
-bool QColor::operator==(const QColor &color) const
+bool QColor::operator==(const QColor &color) const Q_DECL_NOTHROW
 {
     if (cspec == Hsl && cspec == color.cspec) {
         return (ct.argb.alpha == color.ct.argb.alpha
-                && ((((ct.ahsl.hue % 36000) == (color.ct.ahsl.hue % 36000)))
-                    || (ct.ahsl.hue == color.ct.ahsl.hue))
+                && ct.ahsl.hue % 36000 == color.ct.ahsl.hue % 36000
                 && (qAbs(ct.ahsl.saturation - color.ct.ahsl.saturation) < 50
                     || ct.ahsl.lightness == 0
                     || color.ct.ahsl.lightness == 0
@@ -2357,7 +2807,7 @@ bool QColor::operator==(const QColor &color) const
     Returns \c true if this color has a different RGB and alpha values from
     \a color; otherwise returns \c false.
 */
-bool QColor::operator!=(const QColor &color) const
+bool QColor::operator!=(const QColor &color) const Q_DECL_NOTHROW
 { return !operator==(color); }
 
 
@@ -2374,7 +2824,7 @@ QColor::operator QVariant() const
     Marks the color as invalid and sets all components to zero (alpha is set
     to fully opaque for compatibility with Qt 3).
 */
-void QColor::invalidate()
+void QColor::invalidate() Q_DECL_NOTHROW
 {
     cspec = Invalid;
     ct.argb.alpha = USHRT_MAX;

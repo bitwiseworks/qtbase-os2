@@ -8,6 +8,7 @@ SUBDIRS       = addressbook \
                 dirview \
                 editabletreemodel \
                 fetchmore \
+                flattreeview \
                 frozencolumn \
                 interview \
                 pixelator \
@@ -20,3 +21,4 @@ SUBDIRS       = addressbook \
                 stardelegate \
                 storageview
 contains(DEFINES, QT_NO_DRAGANDDROP): SUBDIRS -= puzzle
+!qtHaveModule(xml): SUBDIRS -= simpledommodel

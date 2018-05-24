@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,6 +42,7 @@
 #include <qalgorithms.h>
 #include <qdatastream.h>
 #include <qdebug.h>
+#include <qendian.h>
 #include <string.h>
 
 QT_BEGIN_NAMESPACE
@@ -162,25 +170,6 @@ QBitArray::QBitArray(int size, bool value)
     Same as size().
 */
 
-template <typename T> T qUnalignedLoad(const uchar *ptr)
-{
-    /*
-     * Testing with different compilers shows that they all optimize the memcpy
-     * call away and replace with direct loads whenever possible. On x86 and PPC,
-     * GCC does direct unaligned loads; on MIPS, it generates a pair of load-left
-     * and load-right instructions. ICC and Clang do the same on x86. This is both
-     * 32- and 64-bit.
-     *
-     * On ARM cores without unaligned loads, the compiler leaves a call to
-     * memcpy.
-     */
-
-    T u;
-    memcpy(&u, ptr, sizeof(u));
-    return u;
-}
-
-
 /*!
     If \a on is true, this function returns the number of
     1-bits stored in the bit array; otherwise the number
@@ -196,17 +185,17 @@ int QBitArray::count(bool on) const
     const quint8 *const end = reinterpret_cast<const quint8 *>(d.end());
 
     while (bits + 7 <= end) {
-        quint64 v = qUnalignedLoad<quint64>(bits);
+        quint64 v = qFromUnaligned<quint64>(bits);
         bits += 8;
         numBits += int(qPopulationCount(v));
     }
     if (bits + 3 <= end) {
-        quint32 v = qUnalignedLoad<quint32>(bits);
+        quint32 v = qFromUnaligned<quint32>(bits);
         bits += 4;
         numBits += int(qPopulationCount(v));
     }
     if (bits + 1 < end) {
-        quint16 v = qUnalignedLoad<quint16>(bits);
+        quint16 v = qFromUnaligned<quint16>(bits);
         bits += 2;
         numBits += int(qPopulationCount(v));
     }
@@ -309,6 +298,46 @@ void QBitArray::fill(bool value, int begin, int end)
     begin += s;
     while (begin < end)
         setBit(begin++, value);
+}
+
+/*!
+    \fn const char *QBitArray::bits() const
+    \since 5.11
+
+    Returns a pointer to a dense bit array for this QBitArray. Bits are counted
+    upwards from the least significant bit in each byte. The the number of bits
+    relevant in the last byte is given by \c{size() % 8}.
+
+    \sa fromBits(), size()
+ */
+
+/*!
+    \since 5.11
+
+    Creates a QBitArray with the dense bit array located at \a data, with \a
+    size bits. The byte array at \a data must be at least \a size / 8 (rounded up)
+    bytes long.
+
+    If \a size is not a multiple of 8, this function will include the lowest
+    \a size % 8 bits from the last byte in \a data.
+
+    \sa bits()
+ */
+QBitArray QBitArray::fromBits(const char *data, qsizetype size)
+{
+    QBitArray result;
+    qsizetype nbytes = (size + 7) / 8;
+
+    result.d = QByteArray(nbytes + 1, Qt::Uninitialized);
+    char *bits = result.d.data();
+    memcpy(bits + 1, data, nbytes);
+
+    // clear any unused bits from the last byte
+    if (size & 7)
+        bits[nbytes] &= 0xffU >> (size & 7);
+
+    *bits = result.d.size() * 8 - size;
+    return result;
 }
 
 /*! \fn bool QBitArray::isDetached() const
@@ -604,7 +633,7 @@ QBitArray QBitArray::operator~() const
     Example:
     \snippet code/src_corelib_tools_qbitarray.cpp 12
 
-    \sa QBitArray::operator&=(), operator|(), operator^()
+    \sa {QBitArray::}{operator&=()}, {QBitArray::}{operator|()}, {QBitArray::}{operator^()}
 */
 
 QBitArray operator&(const QBitArray &a1, const QBitArray &a2)
@@ -650,7 +679,7 @@ QBitArray operator|(const QBitArray &a1, const QBitArray &a2)
     Example:
     \snippet code/src_corelib_tools_qbitarray.cpp 14
 
-    \sa QBitArray::operator^=(), operator&(), operator|()
+    \sa {QBitArray}{operator^=()}, {QBitArray}{operator&()}, {QBitArray}{operator|()}
 */
 
 QBitArray operator^(const QBitArray &a1, const QBitArray &a2)

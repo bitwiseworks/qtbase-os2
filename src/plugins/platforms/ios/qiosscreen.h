@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,6 +46,10 @@
 
 @class QIOSOrientationListener;
 
+@interface QUIWindow : UIWindow
+@property (nonatomic, readonly) BOOL sendingEvent;
+@end
+
 QT_BEGIN_NAMESPACE
 
 class QIOSScreen : public QObject, public QPlatformScreen
@@ -50,32 +60,42 @@ public:
     QIOSScreen(UIScreen *screen);
     ~QIOSScreen();
 
-    QRect geometry() const Q_DECL_OVERRIDE;
-    QRect availableGeometry() const Q_DECL_OVERRIDE;
-    int depth() const Q_DECL_OVERRIDE;
-    QImage::Format format() const Q_DECL_OVERRIDE;
-    QSizeF physicalSize() const Q_DECL_OVERRIDE;
-    QDpi logicalDpi() const Q_DECL_OVERRIDE;
-    qreal devicePixelRatio() const Q_DECL_OVERRIDE;
+    QString name() const override;
 
-    Qt::ScreenOrientation nativeOrientation() const Q_DECL_OVERRIDE;
-    Qt::ScreenOrientation orientation() const Q_DECL_OVERRIDE;
-    void setOrientationUpdateMask(Qt::ScreenOrientations mask) Q_DECL_OVERRIDE;
+    QRect geometry() const override;
+    QRect availableGeometry() const override;
+    int depth() const override;
+    QImage::Format format() const override;
+    QSizeF physicalSize() const override;
+    QDpi logicalDpi() const override;
+    qreal devicePixelRatio() const override;
+    qreal refreshRate() const override;
+
+    Qt::ScreenOrientation nativeOrientation() const override;
+    Qt::ScreenOrientation orientation() const override;
+    void setOrientationUpdateMask(Qt::ScreenOrientations mask) override;
+
+    QPixmap grabWindow(WId window, int x, int y, int width, int height) const override;
 
     UIScreen *uiScreen() const;
     UIWindow *uiWindow() const;
 
+    void setUpdatesPaused(bool);
+
     void updateProperties();
 
 private:
+    void deliverUpdateRequests() const;
+
     UIScreen *m_uiScreen;
     UIWindow *m_uiWindow;
     QRect m_geometry;
     QRect m_availableGeometry;
     int m_depth;
-    uint m_unscaledDpi;
+    uint m_physicalDpi;
     QSizeF m_physicalSize;
     QIOSOrientationListener *m_orientationListener;
+    CADisplayLink *m_displayLink;
 };
 
 QT_END_NAMESPACE

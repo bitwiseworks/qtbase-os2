@@ -2,31 +2,37 @@
 **
 ** Copyright (C) 2013 Laszlo Papp <lpapp@kde.org>
 ** Copyright (C) 2013 David Faure <faure@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,10 +47,17 @@ QT_BEGIN_NAMESPACE
 class QCommandLineOptionPrivate : public QSharedData
 {
 public:
-    inline QCommandLineOptionPrivate()
+    Q_NEVER_INLINE
+    explicit QCommandLineOptionPrivate(const QString &name)
+        : names(removeInvalidNames(QStringList(name)))
     { }
 
-    void setNames(const QStringList &nameList);
+    Q_NEVER_INLINE
+    explicit QCommandLineOptionPrivate(const QStringList &names)
+        : names(removeInvalidNames(names))
+    { }
+
+    static QStringList removeInvalidNames(QStringList nameList);
 
     //! The list of names used for this option.
     QStringList names;
@@ -58,6 +71,8 @@ public:
 
     //! The list of default values used for this option.
     QStringList defaultValues;
+
+    QCommandLineOption::Flags flags;
 };
 
 /*!
@@ -98,9 +113,8 @@ public:
     \sa setDescription(), setValueName(), setDefaultValues()
 */
 QCommandLineOption::QCommandLineOption(const QString &name)
-    : d(new QCommandLineOptionPrivate)
+    : d(new QCommandLineOptionPrivate(name))
 {
-    d->setNames(QStringList(name));
 }
 
 /*!
@@ -117,9 +131,8 @@ QCommandLineOption::QCommandLineOption(const QString &name)
     \sa setDescription(), setValueName(), setDefaultValues()
 */
 QCommandLineOption::QCommandLineOption(const QStringList &names)
-    : d(new QCommandLineOptionPrivate)
+    : d(new QCommandLineOptionPrivate(names))
 {
-    d->setNames(names);
 }
 
 /*!
@@ -134,7 +147,7 @@ QCommandLineOption::QCommandLineOption(const QStringList &names)
     The description is set to \a description. It is customary to add a "."
     at the end of the description.
 
-    In addition, the \a valueName can be set if the option expects a value.
+    In addition, the \a valueName needs to be set if the option expects a value.
     The default value for the option is set to \a defaultValue.
 
     In Qt versions before 5.4, this constructor was \c explicit. In Qt 5.4
@@ -148,9 +161,8 @@ QCommandLineOption::QCommandLineOption(const QStringList &names)
 QCommandLineOption::QCommandLineOption(const QString &name, const QString &description,
                                        const QString &valueName,
                                        const QString &defaultValue)
-    : d(new QCommandLineOptionPrivate)
+    : d(new QCommandLineOptionPrivate(name))
 {
-    d->setNames(QStringList(name));
     setValueName(valueName);
     setDescription(description);
     setDefaultValue(defaultValue);
@@ -171,7 +183,7 @@ QCommandLineOption::QCommandLineOption(const QString &name, const QString &descr
     The description is set to \a description. It is customary to add a "."
     at the end of the description.
 
-    In addition, the \a valueName can be set if the option expects a value.
+    In addition, the \a valueName needs to be set if the option expects a value.
     The default value for the option is set to \a defaultValue.
 
     In Qt versions before 5.4, this constructor was \c explicit. In Qt 5.4
@@ -185,9 +197,8 @@ QCommandLineOption::QCommandLineOption(const QString &name, const QString &descr
 QCommandLineOption::QCommandLineOption(const QStringList &names, const QString &description,
                                        const QString &valueName,
                                        const QString &defaultValue)
-    : d(new QCommandLineOptionPrivate)
+    : d(new QCommandLineOptionPrivate(names))
 {
-    d->setNames(names);
     setValueName(valueName);
     setDescription(description);
     setDefaultValue(defaultValue);
@@ -236,29 +247,47 @@ QStringList QCommandLineOption::names() const
     return d->names;
 }
 
-void QCommandLineOptionPrivate::setNames(const QStringList &nameList)
-{
-    QStringList newNames;
-    newNames.reserve(nameList.size());
-    if (nameList.isEmpty())
-        qWarning("QCommandLineOption: Options must have at least one name");
-    foreach (const QString &name, nameList) {
-        if (name.isEmpty()) {
-            qWarning("QCommandLineOption: Option names cannot be empty");
-        } else {
+namespace {
+    struct IsInvalidName
+    {
+        typedef bool result_type;
+        typedef QString argument_type;
+
+        Q_NEVER_INLINE
+        result_type operator()(const QString &name) const Q_DECL_NOEXCEPT
+        {
+            if (Q_UNLIKELY(name.isEmpty()))
+                return warn("be empty");
+
             const QChar c = name.at(0);
-            if (c == QLatin1Char('-'))
-                qWarning("QCommandLineOption: Option names cannot start with a '-'");
-            else if (c == QLatin1Char('/'))
-                qWarning("QCommandLineOption: Option names cannot start with a '/'");
-            else if (name.contains(QLatin1Char('=')))
-                qWarning("QCommandLineOption: Option names cannot contain a '='");
-            else
-                newNames.append(name);
+            if (Q_UNLIKELY(c == QLatin1Char('-')))
+                return warn("start with a '-'");
+            if (Q_UNLIKELY(c == QLatin1Char('/')))
+                return warn("start with a '/'");
+            if (Q_UNLIKELY(name.contains(QLatin1Char('='))))
+                return warn("contain a '='");
+
+            return false;
         }
-    }
-    // commit
-    names.swap(newNames);
+
+        Q_NEVER_INLINE
+        static bool warn(const char *what) Q_DECL_NOEXCEPT
+        {
+            qWarning("QCommandLineOption: Option names cannot %s", what);
+            return true;
+        }
+    };
+} // unnamed namespace
+
+// static
+QStringList QCommandLineOptionPrivate::removeInvalidNames(QStringList nameList)
+{
+    if (Q_UNLIKELY(nameList.isEmpty()))
+        qWarning("QCommandLineOption: Options must have at least one name");
+    else
+        nameList.erase(std::remove_if(nameList.begin(), nameList.end(), IsInvalidName()),
+                       nameList.end());
+    return nameList;
 }
 
 /*!
@@ -361,5 +390,74 @@ QStringList QCommandLineOption::defaultValues() const
 {
     return d->defaultValues;
 }
+
+#if QT_DEPRECATED_SINCE(5, 8)
+/*!
+    Sets whether to hide this option in the user-visible help output.
+
+    All options are visible by default. Setting \a hide to true for
+    a particular option makes it internal, i.e. not listed in the help output.
+
+    \since 5.6
+    \obsolete Use setFlags(QCommandLineOption::HiddenFromHelp), QCommandLineOption::HiddenFromHelp
+    \sa isHidden
+ */
+void QCommandLineOption::setHidden(bool hide)
+{
+    d->flags.setFlag(HiddenFromHelp, hide);
+}
+
+/*!
+    Returns true if this option is omitted from the help output,
+    false if the option is listed.
+
+    \since 5.6
+    \obsolete Use flags() & QCommandLineOption::HiddenFromHelp
+    \sa setHidden(), QCommandLineOption::HiddenFromHelp
+ */
+bool QCommandLineOption::isHidden() const
+{
+    return d->flags & HiddenFromHelp;
+}
+#endif
+
+/*!
+    Returns a set of flags that affect this command-line option.
+
+    \since 5.8
+    \sa setFlags(), QCommandLineOption::Flags
+ */
+QCommandLineOption::Flags QCommandLineOption::flags() const
+{
+    return d->flags;
+}
+
+/*!
+    Set the set of flags that affect this command-line option to \a flags.
+
+    \since 5.8
+    \sa flags(), QCommandLineOption::Flags
+ */
+void QCommandLineOption::setFlags(Flags flags)
+{
+    d->flags = flags;
+}
+
+/*!
+    \enum QCommandLineOption::Flag
+
+    \value HiddenFromHelp Hide this option in the user-visible help output. All
+    options are visible by default. Setting this flag for a particular
+    option makes it internal, i.e. not listed in the help output.
+
+    \value ShortOptionStyle The option will always be understood as a short
+    option, regardless of what was set by
+    QCommandLineParser::setSingleDashWordOptionMode.
+    This allows flags such as \c{-DDEFINE=VALUE} or \c{-I/include/path} to be
+    interpreted as short flags even when the parser is in
+    QCommandLineParser::ParseAsLongOptions mode.
+
+    \sa QCommandLineOption::setFlags(), QCommandLineOption::flags()
+*/
 
 QT_END_NAMESPACE

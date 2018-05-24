@@ -30,6 +30,7 @@
 #endif
 
 #include "hb-private.hh"
+#include "hb-debug.hh"
 
 #include "hb-object-private.hh"
 
@@ -42,12 +43,6 @@
 
 #include <stdio.h>
 #include <errno.h>
-
-
-
-#ifndef HB_DEBUG_BLOB
-#define HB_DEBUG_BLOB (HB_DEBUG+0)
-#endif
 
 
 struct hb_blob_t {
@@ -72,8 +67,8 @@ _hb_blob_destroy_user_data (hb_blob_t *blob)
 {
   if (blob->destroy) {
     blob->destroy (blob->user_data);
-    blob->user_data = NULL;
-    blob->destroy = NULL;
+    blob->user_data = nullptr;
+    blob->destroy = nullptr;
   }
 }
 
@@ -91,7 +86,7 @@ _hb_blob_destroy_user_data (hb_blob_t *blob)
  * Return value: New blob, or the empty blob if something failed or if @length is
  * zero.  Destroy with hb_blob_destroy().
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_blob_t *
 hb_blob_create (const char        *data,
@@ -104,7 +99,6 @@ hb_blob_create (const char        *data,
 
   if (!length ||
       length >= 1u << 31 ||
-      data + length < data /* overflows */ ||
       !(blob = hb_object_create<hb_blob_t> ())) {
     if (destroy)
       destroy (user_data);
@@ -129,6 +123,12 @@ hb_blob_create (const char        *data,
   return blob;
 }
 
+static void
+_hb_blob_destroy (void *data)
+{
+  hb_blob_destroy ((hb_blob_t *) data);
+}
+
 /**
  * hb_blob_create_sub_blob:
  * @parent: Parent blob.
@@ -147,7 +147,7 @@ hb_blob_create (const char        *data,
  * @length is zero or @offset is beyond the end of @parent's data.  Destroy
  * with hb_blob_destroy().
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_blob_t *
 hb_blob_create_sub_blob (hb_blob_t    *parent,
@@ -165,7 +165,7 @@ hb_blob_create_sub_blob (hb_blob_t    *parent,
 			 MIN (length, parent->length - offset),
 			 HB_MEMORY_MODE_READONLY,
 			 hb_blob_reference (parent),
-			 (hb_destroy_func_t) hb_blob_destroy);
+			 _hb_blob_destroy);
 
   return blob;
 }
@@ -179,7 +179,7 @@ hb_blob_create_sub_blob (hb_blob_t    *parent,
  *
  * Return value: (transfer full): the empty blob.
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_blob_t *
 hb_blob_get_empty (void)
@@ -189,12 +189,12 @@ hb_blob_get_empty (void)
 
     true, /* immutable */
 
-    NULL, /* data */
+    nullptr, /* data */
     0, /* length */
     HB_MEMORY_MODE_READONLY, /* mode */
 
-    NULL, /* user_data */
-    NULL  /* destroy */
+    nullptr, /* user_data */
+    nullptr  /* destroy */
   };
 
   return const_cast<hb_blob_t *> (&_hb_blob_nil);
@@ -210,7 +210,7 @@ hb_blob_get_empty (void)
  *
  * Return value: @blob.
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_blob_t *
 hb_blob_reference (hb_blob_t *blob)
@@ -228,7 +228,7 @@ hb_blob_reference (hb_blob_t *blob)
  *
  * See TODO:link object types for more information.
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 void
 hb_blob_destroy (hb_blob_t *blob)
@@ -250,7 +250,7 @@ hb_blob_destroy (hb_blob_t *blob)
  *
  * Return value: 
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_bool_t
 hb_blob_set_user_data (hb_blob_t          *blob,
@@ -271,7 +271,7 @@ hb_blob_set_user_data (hb_blob_t          *blob,
  *
  * Return value: (transfer none): 
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 void *
 hb_blob_get_user_data (hb_blob_t          *blob,
@@ -287,7 +287,7 @@ hb_blob_get_user_data (hb_blob_t          *blob,
  *
  * 
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 void
 hb_blob_make_immutable (hb_blob_t *blob)
@@ -306,7 +306,7 @@ hb_blob_make_immutable (hb_blob_t *blob)
  *
  * Return value: TODO
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 hb_bool_t
 hb_blob_is_immutable (hb_blob_t *blob)
@@ -323,7 +323,7 @@ hb_blob_is_immutable (hb_blob_t *blob)
  *
  * Return value: the length of blob data in bytes.
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 unsigned int
 hb_blob_get_length (hb_blob_t *blob)
@@ -340,7 +340,7 @@ hb_blob_get_length (hb_blob_t *blob)
  *
  * Returns: (transfer none) (array length=length): 
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 const char *
 hb_blob_get_data (hb_blob_t *blob, unsigned int *length)
@@ -365,7 +365,7 @@ hb_blob_get_data (hb_blob_t *blob, unsigned int *length)
  * Returns: (transfer none) (array length=length): Writable blob data,
  * or %NULL if failed.
  *
- * Since: 1.0
+ * Since: 0.9.2
  **/
 char *
 hb_blob_get_data_writable (hb_blob_t *blob, unsigned int *length)
@@ -374,7 +374,7 @@ hb_blob_get_data_writable (hb_blob_t *blob, unsigned int *length)
     if (length)
       *length = 0;
 
-    return NULL;
+    return nullptr;
   }
 
   if (length)

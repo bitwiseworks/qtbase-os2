@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -155,6 +161,8 @@
 
     This signal is emitted by QMovie when the error \a error occurred during
     playback.  QMovie will stop the movie, and enter QMovie::NotRunning state.
+
+    \sa lastError(), lastErrorString()
 */
 
 /*! \fn void QMovie::finished()
@@ -164,11 +172,9 @@
     \sa QMovie::stop()
 */
 
-#include "qglobal.h"
-
-#ifndef QT_NO_MOVIE
-
 #include "qmovie.h"
+
+#include "qglobal.h"
 #include "qimage.h"
 #include "qimagereader.h"
 #include "qpixmap.h"
@@ -324,6 +330,8 @@ int QMoviePrivate::speedAdjustedDelay(int delay) const
 */
 QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
 {
+    Q_Q(QMovie);
+
     if (frameNumber < 0)
         return QFrameInfo(); // Invalid
 
@@ -352,7 +360,8 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
                         reader = new QImageReader(device, format);
                     else
                         reader = new QImageReader(absoluteFilePath, format);
-                    (void)reader->canRead(); // Provoke a device->open() call
+                    if (!reader->canRead()) // Provoke a device->open() call
+                        emit q->error(reader->error());
                     reader->device()->seek(initialDevicePos);
                     reader->setBackgroundColor(bgColor);
                     reader->setScaledSize(scaledSize);
@@ -461,6 +470,10 @@ bool QMoviePrivate::next()
         currentPixmap = QPixmap::fromImage( info.pixmap.toImage().scaled(scaledSize) );
     else
         currentPixmap = info.pixmap;
+
+    if (!speed)
+        return true;
+
     nextDelay = speedAdjustedDelay(info.delay);
     // Adjust delay according to the time it took to read the frame
     int processingTime = time.elapsed();
@@ -495,7 +508,7 @@ void QMoviePrivate::_q_loadNextFrame(bool starting)
         emit q->updated(frameRect);
         emit q->frameChanged(currentFrameNumber);
 
-        if (movieState == QMovie::Running)
+        if (speed && movieState == QMovie::Running)
             nextImageTimer.start(nextDelay);
     } else {
         // Could not read another frame
@@ -519,8 +532,20 @@ void QMoviePrivate::_q_loadNextFrame(bool starting)
 */
 bool QMoviePrivate::isValid() const
 {
-    return (greatestFrameNumber >= 0) // have we seen valid data
-        || reader->canRead(); // or does the reader see valid data
+    Q_Q(const QMovie);
+
+    if (greatestFrameNumber >= 0)
+        return true; // have we seen valid data
+    bool canRead = reader->canRead();
+    if (!canRead) {
+        // let the consumer know it's broken
+        //
+        // ### the const_cast here is ugly, but 'const' of this method is
+        // technically wrong right now, since it may cause the underlying device
+        // to open.
+        emit const_cast<QMovie*>(q)->error(reader->error());
+    }
+    return canRead;
 }
 
 /*!
@@ -771,11 +796,36 @@ QImage QMovie::currentImage() const
 /*!
     Returns \c true if the movie is valid (e.g., the image data is readable and
     the image format is supported); otherwise returns \c false.
+
+    For information about why the movie is not valid, see lastError().
 */
 bool QMovie::isValid() const
 {
     Q_D(const QMovie);
     return d->isValid();
+}
+
+/*!
+    Returns the most recent error that occurred while attempting to read image data.
+
+    \sa lastErrorString()
+*/
+QImageReader::ImageReaderError QMovie::lastError() const
+{
+    Q_D(const QMovie);
+    return d->reader->error();
+}
+
+/*!
+     Returns a human-readable representation of the most recent error that occurred
+     while attempting to read image data.
+
+    \sa lastError()
+*/
+QString QMovie::lastErrorString() const
+{
+    Q_D(const QMovie);
+    return d->reader->errorString();
 }
 
 /*!
@@ -880,6 +930,8 @@ void QMovie::setPaused(bool paused)
 void QMovie::setSpeed(int percentSpeed)
 {
     Q_D(QMovie);
+    if (!d->speed && d->movieState == Running)
+        d->nextImageTimer.start(nextFrameDelay());
     d->speed = percentSpeed;
 }
 
@@ -965,14 +1017,16 @@ void QMovie::setScaledSize(const QSize &size)
 QList<QByteArray> QMovie::supportedFormats()
 {
     QList<QByteArray> list = QImageReader::supportedImageFormats();
-    QMutableListIterator<QByteArray> it(list);
+
     QBuffer buffer;
     buffer.open(QIODevice::ReadOnly);
-    while (it.hasNext()) {
-        QImageReader reader(&buffer, it.next());
-        if (!reader.supportsAnimation())
-            it.remove();
-    }
+
+    const auto doesntSupportAnimation =
+            [&buffer](const QByteArray &format) {
+                return !QImageReader(&buffer, format).supportsOption(QImageIOHandler::Animation);
+            };
+
+    list.erase(std::remove_if(list.begin(), list.end(), doesntSupportAnimation), list.end());
     return list;
 }
 
@@ -1012,5 +1066,3 @@ void QMovie::setCacheMode(CacheMode cacheMode)
 QT_END_NAMESPACE
 
 #include "moc_qmovie.cpp"
-
-#endif // QT_NO_MOVIE

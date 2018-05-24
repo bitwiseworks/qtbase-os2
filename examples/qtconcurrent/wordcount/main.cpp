@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -55,16 +65,18 @@ using namespace QtConcurrent;
 /*
     Utility function that recursivily searches for files.
 */
-QStringList findFiles(const QString &startDir, QStringList filters)
+QStringList findFiles(const QString &startDir, const QStringList &filters)
 {
     QStringList names;
     QDir dir(startDir);
 
-    foreach (QString file, dir.entryList(filters, QDir::Files))
-        names += startDir + "/" + file;
+    const auto files = dir.entryList(filters, QDir::Files);
+    for (const QString &file : files)
+        names += startDir + '/' + file;
 
-    foreach (QString subdir, dir.entryList(QDir::AllDirs | QDir::NoDotAndDotDot))
-        names += findFiles(startDir + "/" + subdir, filters);
+    const auto subdirs =  dir.entryList(QDir::AllDirs | QDir::NoDotAndDotDot);
+    for (const QString &subdir : subdirs)
+        names += findFiles(startDir + '/' + subdir, filters);
     return names;
 }
 
@@ -73,17 +85,18 @@ typedef QMap<QString, int> WordCount;
 /*
     Single threaded word counter function.
 */
-WordCount singleThreadedWordCount(QStringList files)
+WordCount singleThreadedWordCount(const QStringList &files)
 {
     WordCount wordCount;
-    foreach (QString file, files) {
+    for (const QString &file : files) {
         QFile f(file);
         f.open(QIODevice::ReadOnly);
         QTextStream textStream(&f);
-        while (textStream.atEnd() == false)
-            foreach(QString word, textStream.readLine().split(" "))
+        while (!textStream.atEnd()) {
+            const auto words =  textStream.readLine().split(' ');
+            for (const QString &word : words)
                 wordCount[word] += 1;
-
+        }
     }
     return wordCount;
 }
@@ -99,9 +112,11 @@ WordCount countWords(const QString &file)
     QTextStream textStream(&f);
     WordCount wordCount;
 
-    while (textStream.atEnd() == false)
-        foreach (QString word, textStream.readLine().split(" "))
+    while (!textStream.atEnd()) {
+        const auto words =  textStream.readLine().split(' ');
+        for (const QString &word : words)
             wordCount[word] += 1;
+    }
 
     return wordCount;
 }
@@ -127,8 +142,6 @@ int main(int argc, char** argv)
 
     qDebug() << "warmup";
     {
-        QTime time;
-        time.start();
         WordCount total = singleThreadedWordCount(files);
     }
 

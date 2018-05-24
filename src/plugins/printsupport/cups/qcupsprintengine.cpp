@@ -1,39 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qcupsprintengine_p.h"
-
-#ifndef QT_NO_PRINTER
 
 #include <qpa/qplatformprintplugin.h>
 #include <qpa/qplatformprintersupport.h>
@@ -53,11 +57,11 @@ QT_BEGIN_NAMESPACE
 
 extern QMarginsF qt_convertMargins(const QMarginsF &margins, QPageLayout::Unit fromUnits, QPageLayout::Unit toUnits);
 
-QCupsPrintEngine::QCupsPrintEngine(QPrinter::PrinterMode m)
+QCupsPrintEngine::QCupsPrintEngine(QPrinter::PrinterMode m, const QString &deviceId)
     : QPdfPrintEngine(*new QCupsPrintEnginePrivate(m))
 {
     Q_D(QCupsPrintEngine);
-    d->setupDefaultPrinter();
+    d->changePrinter(deviceId);
     state = QPrinter::Idle;
 }
 
@@ -100,10 +104,9 @@ void QCupsPrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &v
         break;
     case PPK_QPageLayout: {
         QPageLayout pageLayout = value.value<QPageLayout>();
-        if (pageLayout.isValid() && d->m_printDevice.isValidPageLayout(pageLayout, d->resolution)) {
+        if (pageLayout.isValid() && (d->m_printDevice.isValidPageLayout(pageLayout, d->resolution) || d->m_printDevice.supportsCustomPageSizes())) {
             d->m_pageLayout = pageLayout;
-            // Replace the page size with the CUPS page size
-            d->setPageSize(d->m_printDevice.supportedPageSize(pageLayout.pageSize()));
+            d->setPageSize(pageLayout.pageSize());
         }
         break;
     }
@@ -226,52 +229,25 @@ void QCupsPrintEnginePrivate::closePrintDevice()
             it += 2;
         }
 
-        for (int c = 0; c < options.size(); ++c) {
+        const int numOptions = options.size();
+        cupsOptStruct.reserve(numOptions);
+        for (int c = 0; c < numOptions; ++c) {
             cups_option_t opt;
             opt.name = options[c].first.data();
             opt.value = options[c].second.data();
             cupsOptStruct.append(opt);
         }
 
-        // Print the file.
+        // Print the file
+        // Cups expect the printer original name without instance, the full name is used only to retrieve the configuration
+        const auto parts = printerName.splitRef(QLatin1Char('/'));
+        const auto printerOriginalName = parts.at(0);
         cups_option_t* optPtr = cupsOptStruct.size() ? &cupsOptStruct.first() : 0;
-        cupsPrintFile(printerName.toLocal8Bit().constData(), tempFile.toLocal8Bit().constData(),
+        cupsPrintFile(printerOriginalName.toLocal8Bit().constData(), tempFile.toLocal8Bit().constData(),
                       title.toLocal8Bit().constData(), cupsOptStruct.size(), optPtr);
 
         QFile::remove(tempFile);
     }
-}
-
-void QCupsPrintEnginePrivate::setupDefaultPrinter()
-{
-    // Should never have reached here if no plugin available, but check just in case
-    QPlatformPrinterSupport *ps = QPlatformPrinterSupportPlugin::get();
-    if (!ps)
-        return;
-
-    // Get default printer id, if no default then use the first available
-    // TODO Find way to remove printerName from base class?
-    printerName = ps->defaultPrintDeviceId();
-    if (printerName.isEmpty()) {
-        QStringList list = ps->availablePrintDeviceIds();
-        if (list.size() > 0)
-            printerName = list.at(0);
-    }
-
-    // Should never have reached here if no printers available, but check just in case
-    if (printerName.isEmpty())
-        return;
-
-    m_printDevice = ps->createPrintDevice(printerName);
-    if (!m_printDevice.isValid())
-        return;
-
-    // Setup the printer defaults
-    duplex = m_printDevice.defaultDuplexMode();
-    grayscale = m_printDevice.defaultColorMode() == QPrint::GrayScale;
-    // CUPS server always supports collation, even if individual m_printDevice doesn't
-    collate = true;
-    setPageSize(m_printDevice.defaultPageSize());
 }
 
 void QCupsPrintEnginePrivate::changePrinter(const QString &newPrinter)
@@ -287,7 +263,7 @@ void QCupsPrintEnginePrivate::changePrinter(const QString &newPrinter)
 
     // Try create the printer, only use it if it returns valid
     QPrintDevice printDevice = ps->createPrintDevice(newPrinter);
-    if (!m_printDevice.isValid())
+    if (!printDevice.isValid())
         return;
     m_printDevice.swap(printDevice);
     printerName = m_printDevice.id();
@@ -315,5 +291,3 @@ void QCupsPrintEnginePrivate::setPageSize(const QPageSize &pageSize)
 }
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_PRINTER

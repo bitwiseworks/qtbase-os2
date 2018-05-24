@@ -10,14 +10,11 @@
 #define SETTINGS_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QSlider>
 #include <QtWidgets/QSpacerItem>
@@ -185,13 +182,13 @@ public:
 
     void retranslateUi(QDialog *Dialog)
     {
-        Dialog->setWindowTitle(QApplication::translate("Dialog", "Dialog", 0));
-        label->setText(QApplication::translate("Dialog", "Audio device:", 0));
-        label_6->setText(QApplication::translate("Dialog", "Audio effect:", 0));
-        crossFadeLabel->setText(QApplication::translate("Dialog", "Cross fade:", 0));
-        label_3->setText(QApplication::translate("Dialog", "-10 Sec", 0));
-        label_5->setText(QApplication::translate("Dialog", "0", 0));
-        label_4->setText(QApplication::translate("Dialog", "10 Sec", 0));
+        Dialog->setWindowTitle(QApplication::translate("Dialog", "Dialog", nullptr));
+        label->setText(QApplication::translate("Dialog", "Audio device:", nullptr));
+        label_6->setText(QApplication::translate("Dialog", "Audio effect:", nullptr));
+        crossFadeLabel->setText(QApplication::translate("Dialog", "Cross fade:", nullptr));
+        label_3->setText(QApplication::translate("Dialog", "-10 Sec", nullptr));
+        label_5->setText(QApplication::translate("Dialog", "0", nullptr));
+        label_4->setText(QApplication::translate("Dialog", "10 Sec", nullptr));
     } // retranslateUi
 
 };

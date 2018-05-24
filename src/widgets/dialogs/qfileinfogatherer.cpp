@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -44,8 +50,6 @@
 
 QT_BEGIN_NAMESPACE
 
-#ifndef QT_NO_FILESYSTEMMODEL
-
 #ifdef QT_BUILD_INTERNAL
 static QBasicAtomicInt fetchedRoot = Q_BASIC_ATOMIC_INITIALIZER(false);
 Q_AUTOTEST_EXPORT void qt_test_resetFetchedRoot()
@@ -58,6 +62,18 @@ Q_AUTOTEST_EXPORT bool qt_test_isFetchedRoot()
     return fetchedRoot.load();
 }
 #endif
+
+static QString translateDriveName(const QFileInfo &drive)
+{
+    QString driveName = drive.absoluteFilePath();
+#ifdef Q_OS_WIN
+    if (driveName.startsWith(QLatin1Char('/'))) // UNC host
+        return drive.fileName();
+    if (driveName.endsWith(QLatin1Char('/')))
+        driveName.chop(1);
+#endif // Q_OS_WIN
+    return driveName;
+}
 
 /*!
     Creates thread
@@ -76,6 +92,16 @@ QFileInfoGatherer::QFileInfoGatherer(QObject *parent)
     watcher = new QFileSystemWatcher(this);
     connect(watcher, SIGNAL(directoryChanged(QString)), this, SLOT(list(QString)));
     connect(watcher, SIGNAL(fileChanged(QString)), this, SLOT(updateFile(QString)));
+
+#  if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+    const QVariant listener = watcher->property("_q_driveListener");
+    if (listener.canConvert<QObject *>()) {
+        if (QObject *driveListener = listener.value<QObject *>()) {
+            connect(driveListener, SIGNAL(driveAdded()), this, SLOT(driveAdded()));
+            connect(driveListener, SIGNAL(driveRemoved()), this, SLOT(driveRemoved()));
+        }
+    }
+#  endif // Q_OS_WIN && !Q_OS_WINRT
 #endif
     start(LowPriority);
 }
@@ -98,6 +124,20 @@ void QFileInfoGatherer::setResolveSymlinks(bool enable)
 #ifdef Q_OS_WIN
     m_resolveSymlinks = enable;
 #endif
+}
+
+void QFileInfoGatherer::driveAdded()
+{
+    fetchExtendedInformation(QString(), QStringList());
+}
+
+void QFileInfoGatherer::driveRemoved()
+{
+    QStringList drives;
+    const QFileInfoList driveInfoList = QDir::drives();
+    for (const QFileInfo &fi : driveInfoList)
+        drives.append(translateDriveName(fi));
+    newListOfFiles(QString(), drives);
 }
 
 bool QFileInfoGatherer::resolveSymlinks() const
@@ -156,7 +196,7 @@ void QFileInfoGatherer::fetchExtendedInformation(const QString &path, const QStr
 */
 void QFileInfoGatherer::updateFile(const QString &filePath)
 {
-    QString dir = filePath.mid(0, filePath.lastIndexOf(QDir::separator()));
+    QString dir = filePath.mid(0, filePath.lastIndexOf(QLatin1Char('/')));
     QString fileName = filePath.mid(dir.length() + 1);
     fetchExtendedInformation(dir, QStringList(fileName));
 }
@@ -211,9 +251,9 @@ void QFileInfoGatherer::run()
             condition.wait(&mutex);
         if (abort.load())
             return;
-        const QString thisPath = path.front();
+        const QString thisPath = qAsConst(path).front();
         path.pop_front();
-        const QStringList thisList = files.front();
+        const QStringList thisList = qAsConst(files).front();
         files.pop_front();
         locker.unlock();
 
@@ -227,19 +267,19 @@ QExtendedInformation QFileInfoGatherer::getInfo(const QFileInfo &fileInfo) const
     info.icon = m_iconProvider->icon(fileInfo);
     info.displayType = m_iconProvider->type(fileInfo);
 #ifndef QT_NO_FILESYSTEMWATCHER
-    // ### Not ready to listen all modifications
-    #if 0
-        // Enable the next two commented out lines to get updates when the file sizes change...
+    // ### Not ready to listen all modifications by default
+    static const bool watchFiles = qEnvironmentVariableIsSet("QT_FILESYSTEMMODEL_WATCH_FILES");
+    if (watchFiles) {
         if (!fileInfo.exists() && !fileInfo.isSymLink()) {
-            info.size = -1;
-            //watcher->removePath(fileInfo.absoluteFilePath());
+            watcher->removePath(fileInfo.absoluteFilePath());
         } else {
-            if (!fileInfo.absoluteFilePath().isEmpty() && fileInfo.exists() && fileInfo.isReadable()
-                && !watcher->files().contains(fileInfo.absoluteFilePath())) {
-                //watcher->addPath(fileInfo.absoluteFilePath());
+            const QString path = fileInfo.absoluteFilePath();
+            if (!path.isEmpty() && fileInfo.exists() && fileInfo.isFile() && fileInfo.isReadable()
+                && !watcher->files().contains(path)) {
+                watcher->addPath(path);
             }
         }
-    #endif
+    }
 #endif
 
 #ifdef Q_OS_WIN
@@ -252,18 +292,6 @@ QExtendedInformation QFileInfoGatherer::getInfo(const QFileInfo &fileInfo) const
     }
 #endif
     return info;
-}
-
-static QString translateDriveName(const QFileInfo &drive)
-{
-    QString driveName = drive.absoluteFilePath();
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
-    if (driveName.startsWith(QLatin1Char('/'))) // UNC host
-        return drive.fileName();
-    if (driveName.endsWith(QLatin1Char('/')))
-        driveName.chop(1);
-#endif
-    return driveName;
 }
 
 /*
@@ -282,12 +310,12 @@ void QFileInfoGatherer::getFileInfos(const QString &path, const QStringList &fil
             infoList = QDir::drives();
         } else {
             infoList.reserve(files.count());
-            for (int i = 0; i < files.count(); ++i)
-                infoList << QFileInfo(files.at(i));
+            for (const auto &file : files)
+                infoList << QFileInfo(file);
         }
         for (int i = infoList.count() - 1; i >= 0; --i) {
             QString driveName = translateDriveName(infoList.at(i));
-            QList<QPair<QString,QFileInfo> > updatedFiles;
+            QVector<QPair<QString,QFileInfo> > updatedFiles;
             updatedFiles.append(QPair<QString,QFileInfo>(driveName, infoList.at(i)));
             emit updates(path, updatedFiles);
         }
@@ -298,17 +326,18 @@ void QFileInfoGatherer::getFileInfos(const QString &path, const QStringList &fil
     base.start();
     QFileInfo fileInfo;
     bool firstTime = true;
-    QList<QPair<QString, QFileInfo> > updatedFiles;
+    QVector<QPair<QString, QFileInfo> > updatedFiles;
     QStringList filesToCheck = files;
 
-    QString itPath = QDir::fromNativeSeparators(files.isEmpty() ? path : QLatin1String(""));
-    QDirIterator dirIt(itPath, QDir::AllEntries | QDir::System | QDir::Hidden);
     QStringList allFiles;
-    while (!abort.load() && dirIt.hasNext()) {
-        dirIt.next();
-        fileInfo = dirIt.fileInfo();
-        allFiles.append(fileInfo.fileName());
-        fetch(fileInfo, base, firstTime, updatedFiles, path);
+    if (files.isEmpty()) {
+        QDirIterator dirIt(path, QDir::AllEntries | QDir::System | QDir::Hidden);
+        while (!abort.load() && dirIt.hasNext()) {
+            dirIt.next();
+            fileInfo = dirIt.fileInfo();
+            allFiles.append(fileInfo.fileName());
+            fetch(fileInfo, base, firstTime, updatedFiles, path);
+        }
     }
     if (!allFiles.isEmpty())
         emit newListOfFiles(path, allFiles);
@@ -324,7 +353,7 @@ void QFileInfoGatherer::getFileInfos(const QString &path, const QStringList &fil
     emit directoryLoaded(path);
 }
 
-void QFileInfoGatherer::fetch(const QFileInfo &fileInfo, QElapsedTimer &base, bool &firstTime, QList<QPair<QString, QFileInfo> > &updatedFiles, const QString &path) {
+void QFileInfoGatherer::fetch(const QFileInfo &fileInfo, QElapsedTimer &base, bool &firstTime, QVector<QPair<QString, QFileInfo> > &updatedFiles, const QString &path) {
     updatedFiles.append(QPair<QString, QFileInfo>(fileInfo.fileName(), fileInfo));
     QElapsedTimer current;
     current.start();
@@ -336,6 +365,6 @@ void QFileInfoGatherer::fetch(const QFileInfo &fileInfo, QElapsedTimer &base, bo
     }
 }
 
-#endif // QT_NO_FILESYSTEMMODEL
-
 QT_END_NAMESPACE
+
+#include "moc_qfileinfogatherer_p.cpp"

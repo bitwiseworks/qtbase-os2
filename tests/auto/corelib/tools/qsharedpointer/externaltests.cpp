@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +31,9 @@
 
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTemporaryDir>
-#include <QtCore/QProcess>
+#if QT_CONFIG(process)
+# include <QtCore/QProcess>
+#endif
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QFileInfo>
@@ -45,6 +42,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDebug>
 #include <QtCore/QLibraryInfo>
+#include <QtCore/QThread>
 
 #ifndef DEFAULT_MAKESPEC
 # error DEFAULT_MAKESPEC not defined
@@ -71,7 +69,17 @@ static QString makespec()
 
 QT_BEGIN_NAMESPACE
 namespace QTest {
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
+    static void ensureStopped(QProcess &process)
+    {
+        if (process.state() == QProcess::Running) {
+            process.terminate();
+            QThread::msleep(20);
+            if (process.state() == QProcess::Running)
+                process.kill();
+        }
+    }
+
     class QExternalProcess: public QProcess
     {
     protected:
@@ -92,7 +100,7 @@ namespace QTest {
         }
 #endif
     };
-#endif // !QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 
     class QExternalTestPrivate
     {
@@ -347,7 +355,7 @@ namespace QTest {
             "\n"
             "#ifdef Q_OS_WIN\n"
             "#include <windows.h>\n"
-            "#if defined(Q_CC_MSVC) && !defined(Q_OS_WINCE)\n"
+            "#if defined(Q_CC_MSVC)\n"
             "#include <crtdbg.h>\n"
             "#endif\n"
             "static void q_test_setup()\n"
@@ -363,7 +371,7 @@ namespace QTest {
             "#endif\n"
             "int main(int argc, char **argv)\n"
             "{\n"
-            "#if defined(Q_CC_MSVC) && defined(QT_DEBUG) && defined(_DEBUG) && defined(_CRT_ERROR) && !defined(Q_OS_WINCE)\n"
+            "#if defined(Q_CC_MSVC) && defined(QT_DEBUG) && defined(_DEBUG) && defined(_CRT_ERROR)\n"
             "    _CrtSetReportHook2(_CRT_RPTHOOK_INSTALL, CrtDbgHook);\n"
             "#endif\n";
 
@@ -559,7 +567,7 @@ namespace QTest {
 
     bool QExternalTestPrivate::runQmake()
     {
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
         if (temporaryDirPath.isEmpty())
             qWarning() << "Temporary directory is expected to be non-empty";
 
@@ -596,20 +604,22 @@ namespace QTest {
         } else {
             ok = qmake.waitForFinished();
             exitCode = qmake.exitCode();
+            if (!ok)
+                QTest::ensureStopped(qmake);
 
             std_out += qmake.readAllStandardOutput();
             std_err += qmake.readAllStandardError();
         }
 
         return ok && exitCode == 0;
-#else // QT_NO_PROCESS
+#else // QT_CONFIG(process)
         return false;
-#endif // QT_NO_PROCESS
+#endif // QT_CONFIG(process)
     }
 
     bool QExternalTestPrivate::runMake(Target target)
     {
-#ifdef QT_NO_PROCESS
+#if !QT_CONFIG(process)
         return false;
 #else
         if (temporaryDirPath.isEmpty())
@@ -641,6 +651,7 @@ namespace QTest {
         make.setProcessChannelMode(channelMode);
 
         static const char makes[] =
+            "jom.exe\0" //preferred for visual c++ or mingw
             "nmake.exe\0" //for visual c++
             "mingw32-make.exe\0" //for mingw
             "gmake\0"
@@ -661,13 +672,13 @@ namespace QTest {
         make.closeWriteChannel();
         bool ok = make.waitForFinished(channelMode == QProcess::ForwardedChannels ? -1 : 60000);
         if (!ok)
-            make.terminate();
+            QTest::ensureStopped(make);
         exitCode = make.exitCode();
         std_out += make.readAllStandardOutput();
         std_err += make.readAllStandardError();
 
         return ok;
-#endif // !QT_NO_PROCESS
+#endif // QT_CONFIG(process)
     }
 
     bool QExternalTestPrivate::commonSetup(const QByteArray &body)

@@ -10,12 +10,9 @@
 #define QUERYWIDGET_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QGroupBox>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QStatusBar>
@@ -156,10 +153,10 @@ public:
 
     void retranslateUi(QMainWindow *QueryWidget)
     {
-        QueryWidget->setWindowTitle(QApplication::translate("QueryWidget", "Recipes XQuery Example", 0));
-        inputGroupBox->setTitle(QApplication::translate("QueryWidget", "Input Document", 0));
-        queryGroupBox->setTitle(QApplication::translate("QueryWidget", "Select your query:", 0));
-        outputGroupBox->setTitle(QApplication::translate("QueryWidget", "Output Document", 0));
+        QueryWidget->setWindowTitle(QApplication::translate("QueryWidget", "Recipes XQuery Example", nullptr));
+        inputGroupBox->setTitle(QApplication::translate("QueryWidget", "Input Document", nullptr));
+        queryGroupBox->setTitle(QApplication::translate("QueryWidget", "Select your query:", nullptr));
+        outputGroupBox->setTitle(QApplication::translate("QueryWidget", "Output Document", nullptr));
     } // retranslateUi
 
 };

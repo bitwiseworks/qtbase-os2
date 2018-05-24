@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,6 +42,7 @@ void tst_qmakelib::initTestCase()
 #endif
     m_prop.insert(ProKey("P1"), ProString("prop val"));
     m_prop.insert(ProKey("QT_HOST_DATA/get"), ProString(m_indir));
+    m_prop.insert(ProKey("QT_HOST_DATA/src"), ProString(m_indir));
 
     QVERIFY(!m_indir.isEmpty());
     QVERIFY(QDir(m_outdir).removeRecursively());
@@ -229,21 +225,99 @@ void tst_qmakelib::pathUtils()
     QVERIFY(IoUtils::isRelativePath(fn0));
 
     QString fn1 = "/a/unix/file/path";
-    QVERIFY(IoUtils::isAbsolutePath(fn1));
     QCOMPARE(IoUtils::pathName(fn1).toString(), QStringLiteral("/a/unix/file/"));
     QCOMPARE(IoUtils::fileName(fn1).toString(), QStringLiteral("path"));
+}
 
-#ifdef Q_OS_WIN
-    QString fn0a = "c:file/path";
-    QVERIFY(IoUtils::isRelativePath(fn0a));
+void tst_qmakelib::ioUtilRelativity_data()
+{
+    QTest::addColumn<QString>("path");
+    QTest::addColumn<bool>("relative");
 
-    QString fn1a = "c:\\file\\path";
-    QVERIFY(IoUtils::isAbsolutePath(fn1a));
+    static const struct {
+        const char *name;
+        const char *path;
+        bool relative;
+    } rows[] = {
+        { "resource", ":/resource",
+#ifdef QMAKE_BUILTIN_PRFS
+          false
+#else
+          true
 #endif
+        },
+#ifdef Q_OS_WIN // all the complications:
+        // (except UNC: unsupported)
+        { "drive-abs", "c:/path/to/file", false },
+        { "drive-abs-bs", "c:\\path\\to\\file", false },
+        { "drive-path", "c:path/to/file.txt", true },
+        { "drive-path-bs", "c:path\\to\\file.txt", true },
+        { "rooted", "/Users/qt/bin/true", true },
+        { "rooted-bs", "\\Users\\qt\\bin\\true", true },
+        { "drive-rel", "c:file.txt", true },
+        { "subdir-bs", "path\\to\\file", true },
+#else
+        { "rooted", "/usr/bin/false", false },
+#endif // Q_OS_WIN
+        { "subdir", "path/to/file", true },
+        { "simple", "file.name", true },
+        { "empty", "", true }
+    };
 
-    QString fnbase = "/another/dir";
-    QCOMPARE(IoUtils::resolvePath(fnbase, fn0), QStringLiteral("/another/dir/file/path"));
-    QCOMPARE(IoUtils::resolvePath(fnbase, fn1), QStringLiteral("/a/unix/file/path"));
+    for (unsigned int i = sizeof(rows) / sizeof(rows[0]); i-- > 0; )
+        QTest::newRow(rows[i].name) << QString::fromLatin1(rows[i].path)
+                                    << rows[i].relative;
+}
+
+void tst_qmakelib::ioUtilRelativity()
+{
+    QFETCH(QString, path);
+    QFETCH(bool, relative);
+
+    QCOMPARE(IoUtils::isRelativePath(path), relative);
+}
+
+void tst_qmakelib::ioUtilResolve_data()
+{
+    QTest::addColumn<QString>("base");
+    QTest::addColumn<QString>("path");
+    QTest::addColumn<QString>("expect");
+
+    static const struct {
+        const char *name;
+        const char *base;
+        const char *path;
+        const char *expect;
+    } data[] = {
+#ifdef Q_OS_WIN // all the complications:
+        { "drive-drive", "a:/ms/dir", "z:/root/file", "z:/root/file" },
+        { "drive-drive-bs", "a:\\ms\\dir", "z:\\root\\file", "z:/root/file" },
+        { "drive-root", "a:/ms/dir", "/root/file", "a:/root/file" },
+        { "drive-root-bs", "a:\\ms\\dir", "\\root\\file", "a:/root/file" },
+        { "drive-sub", "a:/ms/dir", "sub/file", "a:/ms/dir/sub/file" },
+        { "drive-sub-bs", "a:\\ms\\dir", "sub\\file", "a:/ms/dir/sub/file" },
+        { "drive-rel", "a:/ms/dir", "file.txt", "a:/ms/dir/file.txt" },
+        { "drive-rel-bs", "a:\\ms\\dir", "file.txt", "a:/ms/dir/file.txt" },
+#else
+        { "abs-abs", "/a/unix/dir", "/root/file", "/root/file" },
+        { "abs-sub", "/a/unix/dir", "sub/file", "/a/unix/dir/sub/file" },
+        { "abs-rel", "/a/unix/dir", "file.txt", "/a/unix/dir/file.txt" },
+#endif // Q_OS_WIN
+    };
+
+    for (unsigned i = sizeof(data) / sizeof(data[0]); i-- > 0; )
+        QTest::newRow(data[i].name) << QString::fromLatin1(data[i].base)
+                                    << QString::fromLatin1(data[i].path)
+                                    << QString::fromLatin1(data[i].expect);
+}
+
+void tst_qmakelib::ioUtilResolve()
+{
+    QFETCH(QString, base);
+    QFETCH(QString, path);
+    QFETCH(QString, expect);
+
+    QCOMPARE(IoUtils::resolvePath(base, path), expect);
 }
 
 void QMakeTestHandler::print(const QString &fileName, int lineNo, int type, const QString &msg)

@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,8 +43,6 @@
 #include <qpa/qplatformscreen.h>
 #include <qpa/qwindowsysteminterface.h>
 
-#include <EGL/egl.h>
-
 namespace ABI {
     namespace Windows {
         namespace ApplicationModel {
@@ -51,6 +52,7 @@ namespace ABI {
             namespace Core {
                 struct IAutomationProviderRequestedEventArgs;
                 struct ICharacterReceivedEventArgs;
+                struct ICorePointerRedirector;
                 struct ICoreWindow;
                 struct ICoreWindowEventArgs;
                 struct IKeyEventArgs;
@@ -59,21 +61,19 @@ namespace ABI {
                 struct IWindowActivatedEventArgs;
                 struct IWindowSizeChangedEventArgs;
             }
+            namespace Xaml {
+                struct IDependencyObject;
+                struct IWindow;
+            }
+            namespace ViewManagement {
+                struct IApplicationView;
+            }
         }
         namespace Graphics {
             namespace Display {
                 struct IDisplayInformation;
             }
         }
-#ifdef Q_OS_WINPHONE
-        namespace Phone {
-            namespace UI {
-                namespace Input {
-                    struct IBackPressedEventArgs;
-                }
-            }
-        }
-#endif
     }
 }
 struct IInspectable;
@@ -81,39 +81,52 @@ struct IInspectable;
 QT_BEGIN_NAMESPACE
 
 class QTouchDevice;
-class QWinRTEGLContext;
 class QWinRTCursor;
 class QWinRTInputContext;
 class QWinRTScreenPrivate;
+class QWinRTWindow;
 class QWinRTScreen : public QPlatformScreen
 {
 public:
     explicit QWinRTScreen();
     ~QWinRTScreen();
-    QRect geometry() const;
-    int depth() const;
-    QImage::Format format() const;
-    QSurfaceFormat surfaceFormat() const;
-    QSizeF physicalSize() const Q_DECL_OVERRIDE;
-    QDpi logicalDpi() const Q_DECL_OVERRIDE;
+
+    QRect geometry() const override;
+    QRect availableGeometry() const override;
+    int depth() const override;
+    QImage::Format format() const override;
+    QSizeF physicalSize() const override;
+    QDpi logicalDpi() const override;
+    qreal pixelDensity() const override;
     qreal scaleFactor() const;
-    QWinRTInputContext *inputContext() const;
-    QPlatformCursor *cursor() const;
+    QPlatformCursor *cursor() const override;
     Qt::KeyboardModifiers keyboardModifiers() const;
 
-    Qt::ScreenOrientation nativeOrientation() const;
-    Qt::ScreenOrientation orientation() const;
+    Qt::ScreenOrientation nativeOrientation() const override;
+    Qt::ScreenOrientation orientation() const override;
 
     QWindow *topWindow() const;
+    QWindow *windowAt(const QPoint &pos);
     void addWindow(QWindow *window);
     void removeWindow(QWindow *window);
     void raise(QWindow *window);
     void lower(QWindow *window);
 
+    bool setMouseGrabWindow(QWinRTWindow *window, bool grab);
+    QWinRTWindow* mouseGrabWindow() const;
+
+    bool setKeyboardGrabWindow(QWinRTWindow *window, bool grab);
+    QWinRTWindow* keyboardGrabWindow() const;
+
+    void updateWindowTitle(const QString &title);
+
     ABI::Windows::UI::Core::ICoreWindow *coreWindow() const;
-    EGLDisplay eglDisplay() const; // To opengl context
-    EGLSurface eglSurface() const; // To window
-    EGLConfig eglConfig() const;
+    ABI::Windows::UI::Xaml::IDependencyObject *canvas() const;
+
+    void initialize();
+
+    void setCursorRect(const QRectF &cursorRect);
+    void setKeyboardRect(const QRectF &keyboardRect);
 
 private:
     void handleExpose();
@@ -124,24 +137,23 @@ private:
     HRESULT onPointerEntered(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IPointerEventArgs *);
     HRESULT onPointerExited(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IPointerEventArgs *);
     HRESULT onPointerUpdated(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IPointerEventArgs *);
-    HRESULT onSizeChanged(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IWindowSizeChangedEventArgs *);
 
     HRESULT onActivated(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IWindowActivatedEventArgs *);
-    HRESULT onSuspended(IInspectable *, ABI::Windows::ApplicationModel::ISuspendingEventArgs *);
-    HRESULT onResume(IInspectable *, IInspectable *);
 
     HRESULT onClosed(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::ICoreWindowEventArgs *);
     HRESULT onVisibilityChanged(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IVisibilityChangedEventArgs *);
-    HRESULT onAutomationProviderRequested(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IAutomationProviderRequestedEventArgs *);
 
     HRESULT onOrientationChanged(ABI::Windows::Graphics::Display::IDisplayInformation *, IInspectable *);
     HRESULT onDpiChanged(ABI::Windows::Graphics::Display::IDisplayInformation *, IInspectable *);
-
-#ifdef Q_OS_WINPHONE
-    HRESULT onBackButtonPressed(IInspectable *, ABI::Windows::Phone::UI::Input::IBackPressedEventArgs *args);
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+    HRESULT onWindowSizeChanged(ABI::Windows::UI::ViewManagement::IApplicationView *, IInspectable *);
+#else
+    HRESULT onWindowSizeChanged(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IWindowSizeChangedEventArgs *);
 #endif
+    HRESULT onRedirectReleased(ABI::Windows::UI::Core::ICorePointerRedirector *, ABI::Windows::UI::Core::IPointerEventArgs *);
 
     QScopedPointer<QWinRTScreenPrivate> d_ptr;
+    QRectF mCursorRect;
     Q_DECLARE_PRIVATE(QWinRTScreen)
 };
 

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,6 +35,7 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <qinputdialog.h>
+#include <QtWidgets/private/qdialog_p.h>
 
 class tst_QInputDialog : public QObject
 {
@@ -51,12 +47,14 @@ class tst_QInputDialog : public QObject
     static void testFuncGetDouble(QInputDialog *dialog);
     static void testFuncGetText(QInputDialog *dialog);
     static void testFuncGetItem(QInputDialog *dialog);
+    static void testFuncSingleStepDouble(QInputDialog *dialog);
     void timerEvent(QTimerEvent *event);
 private slots:
     void getInt_data();
     void getInt();
     void getDouble_data();
     void getDouble();
+    void taskQTBUG_54693_crashWhenParentIsDeletedWhileDialogIsOpen();
     void task255502getDouble();
     void getText_data();
     void getText();
@@ -64,6 +62,8 @@ private slots:
     void getItem();
     void task256299_getTextReturnNullStringOnRejected();
     void inputMethodHintsOfChildWidget();
+    void setDoubleStep_data();
+    void setDoubleStep();
 };
 
 QString stripFraction(const QString &s)
@@ -168,10 +168,10 @@ void testGetNumeric(QInputDialog *dialog, SpinBoxType * = 0, ValueType * = 0)
     const ValueType origValue = sbox->value();
 
     testInvalidateAndRestore<SpinBoxType, ValueType>(sbox, okButton, ledit);
-    testTypingValue<SpinBoxType>(sbox, okButton, QString("%1").arg(sbox->minimum()));
-    testTypingValue<SpinBoxType>(sbox, okButton, QString("%1").arg(sbox->maximum()));
-    testTypingValue<SpinBoxType>(sbox, okButton, QString("%1").arg(sbox->minimum() - 1));
-    testTypingValue<SpinBoxType>(sbox, okButton, QString("%1").arg(sbox->maximum() + 1));
+    testTypingValue<SpinBoxType>(sbox, okButton, QString::number(sbox->minimum()));
+    testTypingValue<SpinBoxType>(sbox, okButton, QString::number(sbox->maximum()));
+    testTypingValue<SpinBoxType>(sbox, okButton, QString::number(sbox->minimum() - 1));
+    testTypingValue<SpinBoxType>(sbox, okButton, QString::number(sbox->maximum() + 1));
     testTypingValue<SpinBoxType>(sbox, okButton, "0");
     testTypingValue<SpinBoxType>(sbox, okButton, "0.0");
     testTypingValue<SpinBoxType>(sbox, okButton, "foobar");
@@ -260,6 +260,14 @@ void tst_QInputDialog::getInt()
     QFETCH(int, min);
     QFETCH(int, max);
     QVERIFY(min < max);
+
+#if defined(Q_OS_MACOS)
+    if (QSysInfo::productVersion() == QLatin1String("10.12")) {
+        QSKIP("Test hangs  on macOS 10.12 -- QTQAINFRA-1356");
+        return;
+    }
+#endif
+
     parent = new QWidget;
     doneCode = QDialog::Accepted;
     testFunc = &tst_QInputDialog::testFuncGetInt;
@@ -300,6 +308,14 @@ void tst_QInputDialog::getDouble()
     QFETCH(double, max);
     QFETCH(int, decimals);
     QVERIFY(min < max && decimals >= 0 && decimals <= 13);
+
+#if defined(Q_OS_MACOS)
+    if (QSysInfo::productVersion() == QLatin1String("10.12")) {
+        QSKIP("Test hangs  on macOS 10.12 -- QTQAINFRA-1356");
+        return;
+    }
+#endif
+
     parent = new QWidget;
     doneCode = QDialog::Accepted;
     testFunc = &tst_QInputDialog::testFuncGetDouble;
@@ -314,6 +330,76 @@ void tst_QInputDialog::getDouble()
     QVERIFY(ok);
     QCOMPARE(result, value);
     delete parent;
+}
+
+namespace {
+class SelfDestructParent : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SelfDestructParent(int delay = 100)
+        : QWidget(nullptr)
+    {
+        QTimer::singleShot(delay, this, SLOT(deleteLater()));
+    }
+};
+}
+
+void tst_QInputDialog::taskQTBUG_54693_crashWhenParentIsDeletedWhileDialogIsOpen()
+{
+    // getText
+    {
+        QAutoPointer<SelfDestructParent> dialog(new SelfDestructParent);
+        bool ok = true;
+        const QString result = QInputDialog::getText(dialog.get(), "Title", "Label", QLineEdit::Normal, "Text", &ok);
+        QVERIFY(!dialog);
+        QVERIFY(!ok);
+        QVERIFY(result.isNull());
+    }
+
+    // getMultiLineText
+    {
+        QAutoPointer<SelfDestructParent> dialog(new SelfDestructParent);
+        bool ok = true;
+        const QString result = QInputDialog::getMultiLineText(dialog.get(), "Title", "Label", "Text", &ok);
+        QVERIFY(!dialog);
+        QVERIFY(!ok);
+        QVERIFY(result.isNull());
+    }
+
+    // getItem
+    for (int editable = 0; editable < 2; ++editable) {
+        QAutoPointer<SelfDestructParent> dialog(new SelfDestructParent);
+        bool ok = true;
+        const QString result = QInputDialog::getItem(dialog.get(), "Title", "Label",
+                                                     QStringList() << "1" << "2", 1,
+                                                     editable != 0, &ok);
+        QVERIFY(!dialog);
+        QVERIFY(!ok);
+        QCOMPARE(result, QLatin1String("2"));
+    }
+
+    // getInt
+    {
+        const int initial = 7;
+        QAutoPointer<SelfDestructParent> dialog(new SelfDestructParent);
+        bool ok = true;
+        const int result = QInputDialog::getInt(dialog.get(), "Title", "Label", initial, -10, +10, 1, &ok);
+        QVERIFY(!dialog);
+        QVERIFY(!ok);
+        QCOMPARE(result, initial);
+    }
+
+    // getDouble
+    {
+        const double initial = 7;
+        QAutoPointer<SelfDestructParent> dialog(new SelfDestructParent);
+        bool ok = true;
+        const double result = QInputDialog::getDouble(dialog.get(), "Title", "Label", initial, -10, +10, 2, &ok);
+        QVERIFY(!dialog);
+        QVERIFY(!ok);
+        QCOMPARE(result, initial);
+    }
 }
 
 void tst_QInputDialog::task255502getDouble()
@@ -413,6 +499,46 @@ void tst_QInputDialog::inputMethodHintsOfChildWidget()
     dialog.setInputMethodHints(Qt::ImhDigitsOnly);
     QCOMPARE(editWidget->inputMethodHints(), dialog.inputMethodHints());
     QCOMPARE(editWidget->inputMethodHints(), Qt::ImhDigitsOnly);
+}
+
+void tst_QInputDialog::testFuncSingleStepDouble(QInputDialog *dialog)
+{
+    QDoubleSpinBox *sbox = dialog->findChild<QDoubleSpinBox *>();
+    QVERIFY(sbox);
+    QTest::keyClick(sbox, Qt::Key_Up);
+}
+
+void tst_QInputDialog::setDoubleStep_data()
+{
+    QTest::addColumn<double>("min");
+    QTest::addColumn<double>("max");
+    QTest::addColumn<int>("decimals");
+    QTest::addColumn<double>("doubleStep");
+    QTest::addColumn<double>("actualResult");
+    QTest::newRow("step 2.0") << 0.0 << 10.0 << 0 << 2.0 << 2.0;
+    QTest::newRow("step 2.5") << 0.5 << 10.5 << 1 << 2.5 << 3.0;
+    QTest::newRow("step 2.25") << 10.05 << 20.05 << 2 << 2.25 << 12.30;
+    QTest::newRow("step 2.25 fewer decimals") << 0.5 << 10.5 << 1 << 2.25 << 2.75;
+}
+
+void tst_QInputDialog::setDoubleStep()
+{
+    QFETCH(double, min);
+    QFETCH(double, max);
+    QFETCH(int, decimals);
+    QFETCH(double, doubleStep);
+    QFETCH(double, actualResult);
+    QWidget p;
+    parent = &p;
+    doneCode = QDialog::Accepted;
+    testFunc = &tst_QInputDialog::testFuncSingleStepDouble;
+    startTimer(0);
+    bool ok = false;
+    const double result = QInputDialog::getDouble(parent, QString(), QString(), min, min,
+                                                  max, decimals, &ok, QFlags<Qt::WindowType>(),
+                                                  doubleStep);
+    QVERIFY(ok);
+    QCOMPARE(result, actualResult);
 }
 
 QTEST_MAIN(tst_QInputDialog)

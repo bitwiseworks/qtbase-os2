@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,11 +39,29 @@
 
 #include <private/qdrawhelper_p.h>
 #include <private/qguiapplication_p.h>
+#include <private/qcolorprofile_p.h>
+#include <private/qendian_p.h>
 #include <private/qsimd_p.h>
 #include <private/qimage_p.h>
 #include <qendian.h>
 
 QT_BEGIN_NAMESPACE
+
+struct QDefaultColorTables
+{
+    QDefaultColorTables()
+        : gray(256), alpha(256)
+    {
+        for (int i = 0; i < 256; ++i) {
+            gray[i] = qRgb(i, i, i);
+            alpha[i] = qRgba(0, 0, 0, i);
+        }
+    }
+
+    QVector<QRgb> gray, alpha;
+};
+
+Q_GLOBAL_STATIC(QDefaultColorTables, defaultColorTables);
 
 // table to flip bits
 static const uchar bitflip[256] = {
@@ -76,23 +100,17 @@ const uchar *qt_get_bitflip_array()
 
 void qGamma_correct_back_to_linear_cs(QImage *image)
 {
-    const QDrawHelperGammaTables *tables = QGuiApplicationPrivate::instance()->gammaTables();
-    if (!tables)
+    const QColorProfile *cp = QGuiApplicationPrivate::instance()->colorProfileForA32Text();
+    if (!cp)
         return;
-    const uchar *gamma = tables->qt_pow_rgb_gamma;
     // gamma correct the pixels back to linear color space...
     int h = image->height();
     int w = image->width();
 
     for (int y=0; y<h; ++y) {
-        uint *pixels = (uint *) image->scanLine(y);
-        for (int x=0; x<w; ++x) {
-            uint p = pixels[x];
-            uint r = gamma[qRed(p)];
-            uint g = gamma[qGreen(p)];
-            uint b = gamma[qBlue(p)];
-            pixels[x] = (r << 16) | (g << 8) | b | 0xff000000;
-        }
+        QRgb *pixels = reinterpret_cast<QRgb *>(image->scanLine(y));
+        for (int x=0; x<w; ++x)
+            pixels[x] = cp->toLinear(pixels[x]);
     }
 }
 
@@ -102,15 +120,15 @@ void qGamma_correct_back_to_linear_cs(QImage *image)
 
 // The drawhelper conversions from/to RGB32 are passthroughs which is not always correct for general image conversion.
 static const uint *QT_FASTCALL convertRGB32FromARGB32PM(uint *buffer, const uint *src, int count,
-                                                        const QPixelLayout *, const QRgb *)
+                                                        const QVector<QRgb> *, QDitherInfo *)
 {
     for (int i = 0; i < count; ++i)
         buffer[i] = 0xff000000 | qUnpremultiply(src[i]);
     return buffer;
 }
 
-static const uint *QT_FASTCALL convertRGB32ToARGB32PM(uint *buffer, const uint *src, int count,
-                                                      const QPixelLayout *, const QRgb *)
+static const uint *QT_FASTCALL maskRGB32(uint *buffer, const uint *src, int count,
+                                         const QVector<QRgb> *, QDitherInfo *)
 {
     for (int i = 0; i < count; ++i)
         buffer[i] = 0xff000000 |src[i];
@@ -118,16 +136,18 @@ static const uint *QT_FASTCALL convertRGB32ToARGB32PM(uint *buffer, const uint *
 }
 
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
-extern const uint *QT_FASTCALL convertRGB32FromARGB32PM_sse4(uint *buffer, const uint *src, int count, const QPixelLayout *, const QRgb *);
+extern const uint *QT_FASTCALL convertRGB32FromARGB32PM_sse4(uint *buffer, const uint *src, int count,
+                                                             const QVector<QRgb> *, QDitherInfo *);
 #endif
 
-void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags)
+void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags flags)
 {
     // Cannot be used with indexed formats.
     Q_ASSERT(dest->format > QImage::Format_Indexed8);
     Q_ASSERT(src->format > QImage::Format_Indexed8);
     const int buffer_size = 2048;
-    uint buffer[buffer_size];
+    uint buf[buffer_size];
+    uint *buffer = buf;
     const QPixelLayout *srcLayout = &qPixelLayouts[src->format];
     const QPixelLayout *destLayout = &qPixelLayouts[dest->format];
     const uchar *srcData = src->data;
@@ -141,8 +161,9 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
         // If the source doesn't have an alpha channel, we can use the faster convertFromRGB32 method.
         convertFromARGB32PM = destLayout->convertFromRGB32;
     } else {
+        // The drawhelpers do not mask the alpha value in RGB32, we want to here.
         if (src->format == QImage::Format_RGB32)
-            convertToARGB32PM = convertRGB32ToARGB32PM;
+            convertToARGB32PM = maskRGB32;
         if (dest->format == QImage::Format_RGB32) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
             if (qCpuHasFeature(SSE4_1))
@@ -152,15 +173,35 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
                 convertFromARGB32PM = convertRGB32FromARGB32PM;
         }
     }
+    if ((src->format == QImage::Format_ARGB32 || src->format == QImage::Format_RGBA8888) &&
+            destLayout->alphaWidth == 0 && destLayout->convertFromRGB32) {
+        // Avoid unnecessary premultiply and unpremultiply when converting from unpremultiplied src format.
+        convertToARGB32PM = qPixelLayouts[src->format + 1].convertToARGB32PM;
+        if (dest->format == QImage::Format_RGB32)
+            convertFromARGB32PM = maskRGB32;
+        else
+            convertFromARGB32PM = destLayout->convertFromRGB32;
+    }
+    QDitherInfo dither;
+    QDitherInfo *ditherPtr = 0;
+    if ((flags & Qt::PreferDither) && (flags & Qt::Dither_Mask) != Qt::ThresholdDither)
+        ditherPtr = &dither;
 
     for (int y = 0; y < src->height; ++y) {
+        dither.y = y;
         int x = 0;
         while (x < src->width) {
-            int l = qMin(src->width - x, buffer_size);
+            dither.x = x;
+            int l = src->width - x;
+            if (destLayout->bpp == QPixelLayout::BPP32)
+                buffer = reinterpret_cast<uint *>(destData) + x;
+            else
+                l = qMin(l, buffer_size);
             const uint *ptr = fetch(buffer, srcData, x, l);
-            ptr = convertToARGB32PM(buffer, ptr, l, srcLayout, 0);
-            ptr = convertFromARGB32PM(buffer, ptr, l, destLayout, 0);
-            store(destData, ptr, x, l);
+            ptr = convertToARGB32PM(buffer, ptr, l, 0, ditherPtr);
+            ptr = convertFromARGB32PM(buffer, ptr, l, 0, ditherPtr);
+            if (ptr != reinterpret_cast<uint *>(destData))
+                store(destData, ptr, x, l);
             x += l;
         }
         srcData += src->bytes_per_line;
@@ -168,7 +209,7 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
     }
 }
 
-bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::ImageConversionFlags)
+bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::ImageConversionFlags flags)
 {
     // Cannot be used with indexed formats or between formats with different pixel depths.
     Q_ASSERT(dst_format > QImage::Format_Indexed8);
@@ -191,7 +232,7 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
         convertFromARGB32PM = destLayout->convertFromRGB32;
     } else {
         if (data->format == QImage::Format_RGB32)
-            convertToARGB32PM = convertRGB32ToARGB32PM;
+            convertToARGB32PM = maskRGB32;
         if (dst_format == QImage::Format_RGB32) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
             if (qCpuHasFeature(SSE4_1))
@@ -201,14 +242,29 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
                 convertFromARGB32PM = convertRGB32FromARGB32PM;
         }
     }
+    if ((data->format == QImage::Format_ARGB32 || data->format == QImage::Format_RGBA8888) &&
+            destLayout->alphaWidth == 0 && destLayout->convertFromRGB32) {
+        // Avoid unnecessary premultiply and unpremultiply when converting from unpremultiplied src format.
+        convertToARGB32PM = qPixelLayouts[data->format + 1].convertToARGB32PM;
+        if (dst_format == QImage::Format_RGB32)
+            convertFromARGB32PM = maskRGB32;
+        else
+            convertFromARGB32PM = destLayout->convertFromRGB32;
+    }
+    QDitherInfo dither;
+    QDitherInfo *ditherPtr = 0;
+    if ((flags & Qt::PreferDither) && (flags & Qt::Dither_Mask) != Qt::ThresholdDither)
+        ditherPtr = &dither;
 
     for (int y = 0; y < data->height; ++y) {
+        dither.y = y;
         int x = 0;
         while (x < data->width) {
+            dither.x = x;
             int l = qMin(data->width - x, buffer_size);
             const uint *ptr = fetch(buffer, srcData, x, l);
-            ptr = convertToARGB32PM(buffer, ptr, l, srcLayout, 0);
-            ptr = convertFromARGB32PM(buffer, ptr, l, destLayout, 0);
+            ptr = convertToARGB32PM(buffer, ptr, l, 0, ditherPtr);
+            ptr = convertFromARGB32PM(buffer, ptr, l, 0, ditherPtr);
             // The conversions might be passthrough and not use the buffer, in that case we are already done.
             if (srcData != (const uchar*)ptr)
                 store(srcData, ptr, x, l);
@@ -286,10 +342,10 @@ Q_GUI_EXPORT void QT_FASTCALL qt_convert_rgb888_to_rgb32(quint32 *dest_data, con
 
     // Handle 4 pixels at a time 12 bytes input to 16 bytes output.
     for (; pixel + 3 < len; pixel += 4) {
-        const quint32 *src_packed = (const quint32 *) src_data;
-        const quint32 src1 = qFromBigEndian(src_packed[0]);
-        const quint32 src2 = qFromBigEndian(src_packed[1]);
-        const quint32 src3 = qFromBigEndian(src_packed[2]);
+        const quint32_be *src_packed = reinterpret_cast<const quint32_be *>(src_data);
+        const quint32 src1 = src_packed[0];
+        const quint32 src2 = src_packed[1];
+        const quint32 src3 = src_packed[2];
 
         dest_data[0] = 0xff000000 | (src1 >> 8);
         dest_data[1] = 0xff000000 | (src1 << 16) | (src2 >> 16);
@@ -375,7 +431,32 @@ static void convert_RGB888_to_RGB(QImageData *dest, const QImageData *src, Qt::I
     }
 }
 
+#ifdef __SSE2__
 extern bool convert_ARGB_to_ARGB_PM_inplace_sse2(QImageData *data, Qt::ImageConversionFlags);
+#else
+static bool convert_ARGB_to_ARGB_PM_inplace(QImageData *data,Qt::ImageConversionFlags)
+{
+    Q_ASSERT(data->format == QImage::Format_ARGB32 || data->format == QImage::Format_RGBA8888);
+
+    const int pad = (data->bytes_per_line >> 2) - data->width;
+    QRgb *rgb_data = (QRgb *) data->data;
+
+    for (int i = 0; i < data->height; ++i) {
+        const QRgb *end = rgb_data + data->width;
+        while (rgb_data < end) {
+            *rgb_data = qPremultiply(*rgb_data);
+            ++rgb_data;
+        }
+        rgb_data += pad;
+    }
+
+    if (data->format == QImage::Format_ARGB32)
+        data->format = QImage::Format_ARGB32_Premultiplied;
+    else
+        data->format = QImage::Format_RGBA8888_Premultiplied;
+    return true;
+}
+#endif
 
 static void convert_ARGB_to_RGBx(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags)
 {
@@ -738,12 +819,12 @@ static bool convert_A2RGB30_PM_to_ARGB_inplace(QImageData *data, Qt::ImageConver
 static bool convert_indexed8_to_ARGB_PM_inplace(QImageData *data, Qt::ImageConversionFlags)
 {
     Q_ASSERT(data->format == QImage::Format_Indexed8);
-    if (!data->own_data)
-        return false;
+    Q_ASSERT(data->own_data);
+
     const int depth = 32;
 
-    const int dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
-    const int nbytes = dst_bytes_per_line * data->height;
+    const qsizetype dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
+    const qsizetype nbytes = dst_bytes_per_line * data->height;
     uchar *const newData = (uchar *)realloc(data->data, nbytes);
     if (!newData)
         return false;
@@ -792,12 +873,12 @@ static bool convert_indexed8_to_ARGB_PM_inplace(QImageData *data, Qt::ImageConve
 static bool convert_indexed8_to_ARGB_inplace(QImageData *data, Qt::ImageConversionFlags)
 {
     Q_ASSERT(data->format == QImage::Format_Indexed8);
-    if (!data->own_data)
-        return false;
+    Q_ASSERT(data->own_data);
+
     const int depth = 32;
 
-    const int dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
-    const int nbytes = dst_bytes_per_line * data->height;
+    const qsizetype dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
+    const qsizetype nbytes = dst_bytes_per_line * data->height;
     uchar *const newData = (uchar *)realloc(data->data, nbytes);
     if (!newData)
         return false;
@@ -843,8 +924,7 @@ static bool convert_indexed8_to_ARGB_inplace(QImageData *data, Qt::ImageConversi
 static bool convert_indexed8_to_RGB_inplace(QImageData *data, Qt::ImageConversionFlags flags)
 {
     Q_ASSERT(data->format == QImage::Format_Indexed8);
-    if (!data->own_data)
-        return false;
+    Q_ASSERT(data->own_data);
 
     if (data->has_alpha_clut) {
         for (int i = 0; i < data->colortable.size(); ++i)
@@ -861,12 +941,12 @@ static bool convert_indexed8_to_RGB_inplace(QImageData *data, Qt::ImageConversio
 static bool convert_indexed8_to_RGB16_inplace(QImageData *data, Qt::ImageConversionFlags)
 {
     Q_ASSERT(data->format == QImage::Format_Indexed8);
-    if (!data->own_data)
-        return false;
+    Q_ASSERT(data->own_data);
+
     const int depth = 16;
 
-    const int dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
-    const int nbytes = dst_bytes_per_line * data->height;
+    const qsizetype dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
+    const qsizetype nbytes = dst_bytes_per_line * data->height;
     uchar *const newData = (uchar *)realloc(data->data, nbytes);
     if (!newData)
         return false;
@@ -881,12 +961,12 @@ static bool convert_indexed8_to_RGB16_inplace(QImageData *data, Qt::ImageConvers
     const int dest_pad = (dst_bytes_per_line >> 1) - width;
 
     quint16 colorTableRGB16[256];
-    if (data->colortable.isEmpty()) {
+    const int tableSize = data->colortable.size();
+    if (tableSize == 0) {
         for (int i = 0; i < 256; ++i)
             colorTableRGB16[i] = qConvertRgb32To16(qRgb(i, i, i));
     } else {
         // 1) convert the existing colors to RGB16
-        const int tableSize = data->colortable.size();
         for (int i = 0; i < tableSize; ++i)
             colorTableRGB16[i] = qConvertRgb32To16(data->colortable.at(i));
         data->colortable = QVector<QRgb>();
@@ -918,12 +998,12 @@ static bool convert_indexed8_to_RGB16_inplace(QImageData *data, Qt::ImageConvers
 static bool convert_RGB_to_RGB16_inplace(QImageData *data, Qt::ImageConversionFlags)
 {
     Q_ASSERT(data->format == QImage::Format_RGB32);
-    if (!data->own_data)
-        return false;
+    Q_ASSERT(data->own_data);
+
     const int depth = 16;
 
-    const int dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
-    const int src_bytes_per_line = data->bytes_per_line;
+    const qsizetype dst_bytes_per_line = ((data->width * depth + 31) >> 5) << 2;
+    const qsizetype src_bytes_per_line = data->bytes_per_line;
     quint32 *src_data = (quint32 *) data->data;
     quint16 *dst_data = (quint16 *) data->data;
 
@@ -1177,9 +1257,9 @@ void dither_to_Mono(QImageData *dst, const QImageData *src,
     }
 
     uchar *dst_data = dst->data;
-    int dst_bpl = dst->bytes_per_line;
+    qsizetype dst_bpl = dst->bytes_per_line;
     const uchar *src_data = src->data;
-    int src_bpl = src->bytes_per_line;
+    qsizetype src_bpl = src->bytes_per_line;
 
     switch (dithermode) {
     case Diffuse: {
@@ -1253,14 +1333,18 @@ void dither_to_Mono(QImageData *dst, const QImageData *src,
                 } else {
                     bit--;
                 }
+                const int e7 = ((err * 7) + 8) >> 4;
+                const int e5 = ((err * 5) + 8) >> 4;
+                const int e3 = ((err * 3) + 8) >> 4;
+                const int e1 = err - (e7 + e5 + e3);
                 if (x < w)
-                    *b1 += (err*7)>>4;                // spread error to right pixel
+                    *b1 += e7;                  // spread error to right pixel
                 if (not_last_line) {
-                    b2[0] += (err*5)>>4;        // pixel below
+                    b2[0] += e5;                // pixel below
                     if (x > 1)
-                        b2[-1] += (err*3)>>4;        // pixel below left
+                        b2[-1] += e3;           // pixel below left
                     if (x < w)
-                        b2[1] += err>>4;        // pixel below right
+                        b2[1] += e1;            // pixel below right
                 }
                 b2++;
             }
@@ -1703,24 +1787,30 @@ static void convert_Indexed8_to_X32(QImageData *dest, const QImageData *src, Qt:
     Q_ASSERT(src->width == dest->width);
     Q_ASSERT(src->height == dest->height);
 
-    QVector<QRgb> colorTable = fix_color_table(src->colortable, dest->format);
+    QVector<QRgb> colorTable = src->has_alpha_clut ? fix_color_table(src->colortable, dest->format) : src->colortable;
     if (colorTable.size() == 0) {
         colorTable.resize(256);
         for (int i=0; i<256; ++i)
             colorTable[i] = qRgb(i, i, i);
     }
+    if (colorTable.size() < 256) {
+        int tableSize = colorTable.size();
+        colorTable.resize(256);
+        for (int i=tableSize; i<256; ++i)
+            colorTable[i] = 0;
+    }
 
     int w = src->width;
     const uchar *src_data = src->data;
     uchar *dest_data = dest->data;
-    int tableSize = colorTable.size() - 1;
+    const QRgb *colorTablePtr = colorTable.constData();
     for (int y = 0; y < src->height; y++) {
-        uint *p = (uint *)dest_data;
+        uint *p = reinterpret_cast<uint *>(dest_data);
         const uchar *b = src_data;
         uint *end = p + w;
 
         while (p < end)
-            *p++ = colorTable.at(qMin<int>(tableSize, *b++));
+            *p++ = colorTablePtr[*b++];
 
         src_data += src->bytes_per_line;
         dest_data += dest->bytes_per_line;
@@ -1826,8 +1916,8 @@ static void convert_Indexed8_to_Alpha8(QImageData *dest, const QImageData *src, 
     if (simpleCase)
         memcpy(dest->data, src->data, src->bytes_per_line * src->height);
     else {
-        int size = src->bytes_per_line * src->height;
-        for (int i = 0; i < size; ++i) {
+        qsizetype size = src->bytes_per_line * src->height;
+        for (qsizetype i = 0; i < size; ++i) {
             dest->data[i] = translate[src->data[i]];
         }
     }
@@ -1850,8 +1940,8 @@ static void convert_Indexed8_to_Grayscale8(QImageData *dest, const QImageData *s
     if (simpleCase)
         memcpy(dest->data, src->data, src->bytes_per_line * src->height);
     else {
-        int size = src->bytes_per_line * src->height;
-        for (int i = 0; i < size; ++i) {
+        qsizetype size = src->bytes_per_line * src->height;
+        for (qsizetype i = 0; i < size; ++i) {
             dest->data[i] = translate[src->data[i]];
         }
     }
@@ -1902,11 +1992,7 @@ static void convert_Alpha8_to_Indexed8(QImageData *dest, const QImageData *src, 
 
     memcpy(dest->data, src->data, src->bytes_per_line * src->height);
 
-    QVector<QRgb> colors(256);
-    for (int i=0; i<256; ++i)
-        colors[i] = qRgba(0, 0, 0, i);
-
-    dest->colortable = colors;
+    dest->colortable = defaultColorTables->alpha;
 }
 
 static void convert_Grayscale8_to_Indexed8(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags)
@@ -1916,22 +2002,15 @@ static void convert_Grayscale8_to_Indexed8(QImageData *dest, const QImageData *s
 
     memcpy(dest->data, src->data, src->bytes_per_line * src->height);
 
-    QVector<QRgb> colors(256);
-    for (int i=0; i<256; ++i)
-        colors[i] = qRgb(i, i, i);
 
-    dest->colortable = colors;
+    dest->colortable = defaultColorTables->gray;
 }
 
 static bool convert_Alpha8_to_Indexed8_inplace(QImageData *data, Qt::ImageConversionFlags)
 {
     Q_ASSERT(data->format == QImage::Format_Alpha8);
 
-    QVector<QRgb> colors(256);
-    for (int i=0; i<256; ++i)
-        colors[i] = qRgba(0, 0, 0, i);
-
-    data->colortable = colors;
+    data->colortable = defaultColorTables->alpha;
     data->format = QImage::Format_Indexed8;
 
     return true;
@@ -1941,11 +2020,7 @@ static bool convert_Grayscale8_to_Indexed8_inplace(QImageData *data, Qt::ImageCo
 {
     Q_ASSERT(data->format == QImage::Format_Grayscale8);
 
-    QVector<QRgb> colors(256);
-    for (int i=0; i<256; ++i)
-        colors[i] = qRgb(i, i, i);
-
-    data->colortable = colors;
+    data->colortable = defaultColorTables->gray;
     data->format = QImage::Format_Indexed8;
 
     return true;
@@ -2592,7 +2667,7 @@ InPlace_Image_Converter qimage_inplace_converter_map[QImage::NImageFormats][QIma
 #ifdef __SSE2__
         convert_ARGB_to_ARGB_PM_inplace_sse2,
 #else
-        0,
+        convert_ARGB_to_ARGB_PM_inplace,
 #endif
         0,
         0,
@@ -2705,11 +2780,12 @@ InPlace_Image_Converter qimage_inplace_converter_map[QImage::NImageFormats][QIma
         0,
         0,
         mask_alpha_converter_rgbx_inplace,
-#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN && __SSE2__
         0,
+#ifdef __SSE2__
         convert_ARGB_to_ARGB_PM_inplace_sse2,
+#elif Q_BYTE_ORDER == Q_LITTLE_ENDIAN
+        convert_ARGB_to_ARGB_PM_inplace,
 #else
-        0,
         0,
 #endif
         0, 0, 0, 0, 0, 0
@@ -2894,7 +2970,7 @@ InPlace_Image_Converter qimage_inplace_converter_map[QImage::NImageFormats][QIma
     }  // Format_Grayscale8
 };
 
-void qInitImageConversions()
+static void qInitImageConversions()
 {
 #if defined(__SSE2__) && defined(QT_COMPILER_SUPPORTS_SSSE3)
     if (qCpuHasFeature(SSSE3)) {
@@ -2921,24 +2997,24 @@ void qInitImageConversions()
     }
 #endif
 
-#if defined(__ARM_NEON__) && !defined(Q_PROCESSOR_ARM_64)
+#if defined(__ARM_NEON__)
     extern void convert_RGB888_to_RGB32_neon(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags);
     qimage_converter_map[QImage::Format_RGB888][QImage::Format_RGB32] = convert_RGB888_to_RGB32_neon;
     qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32] = convert_RGB888_to_RGB32_neon;
     qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32_Premultiplied] = convert_RGB888_to_RGB32_neon;
 #endif
 
-#ifdef QT_COMPILER_SUPPORTS_MIPS_DSPR2
-    if (qCpuHasFeature(DSPR2)) {
-        extern bool convert_ARGB_to_ARGB_PM_inplace_mips_dspr2(QImageData *data, Qt::ImageConversionFlags);
-        qimage_inplace_converter_map[QImage::Format_ARGB32][QImage::Format_ARGB32_Premultiplied] = convert_ARGB_to_ARGB_PM_inplace_mips_dspr2;
+#if defined(__MIPS_DSPR2__)
+    extern bool convert_ARGB_to_ARGB_PM_inplace_mips_dspr2(QImageData *data, Qt::ImageConversionFlags);
+    qimage_inplace_converter_map[QImage::Format_ARGB32][QImage::Format_ARGB32_Premultiplied] = convert_ARGB_to_ARGB_PM_inplace_mips_dspr2;
 
-        extern void convert_RGB888_to_RGB32_mips_dspr2(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags);
-        qimage_converter_map[QImage::Format_RGB888][QImage::Format_RGB32] = convert_RGB888_to_RGB32_mips_dspr2;
-        qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32] = convert_RGB888_to_RGB32_mips_dspr2;
-        qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32_Premultiplied] = convert_RGB888_to_RGB32_mips_dspr2;
-    }
+    extern void convert_RGB888_to_RGB32_mips_dspr2(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags);
+    qimage_converter_map[QImage::Format_RGB888][QImage::Format_RGB32] = convert_RGB888_to_RGB32_mips_dspr2;
+    qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32] = convert_RGB888_to_RGB32_mips_dspr2;
+    qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32_Premultiplied] = convert_RGB888_to_RGB32_mips_dspr2;
 #endif
 }
+
+Q_CONSTRUCTOR_FUNCTION(qInitImageConversions);
 
 QT_END_NAMESPACE

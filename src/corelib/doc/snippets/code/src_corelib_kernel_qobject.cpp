@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -37,14 +47,6 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-
-//! [0]
-QLineEdit *lineEdit = static_cast<QLineEdit *>(
-        qt_find_obj_child(myWidget, "QLineEdit", "my line edit"));
-if (lineEdit)
-    lineEdit->setText("Default");
-//! [0]
-
 
 //! [1]
 QObject *obj = new QPushButton;
@@ -154,6 +156,17 @@ MyObject::MyObject(QObject *parent)
     startTimer(50);     // 50-millisecond timer
     startTimer(1000);   // 1-second timer
     startTimer(60000);  // 1-minute timer
+
+    using namespace std::chrono;
+    startTimer(milliseconds(50));
+    startTimer(seconds(1));
+    startTimer(minutes(1));
+
+    // since C++14 we can use std::chrono::duration literals, e.g.:
+    startTimer(100ms);
+    startTimer(5s);
+    startTimer(2min);
+    startTimer(1h);
 }
 
 void MyObject::timerEvent(QTimerEvent *event)
@@ -418,17 +431,17 @@ QString example = tr("Example");
 //! [40]
 
 //! [41]
-QPushButton *button = parentWidget->findChild<QPushButton *>("button1", Qt::FindDirectChildOnly);
+QPushButton *button = parentWidget->findChild<QPushButton *>("button1", Qt::FindDirectChildrenOnly);
 //! [41]
 
 
 //! [42]
-QListWidget *list = parentWidget->findChild<QListWidget *>(QString(), Qt::FindDirectChildOnly);
+QListWidget *list = parentWidget->findChild<QListWidget *>(QString(), Qt::FindDirectChildrenOnly);
 //! [42]
 
 
 //! [43]
-QList<QPushButton *> childButtons = parentWidget.findChildren<QPushButton *>(QString(), Qt::FindDirectChildOnly);
+QList<QPushButton *> childButtons = parentWidget.findChildren<QPushButton *>(QString(), Qt::FindDirectChildrenOnly);
 //! [43]
 
 //! [44]
@@ -485,6 +498,33 @@ QObject::connect(socket, &QTcpSocket::connected, this, [=] () {
         socket->write("GET " + page + "\r\n");
     }, Qt::AutoConnection);
 //! [51]
+
+//! [52]
+class MyClass : public QWidget
+{
+    Q_OBJECT
+
+public:
+    MyClass(QWidget *parent = 0);
+    ~MyClass();
+
+    bool event(QEvent* ev)
+    {
+        if (ev->type() == QEvent::PolishRequest) {
+            // overwrite handling of PolishRequest if any
+            doThings();
+            return true;
+        } else  if (ev->type() == QEvent::Show) {
+            // complement handling of Show if any
+            doThings2();
+            QWidget::event(ev);
+            return true;
+        }
+        // Make sure the rest of events are handled
+        return QWidget::event(ev);
+    }
+};
+//! [52]
 
 //! [meta data]
 //: This is a comment for the translator.

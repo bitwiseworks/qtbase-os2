@@ -2,6 +2,7 @@ TEMPLATE=subdirs
 SUBDIRS=\
    qbackingstore \
    qclipboard \
+   qcursor \
    qdrag \
    qevent \
    qfileopenevent \
@@ -11,6 +12,7 @@ SUBDIRS=\
    qguitimer \
    qguivariant \
    qinputmethod \
+   qkeyevent \
    qkeysequence \
    qmouseevent \
    qmouseevent_modal \
@@ -24,7 +26,7 @@ SUBDIRS=\
    qopenglwindow \
    qrasterwindow
 
-win32:!wince*:!winrt: SUBDIRS += noqteventloop
+win32:!winrt:qtHaveModule(network): SUBDIRS += noqteventloop
 
 !qtHaveModule(widgets): SUBDIRS -= \
    qmouseevent_modal \
@@ -33,4 +35,6 @@ win32:!wince*:!winrt: SUBDIRS += noqteventloop
 !qtHaveModule(network): SUBDIRS -= \
    qguieventloop
 
-!contains(QT_CONFIG, opengl(es2)?): SUBDIRS -= qopenglwindow
+!qtConfig(opengl): SUBDIRS -= qopenglwindow
+
+uikit: SUBDIRS -= qclipboard

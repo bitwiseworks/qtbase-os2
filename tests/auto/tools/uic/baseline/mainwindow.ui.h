@@ -12,13 +12,11 @@
 #include <QtCore/QVariant>
 #include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFontComboBox>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QListWidget>
@@ -363,30 +361,30 @@ public:
 
     void retranslateUi(QMainWindow *MainWindow)
     {
-        MainWindow->setWindowTitle(QApplication::translate("MainWindow", "MakeQPF", 0));
-        actionAdd_Custom_Font->setText(QApplication::translate("MainWindow", "&Add Custom Font...", 0));
-        action_Exit->setText(QApplication::translate("MainWindow", "&Exit", 0));
-        groupBox->setTitle(QApplication::translate("MainWindow", "Font Properties", 0));
-        label->setText(QApplication::translate("MainWindow", "Family:", 0));
-        label_2->setText(QApplication::translate("MainWindow", "Pixel Size:", 0));
-        label_7->setText(QApplication::translate("MainWindow", "Weight:", 0));
-        italic->setText(QApplication::translate("MainWindow", "Italic", 0));
-        groupBox_2->setTitle(QApplication::translate("MainWindow", "Glyph Coverage", 0));
-        chooseFromCodePoints->setText(QApplication::translate("MainWindow", "Choose from Unicode Codepoints:", 0));
-        selectAll->setText(QApplication::translate("MainWindow", "Select &All", 0));
-        deselectAll->setText(QApplication::translate("MainWindow", "&Deselect All", 0));
-        invertSelection->setText(QApplication::translate("MainWindow", "&Invert Selection", 0));
-        chooseFromSampleFile->setText(QApplication::translate("MainWindow", "Choose from Sample Text File (UTF-8 Encoded):", 0));
-        label_5->setText(QApplication::translate("MainWindow", "Path:", 0));
-        browseSampleFile->setText(QApplication::translate("MainWindow", "Browse...", 0));
-        charCount->setText(QApplication::translate("MainWindow", "TextLabel", 0));
-        groupBox_3->setTitle(QApplication::translate("MainWindow", "Preview", 0));
-        groupBox_4->setTitle(QApplication::translate("MainWindow", "Output Options", 0));
-        label_3->setText(QApplication::translate("MainWindow", "Path:", 0));
-        browsePath->setText(QApplication::translate("MainWindow", "Browse...", 0));
-        label_4->setText(QApplication::translate("MainWindow", "Filename:", 0));
-        generate->setText(QApplication::translate("MainWindow", "Generate Pre-Rendered Font...", 0));
-        menuFile->setTitle(QApplication::translate("MainWindow", "File", 0));
+        MainWindow->setWindowTitle(QApplication::translate("MainWindow", "MakeQPF", nullptr));
+        actionAdd_Custom_Font->setText(QApplication::translate("MainWindow", "&Add Custom Font...", nullptr));
+        action_Exit->setText(QApplication::translate("MainWindow", "&Exit", nullptr));
+        groupBox->setTitle(QApplication::translate("MainWindow", "Font Properties", nullptr));
+        label->setText(QApplication::translate("MainWindow", "Family:", nullptr));
+        label_2->setText(QApplication::translate("MainWindow", "Pixel Size:", nullptr));
+        label_7->setText(QApplication::translate("MainWindow", "Weight:", nullptr));
+        italic->setText(QApplication::translate("MainWindow", "Italic", nullptr));
+        groupBox_2->setTitle(QApplication::translate("MainWindow", "Glyph Coverage", nullptr));
+        chooseFromCodePoints->setText(QApplication::translate("MainWindow", "Choose from Unicode Codepoints:", nullptr));
+        selectAll->setText(QApplication::translate("MainWindow", "Select &All", nullptr));
+        deselectAll->setText(QApplication::translate("MainWindow", "&Deselect All", nullptr));
+        invertSelection->setText(QApplication::translate("MainWindow", "&Invert Selection", nullptr));
+        chooseFromSampleFile->setText(QApplication::translate("MainWindow", "Choose from Sample Text File (UTF-8 Encoded):", nullptr));
+        label_5->setText(QApplication::translate("MainWindow", "Path:", nullptr));
+        browseSampleFile->setText(QApplication::translate("MainWindow", "Browse...", nullptr));
+        charCount->setText(QApplication::translate("MainWindow", "TextLabel", nullptr));
+        groupBox_3->setTitle(QApplication::translate("MainWindow", "Preview", nullptr));
+        groupBox_4->setTitle(QApplication::translate("MainWindow", "Output Options", nullptr));
+        label_3->setText(QApplication::translate("MainWindow", "Path:", nullptr));
+        browsePath->setText(QApplication::translate("MainWindow", "Browse...", nullptr));
+        label_4->setText(QApplication::translate("MainWindow", "Filename:", nullptr));
+        generate->setText(QApplication::translate("MainWindow", "Generate Pre-Rendered Font...", nullptr));
+        menuFile->setTitle(QApplication::translate("MainWindow", "File", nullptr));
     } // retranslateUi
 
 };

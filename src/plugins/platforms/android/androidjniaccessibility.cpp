@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,7 +41,7 @@
 #include "androidjnimain.h"
 #include "qandroidplatformintegration.h"
 #include "qpa/qplatformaccessibility.h"
-#include <QtPlatformSupport/private/qaccessiblebridgeutils_p.h>
+#include <QtAccessibilitySupport/private/qaccessiblebridgeutils_p.h>
 #include "qguiapplication.h"
 #include "qwindow.h"
 #include "qrect.h"
@@ -43,12 +49,12 @@
 #include <QtCore/qmath.h>
 #include <QtCore/private/qjnihelpers_p.h>
 #include <QtCore/private/qjni_p.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 #include "qdebug.h"
 
 static const char m_qtTag[] = "Qt A11Y";
 static const char m_classErrorMsg[] = "Can't find class \"%s\"";
-static const char m_methodErrorMsg[] = "Can't find method \"%s%s\"";
 
 QT_BEGIN_NAMESPACE
 
@@ -68,16 +74,13 @@ namespace QtAndroidAccessibility
 
     void initialize()
     {
-        // API level > 16 is required.
-        if (QtAndroidPrivate::androidSdkVersion() < 16)
-            return;
-
         QJNIObjectPrivate::callStaticMethod<void>(QtAndroid::applicationClass(),
                                                   "initializeAccessibility");
     }
 
     static void setActive(JNIEnv */*env*/, jobject /*thiz*/, jboolean active)
     {
+        QMutexLocker lock(QtAndroid::platformInterfaceMutex());
         QAndroidPlatformIntegration *platformIntegration = QtAndroid::androidPlatformIntegration();
         if (platformIntegration)
             platformIntegration->accessibility()->setActive(active);
@@ -101,16 +104,17 @@ namespace QtAndroidAccessibility
     static jintArray childIdListForAccessibleObject(JNIEnv *env, jobject /*thiz*/, jint objectId)
     {
         QAccessibleInterface *iface = interfaceFromId(objectId);
-        if (iface) {
-            jintArray jArray = env->NewIntArray(jsize(iface->childCount()));
-            for (int i = 0; i < iface->childCount(); ++i) {
+        if (iface && iface->isValid()) {
+            const int childCount = iface->childCount();
+            QVarLengthArray<jint, 8> ifaceIdArray;
+            ifaceIdArray.reserve(childCount);
+            for (int i = 0; i < childCount; ++i) {
                 QAccessibleInterface *child = iface->child(i);
-                if (child) {
-                    QAccessible::Id ifaceId = QAccessible::uniqueId(child);
-                    jint jid = ifaceId;
-                    env->SetIntArrayRegion(jArray, i, 1, &jid);
-                }
+                if (child && child->isValid())
+                    ifaceIdArray.append(QAccessible::uniqueId(child));
             }
+            jintArray jArray = env->NewIntArray(jsize(ifaceIdArray.count()));
+            env->SetIntArrayRegion(jArray, 0, ifaceIdArray.count(), ifaceIdArray.data());
             return jArray;
         }
 
@@ -120,9 +124,9 @@ namespace QtAndroidAccessibility
     static jint parentId(JNIEnv */*env*/, jobject /*thiz*/, jint objectId)
     {
         QAccessibleInterface *iface = interfaceFromId(objectId);
-        if (iface) {
+        if (iface && iface->isValid()) {
             QAccessibleInterface *parent = iface->parent();
-            if (parent) {
+            if (parent && parent->isValid()) {
                 if (parent->role() == QAccessible::Application)
                     return -1;
                 return QAccessible::uniqueId(parent);
@@ -136,7 +140,7 @@ namespace QtAndroidAccessibility
         QRect rect;
         QAccessibleInterface *iface = interfaceFromId(objectId);
         if (iface && iface->isValid()) {
-            rect = iface->rect();
+            rect = QHighDpi::toNativePixels(iface->rect(), iface->window());
         }
 
         jclass rectClass = env->FindClass("android/graphics/Rect");
@@ -148,12 +152,14 @@ namespace QtAndroidAccessibility
     static jint hitTest(JNIEnv */*env*/, jobject /*thiz*/, jfloat x, jfloat y)
     {
         QAccessibleInterface *root = interfaceFromId(-1);
-        if (root) {
-            QAccessibleInterface *child = root->childAt((int)x, (int)y);
+        if (root && root->isValid()) {
+            QPoint pos = QHighDpi::fromNativePixels(QPoint(int(x), int(y)), root->window());
+
+            QAccessibleInterface *child = root->childAt(pos.x(), pos.y());
             QAccessibleInterface *lastChild = 0;
             while (child && (child != lastChild)) {
                 lastChild = child;
-                child = child->childAt((int)x, (int)y);
+                child = child->childAt(pos.x(), pos.y());
             }
             if (lastChild)
                 return QAccessible::uniqueId(lastChild);
@@ -165,7 +171,7 @@ namespace QtAndroidAccessibility
     {
 //        qDebug() << "A11Y: CLICK: " << objectId;
         QAccessibleInterface *iface = interfaceFromId(objectId);
-        if (iface && iface->actionInterface()) {
+        if (iface && iface->isValid() && iface->actionInterface()) {
             if (iface->actionInterface()->actionNames().contains(QAccessibleActionInterface::pressAction()))
                 iface->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
             else
@@ -177,13 +183,17 @@ namespace QtAndroidAccessibility
     static jboolean scrollForward(JNIEnv */*env*/, jobject /*thiz*/, jint objectId)
     {
         QAccessibleInterface *iface = interfaceFromId(objectId);
-        return QAccessibleBridgeUtils::performEffectiveAction(iface, QAccessibleActionInterface::increaseAction());
+        if (iface && iface->isValid())
+            return QAccessibleBridgeUtils::performEffectiveAction(iface, QAccessibleActionInterface::increaseAction());
+        return false;
     }
 
     static jboolean scrollBackward(JNIEnv */*env*/, jobject /*thiz*/, jint objectId)
     {
         QAccessibleInterface *iface = interfaceFromId(objectId);
-        return QAccessibleBridgeUtils::performEffectiveAction(iface, QAccessibleActionInterface::decreaseAction());
+        if (iface && iface->isValid())
+            return QAccessibleBridgeUtils::performEffectiveAction(iface, QAccessibleActionInterface::decreaseAction());
+        return false;
     }
 
 
@@ -299,9 +309,6 @@ if (!clazz) { \
 
     bool registerNatives(JNIEnv *env)
     {
-        if (QtAndroidPrivate::androidSdkVersion() < 16)
-            return true; // We need API level 16 or higher
-
         jclass clazz;
         FIND_AND_CHECK_CLASS("org/qtproject/qt5/android/accessibility/QtNativeAccessibility");
         jclass appClass = static_cast<jclass>(env->NewGlobalRef(clazz));

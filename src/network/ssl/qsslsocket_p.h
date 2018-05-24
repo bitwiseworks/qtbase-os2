@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,13 +47,14 @@
 //  W A R N I N G
 //  -------------
 //
-// This file is not part of the Qt API.  It exists for the convenience
-// of the QLibrary class.  This header file may change from
-// version to version without notice, or even be removed.
+// This file is not part of the Qt API. It exists purely as an
+// implementation detail. This header file may change from version to
+// version without notice, or even be removed.
 //
 // We mean it.
 //
 
+#include <QtNetwork/private/qtnetworkglobal_p.h>
 #include <private/qtcpsocket_p.h>
 #include "qsslkey.h"
 #include "qsslconfiguration_p.h"
@@ -83,11 +90,7 @@ QT_BEGIN_NAMESPACE
 #endif
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-#if defined(Q_OS_WINCE)
-    typedef HCERTSTORE (WINAPI *PtrCertOpenSystemStoreW)(LPCSTR, DWORD, HCRYPTPROV_LEGACY, DWORD, const void*);
-#else
     typedef HCERTSTORE (WINAPI *PtrCertOpenSystemStoreW)(HCRYPTPROV_LEGACY, LPCWSTR);
-#endif
     typedef PCCERT_CONTEXT (WINAPI *PtrCertFindCertificateInStore)(HCERTSTORE, DWORD, DWORD, DWORD, const void*, PCCERT_CONTEXT);
     typedef BOOL (WINAPI *PtrCertCloseStore)(HCERTSTORE, DWORD);
 #endif // Q_OS_WIN && !Q_OS_WINRT
@@ -148,14 +151,11 @@ public:
                                          QRegExp::PatternSyntax syntax);
     static void addDefaultCaCertificate(const QSslCertificate &cert);
     static void addDefaultCaCertificates(const QList<QSslCertificate> &certs);
-    static bool isMatchingHostname(const QSslCertificate &cert, const QString &peerName);
+    Q_AUTOTEST_EXPORT static bool isMatchingHostname(const QSslCertificate &cert,
+                                                     const QString &peerName);
     Q_AUTOTEST_EXPORT static bool isMatchingHostname(const QString &cn, const QString &hostname);
 
-#if defined(Q_OS_MACX)
-    static PtrSecCertificateCopyData ptrSecCertificateCopyData;
-    static PtrSecTrustSettingsCopyCertificates ptrSecTrustSettingsCopyCertificates;
-    static PtrSecTrustCopyAnchorCertificates ptrSecTrustCopyAnchorCertificates;
-#elif defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     static PtrCertOpenSystemStoreW ptrCertOpenSystemStoreW;
     static PtrCertFindCertificateInStore ptrCertFindCertificateInStore;
     static PtrCertCloseStore ptrCertCloseStore;
@@ -170,14 +170,17 @@ public:
     static void checkSettingSslContext(QSslSocket*, QSharedPointer<QSslContext>);
     static QSharedPointer<QSslContext> sslContext(QSslSocket *socket);
     bool isPaused() const;
-    bool bind(const QHostAddress &address, quint16, QAbstractSocket::BindMode) Q_DECL_OVERRIDE;
+    bool bind(const QHostAddress &address, quint16, QAbstractSocket::BindMode) override;
     void _q_connectedSlot();
     void _q_hostFoundSlot();
     void _q_disconnectedSlot();
     void _q_stateChangedSlot(QAbstractSocket::SocketState);
     void _q_errorSlot(QAbstractSocket::SocketError);
     void _q_readyReadSlot();
+    void _q_channelReadyReadSlot(int);
     void _q_bytesWrittenSlot(qint64);
+    void _q_channelBytesWrittenSlot(int, qint64);
+    void _q_readChannelFinishedSlot();
     void _q_flushWriteBuffer();
     void _q_flushReadBuffer();
     void _q_resumeImplementation();
@@ -187,8 +190,10 @@ public:
 
     static QList<QByteArray> unixRootCertDirectories(); // used also by QSslContext
 
-    virtual qint64 peek(char *data, qint64 maxSize) Q_DECL_OVERRIDE;
-    virtual QByteArray peek(qint64 maxSize) Q_DECL_OVERRIDE;
+    virtual qint64 peek(char *data, qint64 maxSize) override;
+    virtual QByteArray peek(qint64 maxSize) override;
+    qint64 skip(qint64 maxSize) override;
+    bool flush() override;
 
     // Platform specific functions
     virtual void startClientEncryption() = 0;
@@ -205,7 +210,7 @@ public:
 private:
     static bool ensureLibraryLoaded();
     static void ensureCiphersAndCertsLoaded();
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     static QList<QByteArray> fetchSslCertificateData();
 #endif
 
@@ -214,6 +219,7 @@ private:
 protected:
     bool verifyErrorsHaveBeenIgnored();
     bool paused;
+    bool flushTriggered;
 };
 
 QT_END_NAMESPACE

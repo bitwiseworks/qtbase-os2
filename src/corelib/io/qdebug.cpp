@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2014 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -115,15 +121,15 @@ using QtMiscUtils::fromHex;
 */
 
 /*!
-    \fn QDebug::QDebug(QtMsgType type)
+    \fn QDebug::QDebug(QtMsgType t)
 
-    Constructs a debug stream that writes to the handler for the message type specified by \a type.
+    Constructs a debug stream that writes to the handler for the message type \a t.
 */
 
 /*!
-    \fn QDebug::QDebug(const QDebug &other)
+    \fn QDebug::QDebug(const QDebug &o)
 
-    Constructs a copy of the \a other debug stream.
+    Constructs a copy of the other debug stream \a o.
 */
 
 /*!
@@ -160,16 +166,15 @@ void QDebug::putUcs4(uint ucs4)
 {
     maybeQuote('\'');
     if (ucs4 < 0x20) {
-        stream->ts << hex << "\\x" << ucs4 << reset;
+        stream->ts << "\\x" << hex << ucs4 << reset;
     } else if (ucs4 < 0x80) {
         stream->ts << char(ucs4);
     } else {
-        stream->ts << hex << qSetPadChar(QLatin1Char('0'));
         if (ucs4 < 0x10000)
-            stream->ts << qSetFieldWidth(4) << "\\u";
+            stream->ts << "\\u" << qSetFieldWidth(4);
         else
-            stream->ts << qSetFieldWidth(8) << "\\U";
-        stream->ts << ucs4 << reset;
+            stream->ts << "\\U" << qSetFieldWidth(8);
+        stream->ts << hex << qSetPadChar(QLatin1Char('0')) << ucs4 << reset;
     }
     maybeQuote('\'');
 }
@@ -351,6 +356,7 @@ QDebug &QDebug::resetFormat()
     stream->space = true;
     if (stream->context.version > 1)
         stream->flags = 0;
+    stream->setVerbosity(Stream::DefaultVerbosity);
     return *this;
 }
 
@@ -444,6 +450,32 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
+    \fn int QDebug::verbosity() const
+    \since 5.6
+
+    Returns the verbosity of the debug stream.
+
+    Streaming operators can check the value to decide whether
+    verbose output is desired and print more information depending on the
+    level. Higher values indicate that more information is desired.
+
+    The allowed range is from 0 to 7. The default value is 2.
+
+    \sa setVerbosity()
+*/
+
+/*!
+    \fn void QDebug::setVerbosity(int verbosityLevel)
+    \since 5.6
+
+    Sets the verbosity of the stream to \a verbosityLevel.
+
+    The allowed range is from 0 to 7. The default value is 2.
+
+    \sa verbosity()
+*/
+
+/*!
     \fn QDebug &QDebug::operator<<(QChar t)
 
     Writes the character, \a t, to the stream and returns a reference to the
@@ -469,87 +501,103 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(signed short i)
+    \fn QDebug &QDebug::operator<<(signed short t)
 
-    Writes the signed short integer, \a i, to the stream and returns a reference
+    Writes the signed short integer, \a t, to the stream and returns a reference
     to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(unsigned short i)
+    \fn QDebug &QDebug::operator<<(unsigned short t)
 
-    Writes then unsigned short integer, \a i, to the stream and returns a
+    Writes then unsigned short integer, \a t, to the stream and returns a
     reference to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(signed int i)
+    \fn QDebug &QDebug::operator<<(signed int t)
 
-    Writes the signed integer, \a i, to the stream and returns a reference
+    Writes the signed integer, \a t, to the stream and returns a reference
     to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(unsigned int i)
+    \fn QDebug &QDebug::operator<<(unsigned int t)
 
-    Writes then unsigned integer, \a i, to the stream and returns a reference to
+    Writes then unsigned integer, \a t, to the stream and returns a reference to
     the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(signed long l)
+    \fn QDebug &QDebug::operator<<(signed long t)
 
-    Writes the signed long integer, \a l, to the stream and returns a reference
+    Writes the signed long integer, \a t, to the stream and returns a reference
     to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(unsigned long l)
+    \fn QDebug &QDebug::operator<<(unsigned long t)
 
-    Writes then unsigned long integer, \a l, to the stream and returns a reference
+    Writes then unsigned long integer, \a t, to the stream and returns a reference
     to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(qint64 i)
+    \fn QDebug &QDebug::operator<<(qint64 t)
 
-    Writes the signed 64-bit integer, \a i, to the stream and returns a reference
+    Writes the signed 64-bit integer, \a t, to the stream and returns a reference
     to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(quint64 i)
+    \fn QDebug &QDebug::operator<<(quint64 t)
 
-    Writes then unsigned 64-bit integer, \a i, to the stream and returns a
+    Writes then unsigned 64-bit integer, \a t, to the stream and returns a
     reference to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(float f)
+    \fn QDebug &QDebug::operator<<(float t)
 
-    Writes the 32-bit floating point number, \a f, to the stream and returns a
+    Writes the 32-bit floating point number, \a t, to the stream and returns a
     reference to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(double f)
+    \fn QDebug &QDebug::operator<<(double t)
 
-    Writes the 64-bit floating point number, \a f, to the stream and returns a
+    Writes the 64-bit floating point number, \a t, to the stream and returns a
     reference to the stream.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const char *s)
+    \fn QDebug &QDebug::operator<<(const char *t)
 
-    Writes the '\\0'-terminated string, \a s, to the stream and returns a
+    Writes the '\\0'-terminated string, \a t, to the stream and returns a
     reference to the stream. The string is never quoted nor transformed to the
     output, but note that some QDebug backends might not be 8-bit clean.
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const QString &s)
+    \fn QDebug &QDebug::operator<<(char16_t t)
+    \since 5.5
 
-    Writes the string, \a s, to the stream and returns a reference to the
+    Writes the UTF-16 character, \a t, to the stream and returns a reference
+    to the stream.
+*/
+
+/*!
+    \fn QDebug &QDebug::operator<<(char32_t t)
+    \since 5.5
+
+    Writes the UTF-32 character, \a t, to the stream and returns a reference
+    to the stream.
+*/
+
+/*!
+    \fn QDebug &QDebug::operator<<(const QString &t)
+
+    Writes the string, \a t, to the stream and returns a reference to the
     stream. Normally, QDebug prints the string inside quotes and transforms
     non-printable characters to their Unicode values (\\u1234).
 
@@ -586,9 +634,9 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const QStringRef &s)
+    \fn QDebug &QDebug::operator<<(const QStringRef &t)
 
-    Writes the string, \a s, to the stream and returns a reference to the
+    Writes the string, \a t, to the stream and returns a reference to the
     stream. Normally, QDebug prints the string inside quotes and transforms
     non-printable characters to their Unicode values (\\u1234).
 
@@ -600,9 +648,10 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(QLatin1String s)
+    \since 5.10
+    \fn QDebug &QDebug::operator<<(QStringView s)
 
-    Writes the string, \a s, to the stream and returns a reference to the
+    Writes the string view, \a s, to the stream and returns a reference to the
     stream. Normally, QDebug prints the string inside quotes and transforms
     non-printable characters to their Unicode values (\\u1234).
 
@@ -614,9 +663,23 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const QByteArray &b)
+    \fn QDebug &QDebug::operator<<(QLatin1String t)
 
-    Writes the byte array, \a b, to the stream and returns a reference to the
+    Writes the string, \a t, to the stream and returns a reference to the
+    stream. Normally, QDebug prints the string inside quotes and transforms
+    non-printable characters to their Unicode values (\\u1234).
+
+    To print non-printable characters without transformation, enable the
+    noquote() functionality. Note that some QDebug backends might not be 8-bit
+    clean.
+
+    See the QString overload for examples.
+*/
+
+/*!
+    \fn QDebug &QDebug::operator<<(const QByteArray &t)
+
+    Writes the byte array, \a t, to the stream and returns a reference to the
     stream. Normally, QDebug prints the array inside quotes and transforms
     control or non-US-ASCII characters to their C escape sequences (\\xAB). This
     way, the output is always 7-bit clean and the string can be copied from the
@@ -653,9 +716,9 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const void *p)
+    \fn QDebug &QDebug::operator<<(const void *t)
 
-    Writes a pointer, \a p, to the stream and returns a reference to the stream.
+    Writes a pointer, \a t, to the stream and returns a reference to the stream.
 */
 
 /*!
@@ -669,8 +732,116 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \class QDebugStateSaver
+    \fn template <class T> QDebug operator<<(QDebug debug, const QList<T> &list)
+    \relates QDebug
 
+    Writes the contents of \a list to \a debug. \c T needs to
+    support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename T, typename Alloc> QDebug operator<<(QDebug debug, const std::list<T, Alloc> &vec)
+    \relates QDebug
+    \since 5.7
+
+    Writes the contents of list \a vec to \a debug. \c T needs to
+    support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename T> QDebug operator<<(QDebug debug, const QVector<T> &vec)
+    \relates QDebug
+
+    Writes the contents of vector \a vec to \a debug. \c T needs to
+    support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename T, typename Alloc> QDebug operator<<(QDebug debug, const std::vector<T, Alloc> &vec)
+    \relates QDebug
+    \since 5.7
+
+    Writes the contents of vector \a vec to \a debug. \c T needs to
+    support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename T> QDebug operator<<(QDebug debug, const QSet<T> &set)
+    \relates QDebug
+
+    Writes the contents of \a set to \a debug. \c T needs to
+    support streaming into QDebug.
+*/
+
+/*!
+    \fn template <class Key, class T> QDebug operator<<(QDebug debug, const QMap<Key, T> &map)
+    \relates QDebug
+
+    Writes the contents of \a map to \a debug. Both \c Key and
+    \c T need to support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename Key, typename T, typename Compare, typename Alloc> QDebug operator<<(QDebug debug, const std::map<Key, T, Compare, Alloc> &map)
+    \relates QDebug
+    \since 5.7
+
+    Writes the contents of \a map to \a debug. Both \c Key and
+    \c T need to support streaming into QDebug.
+*/
+
+/*!
+    \fn template <typename Key, typename T, typename Compare, typename Alloc> QDebug operator<<(QDebug debug, const std::multimap<Key, T, Compare, Alloc> &map)
+    \relates QDebug
+    \since 5.7
+
+    Writes the contents of \a map to \a debug. Both \c Key and
+    \c T need to support streaming into QDebug.
+*/
+
+/*!
+    \fn template <class Key, class T> QDebug operator<<(QDebug debug, const QHash<Key, T> &hash)
+    \relates QDebug
+
+    Writes the contents of \a hash to \a debug. Both \c Key and
+    \c T need to support streaming into QDebug.
+*/
+
+/*!
+    \fn template <class T1, class T2> QDebug operator<<(QDebug debug, const QPair<T1, T2> &pair)
+    \relates QDebug
+
+    Writes the contents of \a pair to \a debug. Both \c T1 and
+    \c T2 need to support streaming into QDebug.
+*/
+
+/*!
+    \fn template<typename T> QDebug operator<<(QDebug debug, const QFlags<T> &flags)
+    \relates QDebug
+    \since 4.7
+
+    Writes \a flags to \a debug.
+*/
+
+/*!
+    \fn template<typename T> QDebug operator<<(QDebug debug, const QSharedPointer<T> &ptr)
+    \relates QSharedPointer
+    \since 5.7
+
+    Writes the pointer tracked by \a ptr into the debug object \a debug for
+    debugging purposes.
+
+    \sa {Debugging Techniques}
+*/
+
+/*!
+  \fn QDebug &QDebug::operator<<(std::nullptr_t)
+  \internal
+ */
+
+/*!
+    \class QDebugStateSaver
+    \inmodule QtCore
     \brief Convenience class for custom QDebug operators
 
     Saves the settings used by QDebug, and restores them upon destruction,
@@ -746,6 +917,19 @@ QDebugStateSaver::QDebugStateSaver(QDebug &dbg)
 QDebugStateSaver::~QDebugStateSaver()
 {
     d->restoreState();
+}
+
+/*!
+    \internal
+
+    Specialization of the primary template in qdebug.h to out-of-line
+    the common case of QFlags<T>::Int being int.
+
+    Just call the generic version so the two don't get out of sync.
+*/
+void qt_QMetaEnum_flagDebugOperator(QDebug &debug, size_t sizeofT, int value)
+{
+    qt_QMetaEnum_flagDebugOperator<int>(debug, sizeofT, value);
 }
 
 #ifndef QT_NO_QOBJECT

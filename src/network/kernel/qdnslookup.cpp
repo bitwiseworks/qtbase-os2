@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Jeremy Lainé <jeremy.laine@m4x.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +42,7 @@
 
 #include <qcoreapplication.h>
 #include <qdatetime.h>
-#include <qthreadstorage.h>
+#include <qrandom.h>
 #include <qurl.h>
 
 #include <algorithm>
@@ -44,7 +50,6 @@
 QT_BEGIN_NAMESPACE
 
 Q_GLOBAL_STATIC(QDnsLookupThreadPool, theDnsLookupThreadPool);
-Q_GLOBAL_STATIC(QThreadStorage<bool *>, theDnsLookupSeedStorage);
 
 static bool qt_qdnsmailexchangerecord_less_than(const QDnsMailExchangeRecord &r1, const QDnsMailExchangeRecord &r2)
 {
@@ -52,7 +57,7 @@ static bool qt_qdnsmailexchangerecord_less_than(const QDnsMailExchangeRecord &r1
     return r1.preference() < r2.preference();
 }
 
-/*!
+/*
     Sorts a list of QDnsMailExchangeRecord objects according to RFC 5321.
 */
 
@@ -70,16 +75,16 @@ static void qt_qdnsmailexchangerecord_sort(QList<QDnsMailExchangeRecord> &record
 
         // Determine the slice of records with the current preference.
         QList<QDnsMailExchangeRecord> slice;
-        const quint16 slicePreference = records[i].preference();
+        const quint16 slicePreference = records.at(i).preference();
         for (int j = i; j < records.size(); ++j) {
-            if (records[j].preference() != slicePreference)
+            if (records.at(j).preference() != slicePreference)
                 break;
-            slice << records[j];
+            slice << records.at(j);
         }
 
         // Randomize the slice of records.
         while (!slice.isEmpty()) {
-            const unsigned int pos = qrand() % slice.size();
+            const unsigned int pos = QRandomGenerator::global()->bounded(slice.size());
             records[i++] = slice.takeAt(pos);
         }
     }
@@ -94,7 +99,7 @@ static bool qt_qdnsservicerecord_less_than(const QDnsServiceRecord &r1, const QD
         && r1.weight() == 0 && r2.weight() > 0);
 }
 
-/*!
+/*
     Sorts a list of QDnsServiceRecord objects according to RFC 2782.
 */
 
@@ -113,13 +118,13 @@ static void qt_qdnsservicerecord_sort(QList<QDnsServiceRecord> &records)
 
         // Determine the slice of records with the current priority.
         QList<QDnsServiceRecord> slice;
-        const quint16 slicePriority = records[i].priority();
+        const quint16 slicePriority = records.at(i).priority();
         unsigned int sliceWeight = 0;
         for (int j = i; j < records.size(); ++j) {
-            if (records[j].priority() != slicePriority)
+            if (records.at(j).priority() != slicePriority)
                 break;
-            sliceWeight += records[j].weight();
-            slice << records[j];
+            sliceWeight += records.at(j).weight();
+            slice << records.at(j);
         }
 #ifdef QDNSLOOKUP_DEBUG
         qDebug("qt_qdnsservicerecord_sort() : priority %i (size: %i, total weight: %i)",
@@ -128,18 +133,18 @@ static void qt_qdnsservicerecord_sort(QList<QDnsServiceRecord> &records)
 
         // Order the slice of records.
         while (!slice.isEmpty()) {
-            const unsigned int weightThreshold = qrand() % (sliceWeight + 1);
+            const unsigned int weightThreshold = QRandomGenerator::global()->bounded(sliceWeight + 1);
             unsigned int summedWeight = 0;
             for (int j = 0; j < slice.size(); ++j) {
-                summedWeight += slice[j].weight();
+                summedWeight += slice.at(j).weight();
                 if (summedWeight >= weightThreshold) {
 #ifdef QDNSLOOKUP_DEBUG
                     qDebug("qt_qdnsservicerecord_sort() : adding %s %i (weight: %i)",
-                           qPrintable(slice[j].target()), slice[j].port(),
-                           slice[j].weight());
+                           qPrintable(slice.at(j).target()), slice.at(j).port(),
+                           slice.at(j).weight());
 #endif
                     // Adjust the slice weight and take the current record.
-                    sliceWeight -= slice[j].weight();
+                    sliceWeight -= slice.at(j).weight();
                     records[i++] = slice.takeAt(j);
                     break;
                 }
@@ -147,6 +152,9 @@ static void qt_qdnsservicerecord_sort(QList<QDnsServiceRecord> &records)
         }
     }
 }
+
+const char *QDnsLookupPrivate::msgNoIpV6NameServerAdresses =
+    QT_TRANSLATE_NOOP("QDnsLookupRunnable", "IPv6 addresses for nameservers are currently not supported");
 
 /*!
     \class QDnsLookup
@@ -1002,10 +1010,6 @@ void QDnsLookupRunnable::run()
     query(requestType, requestName, nameserver, &reply);
 
     // Sort results.
-    if (!theDnsLookupSeedStorage()->hasLocalData()) {
-        qsrand(QTime(0,0,0).msecsTo(QTime::currentTime()) ^ reinterpret_cast<quintptr>(this));
-        theDnsLookupSeedStorage()->setLocalData(new bool(true));
-    }
     qt_qdnsmailexchangerecord_sort(reply.mailExchangeRecords);
     qt_qdnsservicerecord_sort(reply.serviceRecords);
 

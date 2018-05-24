@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -50,6 +56,7 @@ public:
     {
         engine = new QPdfEngine();
         output = 0;
+        pdfVersion = QPdfWriter::PdfVersion_1_4;
     }
     ~QPdfWriterPrivate()
     {
@@ -59,6 +66,7 @@ public:
 
     QPdfEngine *engine;
     QFile *output;
+    QPdfWriter::PdfVersion pdfVersion;
 };
 
 class QPdfPagedPaintDevicePrivate : public QPagedPaintDevicePrivate
@@ -71,7 +79,7 @@ public:
     virtual ~QPdfPagedPaintDevicePrivate()
     {}
 
-    bool setPageLayout(const QPageLayout &newPageLayout) Q_DECL_OVERRIDE
+    bool setPageLayout(const QPageLayout &newPageLayout) override
     {
         // Try to set the paint engine page layout
         pd->engine->setPageLayout(newPageLayout);
@@ -80,7 +88,7 @@ public:
         return m_pageLayout.isEquivalentTo(newPageLayout);
     }
 
-    bool setPageSize(const QPageSize &pageSize) Q_DECL_OVERRIDE
+    bool setPageSize(const QPageSize &pageSize) override
     {
         // Try to set the paint engine page size
         pd->engine->setPageSize(pageSize);
@@ -89,7 +97,7 @@ public:
         return m_pageLayout.pageSize().isEquivalentTo(pageSize);
     }
 
-    bool setPageOrientation(QPageLayout::Orientation orientation) Q_DECL_OVERRIDE
+    bool setPageOrientation(QPageLayout::Orientation orientation) override
     {
         // Set the print engine value
         pd->engine->setPageOrientation(orientation);
@@ -98,12 +106,12 @@ public:
         return m_pageLayout.orientation() == orientation;
     }
 
-    bool setPageMargins(const QMarginsF &margins) Q_DECL_OVERRIDE
+    bool setPageMargins(const QMarginsF &margins) override
     {
         return setPageMargins(margins, pageLayout().units());
     }
 
-    bool setPageMargins(const QMarginsF &margins, QPageLayout::Unit units) Q_DECL_OVERRIDE
+    bool setPageMargins(const QMarginsF &margins, QPageLayout::Unit units) override
     {
         // Try to set engine margins
         pd->engine->setPageMargins(margins, units);
@@ -112,7 +120,7 @@ public:
         return m_pageLayout.margins() == margins && m_pageLayout.units() == units;
     }
 
-    QPageLayout pageLayout() const Q_DECL_OVERRIDE
+    QPageLayout pageLayout() const override
     {
         return pd->engine->pageLayout();
     }
@@ -151,7 +159,8 @@ QPdfWriter::QPdfWriter(const QString &filename)
   Constructs a PDF writer that will write the pdf to \a device.
   */
 QPdfWriter::QPdfWriter(QIODevice *device)
-    : QObject(*new QPdfWriterPrivate)
+    : QObject(*new QPdfWriterPrivate),
+      QPagedPaintDevice(new QPdfPagedPaintDevicePrivate(d_func()))
 {
     Q_D(QPdfWriter);
 
@@ -167,6 +176,35 @@ QPdfWriter::QPdfWriter(QIODevice *device)
 QPdfWriter::~QPdfWriter()
 {
 
+}
+
+/*!
+    \since 5.10
+
+    Sets the PDF version for this writer to \a version.
+
+    If \a version is the same value as currently set then no change will be made.
+*/
+void QPdfWriter::setPdfVersion(PdfVersion version)
+{
+    Q_D(QPdfWriter);
+
+    if (d->pdfVersion == version)
+        return;
+
+    d->pdfVersion = version;
+    d->engine->setPdfVersion(d->pdfVersion == QPdfWriter::PdfVersion_1_4 ? QPdfEngine::Version_1_4 : QPdfEngine::Version_A1b);
+}
+
+/*!
+    \since 5.10
+
+    Returns the PDF version for this writer. The default is \c PdfVersion_1_4.
+*/
+QPdfWriter::PdfVersion QPdfWriter::pdfVersion() const
+{
+    Q_D(const QPdfWriter);
+    return d->pdfVersion;
 }
 
 /*!

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Intel Corporation
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,7 +37,7 @@
 #      undef QT_ATOMIC_FORCE_CXX11
 #    endif
 #  elif defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__) >= 407 && (__cplusplus >= 201103L || defined(__GXX_EXPERIMENTAL_CXX0X__))
-#  elif defined(_MSC_VER) && _MSC_VER >= 1900
+#  elif defined(_MSC_VER)
     // We need MSVC 2015 because of: atomics (2012), constexpr (2015), and unrestricted unions (2015).
     // Support for constexpr is not working completely on MSVC 2015 but it's enough for the test.
 #  else
@@ -178,9 +173,6 @@ private Q_SLOTS:
 
     void fetchAndSub_data() { addData(); }
     void fetchAndSub();
-
-    void addSub_data() { addData(); }
-    void addSub();
 
     void fetchAndOr_data() { addData(); }
     void fetchAndOr();
@@ -362,28 +354,46 @@ void tst_QAtomicIntegerXX::loadAcquireStoreRelease()
 void tst_QAtomicIntegerXX::refDeref()
 {
     QFETCH(LargeInt, value);
-    T nextValue = T(value + 1);
-    T prevValue = T(value - 1);
+    const bool needToPreventOverflow  = TypeIsSigned && value == std::numeric_limits<T>::max();
+    const bool needToPreventUnderflow = TypeIsSigned && value == std::numeric_limits<T>::min();
+    T nextValue = T(value);
+    if (!needToPreventOverflow)
+        ++nextValue;
+    T prevValue = T(value);
+    if (!needToPreventUnderflow)
+        --prevValue;
 
     QAtomicInteger<T> atomic(value);
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.ref(), (nextValue != 0));
     QCOMPARE(atomic.load(), nextValue);
     QCOMPARE(atomic.deref(), (value != 0));
+    }
     QCOMPARE(atomic.load(), T(value));
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.deref(), (prevValue != 0));
     QCOMPARE(atomic.load(), prevValue);
     QCOMPARE(atomic.ref(), (value != 0));
+    }
     QCOMPARE(atomic.load(), T(value));
 
+    if (!needToPreventOverflow) {
     QCOMPARE(++atomic, nextValue);
     QCOMPARE(--atomic, T(value));
+    }
+    if (!needToPreventUnderflow) {
     QCOMPARE(--atomic, prevValue);
     QCOMPARE(++atomic, T(value));
+    }
 
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic++, T(value));
     QCOMPARE(atomic--, nextValue);
+    }
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic--, T(value));
     QCOMPARE(atomic++, prevValue);
+    }
     QCOMPARE(atomic.load(), T(value));
 }
 
@@ -486,53 +496,80 @@ void tst_QAtomicIntegerXX::fetchAndAdd()
     QFETCH(LargeInt, value);
     QAtomicInteger<T> atomic(value);
 
-    // note: this test has undefined behavior for signed max and min
     T parcel1 = 42;
     T parcel2 = T(0-parcel1);
-    T newValue1 = T(value) + parcel1;
-    T newValue2 = T(value) + parcel2;
 
+    const bool needToPreventOverflow  = TypeIsSigned && value > std::numeric_limits<T>::max() + parcel2;
+    const bool needToPreventUnderflow = TypeIsSigned && value < std::numeric_limits<T>::min() + parcel1;
+
+    T newValue1 = T(value);
+    if (!needToPreventOverflow)
+        newValue1 += parcel1;
+    T newValue2 = T(value);
+    if (!needToPreventUnderflow)
+        newValue2 += parcel2;
+
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndAddRelaxed(parcel1), T(value));
     QCOMPARE(atomic.load(), newValue1);
     QCOMPARE(atomic.fetchAndAddRelaxed(parcel2), newValue1);
+    }
     QCOMPARE(atomic.load(), T(value));
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndAddRelaxed(parcel2), T(value));
     QCOMPARE(atomic.load(), newValue2);
     QCOMPARE(atomic.fetchAndAddRelaxed(parcel1), newValue2);
+    }
     QCOMPARE(atomic.load(), T(value));
 
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndAddAcquire(parcel1), T(value));
     QCOMPARE(atomic.load(), newValue1);
     QCOMPARE(atomic.fetchAndAddAcquire(parcel2), newValue1);
+    }
     QCOMPARE(atomic.load(), T(value));
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndAddAcquire(parcel2), T(value));
     QCOMPARE(atomic.load(), newValue2);
     QCOMPARE(atomic.fetchAndAddAcquire(parcel1), newValue2);
+    }
     QCOMPARE(atomic.load(), T(value));
 
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndAddRelease(parcel1), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue1);
     QCOMPARE(atomic.fetchAndAddRelease(parcel2), newValue1);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndAddRelease(parcel2), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue2);
     QCOMPARE(atomic.fetchAndAddRelease(parcel1), newValue2);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
 
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndAddOrdered(parcel1), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue1);
     QCOMPARE(atomic.fetchAndAddOrdered(parcel2), newValue1);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndAddOrdered(parcel2), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue2);
     QCOMPARE(atomic.fetchAndAddOrdered(parcel1), newValue2);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
 
     // operator+=
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic += parcel1, newValue1);
     QCOMPARE(atomic += parcel2, T(value));
+    }
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic += parcel2, newValue2);
     QCOMPARE(atomic += parcel1, T(value));
+    }
 }
 
 void tst_QAtomicIntegerXX::fetchAndSub()
@@ -540,143 +577,80 @@ void tst_QAtomicIntegerXX::fetchAndSub()
     QFETCH(LargeInt, value);
     QAtomicInteger<T> atomic(value);
 
-    // note: this test has undefined behavior for signed max and min
     T parcel1 = 42;
     T parcel2 = T(0-parcel1);
-    T newValue1 = T(value) - parcel1;
-    T newValue2 = T(value) - parcel2;
 
+    const bool needToPreventOverflow  = TypeIsSigned && value > std::numeric_limits<T>::max() - parcel1;
+    const bool needToPreventUnderflow = TypeIsSigned && value < std::numeric_limits<T>::min() - parcel2;
+
+    T newValue1 = T(value);
+    if (!needToPreventUnderflow)
+        newValue1 -= parcel1;
+    T newValue2 = T(value);
+    if (!needToPreventOverflow)
+        newValue2 -= parcel2;
+
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndSubRelaxed(parcel1), T(value));
     QCOMPARE(atomic.load(), newValue1);
     QCOMPARE(atomic.fetchAndSubRelaxed(parcel2), newValue1);
+    }
     QCOMPARE(atomic.load(), T(value));
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndSubRelaxed(parcel2), T(value));
     QCOMPARE(atomic.load(), newValue2);
     QCOMPARE(atomic.fetchAndSubRelaxed(parcel1), newValue2);
+    }
     QCOMPARE(atomic.load(), T(value));
 
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndSubAcquire(parcel1), T(value));
     QCOMPARE(atomic.load(), newValue1);
     QCOMPARE(atomic.fetchAndSubAcquire(parcel2), newValue1);
+    }
     QCOMPARE(atomic.load(), T(value));
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndSubAcquire(parcel2), T(value));
     QCOMPARE(atomic.load(), newValue2);
     QCOMPARE(atomic.fetchAndSubAcquire(parcel1), newValue2);
+    }
     QCOMPARE(atomic.load(), T(value));
 
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndSubRelease(parcel1), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue1);
     QCOMPARE(atomic.fetchAndSubRelease(parcel2), newValue1);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndSubRelease(parcel2), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue2);
     QCOMPARE(atomic.fetchAndSubRelease(parcel1), newValue2);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
 
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic.fetchAndSubOrdered(parcel1), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue1);
     QCOMPARE(atomic.fetchAndSubOrdered(parcel2), newValue1);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic.fetchAndSubOrdered(parcel2), T(value));
     QCOMPARE(atomic.loadAcquire(), newValue2);
     QCOMPARE(atomic.fetchAndSubOrdered(parcel1), newValue2);
+    }
     QCOMPARE(atomic.loadAcquire(), T(value));
 
     // operator-=
+    if (!needToPreventUnderflow) {
     QCOMPARE(atomic -= parcel1, newValue1);
     QCOMPARE(atomic -= parcel2, T(value));
+    }
+    if (!needToPreventOverflow) {
     QCOMPARE(atomic -= parcel2, newValue2);
     QCOMPARE(atomic -= parcel1, T(value));
-}
-
-void tst_QAtomicIntegerXX::addSub()
-{
-    QFETCH(LargeInt, value);
-    QAtomicInteger<T> atomic(value);
-
-    // note: this test has undefined behavior for signed max and min
-    T parcel1 = 42;
-    T parcel2 = T(0-parcel1);
-    T newValue1 = T(value) + parcel1;
-    T newValue2 = T(value) - parcel1;
-
-    QCOMPARE(atomic.fetchAndAddRelaxed(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndSubRelaxed(parcel1), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubRelaxed(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndAddRelaxed(parcel1), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndAddRelaxed(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndSubRelaxed(parcel2), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubRelaxed(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndAddRelaxed(parcel2), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-
-    QCOMPARE(atomic.fetchAndAddAcquire(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndSubAcquire(parcel1), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubAcquire(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndAddAcquire(parcel1), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndAddAcquire(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndSubAcquire(parcel2), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubAcquire(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndAddAcquire(parcel2), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-
-    QCOMPARE(atomic.fetchAndAddRelease(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndSubRelease(parcel1), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubRelease(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndAddRelease(parcel1), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndAddRelease(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndSubRelease(parcel2), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubRelease(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndAddRelease(parcel2), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-
-    QCOMPARE(atomic.fetchAndAddOrdered(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndSubOrdered(parcel1), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubOrdered(parcel1), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndAddOrdered(parcel1), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndAddOrdered(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue2);
-    QCOMPARE(atomic.fetchAndSubOrdered(parcel2), newValue2);
-    QCOMPARE(atomic.load(), T(value));
-    QCOMPARE(atomic.fetchAndSubOrdered(parcel2), T(value));
-    QCOMPARE(atomic.load(), newValue1);
-    QCOMPARE(atomic.fetchAndAddOrdered(parcel2), newValue1);
-    QCOMPARE(atomic.load(), T(value));
-
-    // operator+= and operator-=
-    QCOMPARE(atomic += parcel1, newValue1);
-    QCOMPARE(atomic -= parcel1, T(value));
-    QCOMPARE(atomic -= parcel1, newValue2);
-    QCOMPARE(atomic += parcel1, T(value));
-    QCOMPARE(atomic += parcel2, newValue2);
-    QCOMPARE(atomic -= parcel2, T(value));
-    QCOMPARE(atomic -= parcel2, newValue1);
-    QCOMPARE(atomic += parcel2, T(value));
+    }
 }
 
 void tst_QAtomicIntegerXX::fetchAndOr()

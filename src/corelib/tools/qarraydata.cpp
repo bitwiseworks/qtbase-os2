@@ -1,37 +1,45 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include <QtCore/qarraydata.h>
+#include <QtCore/private/qnumeric_p.h>
 #include <QtCore/private/qtools_p.h>
 
 #include <stdlib.h>
@@ -55,6 +63,29 @@ QT_WARNING_POP
 static const QArrayData &qt_array_empty = qt_array[0];
 static const QArrayData &qt_array_unsharable_empty = qt_array[1];
 
+static inline size_t calculateBlockSize(size_t &capacity, size_t objectSize, size_t headerSize,
+                                        uint options)
+{
+    // Calculate the byte size
+    // allocSize = objectSize * capacity + headerSize, but checked for overflow
+    // plus padded to grow in size
+    if (options & QArrayData::Grow) {
+        auto r = qCalculateGrowingBlockSize(capacity, objectSize, headerSize);
+        capacity = r.elementCount;
+        return r.size;
+    } else {
+        return qCalculateBlockSize(capacity, objectSize, headerSize);
+    }
+}
+
+static QArrayData *reallocateData(QArrayData *header, size_t allocSize, uint options)
+{
+    header = static_cast<QArrayData *>(::realloc(header, allocSize));
+    if (header)
+        header->capacityReserved = bool(options & QArrayData::CapacityReserved);
+    return header;
+}
+
 QArrayData *QArrayData::allocate(size_t objectSize, size_t alignment,
         size_t capacity, AllocationOptions options) Q_DECL_NOTHROW
 {
@@ -64,7 +95,7 @@ QArrayData *QArrayData::allocate(size_t objectSize, size_t alignment,
 
     // Don't allocate empty headers
     if (!(options & RawData) && !capacity) {
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         if (options & Unsharable)
             return const_cast<QArrayData *>(&qt_array_unsharable_empty);
 #endif
@@ -80,36 +111,41 @@ QArrayData *QArrayData::allocate(size_t objectSize, size_t alignment,
     if (!(options & RawData))
         headerSize += (alignment - Q_ALIGNOF(QArrayData));
 
-    // Allocate additional space if array is growing
-    if (options & Grow) {
+    if (headerSize > size_t(MaxAllocSize))
+        return 0;
 
-        // Guard against integer overflow when multiplying.
-        if (capacity > std::numeric_limits<size_t>::max() / objectSize)
-            return 0;
-
-        size_t alloc = objectSize * capacity;
-
-        // Make sure qAllocMore won't overflow.
-        if (headerSize > size_t(MaxAllocSize) || alloc > size_t(MaxAllocSize) - headerSize)
-            return 0;
-
-        capacity = qAllocMore(int(alloc), int(headerSize)) / int(objectSize);
-    }
-
-    size_t allocSize = headerSize + objectSize * capacity;
-
+    size_t allocSize = calculateBlockSize(capacity, objectSize, headerSize, options);
     QArrayData *header = static_cast<QArrayData *>(::malloc(allocSize));
     if (header) {
         quintptr data = (quintptr(header) + sizeof(QArrayData) + alignment - 1)
                 & ~(alignment - 1);
 
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
         header->ref.atomic.store(bool(!(options & Unsharable)));
+#else
+        header->ref.atomic.store(1);
+#endif
         header->size = 0;
         header->alloc = capacity;
         header->capacityReserved = bool(options & CapacityReserved);
         header->offset = data - quintptr(header);
     }
 
+    return header;
+}
+
+QArrayData *QArrayData::reallocateUnaligned(QArrayData *data, size_t objectSize, size_t capacity,
+                                            AllocationOptions options) Q_DECL_NOTHROW
+{
+    Q_ASSERT(data);
+    Q_ASSERT(data->isMutable());
+    Q_ASSERT(!data->ref.isShared());
+
+    size_t headerSize = sizeof(QArrayData);
+    size_t allocSize = calculateBlockSize(capacity, objectSize, headerSize, options);
+    QArrayData *header = static_cast<QArrayData *>(reallocateData(data, allocSize, options));
+    if (header)
+        header->alloc = capacity;
     return header;
 }
 
@@ -121,7 +157,7 @@ void QArrayData::deallocate(QArrayData *data, size_t objectSize,
             && !(alignment & (alignment - 1)));
     Q_UNUSED(objectSize) Q_UNUSED(alignment)
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     if (data == &qt_array_unsharable_empty)
         return;
 #endif

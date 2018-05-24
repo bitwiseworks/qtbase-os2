@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2011 - 2013 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -53,14 +59,14 @@ QQnxRasterBackingStore::QQnxRasterBackingStore(QWindow *window)
       m_needsPosting(false),
       m_scrolled(false)
 {
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window;
+    qRasterBackingStoreDebug() << "w =" << window;
 
     m_window = window;
 }
 
 QQnxRasterBackingStore::~QQnxRasterBackingStore()
 {
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window();
+    qRasterBackingStoreDebug() << "w =" << window();
 }
 
 QPaintDevice *QQnxRasterBackingStore::paintDevice()
@@ -75,7 +81,7 @@ void QQnxRasterBackingStore::flush(QWindow *window, const QRegion &region, const
 {
     Q_UNUSED(offset)
 
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << this->window();
+    qRasterBackingStoreDebug() << "w =" << this->window();
 
     // Sometimes this method is called even though there is nothing to be
     // flushed (posted in "screen" parlance), for instance, after an expose
@@ -103,7 +109,7 @@ void QQnxRasterBackingStore::resize(const QSize &size, const QRegion &staticCont
 {
     Q_UNUSED(size);
     Q_UNUSED(staticContents);
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window() << ", s =" << size;
+    qRasterBackingStoreDebug() << "w =" << window() << ", s =" << size;
 
     // NOTE: defer resizing window buffers until next paint as
     // resize() can be called multiple times before a paint occurs
@@ -111,7 +117,7 @@ void QQnxRasterBackingStore::resize(const QSize &size, const QRegion &staticCont
 
 bool QQnxRasterBackingStore::scroll(const QRegion &area, int dx, int dy)
 {
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window();
+    qRasterBackingStoreDebug() << "w =" << window();
 
     m_needsPosting = true;
 
@@ -127,13 +133,14 @@ void QQnxRasterBackingStore::beginPaint(const QRegion &region)
 {
     Q_UNUSED(region);
 
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window();
+    qRasterBackingStoreDebug() << "w =" << window();
     m_needsPosting = true;
 
     platformWindow()->adjustBufferSize();
 
     if (window()->requestedFormat().alphaBufferSize() > 0) {
-        foreach (const QRect &r, region.rects()) {
+        auto platformScreen = static_cast<QQnxScreen *>(platformWindow()->screen());
+        for (const QRect &r : region) {
             // Clear transparent regions
             const int bg[] = {
                                SCREEN_BLIT_COLOR, 0x00000000,
@@ -143,18 +150,18 @@ void QQnxRasterBackingStore::beginPaint(const QRegion &region)
                                SCREEN_BLIT_DESTINATION_HEIGHT, r.height(),
                                SCREEN_BLIT_END
                               };
-            Q_SCREEN_CHECKERROR(screen_fill(platformWindow()->screen()->nativeContext(),
+            Q_SCREEN_CHECKERROR(screen_fill(platformScreen->nativeContext(),
                                             platformWindow()->renderBuffer().nativeBuffer(), bg),
                                 "failed to clear transparent regions");
         }
-        Q_SCREEN_CHECKERROR(screen_flush_blits(platformWindow()->screen()->nativeContext(),
+        Q_SCREEN_CHECKERROR(screen_flush_blits(platformScreen->nativeContext(),
                     SCREEN_WAIT_IDLE), "failed to flush blits");
     }
 }
 
 void QQnxRasterBackingStore::endPaint()
 {
-    qRasterBackingStoreDebug() << Q_FUNC_INFO << "w =" << window();
+    qRasterBackingStoreDebug() << "w =" << window();
 }
 
 QQnxRasterWindow *QQnxRasterBackingStore::platformWindow() const

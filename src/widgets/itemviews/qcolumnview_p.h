@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,9 +51,8 @@
 // We mean it.
 //
 
+#include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include "qcolumnview.h"
-
-#ifndef QT_NO_QCOLUMNVIEW
 
 #include <private/qabstractitemview_p.h>
 
@@ -59,6 +64,8 @@
 #include <qlistview.h>
 #include <qevent.h>
 #include <qscrollbar.h>
+
+QT_REQUIRE_CONFIG(columnview);
 
 QT_BEGIN_NAMESPACE
 
@@ -73,7 +80,7 @@ public:
         setMinimumWidth(previewWidget->minimumWidth());
     }
 
-    void resizeEvent(QResizeEvent * event) Q_DECL_OVERRIDE{
+    void resizeEvent(QResizeEvent * event) override{
         if (!previewWidget)
             return;
         previewWidget->resize(
@@ -89,7 +96,7 @@ public:
         QAbstractScrollArea::resizeEvent(event);
     }
 
-    void scrollContentsBy(int dx, int dy) Q_DECL_OVERRIDE
+    void scrollContentsBy(int dx, int dy) override
     {
         if (!previewWidget)
             return;
@@ -99,36 +106,36 @@ public:
         QAbstractItemView::scrollContentsBy(dx, dy);
     }
 
-    QRect visualRect(const QModelIndex &) const Q_DECL_OVERRIDE
+    QRect visualRect(const QModelIndex &) const override
     {
         return QRect();
     }
-    void scrollTo(const QModelIndex &, ScrollHint) Q_DECL_OVERRIDE
+    void scrollTo(const QModelIndex &, ScrollHint) override
     {
     }
-    QModelIndex indexAt(const QPoint &) const Q_DECL_OVERRIDE
-    {
-        return QModelIndex();
-    }
-    QModelIndex moveCursor(CursorAction, Qt::KeyboardModifiers) Q_DECL_OVERRIDE
+    QModelIndex indexAt(const QPoint &) const override
     {
         return QModelIndex();
     }
-    int horizontalOffset () const Q_DECL_OVERRIDE {
+    QModelIndex moveCursor(CursorAction, Qt::KeyboardModifiers) override
+    {
+        return QModelIndex();
+    }
+    int horizontalOffset () const override {
         return 0;
     }
-    int verticalOffset () const Q_DECL_OVERRIDE {
+    int verticalOffset () const override {
         return 0;
     }
-    QRegion visualRegionForSelection(const QItemSelection &) const Q_DECL_OVERRIDE
+    QRegion visualRegionForSelection(const QItemSelection &) const override
     {
         return QRegion();
     }
-    bool isIndexHidden(const QModelIndex &) const Q_DECL_OVERRIDE
+    bool isIndexHidden(const QModelIndex &) const override
     {
         return false;
     }
-    void setSelection(const QRect &, QItemSelectionModel::SelectionFlags) Q_DECL_OVERRIDE
+    void setSelection(const QRect &, QItemSelectionModel::SelectionFlags) override
     {
     }
 private:
@@ -156,7 +163,7 @@ public:
     void _q_gripMoved(int offset);
     void _q_changeCurrentColumn();
     void _q_clicked(const QModelIndex &index);
-    void _q_columnsInserted(const QModelIndex &parent, int start, int end) Q_DECL_OVERRIDE;
+    void _q_columnsInserted(const QModelIndex &parent, int start, int end) override;
 
     QList<QAbstractItemView*> columns;
     QVector<int> columnSizes; // used during init and corner moving
@@ -181,11 +188,9 @@ public:
 
     void paint(QPainter *painter,
                const QStyleOptionViewItem &option,
-               const QModelIndex &index) const Q_DECL_OVERRIDE;
+               const QModelIndex &index) const override;
 };
-#endif // QT_NO_QCOLUMNVIEW
-
 
 QT_END_NAMESPACE
-#endif //QCOLUMNVIEW_P_H
 
+#endif //QCOLUMNVIEW_P_H

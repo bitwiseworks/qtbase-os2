@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -40,6 +50,7 @@
 
 #include <QtWidgets>
 #include <QtNetwork>
+#include <QtCore>
 
 #include "sender.h"
 
@@ -50,23 +61,21 @@ Sender::Sender(QWidget *parent)
     statusLabel->setWordWrap(true);
 
     startButton = new QPushButton(tr("&Start"));
-    quitButton = new QPushButton(tr("&Quit"));
+    auto quitButton = new QPushButton(tr("&Quit"));
 
-    buttonBox = new QDialogButtonBox;
+    auto buttonBox = new QDialogButtonBox;
     buttonBox->addButton(startButton, QDialogButtonBox::ActionRole);
     buttonBox->addButton(quitButton, QDialogButtonBox::RejectRole);
 
-    timer = new QTimer(this);
 //! [0]
     udpSocket = new QUdpSocket(this);
 //! [0]
-    messageNo = 1;
 
-    connect(startButton, SIGNAL(clicked()), this, SLOT(startBroadcasting()));
-    connect(quitButton, SIGNAL(clicked()), this, SLOT(close()));
-    connect(timer, SIGNAL(timeout()), this, SLOT(broadcastDatagram()));
+    connect(startButton, &QPushButton::clicked, this, &Sender::startBroadcasting);
+    connect(quitButton, &QPushButton::clicked, this, &Sender::close);
+    connect(&timer, &QTimer::timeout, this, &Sender::broadcastDatagram);
 
-    QVBoxLayout *mainLayout = new QVBoxLayout;
+    auto mainLayout = new QVBoxLayout;
     mainLayout->addWidget(statusLabel);
     mainLayout->addWidget(buttonBox);
     setLayout(mainLayout);
@@ -77,7 +86,7 @@ Sender::Sender(QWidget *parent)
 void Sender::startBroadcasting()
 {
     startButton->setEnabled(false);
-    timer->start(1000);
+    timer.start(1000);
 }
 
 void Sender::broadcastDatagram()
@@ -85,8 +94,7 @@ void Sender::broadcastDatagram()
     statusLabel->setText(tr("Now broadcasting datagram %1").arg(messageNo));
 //! [1]
     QByteArray datagram = "Broadcast message " + QByteArray::number(messageNo);
-    udpSocket->writeDatagram(datagram.data(), datagram.size(),
-                             QHostAddress::Broadcast, 45454);
+    udpSocket->writeDatagram(datagram, QHostAddress::Broadcast, 45454);
 //! [1]
     ++messageNo;
 }

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,6 +48,7 @@
 
 #include "qicohandler.h"
 #include <QtCore/qendian.h>
+#include <private/qendian_p.h>
 #include <QtGui/QImage>
 #include <QtCore/QFile>
 #include <QtCore/QBuffer>
@@ -54,37 +61,37 @@ QT_BEGIN_NAMESPACE
 typedef struct
 {
     quint8  bWidth;               // Width of the image
-    quint8  bHeight;              // Height of the image (times 2)
+    quint8  bHeight;              // Height of the image (actual height, not times 2)
     quint8  bColorCount;          // Number of colors in image (0 if >=8bpp) [ not ture ]
     quint8  bReserved;            // Reserved
-    quint16 wPlanes;              // Color Planes
-    quint16 wBitCount;            // Bits per pixel
-    quint32 dwBytesInRes;         // how many bytes in this resource?
-    quint32 dwImageOffset;        // where in the file is this image
+    quint16_le wPlanes;              // Color Planes
+    quint16_le wBitCount;            // Bits per pixel
+    quint32_le dwBytesInRes;         // how many bytes in this resource?
+    quint32_le dwImageOffset;        // where in the file is this image
 } ICONDIRENTRY, *LPICONDIRENTRY;
 #define ICONDIRENTRY_SIZE 16
 
 typedef struct
 {
-    quint16 idReserved;   // Reserved
-    quint16 idType;       // resource type (1 for icons, 2 for cursors)
-    quint16 idCount;      // how many images?
+    quint16_le idReserved;   // Reserved
+    quint16_le idType;       // resource type (1 for icons, 2 for cursors)
+    quint16_le idCount;      // how many images?
     ICONDIRENTRY    idEntries[1]; // the entries for each image
 } ICONDIR, *LPICONDIR;
 #define ICONDIR_SIZE    6       // Exclude the idEntries field
 
 typedef struct {                    // BMP information header
-    quint32 biSize;                // size of this struct
-    quint32 biWidth;               // pixmap width
-    quint32 biHeight;              // pixmap height     (specifies the combined height of the XOR and AND masks)
-    quint16 biPlanes;              // should be 1
-    quint16 biBitCount;            // number of bits per pixel
-    quint32 biCompression;         // compression method
-    quint32 biSizeImage;           // size of image
-    quint32 biXPelsPerMeter;       // horizontal resolution
-    quint32 biYPelsPerMeter;       // vertical resolution
-    quint32 biClrUsed;             // number of colors used
-    quint32 biClrImportant;        // number of important colors
+    quint32_le biSize;                // size of this struct
+    quint32_le biWidth;               // pixmap width
+    quint32_le biHeight;              // pixmap height     (specifies the combined height of the XOR and AND masks)
+    quint16_le biPlanes;              // should be 1
+    quint16_le biBitCount;            // number of bits per pixel
+    quint32_le biCompression;         // compression method
+    quint32_le biSizeImage;           // size of image
+    quint32_le biXPelsPerMeter;       // horizontal resolution
+    quint32_le biYPelsPerMeter;       // vertical resolution
+    quint32_le biClrUsed;             // number of colors used
+    quint32_le biClrImportant;        // number of important colors
 } BMP_INFOHDR ,*LPBMP_INFOHDR;
 #define BMP_INFOHDR_SIZE 40
 
@@ -96,13 +103,14 @@ public:
     QImage iconAt(int index);
     static bool canRead(QIODevice *iodev);
 
-    static QList<QImage> read(QIODevice * device);
+    static QVector<QImage> read(QIODevice *device);
 
-    static bool write(QIODevice * device, const QList<QImage> & images);
+    static bool write(QIODevice *device, const QVector<QImage> &images);
+
+    bool readIconEntry(int index, ICONDIRENTRY * iconEntry);
 
 private:
     bool readHeader();
-    bool readIconEntry(int index, ICONDIRENTRY * iconEntry);
 
     bool readBMPHeader(quint32 imageOffset, BMP_INFOHDR * header);
     void findColorInfo(QImage & image);
@@ -133,108 +141,43 @@ private:
 // Data readers and writers that takes care of alignment and endian stuff.
 static bool readIconDirEntry(QIODevice *iodev, ICONDIRENTRY *iconDirEntry)
 {
-    if (iodev) {
-        uchar tmp[ICONDIRENTRY_SIZE];
-        if (iodev->read((char*)tmp, ICONDIRENTRY_SIZE) == ICONDIRENTRY_SIZE) {
-            iconDirEntry->bWidth = tmp[0];
-            iconDirEntry->bHeight = tmp[1];
-            iconDirEntry->bColorCount = tmp[2];
-            iconDirEntry->bReserved = tmp[3];
-
-            iconDirEntry->wPlanes = qFromLittleEndian<quint16>(&tmp[4]);
-            iconDirEntry->wBitCount = qFromLittleEndian<quint16>(&tmp[6]);
-            iconDirEntry->dwBytesInRes = qFromLittleEndian<quint32>(&tmp[8]);
-            iconDirEntry->dwImageOffset = qFromLittleEndian<quint32>(&tmp[12]);
-            return true;
-        }
-    }
+    if (iodev)
+        return (iodev->read((char*)iconDirEntry, ICONDIRENTRY_SIZE) == ICONDIRENTRY_SIZE);
     return false;
 }
 
 static bool writeIconDirEntry(QIODevice *iodev, const ICONDIRENTRY &iconEntry)
 {
-    if (iodev) {
-        uchar tmp[ICONDIRENTRY_SIZE];
-        tmp[0] = iconEntry.bWidth;
-        tmp[1] = iconEntry.bHeight;
-        tmp[2] = iconEntry.bColorCount;
-        tmp[3] = iconEntry.bReserved;
-        qToLittleEndian<quint16>(iconEntry.wPlanes, &tmp[4]);
-        qToLittleEndian<quint16>(iconEntry.wBitCount, &tmp[6]);
-        qToLittleEndian<quint32>(iconEntry.dwBytesInRes, &tmp[8]);
-        qToLittleEndian<quint32>(iconEntry.dwImageOffset, &tmp[12]);
-        return iodev->write((char*)tmp, ICONDIRENTRY_SIZE) == ICONDIRENTRY_SIZE;
-    }
-
+    if (iodev)
+        return iodev->write((char*)&iconEntry, ICONDIRENTRY_SIZE) == ICONDIRENTRY_SIZE;
     return false;
 }
 
 static bool readIconDir(QIODevice *iodev, ICONDIR *iconDir)
 {
-    if (iodev) {
-        uchar tmp[ICONDIR_SIZE];
-        if (iodev->read((char*)tmp, ICONDIR_SIZE) == ICONDIR_SIZE) {
-            iconDir->idReserved = qFromLittleEndian<quint16>(&tmp[0]);
-            iconDir->idType = qFromLittleEndian<quint16>(&tmp[2]);
-            iconDir->idCount = qFromLittleEndian<quint16>(&tmp[4]);
-            return true;
-        }
-    }
+    if (iodev)
+        return (iodev->read((char*)iconDir, ICONDIR_SIZE) == ICONDIR_SIZE);
     return false;
 }
 
 static bool writeIconDir(QIODevice *iodev, const ICONDIR &iconDir)
 {
-    if (iodev) {
-        uchar tmp[6];
-        qToLittleEndian(iconDir.idReserved, tmp);
-        qToLittleEndian(iconDir.idType, &tmp[2]);
-        qToLittleEndian(iconDir.idCount, &tmp[4]);
-        return iodev->write((char*)tmp, 6) == 6;
-    }
+    if (iodev)
+        return iodev->write((char*)&iconDir, 6) == 6;
     return false;
 }
 
 static bool readBMPInfoHeader(QIODevice *iodev, BMP_INFOHDR *pHeader)
 {
-    if (iodev) {
-        uchar header[BMP_INFOHDR_SIZE];
-        if (iodev->read((char*)header, BMP_INFOHDR_SIZE) == BMP_INFOHDR_SIZE) {
-            pHeader->biSize = qFromLittleEndian<quint32>(&header[0]);
-            pHeader->biWidth = qFromLittleEndian<quint32>(&header[4]);
-            pHeader->biHeight = qFromLittleEndian<quint32>(&header[8]);
-            pHeader->biPlanes = qFromLittleEndian<quint16>(&header[12]);
-            pHeader->biBitCount = qFromLittleEndian<quint16>(&header[14]);
-            pHeader->biCompression = qFromLittleEndian<quint32>(&header[16]);
-            pHeader->biSizeImage = qFromLittleEndian<quint32>(&header[20]);
-            pHeader->biXPelsPerMeter = qFromLittleEndian<quint32>(&header[24]);
-            pHeader->biYPelsPerMeter = qFromLittleEndian<quint32>(&header[28]);
-            pHeader->biClrUsed = qFromLittleEndian<quint32>(&header[32]);
-            pHeader->biClrImportant = qFromLittleEndian<quint32>(&header[36]);
-            return true;
-        }
-    }
+    if (iodev)
+        return (iodev->read((char*)pHeader, BMP_INFOHDR_SIZE) == BMP_INFOHDR_SIZE);
     return false;
 }
 
 static bool writeBMPInfoHeader(QIODevice *iodev, const BMP_INFOHDR &header)
 {
-    if (iodev) {
-        uchar tmp[BMP_INFOHDR_SIZE];
-        qToLittleEndian<quint32>(header.biSize, &tmp[0]);
-        qToLittleEndian<quint32>(header.biWidth, &tmp[4]);
-        qToLittleEndian<quint32>(header.biHeight, &tmp[8]);
-        qToLittleEndian<quint16>(header.biPlanes, &tmp[12]);
-        qToLittleEndian<quint16>(header.biBitCount, &tmp[14]);
-        qToLittleEndian<quint32>(header.biCompression, &tmp[16]);
-        qToLittleEndian<quint32>(header.biSizeImage, &tmp[20]);
-        qToLittleEndian<quint32>(header.biXPelsPerMeter, &tmp[24]);
-        qToLittleEndian<quint32>(header.biYPelsPerMeter, &tmp[28]);
-        qToLittleEndian<quint32>(header.biClrUsed, &tmp[32]);
-        qToLittleEndian<quint32>(header.biClrImportant, &tmp[36]);
-
-        return iodev->write((char*)tmp, BMP_INFOHDR_SIZE) == BMP_INFOHDR_SIZE;
-    }
+    if (iodev)
+        return iodev->write((char*)&header, BMP_INFOHDR_SIZE) == BMP_INFOHDR_SIZE;
     return false;
 }
 
@@ -341,7 +284,7 @@ bool ICOReader::readHeader()
 
 bool ICOReader::readIconEntry(int index, ICONDIRENTRY *iconEntry)
 {
-    if (iod) {
+    if (readHeader()) {
         if (iod->seek(startpos + ICONDIR_SIZE + (index * ICONDIRENTRY_SIZE))) {
             return readIconDirEntry(iod, iconEntry);
         }
@@ -554,14 +497,14 @@ QImage ICOReader::iconAt(int index)
                 if (icoAttrib.depth == 32)                // there's no colormap
                     icoAttrib.ncolors = 0;
                 else                    // # colors used
-                    icoAttrib.ncolors = header.biClrUsed ? header.biClrUsed : 1 << icoAttrib.nbits;
+                    icoAttrib.ncolors = header.biClrUsed ? uint(header.biClrUsed) : 1 << icoAttrib.nbits;
                 if (icoAttrib.ncolors > 256) //color table can't be more than 256
                     return img;
                 icoAttrib.w = iconEntry.bWidth;
-                if (icoAttrib.w == 0)
+                if (icoAttrib.w == 0) // means 256 pixels
                     icoAttrib.w = header.biWidth;
                 icoAttrib.h = iconEntry.bHeight;
-                if (icoAttrib.h == 0)
+                if (icoAttrib.h == 0) // means 256 pixels
                     icoAttrib.h = header.biHeight/2;
 
                 QImage::Format format = QImage::Format_ARGB32;
@@ -612,12 +555,14 @@ QImage ICOReader::iconAt(int index)
 
     \sa write()
 */
-QList<QImage> ICOReader::read(QIODevice * device)
+QVector<QImage> ICOReader::read(QIODevice *device)
 {
-    QList<QImage> images;
+    QVector<QImage> images;
 
     ICOReader reader(device);
-    for (int i = 0; i < reader.count(); i++)
+    const int N = reader.count();
+    images.reserve(N);
+    for (int i = 0; i < N; i++)
         images += reader.iconAt(i);
 
     return images;
@@ -636,7 +581,7 @@ QList<QImage> ICOReader::read(QIODevice * device)
 
     \sa read()
 */
-bool ICOReader::write(QIODevice * device, const QList<QImage> & images)
+bool ICOReader::write(QIODevice *device, const QVector<QImage> &images)
 {
     bool retValue = false;
 
@@ -656,10 +601,11 @@ bool ICOReader::write(QIODevice * device, const QList<QImage> & images)
         for (int i=0; i<id.idCount; i++) {
 
             QImage image = images[i];
-            // Scale down the image if it is larger than 128 pixels in either width or height
-            if (image.width() > 128 || image.height() > 128)
+            // Scale down the image if it is larger than 256 pixels in either width or height
+            // because this is a maximum size of image in the ICO file.
+            if (image.width() > 256 || image.height() > 256)
             {
-                image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                image = image.scaled(256, 256, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             QImage maskImage(image.width(), image.height(), QImage::Format_Mono);
             image = image.convertToFormat(QImage::Format_ARGB32);
@@ -677,8 +623,8 @@ bool ICOReader::write(QIODevice * device, const QList<QImage> & images)
             entries[i].bColorCount = 0;
             entries[i].bReserved = 0;
             entries[i].wBitCount = nbits;
-            entries[i].bHeight = image.height();
-            entries[i].bWidth = image.width();
+            entries[i].bHeight = image.height() < 256 ? image.height() : 0;  // 0 means 256
+            entries[i].bWidth = image.width() < 256 ? image.width() : 0;     // 0 means 256
             entries[i].dwBytesInRes = BMP_INFOHDR_SIZE + (bpl_bmp * image.height())
                 + (maskImage.bytesPerLine() * maskImage.height());
             entries[i].wPlanes = 1;
@@ -692,11 +638,11 @@ bool ICOReader::write(QIODevice * device, const QList<QImage> & images)
             bmpHeaders[i].biClrImportant = 0;
             bmpHeaders[i].biClrUsed = entries[i].bColorCount;
             bmpHeaders[i].biCompression = 0;
-            bmpHeaders[i].biHeight = entries[i].bHeight * 2; // 2 is for the mask
+            bmpHeaders[i].biHeight = entries[i].bHeight ? entries[i].bHeight * 2 : 256 * 2; // 2 is for the mask
             bmpHeaders[i].biPlanes = entries[i].wPlanes;
             bmpHeaders[i].biSize = BMP_INFOHDR_SIZE;
             bmpHeaders[i].biSizeImage = entries[i].dwBytesInRes - BMP_INFOHDR_SIZE;
-            bmpHeaders[i].biWidth = entries[i].bWidth;
+            bmpHeaders[i].biWidth = entries[i].bWidth ? entries[i].bWidth : 256;
             bmpHeaders[i].biXPelsPerMeter = 0;
             bmpHeaders[i].biYPelsPerMeter = 0;
 
@@ -776,25 +722,37 @@ QtIcoHandler::~QtIcoHandler()
 
 QVariant QtIcoHandler::option(ImageOption option) const
 {
-    if (option == Size) {
-        QIODevice *device = QImageIOHandler::device();
-        qint64 oldPos = device->pos();
+    if (option == Size || option == ImageFormat) {
         ICONDIRENTRY iconEntry;
-        if (device->seek(oldPos + ICONDIR_SIZE + (m_currentIconIndex * ICONDIRENTRY_SIZE))) {
-            if (readIconDirEntry(device, &iconEntry)) {
-                device->seek(oldPos);
-                return QSize(iconEntry.bWidth, iconEntry.bHeight);
+        if (m_pICOReader->readIconEntry(m_currentIconIndex, &iconEntry)) {
+            switch (option) {
+                case Size:
+                    return QSize(iconEntry.bWidth ? iconEntry.bWidth : 256,
+                                iconEntry.bHeight ? iconEntry.bHeight : 256);
+
+                case ImageFormat:
+                    switch (iconEntry.wBitCount) {
+                        case 2:
+                            return QImage::Format_Mono;
+                        case 24:
+                            return QImage::Format_RGB32;
+                        case 32:
+                            return QImage::Format_ARGB32;
+                        default:
+                            return QImage::Format_Indexed8;
+                    }
+                    break;
+                default:
+                    break;
             }
         }
-        if (!device->isSequential())
-            device->seek(oldPos);
     }
     return QVariant();
 }
 
 bool QtIcoHandler::supportsOption(ImageOption option) const
 {
-    return option == Size;
+    return (option == Size || option == ImageFormat);
 }
 
 /*!
@@ -849,7 +807,7 @@ bool QtIcoHandler::read(QImage *image)
 bool QtIcoHandler::write(const QImage &image)
 {
     QIODevice *device = QImageIOHandler::device();
-    QList<QImage> imgs;
+    QVector<QImage> imgs;
     imgs.append(image);
     return ICOReader::write(device, imgs);
 }
@@ -879,9 +837,10 @@ bool QtIcoHandler::jumpToImage(int imageNumber)
 {
     if (imageNumber < imageCount()) {
         m_currentIconIndex = imageNumber;
+        return true;
     }
 
-    return imageNumber < imageCount();
+    return false;
 }
 
 /*! \reimp

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,6 +46,7 @@ class tst_QObjectRace: public QObject
 private slots:
     void moveToThreadRace();
     void destroyRace();
+    void disconnectRace();
 };
 
 class RaceObject : public QObject
@@ -298,6 +294,172 @@ void tst_QObjectRace::destroyRace()
         delete threads[i];
 }
 
+static QAtomicInteger<unsigned> countedStructObjectsCount;
+struct CountedFunctor
+{
+    CountedFunctor() : destroyed(false) { countedStructObjectsCount.fetchAndAddRelaxed(1); }
+    CountedFunctor(const CountedFunctor &) : destroyed(false) { countedStructObjectsCount.fetchAndAddRelaxed(1); }
+    CountedFunctor &operator=(const CountedFunctor &) { return *this; }
+    ~CountedFunctor() { destroyed = true; countedStructObjectsCount.fetchAndAddRelaxed(-1);}
+    void operator()() const {QCOMPARE(destroyed, false);}
+
+private:
+    bool destroyed;
+};
+
+class DisconnectRaceSenderObject : public QObject
+{
+    Q_OBJECT
+signals:
+    void theSignal();
+};
+
+class DisconnectRaceThread : public QThread
+{
+    Q_OBJECT
+
+    DisconnectRaceSenderObject *sender;
+    bool emitSignal;
+public:
+    DisconnectRaceThread(DisconnectRaceSenderObject *s, bool emitIt)
+        : QThread(), sender(s), emitSignal(emitIt)
+    {
+    }
+
+    void run()
+    {
+        while (!isInterruptionRequested()) {
+            QMetaObject::Connection conn = connect(sender, &DisconnectRaceSenderObject::theSignal,
+                                                   sender, CountedFunctor(), Qt::BlockingQueuedConnection);
+            if (emitSignal)
+                emit sender->theSignal();
+            disconnect(conn);
+            yieldCurrentThread();
+        }
+    }
+};
+
+class DeleteReceiverRaceSenderThread : public QThread
+{
+    Q_OBJECT
+
+    DisconnectRaceSenderObject *sender;
+public:
+    DeleteReceiverRaceSenderThread(DisconnectRaceSenderObject *s)
+        : QThread(), sender(s)
+    {
+    }
+
+    void run()
+    {
+        while (!isInterruptionRequested()) {
+            emit sender->theSignal();
+            yieldCurrentThread();
+        }
+    }
+};
+
+class DeleteReceiverRaceReceiver : public QObject
+{
+    Q_OBJECT
+
+    DisconnectRaceSenderObject *sender;
+    QObject *receiver;
+    QTimer *timer;
+public:
+    DeleteReceiverRaceReceiver(DisconnectRaceSenderObject *s)
+        : QObject(), sender(s), receiver(0)
+    {
+        timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, &DeleteReceiverRaceReceiver::onTimeout);
+        timer->start(1);
+    }
+
+    void onTimeout()
+    {
+        if (receiver)
+            delete receiver;
+        receiver = new QObject;
+        connect(sender, &DisconnectRaceSenderObject::theSignal, receiver, CountedFunctor(), Qt::BlockingQueuedConnection);
+    }
+};
+
+class DeleteReceiverRaceReceiverThread : public QThread
+{
+    Q_OBJECT
+
+    DisconnectRaceSenderObject *sender;
+public:
+    DeleteReceiverRaceReceiverThread(DisconnectRaceSenderObject *s)
+        : QThread(), sender(s)
+    {
+    }
+
+    void run()
+    {
+        QScopedPointer<DeleteReceiverRaceReceiver> receiver(new DeleteReceiverRaceReceiver(sender));
+        exec();
+    }
+};
+
+void tst_QObjectRace::disconnectRace()
+{
+    enum { ThreadCount = 20, TimeLimit = 3000 };
+
+    QCOMPARE(countedStructObjectsCount.load(), 0u);
+
+    {
+        QScopedPointer<DisconnectRaceSenderObject> sender(new DisconnectRaceSenderObject());
+        QScopedPointer<QThread> senderThread(new QThread());
+        senderThread->start();
+        sender->moveToThread(senderThread.data());
+
+        DisconnectRaceThread *threads[ThreadCount];
+        for (int i = 0; i < ThreadCount; ++i) {
+            threads[i] = new DisconnectRaceThread(sender.data(), !(i % 10));
+            threads[i]->start();
+        }
+
+        QTest::qWait(TimeLimit);
+
+        for (int i = 0; i < ThreadCount; ++i) {
+            threads[i]->requestInterruption();
+            QVERIFY(threads[i]->wait(300));
+            delete threads[i];
+        }
+
+        senderThread->quit();
+        QVERIFY(senderThread->wait(300));
+    }
+
+    QCOMPARE(countedStructObjectsCount.load(), 0u);
+
+    {
+        QScopedPointer<DisconnectRaceSenderObject> sender(new DisconnectRaceSenderObject());
+        QScopedPointer<DeleteReceiverRaceSenderThread> senderThread(new DeleteReceiverRaceSenderThread(sender.data()));
+        senderThread->start();
+        sender->moveToThread(senderThread.data());
+
+        DeleteReceiverRaceReceiverThread *threads[ThreadCount];
+        for (int i = 0; i < ThreadCount; ++i) {
+            threads[i] = new DeleteReceiverRaceReceiverThread(sender.data());
+            threads[i]->start();
+        }
+
+        QTest::qWait(TimeLimit);
+
+        senderThread->requestInterruption();
+        QVERIFY(senderThread->wait(300));
+
+        for (int i = 0; i < ThreadCount; ++i) {
+            threads[i]->quit();
+            QVERIFY(threads[i]->wait(300));
+            delete threads[i];
+        }
+    }
+
+    QCOMPARE(countedStructObjectsCount.load(), 0u);
+}
 
 QTEST_MAIN(tst_QObjectRace)
 #include "tst_qobjectrace.moc"

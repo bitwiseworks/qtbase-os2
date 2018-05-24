@@ -3,16 +3,15 @@ TEMPLATE=subdirs
 SUBDIRS = \
    kernel
 
-!ios: SUBDIRS += \
+!uikit: SUBDIRS += \
    animation \
    codecs \
    global \
    io \
    itemmodels \
-   json \
    mimetypes \
    plugin \
+   serialization \
    statemachine \
    thread \
-   tools \
-   xml
+   tools

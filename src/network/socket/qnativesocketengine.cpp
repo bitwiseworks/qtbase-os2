@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -88,6 +95,25 @@
     errorString() can be called to determine the cause of the error.
 */
 
+/*!
+    \enum QAbstractSocketEngine::PacketHeaderOption
+
+    Specifies which fields in the IP packet header are desired in the call to
+    readDatagram().
+
+    \value WantNone             caller isn't interested in the packet metadata
+    \value WantDatagramSender   caller wants the sender address and port number
+    \value WantDatagramDestination caller wants the packet's destination address and port number
+                                   (this option is useful to distinguish multicast packets from unicast)
+    \value WantDatagramHopLimit caller wants the packet's remaining hop limit or time to live
+                                (this option is useful in IPv4 multicasting, where the TTL is used
+                                to indicate the realm)
+    \value WantAll              this is a catch-all value to indicate the caller is
+                                interested in all the available information
+
+    \sa readDatagram(), QNetworkDatagram
+*/
+
 #include "qnativesocketengine_p.h"
 
 #include <qabstracteventdispatcher.h>
@@ -101,6 +127,10 @@
 # include "qnetworkproxy.h"
 # include "qabstractsocket.h"
 # include "qtcpserver.h"
+#endif
+
+#if !defined(QT_NO_SCTP)
+# include "qsctpserver.h"
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -148,14 +178,16 @@ QT_BEGIN_NAMESPACE
                  " socket other than "#type""); \
         return (returnValue); \
     } } while (0)
+#define Q_CHECK_TYPES(function, type1, type2, returnValue) do { \
+    if (d->socketType != (type1) && d->socketType != (type2)) { \
+        qWarning(#function" was called by a" \
+                 " socket other than "#type1" or "#type2); \
+        return (returnValue); \
+    } } while (0)
 #define Q_TR(a) QT_TRANSLATE_NOOP(QNativeSocketEngine, a)
 
 /*! \internal
     Constructs the private class and initializes all data members.
-
-    On Windows, WSAStartup is called "recursively" for every
-    concurrent QNativeSocketEngine. This is safe, because WSAStartup and
-    WSACleanup are reference counted.
 */
 QNativeSocketEnginePrivate::QNativeSocketEnginePrivate() :
     socketDescriptor(-1),
@@ -163,6 +195,9 @@ QNativeSocketEnginePrivate::QNativeSocketEnginePrivate() :
     writeNotifier(0),
     exceptNotifier(0)
 {
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+    QSysInfo::machineHostName();        // this initializes ws2_32.dll
+#endif
 }
 
 /*! \internal
@@ -275,6 +310,12 @@ void QNativeSocketEnginePrivate::setError(QAbstractSocket::SocketError error, Er
     case TemporaryErrorString:
         socketErrorString = QNativeSocketEngine::tr("Temporary error");
         break;
+    case NetworkDroppedConnectionErrorString:
+        socketErrorString = QNativeSocketEngine::tr("Network dropped connection on reset");
+        break;
+    case ConnectionResetErrorString:
+        socketErrorString = QNativeSocketEngine::tr("Connection reset by peer");
+        break;
     case UnknownSocketErrorString:
         socketErrorString = QNativeSocketEngine::tr("Unknown error");
         break;
@@ -321,17 +362,41 @@ bool QNativeSocketEnginePrivate::checkProxy(const QHostAddress &address)
 #if !defined(QT_NO_NETWORKPROXY)
     QObject *parent = q_func()->parent();
     QNetworkProxy proxy;
+    QNetworkProxyQuery::QueryType queryType = QNetworkProxyQuery::TcpSocket;
     if (QAbstractSocket *socket = qobject_cast<QAbstractSocket *>(parent)) {
         proxy = socket->proxy();
+        switch (socket->socketType()) {
+        case QAbstractSocket::UdpSocket:
+            queryType = QNetworkProxyQuery::UdpSocket;
+            break;
+        case QAbstractSocket::SctpSocket:
+            queryType = QNetworkProxyQuery::SctpSocket;
+            break;
+        case QAbstractSocket::TcpSocket:
+        case QAbstractSocket::UnknownSocketType:
+            queryType = QNetworkProxyQuery::TcpSocket;
+        }
     } else if (QTcpServer *server = qobject_cast<QTcpServer *>(parent)) {
         proxy = server->proxy();
+        queryType = QNetworkProxyQuery::TcpServer;
+#ifndef QT_NO_SCTP
+        if (qobject_cast<QSctpServer *>(server))
+            queryType = QNetworkProxyQuery::SctpServer;
+#endif
     } else {
         // no parent -> no proxy
         return true;
     }
 
-    if (proxy.type() == QNetworkProxy::DefaultProxy)
-        proxy = QNetworkProxy::applicationProxy();
+    if (proxy.type() == QNetworkProxy::DefaultProxy) {
+        // This is similar to what we have in QNetworkProxy::applicationProxy,
+        // the only difference is that we provide the correct query type instead of
+        // always using TcpSocket unconditionally (this is the default type for
+        // QNetworkProxyQuery).
+        QNetworkProxyQuery query;
+        query.setQueryType(queryType);
+        proxy = QNetworkProxyFactory::proxyForQuery(query).constFirst();
+    }
 
     if (proxy.type() != QNetworkProxy::DefaultProxy &&
         proxy.type() != QNetworkProxy::NoProxy) {
@@ -386,6 +451,7 @@ bool QNativeSocketEngine::initialize(QAbstractSocket::SocketType socketType, QAb
         QString typeStr = QLatin1String("UnknownSocketType");
         if (socketType == QAbstractSocket::TcpSocket) typeStr = QLatin1String("TcpSocket");
         else if (socketType == QAbstractSocket::UdpSocket) typeStr = QLatin1String("UdpSocket");
+        else if (socketType == QAbstractSocket::SctpSocket) typeStr = QLatin1String("SctpSocket");
         QString protocolStr = QLatin1String("UnknownProtocol");
         if (protocol == QAbstractSocket::IPv4Protocol) protocolStr = QLatin1String("IPv4Protocol");
         else if (protocol == QAbstractSocket::IPv6Protocol) protocolStr = QLatin1String("IPv6Protocol");
@@ -395,13 +461,18 @@ bool QNativeSocketEngine::initialize(QAbstractSocket::SocketType socketType, QAb
         return false;
     }
 
-    // Set the broadcasting flag if it's a UDP socket.
-    if (socketType == QAbstractSocket::UdpSocket
-        && !setOption(BroadcastSocketOption, 1)) {
-        d->setError(QAbstractSocket::UnsupportedSocketOperationError,
-                    QNativeSocketEnginePrivate::BroadcastingInitFailedErrorString);
-        close();
-        return false;
+    if (socketType == QAbstractSocket::UdpSocket) {
+        // Set the broadcasting flag if it's a UDP socket.
+        if (!setOption(BroadcastSocketOption, 1)) {
+            d->setError(QAbstractSocket::UnsupportedSocketOperationError,
+                        QNativeSocketEnginePrivate::BroadcastingInitFailedErrorString);
+            close();
+            return false;
+        }
+
+        // Set some extra flags that are interesting to us, but accept failure
+        setOption(ReceivePacketInformation, 1);
+        setOption(ReceiveHopLimit, 1);
     }
 
 
@@ -425,8 +496,6 @@ bool QNativeSocketEngine::initialize(QAbstractSocket::SocketType socketType, QAb
     // setReceiveBufferSize(49152);
     // setSendBufferSize(49152);
 
-    d->socketType = socketType;
-    d->socketProtocol = protocol;
     return true;
 }
 
@@ -625,7 +694,12 @@ bool QNativeSocketEngine::listen()
     Q_D(QNativeSocketEngine);
     Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::listen(), false);
     Q_CHECK_STATE(QNativeSocketEngine::listen(), QAbstractSocket::BoundState, false);
+#ifndef QT_NO_SCTP
+    Q_CHECK_TYPES(QNativeSocketEngine::listen(), QAbstractSocket::TcpSocket,
+                  QAbstractSocket::SctpSocket, false);
+#else
     Q_CHECK_TYPE(QNativeSocketEngine::listen(), QAbstractSocket::TcpSocket, false);
+#endif
 
     // We're using a backlog of 50. Most modern kernels support TCP
     // syncookies by default, and if they do, the backlog is ignored.
@@ -646,11 +720,34 @@ int QNativeSocketEngine::accept()
     Q_D(QNativeSocketEngine);
     Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::accept(), -1);
     Q_CHECK_STATE(QNativeSocketEngine::accept(), QAbstractSocket::ListeningState, -1);
+#ifndef QT_NO_SCTP
+    Q_CHECK_TYPES(QNativeSocketEngine::accept(), QAbstractSocket::TcpSocket,
+                  QAbstractSocket::SctpSocket, -1);
+#else
     Q_CHECK_TYPE(QNativeSocketEngine::accept(), QAbstractSocket::TcpSocket, -1);
+#endif
 
     return d->nativeAccept();
 }
 
+/*!
+    Returns the number of bytes that are currently available for
+    reading. On error, -1 is returned.
+
+    For UDP sockets, this function returns the accumulated size of all
+    pending datagrams, and it is therefore more useful for UDP sockets
+    to call hasPendingDatagrams() and pendingDatagramSize().
+*/
+qint64 QNativeSocketEngine::bytesAvailable() const
+{
+    Q_D(const QNativeSocketEngine);
+    Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::bytesAvailable(), -1);
+    Q_CHECK_NOT_STATE(QNativeSocketEngine::bytesAvailable(), QAbstractSocket::UnconnectedState, -1);
+
+    return d->nativeBytesAvailable();
+}
+
+#ifndef QT_NO_UDPSOCKET
 #ifndef QT_NO_NETWORKINTERFACE
 
 /*!
@@ -692,7 +789,9 @@ bool QNativeSocketEngine::leaveMulticastGroup(const QHostAddress &groupAddress,
     return d->nativeLeaveMulticastGroup(groupAddress, iface);
 }
 
-/*! \since 4.8 */
+/*!
+    \since 4.8
+*/
 QNetworkInterface QNativeSocketEngine::multicastInterface() const
 {
     Q_D(const QNativeSocketEngine);
@@ -701,7 +800,9 @@ QNetworkInterface QNativeSocketEngine::multicastInterface() const
     return d->nativeMulticastInterface();
 }
 
-/*! \since 4.8 */
+/*!
+    \since 4.8
+*/
 bool QNativeSocketEngine::setMulticastInterface(const QNetworkInterface &iface)
 {
     Q_D(QNativeSocketEngine);
@@ -711,23 +812,6 @@ bool QNativeSocketEngine::setMulticastInterface(const QNetworkInterface &iface)
 }
 
 #endif // QT_NO_NETWORKINTERFACE
-
-/*!
-    Returns the number of bytes that are currently available for
-    reading. On error, -1 is returned.
-
-    For UDP sockets, this function returns the accumulated size of all
-    pending datagrams, and it is therefore more useful for UDP sockets
-    to call hasPendingDatagrams() and pendingDatagramSize().
-*/
-qint64 QNativeSocketEngine::bytesAvailable() const
-{
-    Q_D(const QNativeSocketEngine);
-    Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::bytesAvailable(), -1);
-    Q_CHECK_NOT_STATE(QNativeSocketEngine::bytesAvailable(), QAbstractSocket::UnconnectedState, -1);
-
-    return d->nativeBytesAvailable();
-}
 
 /*!
     Returns \c true if there is at least one datagram pending. This
@@ -758,36 +842,41 @@ qint64 QNativeSocketEngine::pendingDatagramSize() const
 
     return d->nativePendingDatagramSize();
 }
+#endif // QT_NO_UDPSOCKET
 
 /*!
     Reads up to \a maxSize bytes of a datagram from the socket,
     stores it in \a data and returns the number of bytes read. The
-    address and port of the sender are stored in \a address and \a
-    port. If either of these pointers is 0, the corresponding value is
-    discarded.
+    address, port, and other IP header fields are stored in \a header
+    according to the request in \a options.
 
-    To avoid unnecessarily loss of data, call pendingDatagramSize() to
-    determine the size of the pending message before reading it. If \a
-    maxSize is too small, the rest of the datagram will be lost.
+    For UDP sockets, to avoid unnecessarily loss of data, call
+    pendingDatagramSize() to determine the size of the pending message
+    before reading it. If \a maxSize is too small, the rest of the
+    datagram will be lost.
 
     Returns -1 if an error occurred.
 
     \sa hasPendingDatagrams()
 */
-qint64 QNativeSocketEngine::readDatagram(char *data, qint64 maxSize, QHostAddress *address,
-                                      quint16 *port)
+qint64 QNativeSocketEngine::readDatagram(char *data, qint64 maxSize, QIpPacketHeader *header,
+                                         PacketHeaderOptions options)
 {
     Q_D(QNativeSocketEngine);
     Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::readDatagram(), -1);
-    Q_CHECK_TYPE(QNativeSocketEngine::readDatagram(), QAbstractSocket::UdpSocket, -1);
+    Q_CHECK_STATES(QNativeSocketEngine::readDatagram(), QAbstractSocket::BoundState,
+                   QAbstractSocket::ConnectedState, -1);
 
-    return d->nativeReceiveDatagram(data, maxSize, address, port);
+    return d->nativeReceiveDatagram(data, maxSize, header, options);
 }
 
 /*!
-    Writes a UDP datagram of size \a size bytes to the socket from
-    \a data to the address \a host on port \a port, and returns the
-    number of bytes written, or -1 if an error occurred.
+    Writes a datagram of size \a size bytes to the socket from
+    \a data to the destination contained in \a header, and returns the
+    number of bytes written, or -1 if an error occurred. If \a header
+    contains other settings like hop limit or source address, this function
+    will try to pass them to the operating system too, but will not
+    indicate an error if it could not pass them.
 
     Only one datagram is sent, and if there is too much data to fit
     into a single datagram, the operation will fail and error()
@@ -797,23 +886,29 @@ qint64 QNativeSocketEngine::readDatagram(char *data, qint64 maxSize, QHostAddres
     disadvised, as even if they are sent successfully, they are likely
     to be fragmented before arriving at their destination.
 
-    Experience has shown that it is in general safe to send datagrams
-    no larger than 512 bytes.
+    Experience has shown that it is in general safe to send IPv4 datagrams
+    no larger than 512 bytes or IPv6 datagrams no larger than 1280 (the
+    minimum MTU).
 
     \sa readDatagram()
 */
-qint64 QNativeSocketEngine::writeDatagram(const char *data, qint64 size,
-                                       const QHostAddress &host, quint16 port)
+qint64 QNativeSocketEngine::writeDatagram(const char *data, qint64 size, const QIpPacketHeader &header)
 {
     Q_D(QNativeSocketEngine);
     Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::writeDatagram(), -1);
-    Q_CHECK_TYPE(QNativeSocketEngine::writeDatagram(), QAbstractSocket::UdpSocket, -1);
-    return d->nativeSendDatagram(data, size, d->adjustAddressProtocol(host), port);
+    Q_CHECK_STATES(QNativeSocketEngine::writeDatagram(), QAbstractSocket::BoundState,
+                   QAbstractSocket::ConnectedState, -1);
+
+    return d->nativeSendDatagram(data, size, header);
 }
 
 /*!
     Writes a block of \a size bytes from \a data to the socket.
     Returns the number of bytes written, or -1 if an error occurred.
+
+    Passing zero as the \a size parameter on a connected UDP socket
+    will send an empty datagram. For other socket types results are
+    unspecified.
 */
 qint64 QNativeSocketEngine::write(const char *data, qint64 size)
 {
@@ -842,7 +937,11 @@ qint64 QNativeSocketEngine::read(char *data, qint64 maxSize)
     qint64 readBytes = d->nativeRead(data, maxSize);
 
     // Handle remote close
-    if (readBytes == 0 && d->socketType == QAbstractSocket::TcpSocket) {
+    if (readBytes == 0 && (d->socketType == QAbstractSocket::TcpSocket
+#ifndef QT_NO_SCTP
+        || d->socketType == QAbstractSocket::SctpSocket
+#endif
+        )) {
         d->setError(QAbstractSocket::RemoteHostClosedError,
                     QNativeSocketEnginePrivate::RemoteHostClosedErrorString);
         close();
@@ -883,6 +982,7 @@ void QNativeSocketEngine::close()
     d->localAddress.clear();
     d->peerPort = 0;
     d->peerAddress.clear();
+    d->inboundStreamCount = d->outboundStreamCount = 0;
     if (d->readNotifier) {
         qDeleteInEventHandler(d->readNotifier);
         d->readNotifier = 0;
@@ -967,26 +1067,28 @@ bool QNativeSocketEngine::waitForWrite(int msecs, bool *timedOut)
     // select(writable) is successful. In this case we should not
     // issue a second call to WSAConnect()
 #if defined (Q_OS_WIN)
-    if (ret > 0) {
-        setState(QAbstractSocket::ConnectedState);
-        d_func()->fetchConnectionParameters();
-        return true;
-    } else {
-        int value = 0;
-        int valueSize = sizeof(value);
-        if (::getsockopt(d->socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
-            if (value == WSAECONNREFUSED) {
-                d->setError(QAbstractSocket::ConnectionRefusedError, QNativeSocketEnginePrivate::ConnectionRefusedErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
-            } else if (value == WSAETIMEDOUT) {
-                d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::ConnectionTimeOutErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
-            } else if (value == WSAEHOSTUNREACH) {
-                d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::HostUnreachableErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
+    if (state() == QAbstractSocket::ConnectingState) {
+        if (ret > 0) {
+            setState(QAbstractSocket::ConnectedState);
+            d_func()->fetchConnectionParameters();
+            return true;
+        } else {
+            int value = 0;
+            int valueSize = sizeof(value);
+            if (::getsockopt(d->socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
+                if (value == WSAECONNREFUSED) {
+                    d->setError(QAbstractSocket::ConnectionRefusedError, QNativeSocketEnginePrivate::ConnectionRefusedErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                } else if (value == WSAETIMEDOUT) {
+                    d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::ConnectionTimeOutErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                } else if (value == WSAEHOSTUNREACH) {
+                    d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::HostUnreachableErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                }
             }
         }
     }
@@ -1011,7 +1113,7 @@ bool QNativeSocketEngine::waitForReadOrWrite(bool *readyToRead, bool *readyToWri
                                       int msecs, bool *timedOut)
 {
     Q_D(QNativeSocketEngine);
-    Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::waitForWrite(), false);
+    Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::waitForReadOrWrite(), false);
     Q_CHECK_NOT_STATE(QNativeSocketEngine::waitForReadOrWrite(),
                       QAbstractSocket::UnconnectedState, false);
 
@@ -1020,26 +1122,28 @@ bool QNativeSocketEngine::waitForReadOrWrite(bool *readyToRead, bool *readyToWri
     // select(writable) is successful. In this case we should not
     // issue a second call to WSAConnect()
 #if defined (Q_OS_WIN)
-    if (checkWrite && ((readyToWrite && *readyToWrite) || !readyToWrite) && ret > 0) {
-        setState(QAbstractSocket::ConnectedState);
-        d_func()->fetchConnectionParameters();
-        return true;
-    } else {
-        int value = 0;
-        int valueSize = sizeof(value);
-        if (::getsockopt(d->socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
-            if (value == WSAECONNREFUSED) {
-                d->setError(QAbstractSocket::ConnectionRefusedError, QNativeSocketEnginePrivate::ConnectionRefusedErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
-            } else if (value == WSAETIMEDOUT) {
-                d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::ConnectionTimeOutErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
-            } else if (value == WSAEHOSTUNREACH) {
-                d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::HostUnreachableErrorString);
-                d->socketState = QAbstractSocket::UnconnectedState;
-                return false;
+    if (state() == QAbstractSocket::ConnectingState) {
+        if (checkWrite && ((readyToWrite && *readyToWrite) || !readyToWrite) && ret > 0) {
+            setState(QAbstractSocket::ConnectedState);
+            d_func()->fetchConnectionParameters();
+            return true;
+        } else {
+            int value = 0;
+            int valueSize = sizeof(value);
+            if (::getsockopt(d->socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
+                if (value == WSAECONNREFUSED) {
+                    d->setError(QAbstractSocket::ConnectionRefusedError, QNativeSocketEnginePrivate::ConnectionRefusedErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                } else if (value == WSAETIMEDOUT) {
+                    d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::ConnectionTimeOutErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                } else if (value == WSAEHOSTUNREACH) {
+                    d->setError(QAbstractSocket::NetworkError, QNativeSocketEnginePrivate::HostUnreachableErrorString);
+                    d->socketState = QAbstractSocket::UnconnectedState;
+                    return false;
+                }
             }
         }
     }
@@ -1058,7 +1162,8 @@ bool QNativeSocketEngine::waitForReadOrWrite(bool *readyToRead, bool *readyToWri
     return ret > 0;
 }
 
-/*!
+#if 0   // currently unused
+/*
     Returns the size of the operating system's socket receive
     buffer. Depending on the operating system, this size may be
     different from what has been set earlier with
@@ -1070,7 +1175,7 @@ qint64 QNativeSocketEngine::receiveBufferSize() const
     return option(ReceiveBufferSocketOption);
 }
 
-/*!
+/*
     Sets the size of the operating system receive buffer to \a size.
 
     For clients, this should be set before connectToHost() is called;
@@ -1091,7 +1196,7 @@ void QNativeSocketEngine::setReceiveBufferSize(qint64 size)
     setOption(ReceiveBufferSocketOption, size);
 }
 
-/*!
+/*
     Returns the size of the operating system send buffer. Depending on
     the operating system, this size may be different from what has
     been set earlier with setSendBufferSize().
@@ -1102,7 +1207,7 @@ qint64 QNativeSocketEngine::sendBufferSize() const
     return option(SendBufferSocketOption);
 }
 
-/*!
+/*
     Sets the size of the operating system send buffer to \a size.
 
     The operating system send buffer size effectively limits how much
@@ -1116,7 +1221,7 @@ void QNativeSocketEngine::setSendBufferSize(qint64 size)
     Q_CHECK_VALID_SOCKETLAYER(QNativeSocketEngine::setSendBufferSize(), Q_VOID);
     setOption(SendBufferSocketOption, size);
 }
-
+#endif
 
 /*!
     Sets the option \a option to the value \a value.
@@ -1158,7 +1263,7 @@ public:
     { engine = parent; }
 
 protected:
-    bool event(QEvent *);
+    bool event(QEvent *) override;
 
     QNativeSocketEngine *engine;
 };
@@ -1190,7 +1295,7 @@ public:
         : QSocketNotifier(fd, QSocketNotifier::Write, parent) { engine = parent; }
 
 protected:
-    bool event(QEvent *);
+    bool event(QEvent *) override;
 
     QNativeSocketEngine *engine;
 };
@@ -1214,7 +1319,7 @@ public:
         : QSocketNotifier(fd, QSocketNotifier::Exception, parent) { engine = parent; }
 
 protected:
-    bool event(QEvent *);
+    bool event(QEvent *) override;
 
     QNativeSocketEngine *engine;
 };

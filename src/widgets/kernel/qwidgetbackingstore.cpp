@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,12 +48,16 @@
 #include <QtGui/qevent.h>
 #include <QtWidgets/qapplication.h>
 #include <QtGui/qpaintengine.h>
+#if QT_CONFIG(graphicsview)
 #include <QtWidgets/qgraphicsproxywidget.h>
+#endif
 
 #include <private/qwidget_p.h>
 #include <private/qapplication_p.h>
 #include <private/qpaintengine_raster_p.h>
+#if QT_CONFIG(graphicseffect)
 #include <private/qgraphicseffect_p.h>
+#endif
 #include <QtGui/private/qwindow_p.h>
 
 #include <qpa/qplatformbackingstore.h>
@@ -61,13 +71,16 @@ QT_BEGIN_NAMESPACE
 
 extern QRegion qt_dirtyRegion(QWidget *);
 
+#ifndef QT_NO_OPENGL
+Q_GLOBAL_STATIC(QPlatformTextureList, qt_dummy_platformTextureList)
+#endif
+
 /**
  * Flushes the contents of the \a backingStore into the screen area of \a widget.
- * \a tlwOffset is the position of the top level widget relative to the window surface.
  * \a region is the region to be updated in \a widget coordinates.
  */
 void QWidgetBackingStore::qt_flush(QWidget *widget, const QRegion &region, QBackingStore *backingStore,
-                                   QWidget *tlw, const QPoint &tlwOffset, QPlatformTextureList *widgetTextures,
+                                   QWidget *tlw, QPlatformTextureList *widgetTextures,
                                    QWidgetBackingStore *widgetBackingStore)
 {
 #ifdef QT_NO_OPENGL
@@ -79,7 +92,6 @@ void QWidgetBackingStore::qt_flush(QWidget *widget, const QRegion &region, QBack
     Q_ASSERT(widget);
     Q_ASSERT(backingStore);
     Q_ASSERT(tlw);
-
 #if !defined(QT_NO_PAINT_DEBUG)
     static int flushUpdate = qEnvironmentVariableIntValue("QT_FLUSH_UPDATE");
     if (flushUpdate > 0)
@@ -99,23 +111,44 @@ void QWidgetBackingStore::qt_flush(QWidget *widget, const QRegion &region, QBack
         }
     }
 
-    QPoint offset = tlwOffset;
+    QPoint offset;
     if (widget != tlw)
         offset += widget->mapTo(tlw, QPoint());
 
+    QRegion effectiveRegion = region;
 #ifndef QT_NO_OPENGL
+    const bool compositionWasActive = widget->d_func()->renderToTextureComposeActive;
+    if (!widgetTextures) {
+        widget->d_func()->renderToTextureComposeActive = false;
+        // Detect the case of falling back to the normal flush path when no
+        // render-to-texture widgets are visible anymore. We will force one
+        // last flush to go through the OpenGL-based composition to prevent
+        // artifacts. The next flush after this one will use the normal path.
+        if (compositionWasActive)
+            widgetTextures = qt_dummy_platformTextureList;
+    } else {
+        widget->d_func()->renderToTextureComposeActive = true;
+    }
+    // When changing the composition status, make sure the dirty region covers
+    // the entire widget.  Just having e.g. the shown/hidden render-to-texture
+    // widget's area marked as dirty is incorrect when changing flush paths.
+    if (compositionWasActive != widget->d_func()->renderToTextureComposeActive)
+        effectiveRegion = widget->rect();
+
+    // re-test since we may have been forced to this path via the dummy texture list above
     if (widgetTextures) {
+        qt_window_private(tlw->windowHandle())->compositing = true;
         widget->window()->d_func()->sendComposeStatus(widget->window(), false);
         // A window may have alpha even when the app did not request
         // WA_TranslucentBackground. Therefore the compositor needs to know whether the app intends
         // to rely on translucency, in order to decide if it should clear to transparent or opaque.
         const bool translucentBackground = widget->testAttribute(Qt::WA_TranslucentBackground);
-        backingStore->handle()->composeAndFlush(widget->windowHandle(), region, offset, widgetTextures,
-                                                widget->d_func()->shareContext(), translucentBackground);
+        backingStore->handle()->composeAndFlush(widget->windowHandle(), effectiveRegion, offset,
+                                                widgetTextures, translucentBackground);
         widget->window()->d_func()->sendComposeStatus(widget->window(), true);
     } else
 #endif
-        backingStore->flush(region, widget->windowHandle(), offset);
+        backingStore->flush(effectiveRegion, widget->windowHandle(), offset);
 }
 
 #ifndef QT_NO_PAINT_DEBUG
@@ -132,25 +165,13 @@ static void showYellowThing_win(QWidget *widget, const QRegion &region, int msec
         return;
     const HDC hdc = reinterpret_cast<HDC>(hdcV);
 
-    HBRUSH brush;
-    static int i = 0;
-    switch (i) {
-    case 0:
-        brush = CreateSolidBrush(RGB(255, 255, 0));
-        break;
-    case 1:
-        brush = CreateSolidBrush(RGB(255, 200, 55));
-        break;
-    case 2:
-        brush = CreateSolidBrush(RGB(200, 255, 55));
-        break;
-    case 3:
-        brush = CreateSolidBrush(RGB(200, 200, 0));
-        break;
-    }
-    i = (i + 1) & 3;
+    static const COLORREF colors[] = {RGB(255, 255, 0), RGB(255, 200, 55), RGB(200, 255, 55), RGB(200, 200, 0)};
 
-    foreach (const QRect &rect, region.rects()) {
+    static size_t i = 0;
+    const HBRUSH brush = CreateSolidBrush(colors[i]);
+    i = (i + 1) % (sizeof(colors) / sizeof(colors[0]));
+
+    for (const QRect &rect : region) {
         RECT winRect;
         SetRect(&winRect, rect.left(), rect.top(), rect.right(), rect.bottom());
         FillRect(hdc, &winRect, brush);
@@ -264,8 +285,7 @@ void QWidgetBackingStore::unflushPaint(QWidget *widget, const QRegion &rgn)
     if (!tlwExtra)
         return;
 
-    const QPoint offset = widget->mapTo(tlw, QPoint());
-    qt_flush(widget, rgn, tlwExtra->backingStoreTracker->store, tlw, offset, 0, tlw->d_func()->maybeBackingStore());
+    qt_flush(widget, rgn, tlwExtra->backingStoreTracker->store, tlw, 0, tlw->d_func()->maybeBackingStore());
 }
 #endif // QT_NO_PAINT_DEBUG
 
@@ -275,9 +295,9 @@ void QWidgetBackingStore::unflushPaint(QWidget *widget, const QRegion &rgn)
 */
 bool QWidgetBackingStore::bltRect(const QRect &rect, int dx, int dy, QWidget *widget)
 {
-    const QPoint pos(tlwOffset + widget->mapTo(tlw, rect.topLeft()));
+    const QPoint pos(widget->mapTo(tlw, rect.topLeft()));
     const QRect tlwRect(QRect(pos, rect.size()));
-    if (fullUpdatePending || dirty.intersects(tlwRect))
+    if (dirty.intersects(tlwRect))
         return false; // We don't want to scroll junk.
     return store->scroll(tlwRect, dx, dy);
 }
@@ -346,7 +366,7 @@ QRegion QWidgetBackingStore::dirtyRegion(QWidget *widget) const
     const bool widgetDirty = widget && widget != tlw;
     const QRect tlwRect(topLevelRect());
     const QRect surfaceGeometry(tlwRect.topLeft(), store->size());
-    if (fullUpdatePending || (surfaceGeometry != tlwRect && surfaceGeometry.size() != tlwRect.size())) {
+    if (surfaceGeometry != tlwRect && surfaceGeometry.size() != tlwRect.size()) {
         if (widgetDirty) {
             const QRect dirtyTlwRect = QRect(QPoint(), tlwRect.size());
             const QPoint offset(widget->mapTo(tlw, QPoint()));
@@ -446,6 +466,26 @@ void QWidgetBackingStore::sendUpdateRequest(QWidget *widget, UpdateTime updateTi
     if (!widget)
         return;
 
+#ifndef QT_NO_OPENGL
+    // Having every repaint() leading to a sync/flush is bad as it causes
+    // compositing and waiting for vsync each and every time. Change to
+    // UpdateLater, except for approx. once per frame to prevent starvation in
+    // case the control does not get back to the event loop.
+    QWidget *w = widget->window();
+    if (updateTime == UpdateNow && w && w->windowHandle() && QWindowPrivate::get(w->windowHandle())->compositing) {
+        int refresh = 60;
+        QScreen *ws = w->windowHandle()->screen();
+        if (ws)
+            refresh = ws->refreshRate();
+        QWindowPrivate *wd = QWindowPrivate::get(w->windowHandle());
+        if (wd->lastComposeTime.isValid()) {
+            const qint64 elapsed = wd->lastComposeTime.elapsed();
+            if (elapsed <= qint64(1000.0f / refresh))
+                updateTime = UpdateLater;
+       }
+    }
+#endif
+
     switch (updateTime) {
     case UpdateLater:
         updateRequestSent = true;
@@ -482,9 +522,9 @@ void QWidgetBackingStore::markDirty(const QRegion &rgn, QWidget *widget,
     Q_ASSERT(widget->window() == tlw);
     Q_ASSERT(!rgn.isEmpty());
 
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
     widget->d_func()->invalidateGraphicsEffectsRecursively();
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
 
     if (widget->d_func()->paintOnScreen()) {
         if (widget->d_func()->dirty.isEmpty()) {
@@ -501,13 +541,6 @@ void QWidgetBackingStore::markDirty(const QRegion &rgn, QWidget *widget,
         widget->d_func()->dirty += rgn;
         if (!eventAlreadyPosted || updateTime == UpdateNow)
             sendUpdateRequest(widget, updateTime);
-        return;
-    }
-
-    //### FIXME fullUpdatePending seems to be always false????
-    if (fullUpdatePending) {
-        if (updateTime == UpdateNow)
-            sendUpdateRequest(tlw, updateTime);
         return;
     }
 
@@ -530,11 +563,11 @@ void QWidgetBackingStore::markDirty(const QRegion &rgn, QWidget *widget,
 
     if (bufferState == BufferInvalid) {
         const bool eventAlreadyPosted = !dirty.isEmpty() || updateRequestSent;
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
         if (widget->d_func()->graphicsEffect)
             dirty += widget->d_func()->effectiveRectFor(rgn.boundingRect()).translated(offset);
         else
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
             dirty += rgn.translated(offset);
         if (!eventAlreadyPosted || updateTime == UpdateNow)
             sendUpdateRequest(tlw, updateTime);
@@ -549,11 +582,11 @@ void QWidgetBackingStore::markDirty(const QRegion &rgn, QWidget *widget,
 
     if (widget->d_func()->inDirtyList) {
         if (!qt_region_strictContains(widget->d_func()->dirty, widgetRect)) {
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
             if (widget->d_func()->graphicsEffect)
                 widget->d_func()->dirty += widget->d_func()->effectiveRectFor(rgn.boundingRect());
             else
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
                 widget->d_func()->dirty += rgn;
         }
     } else {
@@ -581,9 +614,9 @@ void QWidgetBackingStore::markDirty(const QRect &rect, QWidget *widget,
     Q_ASSERT(widget->window() == tlw);
     Q_ASSERT(!rect.isEmpty());
 
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
     widget->d_func()->invalidateGraphicsEffectsRecursively();
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
 
     if (widget->d_func()->paintOnScreen()) {
         if (widget->d_func()->dirty.isEmpty()) {
@@ -603,12 +636,6 @@ void QWidgetBackingStore::markDirty(const QRect &rect, QWidget *widget,
         return;
     }
 
-    if (fullUpdatePending) {
-        if (updateTime == UpdateNow)
-            sendUpdateRequest(tlw, updateTime);
-        return;
-    }
-
     if (QWidgetPrivate::get(widget)->renderToTexture) {
         if (!widget->d_func()->inDirtyList)
             addDirtyRenderToTextureWidget(widget);
@@ -619,7 +646,11 @@ void QWidgetBackingStore::markDirty(const QRect &rect, QWidget *widget,
 
 
     const QRect widgetRect = widget->d_func()->effectiveRectFor(rect);
-    const QRect translatedRect(widgetRect.translated(widget->mapTo(tlw, QPoint())));
+    QRect translatedRect = widgetRect;
+    if (widget != tlw)
+        translatedRect.translate(widget->mapTo(tlw, QPoint()));
+    // Graphics effects may exceed window size, clamp.
+    translatedRect = translatedRect.intersected(QRect(QPoint(), tlw->size()));
     if (qt_region_strictContains(dirty, translatedRect)) {
         if (updateTime == UpdateNow)
             sendUpdateRequest(tlw, updateTime);
@@ -662,7 +693,7 @@ void QWidgetBackingStore::markDirtyOnScreen(const QRegion &region, QWidget *widg
     if (!widget || widget->d_func()->paintOnScreen() || region.isEmpty())
         return;
 
-#if defined(Q_DEAD_CODE_FROM_QT4_MAC)
+#if 0 // Used to be included in Qt4 for Q_WS_MAC
     if (!widget->testAttribute(Qt::WA_WState_InPaintEvent))
         dirtyOnScreen += region.translated(topLevelOffset);
     return;
@@ -741,8 +772,6 @@ void QWidgetBackingStore::updateLists(QWidget *cur)
 QWidgetBackingStore::QWidgetBackingStore(QWidget *topLevel)
     : tlw(topLevel),
       dirtyOnScreenWidgets(0),
-      widgetTextures(0),
-      fullUpdatePending(0),
       updateRequestSent(0),
       textureListWatcher(0),
       perfFrames(0)
@@ -761,11 +790,7 @@ QWidgetBackingStore::~QWidgetBackingStore()
     for (int c = 0; c < dirtyRenderToTextureWidgets.size(); ++c)
         resetWidget(dirtyRenderToTextureWidgets.at(c));
 
-#ifndef QT_NO_OPENGL
-    delete widgetTextures;
     delete dirtyOnScreenWidgets;
-#endif
-    dirtyOnScreenWidgets = 0;
 }
 
 //parent's coordinates; move whole rect; update parent and widget
@@ -793,9 +818,10 @@ void QWidgetPrivate::moveRect(const QRect &rect, int dx, int dy)
         destRect = destRect.translated(dx, dy).intersected(clipR);
     const QRect sourceRect(destRect.translated(-dx, -dy));
     const QRect parentRect(rect & clipR);
+    const bool nativeWithTextureChild = textureChildSeen && q->internalWinId();
 
-    bool accelerateMove = accelEnv && isOpaque
-#ifndef QT_NO_GRAPHICSVIEW
+    bool accelerateMove = accelEnv && isOpaque && !nativeWithTextureChild
+#if QT_CONFIG(graphicsview)
                           // No accelerate move for proxy widgets.
                           && !tlw->d_func()->extra->proxyWidget
 #endif
@@ -914,12 +940,160 @@ void QWidgetPrivate::scrollRect(const QRect &rect, int dx, int dy)
     }
 }
 
+#ifndef QT_NO_OPENGL
+static void findTextureWidgetsRecursively(QWidget *tlw, QWidget *widget, QPlatformTextureList *widgetTextures, QVector<QWidget *> *nativeChildren)
+{
+    QWidgetPrivate *wd = QWidgetPrivate::get(widget);
+    if (wd->renderToTexture) {
+        QPlatformTextureList::Flags flags = wd->textureListFlags();
+        const QRect rect(widget->mapTo(tlw, QPoint()), widget->size());
+        widgetTextures->appendTexture(widget, wd->textureId(), rect, wd->clipRect(), flags);
+    }
+
+    for (int i = 0; i < wd->children.size(); ++i) {
+        QWidget *w = qobject_cast<QWidget *>(wd->children.at(i));
+        // Stop at native widgets but store them. Stop at hidden widgets too.
+        if (w && !w->isWindow() && w->internalWinId())
+            nativeChildren->append(w);
+        if (w && !w->isWindow() && !w->internalWinId() && !w->isHidden() && QWidgetPrivate::get(w)->textureChildSeen)
+            findTextureWidgetsRecursively(tlw, w, widgetTextures, nativeChildren);
+    }
+}
+
+static void findAllTextureWidgetsRecursively(QWidget *tlw, QWidget *widget)
+{
+    // textureChildSeen does not take native child widgets into account and that's good.
+    if (QWidgetPrivate::get(widget)->textureChildSeen) {
+        QVector<QWidget *> nativeChildren;
+        QScopedPointer<QPlatformTextureList> tl(new QPlatformTextureList);
+        // Look for texture widgets (incl. widget itself) from 'widget' down,
+        // but skip subtrees with a parent of a native child widget.
+        findTextureWidgetsRecursively(tlw, widget, tl.data(), &nativeChildren);
+        // tl may be empty regardless of textureChildSeen if we have native or hidden children.
+        if (!tl->isEmpty())
+            QWidgetPrivate::get(tlw)->topData()->widgetTextures.append(tl.take());
+        // Native child widgets, if there was any, get their own separate QPlatformTextureList.
+        foreach (QWidget *ncw, nativeChildren) {
+            if (QWidgetPrivate::get(ncw)->textureChildSeen)
+                findAllTextureWidgetsRecursively(tlw, ncw);
+        }
+    }
+}
+
+static QPlatformTextureList *widgetTexturesFor(QWidget *tlw, QWidget *widget)
+{
+    foreach (QPlatformTextureList *tl, QWidgetPrivate::get(tlw)->topData()->widgetTextures) {
+        Q_ASSERT(!tl->isEmpty());
+        for (int i = 0; i < tl->count(); ++i) {
+            QWidget *w = static_cast<QWidget *>(tl->source(i));
+            if ((w->internalWinId() && w == widget) || (!w->internalWinId() && w->nativeParentWidget() == widget))
+                return tl;
+        }
+    }
+
+    if (QWidgetPrivate::get(tlw)->textureChildSeen) {
+        // No render-to-texture widgets in the (sub-)tree due to hidden or native
+        // children. Returning null results in using the normal backingstore flush path
+        // without OpenGL-based compositing. This is very desirable normally. However,
+        // some platforms cannot handle switching between the non-GL and GL paths for
+        // their windows so it has to be opt-in.
+        static bool switchableWidgetComposition =
+            QGuiApplicationPrivate::instance()->platformIntegration()
+                ->hasCapability(QPlatformIntegration::SwitchableWidgetComposition);
+        if (!switchableWidgetComposition
+// The Windows compositor handles fullscreen OpenGL window specially. Besides
+// having trouble with popups, it also has issues with flip-flopping between
+// OpenGL-based and normal flushing. Therefore, stick with GL for fullscreen
+// windows (QTBUG-53515). Similary, translucent windows should not switch to
+// layered native windows (QTBUG-54734).
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !defined(Q_OS_WINCE)
+                || tlw->windowState().testFlag(Qt::WindowFullScreen)
+                || tlw->testAttribute(Qt::WA_TranslucentBackground)
+#endif
+                )
+        {
+            return qt_dummy_platformTextureList();
+        }
+    }
+
+    return 0;
+}
+
+// Watches one or more QPlatformTextureLists for changes in the lock state and
+// triggers a backingstore sync when all the registered lists turn into
+// unlocked state. This is essential when a custom composeAndFlush()
+// implementation in a platform plugin is not synchronous and keeps
+// holding on to the textures for some time even after returning from there.
+QPlatformTextureListWatcher::QPlatformTextureListWatcher(QWidgetBackingStore *backingStore)
+    : m_backingStore(backingStore)
+{
+}
+
+void QPlatformTextureListWatcher::watch(QPlatformTextureList *textureList)
+{
+    connect(textureList, SIGNAL(locked(bool)), SLOT(onLockStatusChanged(bool)));
+    m_locked[textureList] = textureList->isLocked();
+}
+
+bool QPlatformTextureListWatcher::isLocked() const
+{
+    foreach (bool v, m_locked) {
+        if (v)
+            return true;
+    }
+    return false;
+}
+
+void QPlatformTextureListWatcher::onLockStatusChanged(bool locked)
+{
+    QPlatformTextureList *tl = static_cast<QPlatformTextureList *>(sender());
+    m_locked[tl] = locked;
+    if (!isLocked())
+        m_backingStore->sync();
+}
+
+#else
+
+static QPlatformTextureList *widgetTexturesFor(QWidget *tlw, QWidget *widget)
+{
+    Q_UNUSED(tlw);
+    Q_UNUSED(widget);
+    return nullptr;
+}
+
+#endif // QT_NO_OPENGL
+
 static inline bool discardSyncRequest(QWidget *tlw, QTLWExtra *tlwExtra)
 {
     if (!tlw || !tlwExtra || !tlw->testAttribute(Qt::WA_Mapped) || !tlw->isVisible())
         return true;
 
     return false;
+}
+
+bool QWidgetBackingStore::syncAllowed()
+{
+#ifndef QT_NO_OPENGL
+    QTLWExtra *tlwExtra = tlw->d_func()->maybeTopData();
+    if (textureListWatcher && !textureListWatcher->isLocked()) {
+        textureListWatcher->deleteLater();
+        textureListWatcher = 0;
+    } else if (!tlwExtra->widgetTextures.isEmpty()) {
+        bool skipSync = false;
+        foreach (QPlatformTextureList *tl, tlwExtra->widgetTextures) {
+            if (tl->isLocked()) {
+                if (!textureListWatcher)
+                    textureListWatcher = new QPlatformTextureListWatcher(this);
+                if (!textureListWatcher->isLocked())
+                    textureListWatcher->watch(tl);
+                skipSync = true;
+            }
+        }
+        if (skipSync)  // cannot compose due to widget textures being in use
+            return false;
+    }
+#endif
+    return true;
 }
 
 /*!
@@ -942,7 +1116,8 @@ void QWidgetBackingStore::sync(QWidget *exposedWidget, const QRegion &exposedReg
 
     // Nothing to repaint.
     if (!isDirty() && store->size().isValid()) {
-        qt_flush(exposedWidget, exposedRegion, store, tlw, tlwOffset, widgetTextures, this);
+        QPlatformTextureList *tl = widgetTexturesFor(tlw, exposedWidget);
+        qt_flush(exposedWidget, tl ? QRegion() : exposedRegion, store, tlw, tl, this);
         return;
     }
 
@@ -951,47 +1126,9 @@ void QWidgetBackingStore::sync(QWidget *exposedWidget, const QRegion &exposedReg
     else
         markDirtyOnScreen(exposedRegion, exposedWidget, QPoint());
 
-    doSync();
+    if (syncAllowed())
+        doSync();
 }
-
-#ifndef QT_NO_OPENGL
-static void findTextureWidgetsRecursively(QWidget *tlw, QWidget *widget, QPlatformTextureList *widgetTextures)
-{
-    QWidgetPrivate *wd = QWidgetPrivate::get(widget);
-    if (wd->renderToTexture) {
-        QPlatformTextureList::Flags flags = 0;
-        if (widget->testAttribute(Qt::WA_AlwaysStackOnTop))
-            flags |= QPlatformTextureList::StacksOnTop;
-        const QRect rect(widget->mapTo(tlw, QPoint()), widget->size());
-        widgetTextures->appendTexture(widget, wd->textureId(), rect, wd->clipRect(), flags);
-    }
-
-    for (int i = 0; i < wd->children.size(); ++i) {
-        QWidget *w = qobject_cast<QWidget *>(wd->children.at(i));
-        if (w && !w->isWindow() && !w->isHidden() && QWidgetPrivate::get(w)->textureChildSeen)
-            findTextureWidgetsRecursively(tlw, w, widgetTextures);
-    }
-}
-
-QPlatformTextureListWatcher::QPlatformTextureListWatcher(QWidgetBackingStore *backingStore)
-    : m_locked(false),
-      m_backingStore(backingStore)
-{
-}
-
-void QPlatformTextureListWatcher::watch(QPlatformTextureList *textureList)
-{
-    connect(textureList, SIGNAL(locked(bool)), SLOT(onLockStatusChanged(bool)));
-    m_locked = textureList->isLocked();
-}
-
-void QPlatformTextureListWatcher::onLockStatusChanged(bool locked)
-{
-    m_locked = locked;
-    if (!locked)
-        m_backingStore->sync();
-}
-#endif // QT_NO_OPENGL
 
 /*!
     Synchronizes the backing store, i.e. dirty areas are repainted and flushed.
@@ -1011,25 +1148,12 @@ void QWidgetBackingStore::sync()
             for (int i = 0; i < dirtyWidgets.size(); ++i)
                 resetWidget(dirtyWidgets.at(i));
             dirtyWidgets.clear();
-            fullUpdatePending = false;
         }
         return;
     }
 
-#ifndef QT_NO_OPENGL
-    if (textureListWatcher && !textureListWatcher->isLocked()) {
-        textureListWatcher->deleteLater();
-        textureListWatcher = 0;
-    } else if (widgetTextures && widgetTextures->isLocked()) {
-        if (!textureListWatcher)
-            textureListWatcher = new QPlatformTextureListWatcher(this);
-        if (!textureListWatcher->isLocked())
-            textureListWatcher->watch(widgetTextures);
-        return;
-    }
-#endif
-
-    doSync();
+    if (syncAllowed())
+        doSync();
 }
 
 void QWidgetBackingStore::doSync()
@@ -1040,7 +1164,7 @@ void QWidgetBackingStore::doSync()
     const bool inTopLevelResize = tlw->d_func()->maybeTopData()->inTopLevelResize;
     const QRect tlwRect(topLevelRect());
     const QRect surfaceGeometry(tlwRect.topLeft(), store->size());
-    if ((fullUpdatePending || inTopLevelResize || surfaceGeometry.size() != tlwRect.size()) && !updatesDisabled) {
+    if ((inTopLevelResize || surfaceGeometry.size() != tlwRect.size()) && !updatesDisabled) {
         if (hasStaticContents() && !store->size().isEmpty() ) {
             // Repaint existing dirty area and newly visible area.
             const QRect clipRect(0, 0, surfaceGeometry.width(), surfaceGeometry.height());
@@ -1088,9 +1212,19 @@ void QWidgetBackingStore::doSync()
         // We know for sure that the widget isn't overlapped if 'isMoved' is true.
         if (!wd->isMoved)
             wd->subtractOpaqueSiblings(wd->dirty, &hasDirtySiblingsAbove);
+
+        // Make a copy of the widget's dirty region, to restore it in case there is an opaque
+        // render-to-texture child that completely covers the widget, because otherwise the
+        // render-to-texture child won't be visible, due to its parent widget not being redrawn
+        // with a proper blending mask.
+        const QRegion dirtyBeforeSubtractedOpaqueChildren = wd->dirty;
+
         // Scrolled and moved widgets must draw all children.
         if (!wd->isScrolled && !wd->isMoved)
             wd->subtractOpaqueChildren(wd->dirty, w->rect());
+
+        if (wd->dirty.isEmpty() && wd->textureChildSeen)
+            wd->dirty = dirtyBeforeSubtractedOpaqueChildren;
 
         if (wd->dirty.isEmpty()) {
             resetWidget(w);
@@ -1101,7 +1235,7 @@ void QWidgetBackingStore::doSync()
                                            : wd->dirty);
         toClean += widgetDirty;
 
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
         if (tlw->d_func()->extra->proxyWidget) {
             resetWidget(w);
             continue;
@@ -1118,14 +1252,14 @@ void QWidgetBackingStore::doSync()
     dirtyWidgets.clear();
 
 #ifndef QT_NO_OPENGL
-    delete widgetTextures;
-    widgetTextures = 0;
-    if (tlw->d_func()->textureChildSeen) {
-        widgetTextures = new QPlatformTextureList;
-        findTextureWidgetsRecursively(tlw, tlw, widgetTextures);
-    }
-    qt_window_private(tlw->windowHandle())->compositing = widgetTextures;
-    fullUpdatePending = false;
+    // Find all render-to-texture child widgets (including self).
+    // The search is cut at native widget boundaries, meaning that each native child widget
+    // has its own list for the subtree below it.
+    QTLWExtra *tlwExtra = tlw->d_func()->topData();
+    qDeleteAll(tlwExtra->widgetTextures);
+    tlwExtra->widgetTextures.clear();
+    findAllTextureWidgetsRecursively(tlw, tlw);
+    qt_window_private(tlw->windowHandle())->compositing = false; // will get updated in qt_flush()
 #endif
 
     if (toClean.isEmpty()) {
@@ -1135,15 +1269,28 @@ void QWidgetBackingStore::doSync()
         // OpenGL content changes. Check if we have such widgets in the special
         // dirty list.
         QVarLengthArray<QWidget *, 16> paintPending;
-        for (int i = 0; i < dirtyRenderToTextureWidgets.count(); ++i) {
+        const int numPaintPending = dirtyRenderToTextureWidgets.count();
+        paintPending.reserve(numPaintPending);
+        for (int i = 0; i < numPaintPending; ++i) {
             QWidget *w = dirtyRenderToTextureWidgets.at(i);
             paintPending << w;
             resetWidget(w);
         }
         dirtyRenderToTextureWidgets.clear();
-        for (int i = 0; i < paintPending.count(); ++i) {
+        for (int i = 0; i < numPaintPending; ++i) {
             QWidget *w = paintPending[i];
             w->d_func()->sendPaintEvent(w->rect());
+            if (w != tlw) {
+                QWidget *npw = w->nativeParentWidget();
+                if (w->internalWinId() || (npw && npw != tlw)) {
+                    if (!w->internalWinId())
+                        w = npw;
+                    QWidgetPrivate *wPrivate = w->d_func();
+                    if (!wPrivate->needsFlush)
+                        wPrivate->needsFlush = new QRegion;
+                    appendDirtyOnScreenWidget(w);
+                }
+            }
         }
 
         // We might have newly exposed areas on the screen if this function was
@@ -1155,11 +1302,14 @@ void QWidgetBackingStore::doSync()
     }
 
 #ifndef QT_NO_OPENGL
-    if (widgetTextures && widgetTextures->count()) {
-        for (int i = 0; i < widgetTextures->count(); ++i) {
-            QWidget *w = static_cast<QWidget *>(widgetTextures->source(i));
+    foreach (QPlatformTextureList *tl, tlwExtra->widgetTextures) {
+        for (int i = 0; i < tl->count(); ++i) {
+            QWidget *w = static_cast<QWidget *>(tl->source(i));
             if (dirtyRenderToTextureWidgets.contains(w)) {
-                const QRect rect = widgetTextures->geometry(i); // mapped to the tlw already
+                const QRect rect = tl->geometry(i); // mapped to the tlw already
+                // Set a flag to indicate that the paint event for this
+                // render-to-texture widget must not to be optimized away.
+                w->d_func()->renderToTextureReallyDirty = 1;
                 dirty += rect;
                 toClean += rect;
             }
@@ -1170,14 +1320,13 @@ void QWidgetBackingStore::doSync()
     dirtyRenderToTextureWidgets.clear();
 #endif
 
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
     if (tlw->d_func()->extra->proxyWidget) {
         updateStaticContentsSize();
         dirty = QRegion();
         updateRequestSent = false;
-        const QVector<QRect> rects(toClean.rects());
-        for (int i = 0; i < rects.size(); ++i)
-            tlw->d_func()->extra->proxyWidget->update(rects.at(i));
+        for (const QRect &rect : toClean)
+            tlw->d_func()->extra->proxyWidget->update(rect);
         return;
     }
 #endif
@@ -1214,7 +1363,7 @@ void QWidgetBackingStore::doSync()
         QRegion toBePainted(wd->dirty);
         resetWidget(w);
 
-        QPoint offset(tlwOffset);
+        QPoint offset;
         if (w != tlw)
             offset += w->mapTo(tlw, QPoint());
         wd->drawWidget(store->paintDevice(), toBePainted, offset, flags, 0, this);
@@ -1223,7 +1372,7 @@ void QWidgetBackingStore::doSync()
     // Paint the rest with composition.
     if (repaintAllWidgets || !dirtyCopy.isEmpty()) {
         const int flags = QWidgetPrivate::DrawAsRoot | QWidgetPrivate::DrawRecursive;
-        tlw->d_func()->drawWidget(store->paintDevice(), dirtyCopy, tlwOffset, flags, 0, this);
+        tlw->d_func()->drawWidget(store->paintDevice(), dirtyCopy, QPoint(), flags, 0, this);
     }
 
     endPaint(toClean, store, &beginPaintInfo);
@@ -1236,31 +1385,39 @@ void QWidgetBackingStore::doSync()
 */
 void QWidgetBackingStore::flush(QWidget *widget)
 {
+    const bool hasDirtyOnScreenWidgets = dirtyOnScreenWidgets && !dirtyOnScreenWidgets->isEmpty();
+    bool flushed = false;
+
+    // Flush the region in dirtyOnScreen.
     if (!dirtyOnScreen.isEmpty()) {
         QWidget *target = widget ? widget : tlw;
-        qt_flush(target, dirtyOnScreen, store, tlw, tlwOffset, widgetTextures, this);
+        qt_flush(target, dirtyOnScreen, store, tlw, widgetTexturesFor(tlw, tlw), this);
         dirtyOnScreen = QRegion();
+        flushed = true;
+    }
+
+    // Render-to-texture widgets are not in dirtyOnScreen so flush if we have not done it above.
+    if (!flushed && !hasDirtyOnScreenWidgets) {
 #ifndef QT_NO_OPENGL
-        if (widgetTextures && widgetTextures->count())
-            return;
+        if (!tlw->d_func()->topData()->widgetTextures.isEmpty()) {
+            QPlatformTextureList *tl = widgetTexturesFor(tlw, tlw);
+            if (tl) {
+                QWidget *target = widget ? widget : tlw;
+                qt_flush(target, QRegion(), store, tlw, tl, this);
+            }
+        }
 #endif
     }
 
-    if (!dirtyOnScreenWidgets || dirtyOnScreenWidgets->isEmpty()) {
-#ifndef QT_NO_OPENGL
-        if (widgetTextures && widgetTextures->count()) {
-            QWidget *target = widget ? widget : tlw;
-            qt_flush(target, QRegion(), store, tlw, tlwOffset, widgetTextures, this);
-        }
-#endif
+    if (!hasDirtyOnScreenWidgets)
         return;
-    }
 
     for (int i = 0; i < dirtyOnScreenWidgets->size(); ++i) {
         QWidget *w = dirtyOnScreenWidgets->at(i);
         QWidgetPrivate *wd = w->d_func();
         Q_ASSERT(wd->needsFlush);
-        qt_flush(w, *wd->needsFlush, store, tlw, tlwOffset, 0, this);
+        QPlatformTextureList *widgetTexturesForNative = wd->textureChildSeen ? widgetTexturesFor(tlw, w) : 0;
+        qt_flush(w, *wd->needsFlush, store, tlw, widgetTexturesForNative, this);
         *wd->needsFlush = QRegion();
     }
     dirtyOnScreenWidgets->clear();
@@ -1459,7 +1616,7 @@ void QWidgetPrivate::repaint_sys(const QRegion &rgn)
                                         && (usesDoubleBufferedGLContext || q->autoFillBackground());
     QRegion toBePainted(noPartialUpdateSupport ? q->rect() : rgn);
 
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
+#if 0 // Used to be included in Qt4 for Q_WS_MAC
     // No difference between update() and repaint() on the Mac.
     update_sys(toBePainted);
     return;
@@ -1481,9 +1638,11 @@ void QWidgetPrivate::repaint_sys(const QRegion &rgn)
         QWidgetBackingStore::unflushPaint(q, toBePainted);
 #endif
 
-    if (q->paintingActive())
+    if (Q_UNLIKELY(q->paintingActive()))
         qWarning("QWidget::repaint: It is dangerous to leave painters active on a widget outside of the PaintEvent");
 }
 
 
 QT_END_NAMESPACE
+
+#include "moc_qwidgetbackingstore_p.cpp"

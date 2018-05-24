@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,133 +51,168 @@
 // We mean it.
 //
 
+#include <QtCore/private/qglobal_p.h>
 #include <QtCore/qbytearray.h>
-#include <QtCore/qlist.h>
+#include <QtCore/qvector.h>
 
 QT_BEGIN_NAMESPACE
+
+#ifndef QRINGBUFFER_CHUNKSIZE
+#define QRINGBUFFER_CHUNKSIZE 4096
+#endif
+
+class QRingChunk
+{
+public:
+    // initialization and cleanup
+    inline QRingChunk() Q_DECL_NOTHROW :
+        headOffset(0), tailOffset(0)
+    {
+    }
+    inline QRingChunk(const QRingChunk &other) Q_DECL_NOTHROW :
+        chunk(other.chunk), headOffset(other.headOffset), tailOffset(other.tailOffset)
+    {
+    }
+    explicit inline QRingChunk(int alloc) :
+        chunk(alloc, Qt::Uninitialized), headOffset(0), tailOffset(0)
+    {
+    }
+    explicit inline QRingChunk(const QByteArray &qba) Q_DECL_NOTHROW :
+        chunk(qba), headOffset(0), tailOffset(qba.size())
+    {
+    }
+
+    inline QRingChunk &operator=(const QRingChunk &other) Q_DECL_NOTHROW
+    {
+        chunk = other.chunk;
+        headOffset = other.headOffset;
+        tailOffset = other.tailOffset;
+        return *this;
+    }
+    inline QRingChunk(QRingChunk &&other) Q_DECL_NOTHROW :
+        chunk(other.chunk), headOffset(other.headOffset), tailOffset(other.tailOffset)
+    {
+        other.headOffset = other.tailOffset = 0;
+    }
+    inline QRingChunk &operator=(QRingChunk &&other) Q_DECL_NOTHROW
+    {
+        swap(other);
+        return *this;
+    }
+
+    inline void swap(QRingChunk &other) Q_DECL_NOTHROW
+    {
+        chunk.swap(other.chunk);
+        qSwap(headOffset, other.headOffset);
+        qSwap(tailOffset, other.tailOffset);
+    }
+
+    // allocating and sharing
+    void allocate(int alloc);
+    inline bool isShared() const
+    {
+        return !chunk.isDetached();
+    }
+    Q_CORE_EXPORT void detach();
+    QByteArray toByteArray();
+
+    // getters
+    inline int head() const
+    {
+        return headOffset;
+    }
+    inline int size() const
+    {
+        return tailOffset - headOffset;
+    }
+    inline int capacity() const
+    {
+        return chunk.size();
+    }
+    inline int available() const
+    {
+        return chunk.size() - tailOffset;
+    }
+    inline const char *data() const
+    {
+        return chunk.constData() + headOffset;
+    }
+    inline char *data()
+    {
+        if (isShared())
+            detach();
+        return chunk.data() + headOffset;
+    }
+
+    // array management
+    inline void advance(int offset)
+    {
+        Q_ASSERT(headOffset + offset >= 0);
+        Q_ASSERT(size() - offset > 0);
+
+        headOffset += offset;
+    }
+    inline void grow(int offset)
+    {
+        Q_ASSERT(size() + offset > 0);
+        Q_ASSERT(head() + size() + offset <= capacity());
+
+        tailOffset += offset;
+    }
+    inline void assign(const QByteArray &qba)
+    {
+        chunk = qba;
+        headOffset = 0;
+        tailOffset = qba.size();
+    }
+    inline void reset()
+    {
+        headOffset = tailOffset = 0;
+    }
+    inline void clear()
+    {
+        assign(QByteArray());
+    }
+
+private:
+    QByteArray chunk;
+    int headOffset, tailOffset;
+};
 
 class QRingBuffer
 {
 public:
-    explicit inline QRingBuffer(int growth = 4096) :
-        head(0), tail(0), tailBuffer(0), basicBlockSize(growth), bufferSize(0) {
-        buffers.append(QByteArray());
+    explicit inline QRingBuffer(int growth = QRINGBUFFER_CHUNKSIZE) :
+        bufferSize(0), basicBlockSize(growth) { }
+
+    inline void setChunkSize(int size) {
+        basicBlockSize = size;
     }
 
-    inline int nextDataBlockSize() const {
-        return (tailBuffer == 0 ? tail : buffers.first().size()) - head;
+    inline int chunkSize() const {
+        return basicBlockSize;
+    }
+
+    inline qint64 nextDataBlockSize() const {
+        return bufferSize == 0 ? Q_INT64_C(0) : buffers.first().size();
     }
 
     inline const char *readPointer() const {
-        return bufferSize == 0 ? Q_NULLPTR : (buffers.first().constData() + head);
+        return bufferSize == 0 ? nullptr : buffers.first().data();
     }
 
-    // access the bytes at a specified position
-    // the out-variable length will contain the amount of bytes readable
-    // from there, e.g. the amount still the same QByteArray
-    inline const char *readPointerAtPosition(qint64 pos, qint64 &length) const {
-        if (pos >= 0) {
-            pos += head;
-            for (int i = 0; i < buffers.size(); ++i) {
-                length = (i == tailBuffer ? tail : buffers[i].size());
-                if (length > pos) {
-                    length -= pos;
-                    return buffers[i].constData() + pos;
-                }
-                pos -= length;
-            }
-        }
+    Q_CORE_EXPORT const char *readPointerAtPosition(qint64 pos, qint64 &length) const;
+    Q_CORE_EXPORT void free(qint64 bytes);
+    Q_CORE_EXPORT char *reserve(qint64 bytes);
+    Q_CORE_EXPORT char *reserveFront(qint64 bytes);
 
-        length = 0;
-        return 0;
+    inline void truncate(qint64 pos) {
+        Q_ASSERT(pos >= 0 && pos <= size());
+
+        chop(size() - pos);
     }
 
-    inline void free(int bytes) {
-        while (bytes > 0) {
-            int blockSize = buffers.first().size() - head;
-
-            if (tailBuffer == 0 || blockSize > bytes) {
-                // keep a single block around if it does not exceed
-                // the basic block size, to avoid repeated allocations
-                // between uses of the buffer
-                if (bufferSize <= bytes) {
-                    if (buffers.first().size() <= basicBlockSize) {
-                        bufferSize = 0;
-                        head = tail = 0;
-                    } else {
-                        clear(); // try to minify/squeeze us
-                    }
-                } else {
-                    head += bytes;
-                    bufferSize -= bytes;
-                }
-                return;
-            }
-
-            bufferSize -= blockSize;
-            bytes -= blockSize;
-            buffers.removeFirst();
-            --tailBuffer;
-            head = 0;
-        }
-    }
-
-    inline char *reserve(int bytes) {
-        if (bytes <= 0)
-            return 0;
-
-        // if need buffer reallocation
-        if (tail + bytes > buffers.last().size()) {
-            if (tail + bytes > buffers.last().capacity() && tail >= basicBlockSize) {
-                // shrink this buffer to its current size
-                buffers.last().resize(tail);
-
-                // create a new QByteArray
-                buffers.append(QByteArray());
-                ++tailBuffer;
-                tail = 0;
-            }
-            buffers.last().resize(qMax(basicBlockSize, tail + bytes));
-        }
-
-        char *writePtr = buffers.last().data() + tail;
-        bufferSize += bytes;
-        tail += bytes;
-        return writePtr;
-    }
-
-    inline void truncate(int pos) {
-        if (pos < size())
-            chop(size() - pos);
-    }
-
-    inline void chop(int bytes) {
-        while (bytes > 0) {
-            if (tailBuffer == 0 || tail > bytes) {
-                // keep a single block around if it does not exceed
-                // the basic block size, to avoid repeated allocations
-                // between uses of the buffer
-                if (bufferSize <= bytes) {
-                    if (buffers.first().size() <= basicBlockSize) {
-                        bufferSize = 0;
-                        head = tail = 0;
-                    } else {
-                        clear(); // try to minify/squeeze us
-                    }
-                } else {
-                    tail -= bytes;
-                    bufferSize -= bytes;
-                }
-                return;
-            }
-
-            bufferSize -= tail;
-            bytes -= tail;
-            buffers.removeLast();
-            --tailBuffer;
-            tail = buffers.last().size();
-        }
-    }
+    Q_CORE_EXPORT void chop(qint64 bytes);
 
     inline bool isEmpty() const {
         return bufferSize == 0;
@@ -190,143 +231,47 @@ public:
         *ptr = c;
     }
 
-    inline void ungetChar(char c) {
-        --head;
-        if (head < 0) {
-            if (bufferSize != 0) {
-                buffers.prepend(QByteArray());
-                ++tailBuffer;
-            } else {
-                tail = basicBlockSize;
-            }
-            buffers.first().resize(basicBlockSize);
-            head = basicBlockSize - 1;
-        }
-        buffers.first()[head] = c;
-        ++bufferSize;
+    void ungetChar(char c)
+    {
+        char *ptr = reserveFront(1);
+        *ptr = c;
     }
 
-    inline int size() const {
+
+    inline qint64 size() const {
         return bufferSize;
     }
 
-    inline void clear() {
-        buffers.erase(buffers.begin() + 1, buffers.end());
-        buffers.first().clear();
+    Q_CORE_EXPORT void clear();
+    inline qint64 indexOf(char c) const { return indexOf(c, size()); }
+    Q_CORE_EXPORT qint64 indexOf(char c, qint64 maxLength, qint64 pos = 0) const;
+    Q_CORE_EXPORT qint64 read(char *data, qint64 maxLength);
+    Q_CORE_EXPORT QByteArray read();
+    Q_CORE_EXPORT qint64 peek(char *data, qint64 maxLength, qint64 pos = 0) const;
+    Q_CORE_EXPORT void append(const char *data, qint64 size);
+    Q_CORE_EXPORT void append(const QByteArray &qba);
 
-        head = tail = 0;
-        tailBuffer = 0;
-        bufferSize = 0;
+    inline qint64 skip(qint64 length) {
+        qint64 bytesToSkip = qMin(length, bufferSize);
+
+        free(bytesToSkip);
+        return bytesToSkip;
     }
 
-    inline int indexOf(char c) const {
-        int index = 0;
-        int j = head;
-        for (int i = 0; i < buffers.size(); ++i) {
-            const char *ptr = buffers[i].constData() + j;
-            j = index + (i == tailBuffer ? tail : buffers[i].size()) - j;
-
-            while (index < j) {
-                if (*ptr++ == c)
-                    return index;
-                ++index;
-            }
-            j = 0;
-        }
-        return -1;
-    }
-
-    inline int indexOf(char c, int maxLength) const {
-        int index = 0;
-        int j = head;
-        for (int i = 0; index < maxLength && i < buffers.size(); ++i) {
-            const char *ptr = buffers[i].constData() + j;
-            j = qMin(index + (i == tailBuffer ? tail : buffers[i].size()) - j, maxLength);
-
-            while (index < j) {
-                if (*ptr++ == c)
-                    return index;
-                ++index;
-            }
-            j = 0;
-        }
-        return -1;
-    }
-
-    inline int read(char *data, int maxLength) {
-        int bytesToRead = qMin(size(), maxLength);
-        int readSoFar = 0;
-        while (readSoFar < bytesToRead) {
-            int bytesToReadFromThisBlock = qMin(bytesToRead - readSoFar, nextDataBlockSize());
-            if (data)
-                memcpy(data + readSoFar, readPointer(), bytesToReadFromThisBlock);
-            readSoFar += bytesToReadFromThisBlock;
-            free(bytesToReadFromThisBlock);
-        }
-        return readSoFar;
-    }
-
-    // read an unspecified amount (will read the first buffer)
-    inline QByteArray read() {
-        if (bufferSize == 0)
-            return QByteArray();
-
-        QByteArray qba(buffers.takeFirst());
-
-        qba.reserve(0); // avoid that resizing needlessly reallocates
-        if (tailBuffer == 0) {
-            qba.resize(tail);
-            tail = 0;
-            buffers.append(QByteArray());
-        } else {
-            --tailBuffer;
-        }
-        qba.remove(0, head); // does nothing if head is 0
-        head = 0;
-        bufferSize -= qba.size();
-        return qba;
-    }
-
-    // append a new buffer to the end
-    inline void append(const QByteArray &qba) {
-        if (tail == 0) {
-            buffers.last() = qba;
-        } else {
-            buffers.last().resize(tail);
-            buffers.append(qba);
-            ++tailBuffer;
-        }
-        tail = qba.size();
-        bufferSize += tail;
-    }
-
-    inline int skip(int length) {
-        return read(0, length);
-    }
-
-    inline int readLine(char *data, int maxLength) {
-        if (!data || --maxLength <= 0)
-            return -1;
-
-        int i = indexOf('\n', maxLength);
-        i = read(data, i >= 0 ? (i + 1) : maxLength);
-
-        // Terminate it.
-        data[i] = '\0';
-        return i;
-    }
+    Q_CORE_EXPORT qint64 readLine(char *data, qint64 maxLength);
 
     inline bool canReadLine() const {
         return indexOf('\n') >= 0;
     }
 
 private:
-    QList<QByteArray> buffers;
-    int head, tail;
-    int tailBuffer; // always buffers.size() - 1
-    const int basicBlockSize;
-    int bufferSize;
+    QVector<QRingChunk> buffers;
+    qint64 bufferSize;
+    int basicBlockSize;
 };
+
+Q_DECLARE_SHARED(QRingChunk)
+Q_DECLARE_TYPEINFO(QRingBuffer, Q_MOVABLE_TYPE);
 
 QT_END_NAMESPACE
 

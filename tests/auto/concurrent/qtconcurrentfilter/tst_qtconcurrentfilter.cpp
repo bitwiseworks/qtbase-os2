@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -1443,45 +1438,45 @@ void tst_QtConcurrentFilter::noDetach()
         QVERIFY(l.isDetached());
 
         QList<int> ll = l;
-        QVERIFY(l.isDetached() == false);
+        QVERIFY(!l.isDetached());
 
         QtConcurrent::filtered(l, waitFilterfn).waitForFinished();
 
-        QVERIFY(l.isDetached() == false);
-        QVERIFY(ll.isDetached() == false);
+        QVERIFY(!l.isDetached());
+        QVERIFY(!ll.isDetached());
 
         QtConcurrent::blockingFiltered(l, waitFilterfn);
 
-        QVERIFY(l.isDetached() == false);
-        QVERIFY(ll.isDetached() == false);
+        QVERIFY(!l.isDetached());
+        QVERIFY(!ll.isDetached());
 
         QtConcurrent::filteredReduced(l, waitFilterfn, intSumReduce).waitForFinished();
 
-        QVERIFY(l.isDetached() == false);
-        QVERIFY(ll.isDetached() == false);
+        QVERIFY(!l.isDetached());
+        QVERIFY(!ll.isDetached());
 
         QtConcurrent::filter(l, waitFilterfn).waitForFinished();
         if (!l.isDetached())
             QEXPECT_FAIL("", "QTBUG-20688: Known unstable failure", Abort);
-        QVERIFY(l.isDetached() == true);
-        QVERIFY(ll.isDetached() == true);
+        QVERIFY(l.isDetached());
+        QVERIFY(ll.isDetached());
     }
     {
         const QList<int> l = QList<int>() << 1;
         QVERIFY(l.isDetached());
 
         const QList<int> ll = l;
-        QVERIFY(l.isDetached() == false);
+        QVERIFY(!l.isDetached());
 
         QtConcurrent::filtered(l, waitFilterfn).waitForFinished();
 
-        QVERIFY(l.isDetached() == false);
-        QVERIFY(ll.isDetached() == false);
+        QVERIFY(!l.isDetached());
+        QVERIFY(!ll.isDetached());
 
         QtConcurrent::filteredReduced(l, waitFilterfn, intSumReduce).waitForFinished();
 
-        QVERIFY(l.isDetached() == false);
-        QVERIFY(ll.isDetached() == false);
+        QVERIFY(!l.isDetached());
+        QVERIFY(!ll.isDetached());
     }
 }
 

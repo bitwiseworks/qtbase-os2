@@ -42,8 +42,10 @@ namespace OT {
 
 struct NameRecord
 {
-  static int cmp (const NameRecord *a, const NameRecord *b)
+  static int cmp (const void *pa, const void *pb)
   {
+    const NameRecord *a = (const NameRecord *) pa;
+    const NameRecord *b = (const NameRecord *) pb;
     int ret;
     ret = b->platformID.cmp (a->platformID);
     if (ret) return ret;
@@ -60,15 +62,15 @@ struct NameRecord
   {
     TRACE_SANITIZE (this);
     /* We can check from base all the way up to the end of string... */
-    return TRACE_RETURN (c->check_struct (this) && c->check_range ((char *) base, (unsigned int) length + offset));
+    return_trace (c->check_struct (this) && c->check_range ((char *) base, (unsigned int) length + offset));
   }
 
-  USHORT	platformID;	/* Platform ID. */
-  USHORT	encodingID;	/* Platform-specific encoding ID. */
-  USHORT	languageID;	/* Language ID. */
-  USHORT	nameID;		/* Name ID. */
-  USHORT	length;		/* String length (in bytes). */
-  USHORT	offset;		/* String offset from start of storage area (in bytes). */
+  UINT16	platformID;	/* Platform ID. */
+  UINT16	encodingID;	/* Platform-specific encoding ID. */
+  UINT16	languageID;	/* Language ID. */
+  UINT16	nameID;		/* Name ID. */
+  UINT16	length;		/* String length (in bytes). */
+  UINT16	offset;		/* String offset from start of storage area (in bytes). */
   public:
   DEFINE_SIZE_STATIC (12);
 };
@@ -89,7 +91,7 @@ struct name
     key.encodingID.set (encoding_id);
     key.languageID.set (language_id);
     key.nameID.set (name_id);
-    NameRecord *match = (NameRecord *) bsearch (&key, nameRecord, count, sizeof (nameRecord[0]), (hb_compare_func_t) NameRecord::cmp);
+    NameRecord *match = (NameRecord *) bsearch (&key, nameRecord, count, sizeof (nameRecord[0]), NameRecord::cmp);
 
     if (!match)
       return 0;
@@ -107,23 +109,23 @@ struct name
     char *string_pool = (char *) this + stringOffset;
     unsigned int _count = count;
     for (unsigned int i = 0; i < _count; i++)
-      if (!nameRecord[i].sanitize (c, string_pool)) return TRACE_RETURN (false);
-    return TRACE_RETURN (true);
+      if (!nameRecord[i].sanitize (c, string_pool)) return_trace (false);
+    return_trace (true);
   }
 
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return TRACE_RETURN (c->check_struct (this) &&
-			 likely (format == 0 || format == 1) &&
-			 c->check_array (nameRecord, nameRecord[0].static_size, count) &&
-			 sanitize_records (c));
+    return_trace (c->check_struct (this) &&
+		  likely (format == 0 || format == 1) &&
+		  c->check_array (nameRecord, nameRecord[0].static_size, count) &&
+		  sanitize_records (c));
   }
 
   /* We only implement format 0 for now. */
-  USHORT	format;			/* Format selector (=0/1). */
-  USHORT	count;			/* Number of name records. */
-  Offset<>	stringOffset;		/* Offset to start of string storage (from start of table). */
+  UINT16	format;			/* Format selector (=0/1). */
+  UINT16	count;			/* Number of name records. */
+  Offset16	stringOffset;		/* Offset to start of string storage (from start of table). */
   NameRecord	nameRecord[VAR];	/* The name records where count is the number of records. */
   public:
   DEFINE_SIZE_ARRAY (6, nameRecord);

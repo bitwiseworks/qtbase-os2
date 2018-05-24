@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,7 +30,7 @@
 #include <qvarlengtharray.h>
 #include <qvariant.h>
 
-const int N = 1;
+#include <memory>
 
 class tst_QVarLengthArray : public QObject
 {
@@ -47,10 +42,12 @@ private slots:
     void appendCausingRealloc();
     void resize();
     void realloc();
+    void reverseIterators();
     void count();
     void first();
     void last();
     void squeeze();
+    void operators();
     void indexOf();
     void lastIndexOf();
     void contains();
@@ -58,6 +55,9 @@ private slots:
     void initializeListInt();
     void initializeListMovable();
     void initializeListComplex();
+    void insertMove();
+    void nonCopyable();
+
 private:
     template<typename T>
     void initializeList();
@@ -80,8 +80,21 @@ struct Foo
 
 void tst_QVarLengthArray::append()
 {
-    QVarLengthArray<QString> v;
-    v.append(QString("hello"));
+    QVarLengthArray<QString, 2> v;
+    v.append(QString("1"));
+    v.append(v.front());
+    QCOMPARE(v.capacity(), 2);
+    // transition from prealloc to heap:
+    v.append(v.front());
+    QVERIFY(v.capacity() > 2);
+    QCOMPARE(v.front(), v.back());
+    while (v.size() < v.capacity())
+        v.push_back(v[0]);
+    QCOMPARE(v.back(), v.front());
+    QCOMPARE(v.size(), v.capacity());
+    // transition from heap to larger heap:
+    v.push_back(v.front());
+    QCOMPARE(v.back(), v.front());
 
     QVarLengthArray<int> v2; // rocket!
     v2.append(5);
@@ -146,14 +159,14 @@ void tst_QVarLengthArray::oldTests()
         QVarLengthArray<QString> sa(10);
         sa[0] = "Hello";
         sa[9] = "World";
-        QVERIFY(*sa.data() == "Hello");
-        QVERIFY(sa[9] == "World");
+        QCOMPARE(*sa.data(), QLatin1String("Hello"));
+        QCOMPARE(sa[9], QLatin1String("World"));
         sa.reserve(512);
-        QVERIFY(*sa.data() == "Hello");
-        QVERIFY(sa[9] == "World");
+        QCOMPARE(*sa.data(), QLatin1String("Hello"));
+        QCOMPARE(sa[9], QLatin1String("World"));
         sa.resize(512);
-        QVERIFY(*sa.data() == "Hello");
-        QVERIFY(sa[9] == "World");
+        QCOMPARE(*sa.data(), QLatin1String("Hello"));
+        QCOMPARE(sa[9], QLatin1String("World"));
     }
     {
         int arr[2] = {1, 2};
@@ -279,6 +292,11 @@ struct MyBase
         } else {
             ++errorCount;
         }
+        if (!data) {
+            --movedCount;
+            ++liveCount;
+        }
+        data = this;
 
         return *this;
     }
@@ -286,36 +304,46 @@ struct MyBase
     ~MyBase()
     {
         if (isCopy) {
-            if (!copyCount)
+            if (!copyCount || !data)
                 ++errorCount;
             else
                 --copyCount;
         }
 
-        if (!liveCount)
-            ++errorCount;
-        else
-            --liveCount;
+        if (data) {
+            if (!liveCount)
+                ++errorCount;
+            else
+                --liveCount;
+        } else
+            --movedCount;
     }
 
-    bool hasMoved() const
+    bool wasConstructedAt(const MyBase *that) const
     {
-        return this != data;
+        return that == data;
     }
+
+    bool hasMoved() const { return !wasConstructedAt(this); }
 
 protected:
-    MyBase const * const data;
+    MyBase(const MyBase *data, bool isCopy)
+            : data(data), isCopy(isCopy) {}
+
+    const MyBase *data;
     bool isCopy;
 
 public:
     static int errorCount;
     static int liveCount;
     static int copyCount;
+    static int movedCount;
 };
 
 int MyBase::errorCount = 0;
 int MyBase::liveCount = 0;
 int MyBase::copyCount = 0;
+int MyBase::movedCount = 0;
 
 struct MyPrimitive
     : MyBase
@@ -340,7 +368,39 @@ struct MyPrimitive
 struct MyMovable
     : MyBase
 {
-    MyMovable(char input = 'j') : i(input) {}
+    MyMovable(char input = 'j') : MyBase(), i(input) {}
+
+    MyMovable(MyMovable const &other) : MyBase(other), i(other.i) {}
+
+    MyMovable(MyMovable &&other) : MyBase(other.data, other.isCopy), i(other.i)
+    {
+        ++movedCount;
+        other.isCopy = false;
+        other.data = nullptr;
+    }
+
+    MyMovable & operator=(const MyMovable &other)
+    {
+        MyBase::operator=(other);
+        i = other.i;
+        return *this;
+    }
+
+    MyMovable & operator=(MyMovable &&other)
+    {
+        if (isCopy)
+            --copyCount;
+        ++movedCount;
+        if (other.data)
+            --liveCount;
+        isCopy = other.isCopy;
+        data = other.data;
+        other.isCopy = false;
+        other.data = nullptr;
+
+        return *this;
+    }
+
     bool operator==(const MyMovable &other) const
     {
         return i == other.i;
@@ -563,6 +623,21 @@ void tst_QVarLengthArray::realloc()
     QVERIFY(reallocTestProceed);
 }
 
+void tst_QVarLengthArray::reverseIterators()
+{
+    QVarLengthArray<int> v;
+    v << 1 << 2 << 3 << 4;
+    QVarLengthArray<int> vr = v;
+    std::reverse(vr.begin(), vr.end());
+    const QVarLengthArray<int> &cvr = vr;
+    QVERIFY(std::equal(v.begin(), v.end(), vr.rbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), vr.crbegin()));
+    QVERIFY(std::equal(v.begin(), v.end(), cvr.rbegin()));
+    QVERIFY(std::equal(vr.rbegin(), vr.rend(), v.begin()));
+    QVERIFY(std::equal(vr.crbegin(), vr.crend(), v.begin()));
+    QVERIFY(std::equal(cvr.rbegin(), cvr.rend(), v.begin()));
+}
+
 void tst_QVarLengthArray::count()
 {
     // tests size(), count() and length(), since they're the same thing
@@ -689,6 +764,49 @@ void tst_QVarLengthArray::squeeze()
     list.resize(sizeOnHeap);
     list.squeeze();
     QCOMPARE(list.capacity(), sizeOnHeap);
+}
+
+void tst_QVarLengthArray::operators()
+{
+    QVarLengthArray<QString> myvla;
+    myvla << "A" << "B" << "C";
+    QVarLengthArray<QString> myvlatwo;
+    myvlatwo << "D" << "E" << "F";
+    QVarLengthArray<QString> combined;
+    combined << "A" << "B" << "C" << "D" << "E" << "F";
+
+    // !=
+    QVERIFY(myvla != myvlatwo);
+
+    // +=: not provided, emulate
+    //myvla += myvlatwo;
+    Q_FOREACH (const QString &s, myvlatwo)
+        myvla.push_back(s);
+    QCOMPARE(myvla, combined);
+
+    // ==
+    QVERIFY(myvla == combined);
+
+    // <, >, <=, >=
+    QVERIFY(!(myvla <  combined));
+    QVERIFY(!(myvla >  combined));
+    QVERIFY(  myvla <= combined);
+    QVERIFY(  myvla >= combined);
+    combined.push_back("G");
+    QVERIFY(  myvla <  combined);
+    QVERIFY(!(myvla >  combined));
+    QVERIFY(  myvla <= combined);
+    QVERIFY(!(myvla >= combined));
+    QVERIFY(combined >  myvla);
+    QVERIFY(combined >= myvla);
+
+    // []
+    QCOMPARE(myvla[0], QLatin1String("A"));
+    QCOMPARE(myvla[1], QLatin1String("B"));
+    QCOMPARE(myvla[2], QLatin1String("C"));
+    QCOMPARE(myvla[3], QLatin1String("D"));
+    QCOMPARE(myvla[4], QLatin1String("E"));
+    QCOMPARE(myvla[5], QLatin1String("F"));
 }
 
 void tst_QVarLengthArray::indexOf()
@@ -830,6 +948,138 @@ void tst_QVarLengthArray::initializeList()
 #else
     QSKIP("This tests requires a compiler that supports initializer lists.");
 #endif
+}
+
+void tst_QVarLengthArray::insertMove()
+{
+    MyBase::errorCount = 0;
+    QCOMPARE(MyBase::liveCount, 0);
+    QCOMPARE(MyBase::copyCount, 0);
+
+    {
+        QVarLengthArray<MyMovable, 6> vec;
+        MyMovable m1;
+        MyMovable m2;
+        MyMovable m3;
+        MyMovable m4;
+        MyMovable m5;
+        MyMovable m6;
+        QCOMPARE(MyBase::copyCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+
+        vec.append(std::move(m3));
+        QVERIFY(m3.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m3));
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::movedCount, 1);
+
+        vec.push_back(std::move(m4));
+        QVERIFY(m4.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m3));
+        QVERIFY(vec.at(1).wasConstructedAt(&m4));
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::movedCount, 2);
+
+        vec.prepend(std::move(m1));
+        QVERIFY(m1.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m1));
+        QVERIFY(vec.at(1).wasConstructedAt(&m3));
+        QVERIFY(vec.at(2).wasConstructedAt(&m4));
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::movedCount, 3);
+
+        vec.insert(1, std::move(m2));
+        QVERIFY(m2.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m1));
+        QVERIFY(vec.at(1).wasConstructedAt(&m2));
+        QVERIFY(vec.at(2).wasConstructedAt(&m3));
+        QVERIFY(vec.at(3).wasConstructedAt(&m4));
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::movedCount, 4);
+
+        vec += std::move(m5);
+        QVERIFY(m5.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m1));
+        QVERIFY(vec.at(1).wasConstructedAt(&m2));
+        QVERIFY(vec.at(2).wasConstructedAt(&m3));
+        QVERIFY(vec.at(3).wasConstructedAt(&m4));
+        QVERIFY(vec.at(4).wasConstructedAt(&m5));
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::movedCount, 5);
+
+        vec << std::move(m6);
+        QVERIFY(m6.wasConstructedAt(nullptr));
+        QVERIFY(vec.at(0).wasConstructedAt(&m1));
+        QVERIFY(vec.at(1).wasConstructedAt(&m2));
+        QVERIFY(vec.at(2).wasConstructedAt(&m3));
+        QVERIFY(vec.at(3).wasConstructedAt(&m4));
+        QVERIFY(vec.at(4).wasConstructedAt(&m5));
+        QVERIFY(vec.at(5).wasConstructedAt(&m6));
+
+        QCOMPARE(MyBase::copyCount, 0);
+        QCOMPARE(MyBase::liveCount, 6);
+        QCOMPARE(MyBase::errorCount, 0);
+        QCOMPARE(MyBase::movedCount, 6);
+    }
+    QCOMPARE(MyBase::liveCount, 0);
+    QCOMPARE(MyBase::errorCount, 0);
+    QCOMPARE(MyBase::movedCount, 0);
+}
+
+void tst_QVarLengthArray::nonCopyable()
+{
+    QVarLengthArray<std::unique_ptr<int>> vec;
+    std::unique_ptr<int> val1(new int(1));
+    std::unique_ptr<int> val2(new int(2));
+    std::unique_ptr<int> val3(new int(3));
+    std::unique_ptr<int> val4(new int(4));
+    std::unique_ptr<int> val5(new int(5));
+    std::unique_ptr<int> val6(new int(6));
+    int *const ptr1 = val1.get();
+    int *const ptr2 = val2.get();
+    int *const ptr3 = val3.get();
+    int *const ptr4 = val4.get();
+    int *const ptr5 = val5.get();
+    int *const ptr6 = val6.get();
+
+    vec.append(std::move(val3));
+    QVERIFY(!val3);
+    QVERIFY(ptr3 == vec.at(0).get());
+    vec.append(std::move(val4));
+    QVERIFY(!val4);
+    QVERIFY(ptr3 == vec.at(0).get());
+    QVERIFY(ptr4 == vec.at(1).get());
+    vec.prepend(std::move(val1));
+    QVERIFY(!val1);
+    QVERIFY(ptr1 == vec.at(0).get());
+    QVERIFY(ptr3 == vec.at(1).get());
+    QVERIFY(ptr4 == vec.at(2).get());
+    vec.insert(1, std::move(val2));
+    QVERIFY(!val2);
+    QVERIFY(ptr1 == vec.at(0).get());
+    QVERIFY(ptr2 == vec.at(1).get());
+    QVERIFY(ptr3 == vec.at(2).get());
+    QVERIFY(ptr4 == vec.at(3).get());
+    vec += std::move(val5);
+    QVERIFY(!val5);
+    QVERIFY(ptr1 == vec.at(0).get());
+    QVERIFY(ptr2 == vec.at(1).get());
+    QVERIFY(ptr3 == vec.at(2).get());
+    QVERIFY(ptr4 == vec.at(3).get());
+    QVERIFY(ptr5 == vec.at(4).get());
+    vec << std::move(val6);
+    QVERIFY(!val6);
+    QVERIFY(ptr1 == vec.at(0).get());
+    QVERIFY(ptr2 == vec.at(1).get());
+    QVERIFY(ptr3 == vec.at(2).get());
+    QVERIFY(ptr4 == vec.at(3).get());
+    QVERIFY(ptr5 == vec.at(4).get());
+    QVERIFY(ptr6 == vec.at(5).get());
 }
 
 QTEST_APPLESS_MAIN(tst_QVarLengthArray)

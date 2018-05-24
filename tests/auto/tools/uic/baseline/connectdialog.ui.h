@@ -10,16 +10,13 @@
 #define CONNECTDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QSpacerItem>
 #include <QtWidgets/QToolButton>
@@ -129,12 +126,12 @@ public:
 
     void retranslateUi(QDialog *ConnectDialog)
     {
-        ConnectDialog->setWindowTitle(QApplication::translate("ConnectDialog", "Configure Connection", 0));
-        signalGroupBox->setTitle(QApplication::translate("ConnectDialog", "GroupBox", 0));
-        editSignalsButton->setText(QApplication::translate("ConnectDialog", "Edit...", 0));
-        slotGroupBox->setTitle(QApplication::translate("ConnectDialog", "GroupBox", 0));
-        editSlotsButton->setText(QApplication::translate("ConnectDialog", "Edit...", 0));
-        showAllCheckBox->setText(QApplication::translate("ConnectDialog", "Show signals and slots inherited from QWidget", 0));
+        ConnectDialog->setWindowTitle(QApplication::translate("ConnectDialog", "Configure Connection", nullptr));
+        signalGroupBox->setTitle(QApplication::translate("ConnectDialog", "GroupBox", nullptr));
+        editSignalsButton->setText(QApplication::translate("ConnectDialog", "Edit...", nullptr));
+        slotGroupBox->setTitle(QApplication::translate("ConnectDialog", "GroupBox", nullptr));
+        editSlotsButton->setText(QApplication::translate("ConnectDialog", "Edit...", nullptr));
+        showAllCheckBox->setText(QApplication::translate("ConnectDialog", "Show signals and slots inherited from QWidget", nullptr));
     } // retranslateUi
 
 };

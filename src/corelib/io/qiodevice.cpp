@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,7 @@
 #include "qfile.h"
 #include "qstringlist.h"
 #include "qdir.h"
+#include "private/qbytearray_p.h"
 
 #include <algorithm>
 
@@ -82,6 +89,7 @@ void debugBinaryString(const char *data, qint64 maxlen)
 
 static void checkWarnMessage(const QIODevice *device, const char *function, const char *what)
 {
+#ifndef QT_NO_WARNING_OUTPUT
     QDebug d = qWarning();
     d.noquote();
     d.nospace();
@@ -97,6 +105,11 @@ static void checkWarnMessage(const QIODevice *device, const char *function, cons
     Q_UNUSED(device)
 #endif // !QT_NO_QOBJECT
     d << ": " << what;
+#else
+    Q_UNUSED(device);
+    Q_UNUSED(function);
+    Q_UNUSED(what);
+#endif // QT_NO_WARNING_OUTPUT
 }
 
 #define CHECK_MAXLEN(function, returnType) \
@@ -104,6 +117,14 @@ static void checkWarnMessage(const QIODevice *device, const char *function, cons
         if (maxSize < 0) { \
             checkWarnMessage(this, #function, "Called with maxSize < 0"); \
             return returnType; \
+        } \
+    } while (0)
+
+#define CHECK_MAXBYTEARRAYSIZE(function) \
+    do { \
+        if (maxSize >= MaxByteArraySize) { \
+            checkWarnMessage(this, #function, "maxSize argument exceeds QByteArray size limit"); \
+            maxSize = MaxByteArraySize - 1; \
         } \
     } while (0)
 
@@ -135,10 +156,17 @@ static void checkWarnMessage(const QIODevice *device, const char *function, cons
     \internal
  */
 QIODevicePrivate::QIODevicePrivate()
-    : openMode(QIODevice::NotOpen), buffer(QIODEVICE_BUFFERSIZE),
-      pos(0), devicePos(0)
+    : openMode(QIODevice::NotOpen),
+      pos(0), devicePos(0),
+      readChannelCount(0),
+      writeChannelCount(0),
+      currentReadChannel(0),
+      currentWriteChannel(0),
+      readBufferChunkSize(QIODEVICE_BUFFERSIZE),
+      writeBufferChunkSize(0),
+      transactionPos(0),
+      transactionStarted(false)
        , baseReadLineDataCalled(false)
-       , firstRead(true)
        , accessMode(Unset)
 #ifdef QT_NO_QOBJECT
        , q_ptr(0)
@@ -258,6 +286,21 @@ QIODevicePrivate::~QIODevicePrivate()
     subclassing QIODevice, remember to bypass any buffer you may use
     when the device is open in Unbuffered mode.
 
+    Usually, the incoming data stream from an asynchronous device is
+    fragmented, and chunks of data can arrive at arbitrary points in time.
+    To handle incomplete reads of data structures, use the transaction
+    mechanism implemented by QIODevice. See startTransaction() and related
+    functions for more details.
+
+    Some sequential devices support communicating via multiple channels. These
+    channels represent separate streams of data that have the property of
+    independently sequenced delivery. Once the device is opened, you can
+    determine the number of channels by calling the readChannelCount() and
+    writeChannelCount() functions. To switch between channels, call
+    setCurrentReadChannel() and setCurrentWriteChannel(), respectively.
+    QIODevice also provides additional signals to handle asynchronous
+    communication on a per-channel basis.
+
     \sa QBuffer, QFile, QTcpSocket
 */
 
@@ -281,6 +324,23 @@ QIODevicePrivate::~QIODevicePrivate()
                      terminators are translated to the local encoding, for
                      example '\\r\\n' for Win32.
     \value Unbuffered Any buffer in the device is bypassed.
+    \value NewOnly   Fail if the file to be opened already exists. Create and
+                     open the file only if it does not exist. There is a
+                     guarantee from the operating system that you are the only
+                     one creating and opening the file. Note that this mode
+                     implies WriteOnly, and combining it with ReadWrite is
+                     allowed. This flag currently only affects QFile. Other
+                     classes might use this flag in the future, but until then
+                     using this flag with any classes other than QFile may
+                     result in undefined behavior.
+    \value ExistingOnly Fail if the file to be opened does not exist. This flag
+                     must be specified alongside ReadOnly, WriteOnly, or
+                     ReadWrite. Note that using this flag with ReadOnly alone
+                     is redundant, as ReadOnly already fails when the file does
+                     not exist. This flag currently only affects QFile. Other
+                     classes might use this flag in the future, but until then
+                     using this flag with any classes other than QFile may
+                     result in undefined behavior.
 
     Certain flags, such as \c Unbuffered and \c Truncate, are
     meaningless when used with some subclasses. Some of these
@@ -295,8 +355,8 @@ QIODevicePrivate::~QIODevicePrivate()
 /*!     \fn QIODevice::bytesWritten(qint64 bytes)
 
     This signal is emitted every time a payload of data has been
-    written to the device. The \a bytes argument is set to the number
-    of bytes that were written in this payload.
+    written to the device's current write channel. The \a bytes argument is
+    set to the number of bytes that were written in this payload.
 
     bytesWritten() is not emitted recursively; if you reenter the event loop
     or call waitForBytesWritten() inside a slot connected to the
@@ -307,12 +367,28 @@ QIODevicePrivate::~QIODevicePrivate()
 */
 
 /*!
+    \fn QIODevice::channelBytesWritten(int channel, qint64 bytes)
+    \since 5.7
+
+    This signal is emitted every time a payload of data has been written to
+    the device. The \a bytes argument is set to the number of bytes that were
+    written in this payload, while \a channel is the channel they were written
+    to. Unlike bytesWritten(), it is emitted regardless of the
+    \l{currentWriteChannel()}{current write channel}.
+
+    channelBytesWritten() can be emitted recursively - even for the same
+    channel.
+
+    \sa bytesWritten(), channelReadyRead()
+*/
+
+/*!
     \fn QIODevice::readyRead()
 
     This signal is emitted once every time new data is available for
-    reading from the device. It will only be emitted again once new
-    data is available, such as when a new payload of network data has
-    arrived on your network socket, or when a new block of data has
+    reading from the device's current read channel. It will only be emitted
+    again once new data is available, such as when a new payload of network
+    data has arrived on your network socket, or when a new block of data has
     been appended to your device.
 
     readyRead() is not emitted recursively; if you reenter the event loop or
@@ -326,6 +402,20 @@ QIODevicePrivate::~QIODevicePrivate()
     buffers). Do not emit readyRead() in other conditions.
 
     \sa bytesWritten()
+*/
+
+/*!
+    \fn QIODevice::channelReadyRead(int channel)
+    \since 5.7
+
+    This signal is emitted when new data is available for reading from the
+    device. The \a channel argument is set to the index of the read channel on
+    which the data has arrived. Unlike readyRead(), it is emitted regardless of
+    the \l{currentReadChannel()}{current read channel}.
+
+    channelReadyRead() can be emitted recursively - even for the same channel.
+
+    \sa readyRead(), channelBytesWritten()
 */
 
 /*! \fn QIODevice::aboutToClose()
@@ -463,9 +553,8 @@ void QIODevice::setOpenMode(OpenMode openMode)
 #endif
     d->openMode = openMode;
     d->accessMode = QIODevicePrivate::Unset;
-    d->firstRead = true;
-    if (!isReadable())
-        d->buffer.clear();
+    d->setReadChannelCount(isReadable() ? qMax(d->readChannelCount, 1) : 0);
+    d->setWriteChannelCount(isWritable() ? qMax(d->writeChannelCount, 1) : 0);
 }
 
 /*!
@@ -542,6 +631,151 @@ bool QIODevice::isWritable() const
 }
 
 /*!
+    \since 5.7
+
+    Returns the number of available read channels if the device is open;
+    otherwise returns 0.
+
+    \sa writeChannelCount(), QProcess
+*/
+int QIODevice::readChannelCount() const
+{
+    return d_func()->readChannelCount;
+}
+
+/*!
+    \since 5.7
+
+    Returns the number of available write channels if the device is open;
+    otherwise returns 0.
+
+    \sa readChannelCount()
+*/
+int QIODevice::writeChannelCount() const
+{
+    return d_func()->writeChannelCount;
+}
+
+/*!
+    \since 5.7
+
+    Returns the index of the current read channel.
+
+    \sa setCurrentReadChannel(), readChannelCount(), QProcess
+*/
+int QIODevice::currentReadChannel() const
+{
+    return d_func()->currentReadChannel;
+}
+
+/*!
+    \since 5.7
+
+    Sets the current read channel of the QIODevice to the given \a
+    channel. The current input channel is used by the functions
+    read(), readAll(), readLine(), and getChar(). It also determines
+    which channel triggers QIODevice to emit readyRead().
+
+    \sa currentReadChannel(), readChannelCount(), QProcess
+*/
+void QIODevice::setCurrentReadChannel(int channel)
+{
+    Q_D(QIODevice);
+
+    if (d->transactionStarted) {
+        checkWarnMessage(this, "setReadChannel", "Failed due to read transaction being in progress");
+        return;
+    }
+
+#if defined QIODEVICE_DEBUG
+    qDebug("%p QIODevice::setCurrentReadChannel(%d), d->currentReadChannel = %d, d->readChannelCount = %d\n",
+           this, channel, d->currentReadChannel, d->readChannelCount);
+#endif
+
+    d->setCurrentReadChannel(channel);
+}
+
+/*!
+    \internal
+*/
+void QIODevicePrivate::setReadChannelCount(int count)
+{
+    if (count > readBuffers.size()) {
+        readBuffers.insert(readBuffers.end(), count - readBuffers.size(),
+                           QRingBuffer(readBufferChunkSize));
+    } else {
+        readBuffers.resize(count);
+    }
+    readChannelCount = count;
+    setCurrentReadChannel(currentReadChannel);
+}
+
+/*!
+    \since 5.7
+
+    Returns the the index of the current write channel.
+
+    \sa setCurrentWriteChannel(), writeChannelCount()
+*/
+int QIODevice::currentWriteChannel() const
+{
+    return d_func()->currentWriteChannel;
+}
+
+/*!
+    \since 5.7
+
+    Sets the current write channel of the QIODevice to the given \a
+    channel. The current output channel is used by the functions
+    write(), putChar(). It also determines  which channel triggers
+    QIODevice to emit bytesWritten().
+
+    \sa currentWriteChannel(), writeChannelCount()
+*/
+void QIODevice::setCurrentWriteChannel(int channel)
+{
+    Q_D(QIODevice);
+
+#if defined QIODEVICE_DEBUG
+    qDebug("%p QIODevice::setCurrentWriteChannel(%d), d->currentWriteChannel = %d, d->writeChannelCount = %d\n",
+           this, channel, d->currentWriteChannel, d->writeChannelCount);
+#endif
+
+    d->setCurrentWriteChannel(channel);
+}
+
+/*!
+    \internal
+*/
+void QIODevicePrivate::setWriteChannelCount(int count)
+{
+    if (count > writeBuffers.size()) {
+        // If writeBufferChunkSize is zero (default value), we don't use
+        // QIODevice's write buffers.
+        if (writeBufferChunkSize != 0) {
+            writeBuffers.insert(writeBuffers.end(), count - writeBuffers.size(),
+                                QRingBuffer(writeBufferChunkSize));
+        }
+    } else {
+        writeBuffers.resize(count);
+    }
+    writeChannelCount = count;
+    setCurrentWriteChannel(currentWriteChannel);
+}
+
+/*!
+    \internal
+*/
+bool QIODevicePrivate::allWriteBuffersEmpty() const
+{
+    for (const QRingBuffer &ringBuffer : writeBuffers) {
+        if (!ringBuffer.isEmpty())
+            return false;
+    }
+    return true;
+}
+
+/*!
     Opens the device and sets its OpenMode to \a mode. Returns \c true if successful;
     otherwise returns \c false. This function should be called from any
     reimplementations of open() or other functions that open the device.
@@ -553,9 +787,12 @@ bool QIODevice::open(OpenMode mode)
     Q_D(QIODevice);
     d->openMode = mode;
     d->pos = (mode & Append) ? size() : qint64(0);
-    d->buffer.clear();
     d->accessMode = QIODevicePrivate::Unset;
-    d->firstRead = true;
+    d->readBuffers.clear();
+    d->writeBuffers.clear();
+    d->setReadChannelCount(isReadable() ? 1 : 0);
+    d->setWriteChannelCount(isWritable() ? 1 : 0);
+    d->errorString.clear();
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::open(0x%x)\n", this, quint32(mode));
 #endif
@@ -582,10 +819,12 @@ void QIODevice::close()
     emit aboutToClose();
 #endif
     d->openMode = NotOpen;
-    d->errorString.clear();
     d->pos = 0;
-    d->buffer.clear();
-    d->firstRead = true;
+    d->transactionStarted = false;
+    d->transactionPos = 0;
+    d->setReadChannelCount(0);
+    // Do not clear write buffers to allow delayed close in sockets
+    d->writeChannelCount = 0;
 }
 
 /*!
@@ -657,24 +896,32 @@ bool QIODevice::seek(qint64 pos)
            this, pos, d->pos, d->buffer.size());
 #endif
 
-    qint64 offset = pos - d->pos;
-    d->pos = pos;
     d->devicePos = pos;
-
-    if (offset < 0 || offset >= d->buffer.size())
-        // When seeking backwards, an operation that is only allowed for
-        // random-access devices, the buffer is cleared. The next read
-        // operation will then refill the buffer. We can optimize this, if we
-        // find that seeking backwards becomes a significant performance hit.
-        d->buffer.clear();
-    else if (!d->buffer.isEmpty())
-        d->buffer.skip(offset);
+    d->seekBuffer(pos);
 
 #if defined QIODEVICE_DEBUG
     printf("%p \tafter: d->pos == %lld, d->buffer.size() == %lld\n", this, d->pos,
            d->buffer.size());
 #endif
     return true;
+}
+
+/*!
+    \internal
+*/
+void QIODevicePrivate::seekBuffer(qint64 newPos)
+{
+    const qint64 offset = newPos - pos;
+    pos = newPos;
+
+    if (offset < 0 || offset >= buffer.size()) {
+        // When seeking backwards, an operation that is only allowed for
+        // random-access devices, the buffer is cleared. The next read
+        // operation will then refill the buffer.
+        buffer.clear();
+    } else {
+        buffer.free(offset);
+    }
 }
 
 /*!
@@ -685,19 +932,20 @@ bool QIODevice::seek(qint64 pos)
     For some devices, atEnd() can return true even though there is more data
     to read. This special case only applies to devices that generate data in
     direct response to you calling read() (e.g., \c /dev or \c /proc files on
-    Unix and OS X, or console input / \c stdin on all platforms).
+    Unix and \macos, or console input / \c stdin on all platforms).
 
     \sa bytesAvailable(), read(), isSequential()
 */
 bool QIODevice::atEnd() const
 {
     Q_D(const QIODevice);
+    const bool result = (d->openMode == NotOpen || (d->isBufferEmpty()
+                                                    && bytesAvailable() == 0));
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::atEnd() returns %s, d->openMode == %d, d->pos == %lld\n", this,
-           (d->openMode == NotOpen || d->pos == size()) ? "true" : "false", int(d->openMode),
-           d->pos);
+           result ? "true" : "false", int(d->openMode), d->pos);
 #endif
-    return d->openMode == NotOpen || (d->buffer.isEmpty() && bytesAvailable() == 0);
+    return result;
 }
 
 /*!
@@ -736,18 +984,21 @@ qint64 QIODevice::bytesAvailable() const
     Q_D(const QIODevice);
     if (!d->isSequential())
         return qMax(size() - d->pos, qint64(0));
-    return d->buffer.size();
+    return d->buffer.size() - d->transactionPos;
 }
 
 /*!  For buffered devices, this function returns the number of bytes
     waiting to be written. For devices with no buffer, this function
     returns 0.
 
+    Subclasses that reimplement this function must call the base
+    implementation in order to include the size of the buffer of QIODevice.
+
     \sa bytesAvailable(), bytesWritten(), isSequential()
 */
 qint64 QIODevice::bytesToWrite() const
 {
-    return qint64(0);
+    return d_func()->writeBuffer.size();
 }
 
 /*!
@@ -774,8 +1025,8 @@ qint64 QIODevice::read(char *data, qint64 maxSize)
 
     const bool sequential = d->isSequential();
 
-    // Short circuit for getChar()
-    if (maxSize == 1) {
+    // Short-cut for getChar(), unless we need to keep the data in the buffer.
+    if (maxSize == 1 && !(sequential && d->transactionStarted)) {
         int chint;
         while ((chint = d->buffer.getChar()) != -1) {
             if (!sequential)
@@ -796,43 +1047,67 @@ qint64 QIODevice::read(char *data, qint64 maxSize)
     }
 
     CHECK_MAXLEN(read, qint64(-1));
+    CHECK_READABLE(read, qint64(-1));
+
+    const qint64 readBytes = d->read(data, maxSize);
+
+#if defined QIODEVICE_DEBUG
+    printf("%p \treturning %lld, d->pos == %lld, d->buffer.size() == %lld\n", this,
+           readBytes, d->pos, d->buffer.size());
+    if (readBytes > 0)
+        debugBinaryString(data - readBytes, readBytes);
+#endif
+
+    return readBytes;
+}
+
+/*!
+    \internal
+*/
+qint64 QIODevicePrivate::read(char *data, qint64 maxSize, bool peeking)
+{
+    Q_Q(QIODevice);
+
+    const bool buffered = (openMode & QIODevice::Unbuffered) == 0;
+    const bool sequential = isSequential();
+    const bool keepDataInBuffer = sequential
+                                  ? peeking || transactionStarted
+                                  : peeking && buffered;
+    const qint64 savedPos = pos;
     qint64 readSoFar = 0;
     bool madeBufferReadsOnly = true;
     bool deviceAtEof = false;
     char *readPtr = data;
+    qint64 bufferPos = (sequential && transactionStarted) ? transactionPos : Q_INT64_C(0);
     forever {
         // Try reading from the buffer.
-        qint64 bufferReadChunkSize = d->buffer.read(data, maxSize);
+        qint64 bufferReadChunkSize = keepDataInBuffer
+                                     ? buffer.peek(data, maxSize, bufferPos)
+                                     : buffer.read(data, maxSize);
         if (bufferReadChunkSize > 0) {
+            bufferPos += bufferReadChunkSize;
             if (!sequential)
-                d->pos += bufferReadChunkSize;
+                pos += bufferReadChunkSize;
+#if defined QIODEVICE_DEBUG
+            printf("%p \treading %lld bytes from buffer into position %lld\n", q,
+                   bufferReadChunkSize, readSoFar);
+#endif
             readSoFar += bufferReadChunkSize;
             data += bufferReadChunkSize;
             maxSize -= bufferReadChunkSize;
-#if defined QIODEVICE_DEBUG
-            printf("%p \treading %lld bytes from buffer into position %lld\n", this,
-                   bufferReadChunkSize, readSoFar - bufferReadChunkSize);
-#endif
-        } else {
-            if (d->firstRead) {
-                // this is the first time the file has been read, check it's valid and set up pos pointers
-                // for fast pos updates.
-                CHECK_READABLE(read, qint64(-1));
-                d->firstRead = false;
-            }
         }
 
         if (maxSize > 0 && !deviceAtEof) {
             qint64 readFromDevice = 0;
             // Make sure the device is positioned correctly.
-            if (sequential || d->pos == d->devicePos || seek(d->pos)) {
+            if (sequential || pos == devicePos || q->seek(pos)) {
                 madeBufferReadsOnly = false; // fix readData attempt
-                if (maxSize >= QIODEVICE_BUFFERSIZE || (d->openMode & Unbuffered)) {
+                if ((!buffered || maxSize >= readBufferChunkSize) && !keepDataInBuffer) {
                     // Read big chunk directly to output buffer
-                    readFromDevice = readData(data, maxSize);
+                    readFromDevice = q->readData(data, maxSize);
                     deviceAtEof = (readFromDevice != maxSize);
 #if defined QIODEVICE_DEBUG
-                    printf("%p \treading %lld bytes from device (total %lld)\n", this,
+                    printf("%p \treading %lld bytes from device (total %lld)\n", q,
                            readFromDevice, readSoFar);
 #endif
                     if (readFromDevice > 0) {
@@ -840,21 +1115,24 @@ qint64 QIODevice::read(char *data, qint64 maxSize)
                         data += readFromDevice;
                         maxSize -= readFromDevice;
                         if (!sequential) {
-                            d->pos += readFromDevice;
-                            d->devicePos += readFromDevice;
+                            pos += readFromDevice;
+                            devicePos += readFromDevice;
                         }
                     }
                 } else {
-                    const qint64 bytesToBuffer = QIODEVICE_BUFFERSIZE;
+                    // Do not read more than maxSize on unbuffered devices
+                    const qint64 bytesToBuffer = (buffered || readBufferChunkSize < maxSize)
+                            ? qint64(readBufferChunkSize)
+                            : maxSize;
                     // Try to fill QIODevice buffer by single read
-                    readFromDevice = readData(d->buffer.reserve(bytesToBuffer), bytesToBuffer);
+                    readFromDevice = q->readData(buffer.reserve(bytesToBuffer), bytesToBuffer);
                     deviceAtEof = (readFromDevice != bytesToBuffer);
-                    d->buffer.chop(bytesToBuffer - qMax(Q_INT64_C(0), readFromDevice));
+                    buffer.chop(bytesToBuffer - qMax(Q_INT64_C(0), readFromDevice));
                     if (readFromDevice > 0) {
                         if (!sequential)
-                            d->devicePos += readFromDevice;
+                            devicePos += readFromDevice;
 #if defined QIODEVICE_DEBUG
-                        printf("%p \treading %lld from device into buffer\n", this,
+                        printf("%p \treading %lld from device into buffer\n", q,
                                readFromDevice);
 #endif
                         continue;
@@ -870,7 +1148,7 @@ qint64 QIODevice::read(char *data, qint64 maxSize)
             }
         }
 
-        if ((d->openMode & Text) && readPtr < data) {
+        if ((openMode & QIODevice::Text) && readPtr < data) {
             const char *endPtr = data;
 
             // optimization to avoid initial self-assignment
@@ -902,16 +1180,18 @@ qint64 QIODevice::read(char *data, qint64 maxSize)
         break;
     }
 
-#if defined QIODEVICE_DEBUG
-    printf("%p \treturning %lld, d->pos == %lld, d->buffer.size() == %lld\n", this,
-           readSoFar, d->pos, d->buffer.size());
-    debugBinaryString(data - readSoFar, readSoFar);
-#endif
-
-    if (madeBufferReadsOnly && d->buffer.isEmpty()) {
-        d->buffer.clear();
-        readData(data, 0);
+    // Restore positions after reading
+    if (keepDataInBuffer) {
+        if (peeking)
+            pos = savedPos; // does nothing on sequential devices
+        else
+            transactionPos = bufferPos;
+    } else if (peeking) {
+        seekBuffer(savedPos); // unbuffered random-access device
     }
+
+    if (madeBufferReadsOnly && isBufferEmpty())
+        q->readData(data, 0);
 
     return readSoFar;
 }
@@ -932,36 +1212,28 @@ QByteArray QIODevice::read(qint64 maxSize)
     Q_D(QIODevice);
     QByteArray result;
 
-    CHECK_MAXLEN(read, result);
-
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::read(%lld), d->pos = %lld, d->buffer.size() = %lld\n",
            this, maxSize, d->pos, d->buffer.size());
-#else
-    Q_UNUSED(d);
 #endif
 
-    if (quint64(maxSize) >= QByteArray::MaxSize) {
-        checkWarnMessage(this, "read", "maxSize argument exceeds QByteArray size limit");
-        maxSize = QByteArray::MaxSize - 1;
+    // Try to prevent the data from being copied, if we have a chunk
+    // with the same size in the read buffer.
+    if (maxSize == d->buffer.nextDataBlockSize() && !d->transactionStarted
+        && (d->openMode & (QIODevice::ReadOnly | QIODevice::Text)) == QIODevice::ReadOnly) {
+        result = d->buffer.read();
+        if (!d->isSequential())
+            d->pos += maxSize;
+        if (d->buffer.isEmpty())
+            readData(nullptr, 0);
+        return result;
     }
 
-    qint64 readBytes = 0;
-    if (maxSize) {
-        result.resize(int(maxSize));
-        if (!result.size()) {
-            // If resize fails, read incrementally.
-            qint64 readResult;
-            do {
-                result.resize(int(qMin(maxSize, result.size() + QIODEVICE_BUFFERSIZE)));
-                readResult = read(result.data() + readBytes, result.size() - readBytes);
-                if (readResult > 0 || readBytes == 0)
-                    readBytes += readResult;
-            } while (readResult == QIODEVICE_BUFFERSIZE);
-        } else {
-            readBytes = read(result.data(), result.size());
-        }
-    }
+    CHECK_MAXLEN(read, result);
+    CHECK_MAXBYTEARRAYSIZE(read);
+
+    result.resize(int(maxSize));
+    qint64 readBytes = read(result.data(), result.size());
 
     if (readBytes <= 0)
         result.clear();
@@ -972,9 +1244,7 @@ QByteArray QIODevice::read(qint64 maxSize)
 }
 
 /*!
-    \overload
-
-    Reads all available data from the device, and returns it as a
+    Reads all remaining data from the device, and returns it as a
     byte array.
 
     This function has no way of reporting errors; returning an empty
@@ -990,40 +1260,33 @@ QByteArray QIODevice::readAll()
 #endif
 
     QByteArray result;
-    qint64 readBytes = 0;
-    const bool sequential = d->isSequential();
-
-    // flush internal read buffer
-    if (!(d->openMode & Text) && !d->buffer.isEmpty()) {
-        if (quint64(d->buffer.size()) >= QByteArray::MaxSize)
-            return QByteArray();
-        result = d->buffer.readAll();
-        readBytes = result.size();
-        if (!sequential)
-            d->pos += readBytes;
-    }
-
-    qint64 theSize;
-    if (sequential || (theSize = size()) == 0) {
+    qint64 readBytes = (d->isSequential() ? Q_INT64_C(0) : size());
+    if (readBytes == 0) {
         // Size is unknown, read incrementally.
+        qint64 readChunkSize = qMax(qint64(d->readBufferChunkSize),
+                                    d->isSequential() ? (d->buffer.size() - d->transactionPos)
+                                                      : d->buffer.size());
         qint64 readResult;
         do {
-            if (quint64(readBytes) + QIODEVICE_BUFFERSIZE > QByteArray::MaxSize) {
+            if (readBytes + readChunkSize >= MaxByteArraySize) {
                 // If resize would fail, don't read more, return what we have.
                 break;
             }
-            result.resize(readBytes + QIODEVICE_BUFFERSIZE);
-            readResult = read(result.data() + readBytes, QIODEVICE_BUFFERSIZE);
-            if (readResult > 0 || readBytes == 0)
+            result.resize(readBytes + readChunkSize);
+            readResult = read(result.data() + readBytes, readChunkSize);
+            if (readResult > 0 || readBytes == 0) {
                 readBytes += readResult;
+                readChunkSize = d->readBufferChunkSize;
+            }
         } while (readResult > 0);
     } else {
         // Read it all in one go.
         // If resize fails, don't read anything.
-        if (quint64(readBytes + theSize - d->pos) > QByteArray::MaxSize)
+        readBytes -= d->pos;
+        if (readBytes >= MaxByteArraySize)
             return QByteArray();
-        result.resize(int(readBytes + theSize - d->pos));
-        readBytes += read(result.data() + readBytes, result.size() - readBytes);
+        result.resize(readBytes);
+        readBytes = read(result.data(), readBytes);
     }
 
     if (readBytes <= 0)
@@ -1087,21 +1350,35 @@ qint64 QIODevice::readLine(char *data, qint64 maxSize)
     --maxSize;
 
     const bool sequential = d->isSequential();
+    const bool keepDataInBuffer = sequential && d->transactionStarted;
 
     qint64 readSoFar = 0;
-    if (!d->buffer.isEmpty()) {
-        readSoFar = d->buffer.readLine(data, maxSize);
+    if (keepDataInBuffer) {
+        if (d->transactionPos < d->buffer.size()) {
+            // Peek line from the specified position
+            const qint64 i = d->buffer.indexOf('\n', maxSize, d->transactionPos);
+            readSoFar = d->buffer.peek(data, i >= 0 ? (i - d->transactionPos + 1) : maxSize,
+                                       d->transactionPos);
+            d->transactionPos += readSoFar;
+            if (d->transactionPos == d->buffer.size())
+                readData(data, 0);
+        }
+    } else if (!d->buffer.isEmpty()) {
+        // QRingBuffer::readLine() terminates the line with '\0'
+        readSoFar = d->buffer.readLine(data, maxSize + 1);
         if (d->buffer.isEmpty())
             readData(data,0);
         if (!sequential)
             d->pos += readSoFar;
+    }
+
+    if (readSoFar) {
 #if defined QIODEVICE_DEBUG
         printf("%p \tread from buffer: %lld bytes, last character read: %hhx\n", this,
                readSoFar, data[readSoFar - 1]);
-        if (readSoFar)
-            debugBinaryString(data, int(readSoFar));
+        debugBinaryString(data, int(readSoFar));
 #endif
-        if (readSoFar && data[readSoFar - 1] == '\n') {
+        if (data[readSoFar - 1] == '\n') {
             if (d->openMode & Text) {
                 // QRingBuffer::readLine() isn't Text aware.
                 if (readSoFar > 1 && data[readSoFar - 2] == '\r') {
@@ -1117,7 +1394,11 @@ qint64 QIODevice::readLine(char *data, qint64 maxSize)
     if (d->pos != d->devicePos && !sequential && !seek(d->pos))
         return qint64(-1);
     d->baseReadLineDataCalled = false;
-    qint64 readBytes = readLineData(data + readSoFar, maxSize - readSoFar);
+    // Force base implementation for transaction on sequential device
+    // as it stores the data in internal buffer automatically.
+    qint64 readBytes = keepDataInBuffer
+                       ? QIODevice::readLineData(data + readSoFar, maxSize - readSoFar)
+                       : readLineData(data + readSoFar, maxSize - readSoFar);
 #if defined QIODEVICE_DEBUG
     printf("%p \tread from readLineData: %lld bytes, readSoFar = %lld bytes\n", this,
            readBytes, readSoFar);
@@ -1170,36 +1451,30 @@ QByteArray QIODevice::readLine(qint64 maxSize)
     QByteArray result;
 
     CHECK_MAXLEN(readLine, result);
+    CHECK_MAXBYTEARRAYSIZE(readLine);
 
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::readLine(%lld), d->pos = %lld, d->buffer.size() = %lld\n",
            this, maxSize, d->pos, d->buffer.size());
-#else
-    Q_UNUSED(d);
 #endif
-
-    if (quint64(maxSize) >= QByteArray::MaxSize) {
-        qWarning("QIODevice::read: maxSize argument exceeds QByteArray size limit");
-        maxSize = QByteArray::MaxSize - 1;
-    }
 
     result.resize(int(maxSize));
     qint64 readBytes = 0;
     if (!result.size()) {
         // If resize fails or maxSize == 0, read incrementally
         if (maxSize == 0)
-            maxSize = QByteArray::MaxSize - 1;
+            maxSize = MaxByteArraySize - 1;
 
         // The first iteration needs to leave an extra byte for the terminating null
         result.resize(1);
 
         qint64 readResult;
         do {
-            result.resize(int(qMin(maxSize, result.size() + QIODEVICE_BUFFERSIZE)));
+            result.resize(int(qMin(maxSize, qint64(result.size() + d->readBufferChunkSize))));
             readResult = readLine(result.data() + readBytes, result.size() - readBytes);
             if (readResult > 0 || readBytes == 0)
                 readBytes += readResult;
-        } while (readResult == QIODEVICE_BUFFERSIZE
+        } while (readResult == d->readBufferChunkSize
                 && result[int(readBytes - 1)] != '\n');
     } else
         readBytes = readLine(result.data(), result.size());
@@ -1272,7 +1547,95 @@ qint64 QIODevice::readLineData(char *data, qint64 maxSize)
 */
 bool QIODevice::canReadLine() const
 {
-    return d_func()->buffer.canReadLine();
+    Q_D(const QIODevice);
+    return d->buffer.indexOf('\n', d->buffer.size(),
+                             d->isSequential() ? d->transactionPos : Q_INT64_C(0)) >= 0;
+}
+
+/*!
+    \since 5.7
+
+    Starts a new read transaction on the device.
+
+    Defines a restorable point within the sequence of read operations. For
+    sequential devices, read data will be duplicated internally to allow
+    recovery in case of incomplete reads. For random-access devices,
+    this function saves the current position. Call commitTransaction() or
+    rollbackTransaction() to finish the transaction.
+
+    \note Nesting transactions is not supported.
+
+    \sa commitTransaction(), rollbackTransaction()
+*/
+void QIODevice::startTransaction()
+{
+    Q_D(QIODevice);
+    if (d->transactionStarted) {
+        checkWarnMessage(this, "startTransaction", "Called while transaction already in progress");
+        return;
+    }
+    d->transactionPos = d->pos;
+    d->transactionStarted = true;
+}
+
+/*!
+    \since 5.7
+
+    Completes a read transaction.
+
+    For sequential devices, all data recorded in the internal buffer during
+    the transaction will be discarded.
+
+    \sa startTransaction(), rollbackTransaction()
+*/
+void QIODevice::commitTransaction()
+{
+    Q_D(QIODevice);
+    if (!d->transactionStarted) {
+        checkWarnMessage(this, "commitTransaction", "Called while no transaction in progress");
+        return;
+    }
+    if (d->isSequential())
+        d->buffer.free(d->transactionPos);
+    d->transactionStarted = false;
+    d->transactionPos = 0;
+}
+
+/*!
+    \since 5.7
+
+    Rolls back a read transaction.
+
+    Restores the input stream to the point of the startTransaction() call.
+    This function is commonly used to rollback the transaction when an
+    incomplete read was detected prior to committing the transaction.
+
+    \sa startTransaction(), commitTransaction()
+*/
+void QIODevice::rollbackTransaction()
+{
+    Q_D(QIODevice);
+    if (!d->transactionStarted) {
+        checkWarnMessage(this, "rollbackTransaction", "Called while no transaction in progress");
+        return;
+    }
+    if (!d->isSequential())
+        d->seekBuffer(d->transactionPos);
+    d->transactionStarted = false;
+    d->transactionPos = 0;
+}
+
+/*!
+    \since 5.7
+
+    Returns \c true if a transaction is in progress on the device, otherwise
+    \c false.
+
+    \sa startTransaction()
+*/
+bool QIODevice::isTransactionStarted() const
+{
+    return d_func()->transactionStarted;
 }
 
 /*!
@@ -1299,6 +1662,7 @@ qint64 QIODevice::write(const char *data, qint64 maxSize)
         const char *startOfBlock = data;
 
         qint64 writtenSoFar = 0;
+        const qint64 savedPos = d->pos;
 
         forever {
             const char *endOfBlock = startOfBlock;
@@ -1310,7 +1674,7 @@ qint64 QIODevice::write(const char *data, qint64 maxSize)
                 qint64 ret = writeData(startOfBlock, blockSize);
                 if (ret <= 0) {
                     if (writtenSoFar && !sequential)
-                        d->buffer.skip(writtenSoFar);
+                        d->buffer.skip(d->pos - savedPos);
                     return writtenSoFar ? writtenSoFar : ret;
                 }
                 if (!sequential) {
@@ -1326,7 +1690,7 @@ qint64 QIODevice::write(const char *data, qint64 maxSize)
             qint64 ret = writeData("\r\n", 2);
             if (ret <= 0) {
                 if (writtenSoFar && !sequential)
-                    d->buffer.skip(writtenSoFar);
+                    d->buffer.skip(d->pos - savedPos);
                 return writtenSoFar ? writtenSoFar : ret;
             }
             if (!sequential) {
@@ -1339,19 +1703,16 @@ qint64 QIODevice::write(const char *data, qint64 maxSize)
         }
 
         if (writtenSoFar && !sequential)
-            d->buffer.skip(writtenSoFar);
+            d->buffer.skip(d->pos - savedPos);
         return writtenSoFar;
     }
 #endif
 
     qint64 written = writeData(data, maxSize);
-    if (written > 0) {
-        if (!sequential) {
-            d->pos += written;
-            d->devicePos += written;
-        }
-        if (!d->buffer.isEmpty() && !sequential)
-            d->buffer.skip(written);
+    if (!sequential && written > 0) {
+        d->pos += written;
+        d->devicePos += written;
+        d->buffer.skip(written);
     }
     return written;
 }
@@ -1395,11 +1756,18 @@ qint64 QIODevice::write(const char *data)
 
     If \a c was not previously read from the device, the behavior is
     undefined.
+
+    \note This function is not available while a transaction is in progress.
 */
 void QIODevice::ungetChar(char c)
 {
     Q_D(QIODevice);
     CHECK_READABLE(read, Q_VOID);
+
+    if (d->transactionStarted) {
+        checkWarnMessage(this, "ungetChar", "Called while transaction is in progress");
+        return;
+    }
 
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::ungetChar(0x%hhx '%c')\n", this, c, isprint(c) ? c : '?');
@@ -1435,14 +1803,7 @@ bool QIODevicePrivate::putCharHelper(char c)
 */
 qint64 QIODevicePrivate::peek(char *data, qint64 maxSize)
 {
-    qint64 readBytes = q_func()->read(data, maxSize);
-    if (readBytes <= 0)
-        return readBytes;
-
-    buffer.ungetBlock(data, readBytes);
-    if (!isSequential())
-        pos -= readBytes;
-    return readBytes;
+    return read(data, maxSize, true);
 }
 
 /*!
@@ -1450,14 +1811,17 @@ qint64 QIODevicePrivate::peek(char *data, qint64 maxSize)
 */
 QByteArray QIODevicePrivate::peek(qint64 maxSize)
 {
-    QByteArray result = q_func()->read(maxSize);
+    QByteArray result(maxSize, Qt::Uninitialized);
 
-    if (result.isEmpty())
-        return result;
+    const qint64 readBytes = read(result.data(), maxSize, true);
 
-    buffer.ungetBlock(result.constData(), result.size());
-    if (!isSequential())
-        pos -= result.size();
+    if (readBytes < maxSize) {
+        if (readBytes <= 0)
+            result.clear();
+        else
+            result.resize(readBytes);
+    }
+
     return result;
 }
 
@@ -1495,7 +1859,12 @@ bool QIODevice::getChar(char *c)
 */
 qint64 QIODevice::peek(char *data, qint64 maxSize)
 {
-    return d_func()->peek(data, maxSize);
+    Q_D(QIODevice);
+
+    CHECK_MAXLEN(peek, qint64(-1));
+    CHECK_READABLE(peek, qint64(-1));
+
+    return d->peek(data, maxSize);
 }
 
 /*!
@@ -1517,7 +1886,135 @@ qint64 QIODevice::peek(char *data, qint64 maxSize)
 */
 QByteArray QIODevice::peek(qint64 maxSize)
 {
-    return d_func()->peek(maxSize);
+    Q_D(QIODevice);
+
+    CHECK_MAXLEN(peek, QByteArray());
+    CHECK_MAXBYTEARRAYSIZE(peek);
+    CHECK_READABLE(peek, QByteArray());
+
+    return d->peek(maxSize);
+}
+
+/*!
+    \since 5.10
+
+    Skips up to \a maxSize bytes from the device. Returns the number of bytes
+    actually skipped, or -1 on error.
+
+    This function does not wait and only discards the data that is already
+    available for reading.
+
+    If the device is opened in text mode, end-of-line terminators are
+    translated to '\n' symbols and count as a single byte identically to the
+    read() and peek() behavior.
+
+    This function works for all devices, including sequential ones that cannot
+    seek(). It is optimized to skip unwanted data after a peek() call.
+
+    For random-access devices, skip() can be used to seek forward from the
+    current position. Negative \a maxSize values are not allowed.
+
+    \sa peek(), seek(), read()
+*/
+qint64 QIODevice::skip(qint64 maxSize)
+{
+    Q_D(QIODevice);
+    CHECK_MAXLEN(skip, qint64(-1));
+    CHECK_READABLE(skip, qint64(-1));
+
+    const bool sequential = d->isSequential();
+
+#if defined QIODEVICE_DEBUG
+    printf("%p QIODevice::skip(%lld), d->pos = %lld, d->buffer.size() = %lld\n",
+           this, maxSize, d->pos, d->buffer.size());
+#endif
+
+    if ((sequential && d->transactionStarted) || (d->openMode & QIODevice::Text) != 0)
+        return d->skipByReading(maxSize);
+
+    // First, skip over any data in the internal buffer.
+    qint64 skippedSoFar = 0;
+    if (!d->buffer.isEmpty()) {
+        skippedSoFar = d->buffer.skip(maxSize);
+#if defined QIODEVICE_DEBUG
+        printf("%p \tskipping %lld bytes in buffer\n", this, skippedSoFar);
+#endif
+        if (!sequential)
+            d->pos += skippedSoFar;
+        if (d->buffer.isEmpty())
+            readData(nullptr, 0);
+        if (skippedSoFar == maxSize)
+            return skippedSoFar;
+
+        maxSize -= skippedSoFar;
+    }
+
+    // Try to seek on random-access device. At this point,
+    // the internal read buffer is empty.
+    if (!sequential) {
+        const qint64 bytesToSkip = qMin(size() - d->pos, maxSize);
+
+        // If the size is unknown or file position is at the end,
+        // fall back to reading below.
+        if (bytesToSkip > 0) {
+            if (!seek(d->pos + bytesToSkip))
+                return skippedSoFar ? skippedSoFar : Q_INT64_C(-1);
+            if (bytesToSkip == maxSize)
+                return skippedSoFar + bytesToSkip;
+
+            skippedSoFar += bytesToSkip;
+            maxSize -= bytesToSkip;
+        }
+    }
+
+    const qint64 skipResult = d->skip(maxSize);
+    if (skippedSoFar == 0)
+        return skipResult;
+
+    if (skipResult == -1)
+        return skippedSoFar;
+
+    return skippedSoFar + skipResult;
+}
+
+/*!
+    \internal
+*/
+qint64 QIODevicePrivate::skipByReading(qint64 maxSize)
+{
+    qint64 readSoFar = 0;
+    do {
+        char dummy[4096];
+        const qint64 readBytes = qMin<qint64>(maxSize, sizeof(dummy));
+        const qint64 readResult = read(dummy, readBytes);
+
+        // Do not try again, if we got less data.
+        if (readResult != readBytes) {
+            if (readSoFar == 0)
+                return readResult;
+
+            if (readResult == -1)
+                return readSoFar;
+
+            return readSoFar + readResult;
+        }
+
+        readSoFar += readResult;
+        maxSize -= readResult;
+    } while (maxSize > 0);
+
+    return readSoFar;
+}
+
+/*!
+    \internal
+*/
+qint64 QIODevicePrivate::skip(qint64 maxSize)
+{
+    // Base implementation discards the data by reading into the dummy buffer.
+    // It's slow, but this works for all types of devices. Subclasses can
+    // reimplement this function to improve on that.
+    return skipByReading(maxSize);
 }
 
 /*!
@@ -1701,3 +2198,7 @@ QDebug operator<<(QDebug debug, QIODevice::OpenMode modes)
 #endif
 
 QT_END_NAMESPACE
+
+#ifndef QT_NO_QOBJECT
+#include "moc_qiodevice.cpp"
+#endif

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -42,8 +52,7 @@
 
 #include <QMouseEvent>
 #include <QTimer>
-
-#include <math.h>
+#include <qmath.h>
 
 GLWidget::GLWidget(QWidget *parent)
     : QGLWidget(parent)
@@ -180,8 +189,6 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
                           GLdouble outerRadius, GLdouble thickness,
                           GLdouble toothSize, GLint toothCount)
 {
-    const double Pi = 3.14159265358979323846;
-
     GLuint list = glGenLists(1);
     glNewList(list, GL_COMPILE);
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, reflectance);
@@ -189,7 +196,8 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
     GLdouble r0 = innerRadius;
     GLdouble r1 = outerRadius - toothSize / 2.0;
     GLdouble r2 = outerRadius + toothSize / 2.0;
-    GLdouble delta = (2.0 * Pi / toothCount) / 4.0;
+    GLdouble toothAngle = 2 * M_PI / toothCount;
+    GLdouble delta = toothAngle / 4.0;
     GLdouble z = thickness / 2.0;
 
     glShadeModel(GL_FLAT);
@@ -201,7 +209,7 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
 
         glBegin(GL_QUAD_STRIP);
         for (int j = 0; j <= toothCount; ++j) {
-            GLdouble angle = 2.0 * Pi * j / toothCount;
+            GLdouble angle = j * toothAngle;
             glVertex3d(r0 * cos(angle), r0 * sin(angle), sign * z);
             glVertex3d(r1 * cos(angle), r1 * sin(angle), sign * z);
             glVertex3d(r0 * cos(angle), r0 * sin(angle), sign * z);
@@ -211,7 +219,7 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
 
         glBegin(GL_QUADS);
         for (int j = 0; j < toothCount; ++j) {
-            GLdouble angle = 2.0 * Pi * j / toothCount;
+            GLdouble angle = j * toothAngle;
             glVertex3d(r1 * cos(angle), r1 * sin(angle), sign * z);
             glVertex3d(r2 * cos(angle + delta), r2 * sin(angle + delta), sign * z);
             glVertex3d(r2 * cos(angle + 2 * delta), r2 * sin(angle + 2 * delta), sign * z);
@@ -223,7 +231,7 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
     glBegin(GL_QUAD_STRIP);
     for (int i = 0; i < toothCount; ++i) {
         for (int j = 0; j < 2; ++j) {
-            GLdouble angle = 2.0 * Pi * (i + j / 2.0) / toothCount;
+            GLdouble angle = (i + j / 2.0) * toothAngle;
             GLdouble s1 = r1;
             GLdouble s2 = r2;
             if (j == 1)
@@ -247,7 +255,7 @@ GLuint GLWidget::makeGear(const GLfloat *reflectance, GLdouble innerRadius,
 
     glBegin(GL_QUAD_STRIP);
     for (int i = 0; i <= toothCount; ++i) {
-        GLdouble angle = i * 2.0 * Pi / toothCount;
+        GLdouble angle = i * toothAngle;
         glNormal3d(-cos(angle), -sin(angle), 0.0);
         glVertex3d(r0 * cos(angle), r0 * sin(angle), +z);
         glVertex3d(r0 * cos(angle), r0 * sin(angle), -z);

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -42,12 +52,8 @@
 
 #include <QtWidgets>
 #include <QtCore/qmath.h>
-
+#include <qmath.h>
 #include "blureffect.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 BlurPicker::BlurPicker(QWidget *parent): QGraphicsView(parent), m_index(0.0), m_animation(this, "index")
 {
@@ -74,9 +80,10 @@ void BlurPicker::setIndex(qreal index)
     m_index = index;
 
     qreal baseline = 0;
+    const qreal iconAngle = 2 * M_PI / m_icons.count();
     for (int i = 0; i < m_icons.count(); ++i) {
         QGraphicsItem *icon = m_icons[i];
-        qreal a = ((i + m_index) * 2 * M_PI) / m_icons.count();
+        qreal a = (i + m_index) * iconAngle;
         qreal xs = 170 * qSin(a);
         qreal ys = 100 * qCos(a);
         QPointF pos(xs, ys);

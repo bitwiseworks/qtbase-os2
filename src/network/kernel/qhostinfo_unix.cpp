@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,11 +45,12 @@
 #include "private/qnativesocketengine_p.h"
 #include "qiodevice.h"
 #include <qbytearray.h>
+#if QT_CONFIG(library)
 #include <qlibrary.h>
+#endif
 #include <qbasicatomic.h>
 #include <qurl.h>
 #include <qfile.h>
-#include <private/qmutexpool_p.h>
 #include <private/qnet_unix_p.h>
 
 #include <sys/types.h>
@@ -59,10 +66,6 @@
 #  include <gnu/lib-names.h>
 #endif
 
-#if defined (QT_NO_GETADDRINFO)
-static QBasicMutex getHostByNameMutex;
-#endif
-
 QT_BEGIN_NAMESPACE
 
 // Almost always the same. If not, specify in qplatformdefs.h.
@@ -76,6 +79,11 @@ QT_BEGIN_NAMESPACE
 #  define Q_ADDRCONFIG          AI_ADDRCONFIG
 #endif
 
+enum LibResolvFeature {
+    NeedResInit,
+    NeedResNInit
+};
+
 typedef struct __res_state *res_state_ptr;
 
 typedef int (*res_init_proto)(void);
@@ -86,9 +94,29 @@ typedef void (*res_nclose_proto)(res_state_ptr);
 static res_nclose_proto local_res_nclose = 0;
 static res_state_ptr local_res = 0;
 
-static void resolveLibrary()
+#if QT_CONFIG(library) && !defined(Q_OS_QNX)
+namespace {
+struct LibResolv
 {
-#if !defined(QT_NO_LIBRARY) && !defined(Q_OS_QNX)
+    enum {
+#ifdef RES_NORELOAD
+        // If RES_NORELOAD is defined, then the libc is capable of watching
+        // /etc/resolv.conf for changes and reloading as necessary. So accept
+        // whatever is configured.
+        ReinitNecessary = false
+#else
+        ReinitNecessary = true
+#endif
+    };
+
+    QLibrary lib;
+    LibResolv();
+    ~LibResolv() { lib.unload(); }
+};
+}
+
+LibResolv::LibResolv()
+{
     QLibrary lib;
 #ifdef LIBRESOLV_SO
     lib.setFileName(QStringLiteral(LIBRESOLV_SO));
@@ -100,26 +128,42 @@ static void resolveLibrary()
             return;
     }
 
-    local_res_init = res_init_proto(lib.resolve("__res_init"));
-    if (!local_res_init)
-        local_res_init = res_init_proto(lib.resolve("res_init"));
-
+    // res_ninit is required for localDomainName()
     local_res_ninit = res_ninit_proto(lib.resolve("__res_ninit"));
     if (!local_res_ninit)
         local_res_ninit = res_ninit_proto(lib.resolve("res_ninit"));
-
-    if (!local_res_ninit) {
-        // if we can't get a thread-safe context, we have to use the global _res state
-        local_res = res_state_ptr(lib.resolve("_res"));
-    } else {
+    if (local_res_ninit) {
+        // we must now find res_nclose
         local_res_nclose = res_nclose_proto(lib.resolve("res_nclose"));
         if (!local_res_nclose)
             local_res_nclose = res_nclose_proto(lib.resolve("__res_nclose"));
         if (!local_res_nclose)
-            local_res_ninit = 0;
+            local_res_ninit = nullptr;
     }
-#endif
+
+    if (ReinitNecessary || !local_res_ninit) {
+        local_res_init = res_init_proto(lib.resolve("__res_init"));
+        if (!local_res_init)
+            local_res_init = res_init_proto(lib.resolve("res_init"));
+
+        if (local_res_init && !local_res_ninit) {
+            // if we can't get a thread-safe context, we have to use the global _res state
+            local_res = res_state_ptr(lib.resolve("_res"));
+        }
+    }
 }
+Q_GLOBAL_STATIC(LibResolv, libResolv)
+
+static void resolveLibrary(LibResolvFeature f)
+{
+    if (LibResolv::ReinitNecessary || f == NeedResNInit)
+        libResolv();
+}
+#else // QT_CONFIG(library) || Q_OS_QNX
+static void resolveLibrary(LibResolvFeature)
+{
+}
+#endif // QT_CONFIG(library) || Q_OS_QNX
 
 QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 {
@@ -131,14 +175,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 #endif
 
     // Load res_init on demand.
-    static QBasicAtomicInt triedResolve = Q_BASIC_ATOMIC_INITIALIZER(false);
-    if (!triedResolve.loadAcquire()) {
-        QMutexLocker locker(QMutexPool::globalInstanceGet(&local_res_init));
-        if (!triedResolve.load()) {
-            resolveLibrary();
-            triedResolve.storeRelease(true);
-        }
-    }
+    resolveLibrary(NeedResInit);
 
     // If res_init is available, poll it.
     if (local_res_init)
@@ -147,8 +184,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
     QHostAddress address;
     if (address.setAddress(hostName)) {
         // Reverse lookup
-// Reverse lookups using getnameinfo are broken on darwin, use gethostbyaddr instead.
-#if !defined (QT_NO_GETADDRINFO) && !defined (Q_OS_DARWIN)
         sockaddr_in sa4;
         sockaddr_in6 sa6;
         sockaddr *sa = 0;
@@ -171,12 +206,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         char hbuf[NI_MAXHOST];
         if (sa && getnameinfo(sa, saSize, hbuf, sizeof(hbuf), 0, 0, 0) == 0)
             results.setHostName(QString::fromLatin1(hbuf));
-#else
-        in_addr_t inetaddr = qt_safe_inet_addr(hostName.toLatin1().constData());
-        struct hostent *ent = gethostbyaddr((const char *)&inetaddr, sizeof(inetaddr), AF_INET);
-        if (ent)
-            results.setHostName(QString::fromLatin1(ent->h_name));
-#endif
 
         if (results.hostName().isEmpty())
             results.setHostName(address.toString());
@@ -195,7 +224,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         return results;
     }
 
-#if !defined (QT_NO_GETADDRINFO)
     // Call getaddrinfo, and place all IPv4 addresses at the start and
     // the IPv6 addresses at the end of the address list in results.
     addrinfo *res = 0;
@@ -262,39 +290,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         results.setErrorString(QString::fromLocal8Bit(gai_strerror(result)));
     }
 
-#else
-    // Fall back to gethostbyname for platforms that don't define
-    // getaddrinfo. gethostbyname does not support IPv6, and it's not
-    // reentrant on all platforms. For now this is okay since we only
-    // use one QHostInfoAgent, but if more agents are introduced, locking
-    // must be provided.
-    QMutexLocker locker(&getHostByNameMutex);
-    hostent *result = gethostbyname(aceHostname.constData());
-    if (result) {
-        if (result->h_addrtype == AF_INET) {
-            QList<QHostAddress> addresses;
-            for (char **p = result->h_addr_list; *p != 0; p++) {
-                QHostAddress addr;
-                addr.setAddress(ntohl(*((quint32 *)*p)));
-                if (!addresses.contains(addr))
-                    addresses.prepend(addr);
-            }
-            results.setAddresses(addresses);
-        } else {
-            results.setError(QHostInfo::UnknownError);
-            results.setErrorString(tr("Unknown address type"));
-        }
-#if !defined(Q_OS_VXWORKS)
-    } else if (h_errno == HOST_NOT_FOUND || h_errno == NO_DATA
-               || h_errno == NO_ADDRESS) {
-        results.setError(QHostInfo::HostNotFound);
-        results.setErrorString(tr("Host not found"));
-#endif
-    } else {
-        results.setError(QHostInfo::UnknownError);
-        results.setErrorString(tr("Unknown error"));
-    }
-#endif //  !defined (QT_NO_GETADDRINFO)
 
 #if defined(QHOSTINFO_DEBUG)
     if (results.error() != QHostInfo::NoError) {
@@ -315,19 +310,10 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
     return results;
 }
 
-QString QHostInfo::localHostName()
-{
-    char hostName[512];
-    if (gethostname(hostName, sizeof(hostName)) == -1)
-        return QString();
-    hostName[sizeof(hostName) - 1] = '\0';
-    return QString::fromLocal8Bit(hostName);
-}
-
 QString QHostInfo::localDomainName()
 {
 #if !defined(Q_OS_VXWORKS) && !defined(Q_OS_ANDROID)
-    resolveLibrary();
+    resolveLibrary(NeedResNInit);
     if (local_res_ninit) {
         // using thread-safe version
         res_state_ptr state = res_state_ptr(malloc(sizeof(*state)));
@@ -346,11 +332,6 @@ QString QHostInfo::localDomainName()
     if (local_res_init && local_res) {
         // using thread-unsafe version
 
-#if defined(QT_NO_GETADDRINFO)
-        // We have to call res_init to be sure that _res was initialized
-        // So, for systems without getaddrinfo (which is thread-safe), we lock the mutex too
-        QMutexLocker locker(&getHostByNameMutex);
-#endif
         local_res_init();
         QString domainName = QUrl::fromAce(local_res->defdname);
         if (domainName.isEmpty())

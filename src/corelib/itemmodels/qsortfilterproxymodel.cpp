@@ -1,40 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qsortfilterproxymodel.h"
-
-#ifndef QT_NO_SORTFILTERPROXYMODEL
-
 #include "qitemselectionmodel.h"
 #include <qsize.h>
 #include <qdebug.h>
@@ -48,7 +51,16 @@
 
 QT_BEGIN_NAMESPACE
 
-typedef QList<QPair<QModelIndex, QPersistentModelIndex> > QModelIndexPairList;
+typedef QVector<QPair<QModelIndex, QPersistentModelIndex> > QModelIndexPairList;
+
+struct QSortFilterProxyModelDataChanged
+{
+    QSortFilterProxyModelDataChanged(const QModelIndex &tl, const QModelIndex &br)
+        : topLeft(tl), bottomRight(br) { }
+
+    QModelIndex topLeft;
+    QModelIndex bottomRight;
+};
 
 static inline QSet<int> qVectorToSet(const QVector<int> &vector)
 {
@@ -158,13 +170,17 @@ public:
     bool sort_localeaware;
 
     int filter_column;
-    QRegExp filter_regexp;
     int filter_role;
+    QRegExp filter_regexp;
+    QModelIndex last_top_source;
 
+    bool filter_recursive;
+    bool complete_insert;
     bool dynamic_sortfilter;
     QRowsRemoval itemsBeingRemoved;
 
     QModelIndexPairList saved_persistent_indexes;
+    QList<QPersistentModelIndex> saved_layoutChange_parents;
 
     QHash<QModelIndex, Mapping *>::const_iterator create_mapping(
         const QModelIndex &source_parent) const;
@@ -269,9 +285,10 @@ public:
         const QVector<int> &source_to_proxy, const QVector<int> &source_items,
         int &proxy_low, int &proxy_high) const;
 
-    QModelIndexPairList store_persistent_indexes();
+    QModelIndexPairList store_persistent_indexes() const;
     void update_persistent_indexes(const QModelIndexPairList &source_indexes);
 
+    void filter_about_to_be_changed(const QModelIndex &source_parent = QModelIndex());
     void filter_changed(const QModelIndex &source_parent = QModelIndex());
     QSet<int> handle_filter_changed(
         QVector<int> &source_to_proxy, QVector<int> &proxy_to_source,
@@ -280,7 +297,12 @@ public:
     void updateChildrenMapping(const QModelIndex &source_parent, Mapping *parent_mapping,
                                Qt::Orientation orient, int start, int end, int delta_item_count, bool remove);
 
-    virtual void _q_sourceModelDestroyed() Q_DECL_OVERRIDE;
+    virtual void _q_sourceModelDestroyed() override;
+
+    bool needsReorder(const QVector<int> &source_rows, const QModelIndex &source_parent) const;
+
+    bool filterAcceptsRowInternal(int source_row, const QModelIndex &source_parent) const;
+    bool filterRecursiveAcceptsRow(int source_row, const QModelIndex &source_parent) const;
 };
 
 typedef QHash<QModelIndex, QSortFilterProxyModelPrivate::Mapping *> IndexMap;
@@ -290,6 +312,32 @@ void QSortFilterProxyModelPrivate::_q_sourceModelDestroyed()
     QAbstractProxyModelPrivate::_q_sourceModelDestroyed();
     qDeleteAll(source_index_mapping);
     source_index_mapping.clear();
+}
+
+bool QSortFilterProxyModelPrivate::filterAcceptsRowInternal(int source_row, const QModelIndex &source_parent) const
+{
+    Q_Q(const QSortFilterProxyModel);
+    return filter_recursive
+            ? filterRecursiveAcceptsRow(source_row, source_parent)
+            : q->filterAcceptsRow(source_row, source_parent);
+}
+
+bool QSortFilterProxyModelPrivate::filterRecursiveAcceptsRow(int source_row, const QModelIndex &source_parent) const
+{
+    Q_Q(const QSortFilterProxyModel);
+
+    if (q->filterAcceptsRow(source_row, source_parent))
+        return true;
+
+    const QModelIndex index = model->index(source_row, 0, source_parent);
+    const int count = model->rowCount(index);
+
+    for (int i = 0; i < count; ++i) {
+        if (filterRecursiveAcceptsRow(i, index))
+            return true;
+    }
+
+    return false;
 }
 
 void QSortFilterProxyModelPrivate::remove_from_mapping(const QModelIndex &source_parent)
@@ -332,7 +380,7 @@ IndexMap::const_iterator QSortFilterProxyModelPrivate::create_mapping(
     int source_rows = model->rowCount(source_parent);
     m->source_rows.reserve(source_rows);
     for (int i = 0; i < source_rows; ++i) {
-        if (q->filterAcceptsRow(i, source_parent))
+        if (filterAcceptsRowInternal(i, source_parent))
             m->source_rows.append(i);
     }
     int source_cols = model->columnCount(source_parent);
@@ -369,7 +417,7 @@ QModelIndex QSortFilterProxyModelPrivate::proxy_to_source(const QModelIndex &pro
     if (!proxy_index.isValid())
         return QModelIndex(); // for now; we may want to be able to set a root index later
     if (proxy_index.model() != q_func()) {
-        qWarning() << "QSortFilterProxyModel: index from wrong model passed to mapToSource";
+        qWarning("QSortFilterProxyModel: index from wrong model passed to mapToSource");
         Q_ASSERT(!"QSortFilterProxyModel: index from wrong model passed to mapToSource");
         return QModelIndex();
     }
@@ -387,7 +435,7 @@ QModelIndex QSortFilterProxyModelPrivate::source_to_proxy(const QModelIndex &sou
     if (!source_index.isValid())
         return QModelIndex(); // for now; we may want to be able to set a root index later
     if (source_index.model() != model) {
-        qWarning() << "QSortFilterProxyModel: index from wrong model passed to mapFromSource";
+        qWarning("QSortFilterProxyModel: index from wrong model passed to mapFromSource");
         Q_ASSERT(!"QSortFilterProxyModel: index from wrong model passed to mapFromSource");
         return QModelIndex();
     }
@@ -786,7 +834,7 @@ void QSortFilterProxyModelPrivate::source_items_inserted(
     QVector<int> source_items;
     for (int i = start; i <= end; ++i) {
         if ((orient == Qt::Vertical)
-            ? q->filterAcceptsRow(i, source_parent)
+            ? filterAcceptsRowInternal(i, source_parent)
             : q->filterAcceptsColumn(i, source_parent)) {
             source_items.append(i);
         }
@@ -806,7 +854,7 @@ void QSortFilterProxyModelPrivate::source_items_inserted(
             orthogonal_source_to_proxy.resize(ortho_end);
 
             for (int ortho_item = 0; ortho_item < ortho_end; ++ortho_item) {
-                if ((orient == Qt::Horizontal) ? q->filterAcceptsRow(ortho_item, source_parent)
+                if ((orient == Qt::Horizontal) ? filterAcceptsRowInternal(ortho_item, source_parent)
                         : q->filterAcceptsColumn(ortho_item, source_parent)) {
                     orthogonal_proxy_to_source.append(ortho_item);
                 }
@@ -961,12 +1009,7 @@ void QSortFilterProxyModelPrivate::updateChildrenMapping(const QModelIndex &sour
     // reinsert moved, mapped indexes
     QVector<QPair<QModelIndex, Mapping*> >::iterator it = moved_source_index_mappings.begin();
     for (; it != moved_source_index_mappings.end(); ++it) {
-#ifdef QT_STRICT_ITERATORS
-        source_index_mapping.insert((*it).first, (*it).second);
-        (*it).second->map_iter = source_index_mapping.constFind((*it).first);
-#else
-        (*it).second->map_iter = source_index_mapping.insert((*it).first, (*it).second);
-#endif
+        (*it).second->map_iter = QHash<QModelIndex, Mapping *>::const_iterator(source_index_mapping.insert((*it).first, (*it).second));
     }
 }
 
@@ -1007,11 +1050,12 @@ void QSortFilterProxyModelPrivate::build_source_to_proxy_mapping(
   Maps the persistent proxy indexes to source indexes and
   returns the list of source indexes.
 */
-QModelIndexPairList QSortFilterProxyModelPrivate::store_persistent_indexes()
+QModelIndexPairList QSortFilterProxyModelPrivate::store_persistent_indexes() const
 {
-    Q_Q(QSortFilterProxyModel);
+    Q_Q(const QSortFilterProxyModel);
     QModelIndexPairList source_indexes;
-    foreach (QPersistentModelIndexData *data, persistent.indexes) {
+    source_indexes.reserve(persistent.indexes.count());
+    for (QPersistentModelIndexData *data : qAsConst(persistent.indexes)) {
         QModelIndex proxy_index = data->index;
         QModelIndex source_index = q->mapToSource(proxy_index);
         source_indexes.append(qMakePair(proxy_index, QPersistentModelIndex(source_index)));
@@ -1030,7 +1074,10 @@ void QSortFilterProxyModelPrivate::update_persistent_indexes(
 {
     Q_Q(QSortFilterProxyModel);
     QModelIndexList from, to;
-    for (int i = 0; i < source_indexes.count(); ++i) {
+    const int numSourceIndexes = source_indexes.count();
+    from.reserve(numSourceIndexes);
+    to.reserve(numSourceIndexes);
+    for (int i = 0; i < numSourceIndexes; ++i) {
         QModelIndex source_index = source_indexes.at(i).second;
         QModelIndex old_proxy_index = source_indexes.at(i).first;
         create_mapping(source_index.parent());
@@ -1039,6 +1086,19 @@ void QSortFilterProxyModelPrivate::update_persistent_indexes(
         to << proxy_index;
     }
     q->changePersistentIndexList(from, to);
+}
+
+/*!
+  \internal
+
+  Updates the source_index mapping in case it's invalid and we
+  need it because we have a valid filter
+*/
+void QSortFilterProxyModelPrivate::filter_about_to_be_changed(const QModelIndex &source_parent)
+{
+  if (!filter_regexp.pattern().isEmpty() &&
+        source_index_mapping.constFind(source_parent) == source_index_mapping.constEnd())
+    create_mapping(source_parent);
 }
 
 
@@ -1100,7 +1160,7 @@ QSet<int> QSortFilterProxyModelPrivate::handle_filter_changed(
     for (int i = 0; i < proxy_to_source.count(); ++i) {
         const int source_item = proxy_to_source.at(i);
         if ((orient == Qt::Vertical)
-            ? !q->filterAcceptsRow(source_item, source_parent)
+            ? !filterAcceptsRowInternal(source_item, source_parent)
             : !q->filterAcceptsColumn(source_item, source_parent)) {
             // This source item does not satisfy the filter, so it must be removed
             source_items_remove.append(source_item);
@@ -1112,7 +1172,7 @@ QSet<int> QSortFilterProxyModelPrivate::handle_filter_changed(
     for (int source_item = 0; source_item < source_count; ++source_item) {
         if (source_to_proxy.at(source_item) == -1) {
             if ((orient == Qt::Vertical)
-                ? q->filterAcceptsRow(source_item, source_parent)
+                ? filterAcceptsRowInternal(source_item, source_parent)
                 : q->filterAcceptsColumn(source_item, source_parent)) {
                 // This source item satisfies the filter, so it must be added
                 source_items_insert.append(source_item);
@@ -1131,6 +1191,33 @@ QSet<int> QSortFilterProxyModelPrivate::handle_filter_changed(
     return qVectorToSet(source_items_remove);
 }
 
+bool QSortFilterProxyModelPrivate::needsReorder(const QVector<int> &source_rows, const QModelIndex &source_parent) const
+{
+    Q_Q(const QSortFilterProxyModel);
+    Q_ASSERT(source_sort_column != -1);
+    const int proxyRowCount = q->rowCount(source_to_proxy(source_parent));
+    // If any modified proxy row no longer passes lessThan(previous, current) or lessThan(current, next) then we need to reorder.
+    return std::any_of(source_rows.begin(), source_rows.end(),
+            [this, q, proxyRowCount, source_parent](int sourceRow) -> bool {
+        const QModelIndex sourceIndex = model->index(sourceRow, source_sort_column, source_parent);
+        const QModelIndex proxyIndex = source_to_proxy(sourceIndex);
+        Q_ASSERT(proxyIndex.isValid()); // caller ensured source_rows were not filtered out
+        if (proxyIndex.row() > 0) {
+            const QModelIndex prevProxyIndex = q->sibling(proxyIndex.row() - 1, proxy_sort_column, proxyIndex);
+            const QModelIndex prevSourceIndex = proxy_to_source(prevProxyIndex);
+            if (sort_order == Qt::AscendingOrder ? q->lessThan(sourceIndex, prevSourceIndex) : q->lessThan(prevSourceIndex, sourceIndex))
+                return true;
+        }
+        if (proxyIndex.row() < proxyRowCount - 1) {
+            const QModelIndex nextProxyIndex = q->sibling(proxyIndex.row() + 1, proxy_sort_column, proxyIndex);
+            const QModelIndex nextSourceIndex = proxy_to_source(nextProxyIndex);
+            if (sort_order == Qt::AscendingOrder ? q->lessThan(nextSourceIndex, sourceIndex) : q->lessThan(sourceIndex, nextSourceIndex))
+                return true;
+        }
+        return false;
+    });
+}
+
 void QSortFilterProxyModelPrivate::_q_sourceDataChanged(const QModelIndex &source_top_left,
                                                         const QModelIndex &source_bottom_right,
                                                         const QVector<int> &roles)
@@ -1138,106 +1225,127 @@ void QSortFilterProxyModelPrivate::_q_sourceDataChanged(const QModelIndex &sourc
     Q_Q(QSortFilterProxyModel);
     if (!source_top_left.isValid() || !source_bottom_right.isValid())
         return;
-    QModelIndex source_parent = source_top_left.parent();
-    IndexMap::const_iterator it = source_index_mapping.constFind(source_parent);
-    if (it == source_index_mapping.constEnd()) {
-        // Don't care, since we don't have mapping for this index
-        return;
-    }
-    Mapping *m = it.value();
 
-    // Figure out how the source changes affect us
-    QVector<int> source_rows_remove;
-    QVector<int> source_rows_insert;
-    QVector<int> source_rows_change;
-    QVector<int> source_rows_resort;
-    int end = qMin(source_bottom_right.row(), m->proxy_rows.count() - 1);
-    for (int source_row = source_top_left.row(); source_row <= end; ++source_row) {
-        if (dynamic_sortfilter) {
-            if (m->proxy_rows.at(source_row) != -1) {
-                if (!q->filterAcceptsRow(source_row, source_parent)) {
-                    // This source row no longer satisfies the filter, so it must be removed
-                    source_rows_remove.append(source_row);
-                } else if (source_sort_column >= source_top_left.column() && source_sort_column <= source_bottom_right.column()) {
-                    // This source row has changed in a way that may affect sorted order
-                    source_rows_resort.append(source_row);
+    std::vector<QSortFilterProxyModelDataChanged> data_changed_list;
+    data_changed_list.emplace_back(source_top_left, source_bottom_right);
+
+    // Do check parents if the filter role have changed and we are recursive
+    if (filter_recursive && (roles.isEmpty() || roles.contains(filter_role))) {
+        QModelIndex source_parent = source_top_left.parent();
+
+        while (source_parent.isValid()) {
+            data_changed_list.emplace_back(source_parent, source_parent);
+            source_parent = source_parent.parent();
+        }
+    }
+
+    for (const QSortFilterProxyModelDataChanged &data_changed : data_changed_list) {
+        const QModelIndex &source_top_left = data_changed.topLeft;
+        const QModelIndex &source_bottom_right = data_changed.bottomRight;
+        const QModelIndex source_parent = source_top_left.parent();
+
+        IndexMap::const_iterator it = source_index_mapping.constFind(source_parent);
+        if (it == source_index_mapping.constEnd()) {
+            // Don't care, since we don't have mapping for this index
+            continue;
+        }
+        Mapping *m = it.value();
+
+        // Figure out how the source changes affect us
+        QVector<int> source_rows_remove;
+        QVector<int> source_rows_insert;
+        QVector<int> source_rows_change;
+        QVector<int> source_rows_resort;
+        int end = qMin(source_bottom_right.row(), m->proxy_rows.count() - 1);
+        for (int source_row = source_top_left.row(); source_row <= end; ++source_row) {
+            if (dynamic_sortfilter) {
+                if (m->proxy_rows.at(source_row) != -1) {
+                    if (!filterAcceptsRowInternal(source_row, source_parent)) {
+                        // This source row no longer satisfies the filter, so it must be removed
+                        source_rows_remove.append(source_row);
+                    } else if (source_sort_column >= source_top_left.column() && source_sort_column <= source_bottom_right.column()) {
+                        // This source row has changed in a way that may affect sorted order
+                        source_rows_resort.append(source_row);
+                    } else {
+                        // This row has simply changed, without affecting filtering nor sorting
+                        source_rows_change.append(source_row);
+                    }
                 } else {
-                    // This row has simply changed, without affecting filtering nor sorting
-                    source_rows_change.append(source_row);
+                    if (!itemsBeingRemoved.contains(source_parent, source_row) && filterAcceptsRowInternal(source_row, source_parent)) {
+                        // This source row now satisfies the filter, so it must be added
+                        source_rows_insert.append(source_row);
+                    }
                 }
             } else {
-                if (!itemsBeingRemoved.contains(source_parent, source_row) && q->filterAcceptsRow(source_row, source_parent)) {
-                    // This source row now satisfies the filter, so it must be added
-                    source_rows_insert.append(source_row);
+                if (m->proxy_rows.at(source_row) != -1)
+                    source_rows_change.append(source_row);
+            }
+        }
+
+        if (!source_rows_remove.isEmpty()) {
+            remove_source_items(m->proxy_rows, m->source_rows,
+                                source_rows_remove, source_parent, Qt::Vertical);
+            QSet<int> source_rows_remove_set = qVectorToSet(source_rows_remove);
+            QVector<QModelIndex>::iterator childIt = m->mapped_children.end();
+            while (childIt != m->mapped_children.begin()) {
+                --childIt;
+                const QModelIndex source_child_index = *childIt;
+                if (source_rows_remove_set.contains(source_child_index.row())) {
+                    childIt = m->mapped_children.erase(childIt);
+                    remove_from_mapping(source_child_index);
                 }
             }
-        } else {
-            if (m->proxy_rows.at(source_row) != -1)
-                source_rows_change.append(source_row);
         }
-    }
 
-    if (!source_rows_remove.isEmpty()) {
-        remove_source_items(m->proxy_rows, m->source_rows,
-                            source_rows_remove, source_parent, Qt::Vertical);
-        QSet<int> source_rows_remove_set = qVectorToSet(source_rows_remove);
-        QVector<QModelIndex>::iterator childIt = m->mapped_children.end();
-        while (childIt != m->mapped_children.begin()) {
-            --childIt;
-            const QModelIndex source_child_index = *childIt;
-            if (source_rows_remove_set.contains(source_child_index.row())) {
-                childIt = m->mapped_children.erase(childIt);
-                remove_from_mapping(source_child_index);
+        if (!source_rows_resort.isEmpty()) {
+            if (needsReorder(source_rows_resort, source_parent)) {
+                // Re-sort the rows of this level
+                QList<QPersistentModelIndex> parents;
+                parents << q->mapFromSource(source_parent);
+                emit q->layoutAboutToBeChanged(parents, QAbstractItemModel::VerticalSortHint);
+                QModelIndexPairList source_indexes = store_persistent_indexes();
+                remove_source_items(m->proxy_rows, m->source_rows, source_rows_resort,
+                        source_parent, Qt::Vertical, false);
+                sort_source_rows(source_rows_resort, source_parent);
+                insert_source_items(m->proxy_rows, m->source_rows, source_rows_resort,
+                        source_parent, Qt::Vertical, false);
+                update_persistent_indexes(source_indexes);
+                emit q->layoutChanged(parents, QAbstractItemModel::VerticalSortHint);
+            }
+            // Make sure we also emit dataChanged for the rows
+            source_rows_change += source_rows_resort;
+        }
+
+        if (!source_rows_change.isEmpty()) {
+            // Find the proxy row range
+            int proxy_start_row;
+            int proxy_end_row;
+            proxy_item_range(m->proxy_rows, source_rows_change,
+                             proxy_start_row, proxy_end_row);
+            // ### Find the proxy column range also
+            if (proxy_end_row >= 0) {
+                // the row was accepted, but some columns might still be filtered out
+                int source_left_column = source_top_left.column();
+                while (source_left_column < source_bottom_right.column()
+                       && m->proxy_columns.at(source_left_column) == -1)
+                    ++source_left_column;
+                const QModelIndex proxy_top_left = create_index(
+                    proxy_start_row, m->proxy_columns.at(source_left_column), it);
+                int source_right_column = source_bottom_right.column();
+                while (source_right_column > source_top_left.column()
+                       && m->proxy_columns.at(source_right_column) == -1)
+                    --source_right_column;
+                const QModelIndex proxy_bottom_right = create_index(
+                    proxy_end_row, m->proxy_columns.at(source_right_column), it);
+                emit q->dataChanged(proxy_top_left, proxy_bottom_right, roles);
             }
         }
-    }
 
-    if (!source_rows_resort.isEmpty()) {
-        // Re-sort the rows of this level
-        QList<QPersistentModelIndex> parents;
-        parents << q->mapFromSource(source_parent);
-        emit q->layoutAboutToBeChanged(parents, QAbstractItemModel::VerticalSortHint);
-        QModelIndexPairList source_indexes = store_persistent_indexes();
-        remove_source_items(m->proxy_rows, m->source_rows, source_rows_resort,
-                            source_parent, Qt::Vertical, false);
-        sort_source_rows(source_rows_resort, source_parent);
-        insert_source_items(m->proxy_rows, m->source_rows, source_rows_resort,
-                            source_parent, Qt::Vertical, false);
-        update_persistent_indexes(source_indexes);
-        emit q->layoutChanged(parents, QAbstractItemModel::VerticalSortHint);
-        // Make sure we also emit dataChanged for the rows
-        source_rows_change += source_rows_resort;
-    }
-
-    if (!source_rows_change.isEmpty()) {
-        // Find the proxy row range
-        int proxy_start_row;
-        int proxy_end_row;
-        proxy_item_range(m->proxy_rows, source_rows_change,
-                         proxy_start_row, proxy_end_row);
-        // ### Find the proxy column range also
-        if (proxy_end_row >= 0) {
-            // the row was accepted, but some columns might still be filtered out
-            int source_left_column = source_top_left.column();
-            while (source_left_column < source_bottom_right.column()
-                   && m->proxy_columns.at(source_left_column) == -1)
-                ++source_left_column;
-            const QModelIndex proxy_top_left = create_index(
-                proxy_start_row, m->proxy_columns.at(source_left_column), it);
-            int source_right_column = source_bottom_right.column();
-            while (source_right_column > source_top_left.column()
-                   && m->proxy_columns.at(source_right_column) == -1)
-                --source_right_column;
-            const QModelIndex proxy_bottom_right = create_index(
-                proxy_end_row, m->proxy_columns.at(source_right_column), it);
-            emit q->dataChanged(proxy_top_left, proxy_bottom_right, roles);
+        if (!source_rows_insert.isEmpty()) {
+            sort_source_rows(source_rows_insert, source_parent);
+            insert_source_items(m->proxy_rows, m->source_rows,
+                                source_rows_insert, source_parent, Qt::Vertical);
         }
-    }
-
-    if (!source_rows_insert.isEmpty()) {
-        sort_source_rows(source_rows_insert, source_parent);
-        insert_source_items(m->proxy_rows, m->source_rows,
-                            source_rows_insert, source_parent, Qt::Vertical);
     }
 }
 
@@ -1297,32 +1405,33 @@ void QSortFilterProxyModelPrivate::_q_sourceReset()
     // All internal structures are deleted in clear()
     q->endResetModel();
     update_source_sort_column();
-    if (dynamic_sortfilter)
+    if (dynamic_sortfilter && update_source_sort_column())
         sort();
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceLayoutAboutToBeChanged(const QList<QPersistentModelIndex> &sourceParents, QAbstractItemModel::LayoutChangeHint hint)
 {
     Q_Q(QSortFilterProxyModel);
+    Q_UNUSED(hint); // We can't forward Hint because we might filter additional rows or columns
     saved_persistent_indexes.clear();
 
-    QList<QPersistentModelIndex> parents;
-    foreach (const QPersistentModelIndex &parent, sourceParents) {
+    saved_layoutChange_parents.clear();
+    for (const QPersistentModelIndex &parent : sourceParents) {
         if (!parent.isValid()) {
-            parents << QPersistentModelIndex();
+            saved_layoutChange_parents << QPersistentModelIndex();
             continue;
         }
         const QModelIndex mappedParent = q->mapFromSource(parent);
         // Might be filtered out.
         if (mappedParent.isValid())
-            parents << mappedParent;
+            saved_layoutChange_parents << mappedParent;
     }
 
     // All parents filtered out.
-    if (!sourceParents.isEmpty() && parents.isEmpty())
+    if (!sourceParents.isEmpty() && saved_layoutChange_parents.isEmpty())
         return;
 
-    emit q->layoutAboutToBeChanged(parents, hint);
+    emit q->layoutAboutToBeChanged(saved_layoutChange_parents);
     if (persistent.indexes.isEmpty())
         return;
 
@@ -1332,6 +1441,10 @@ void QSortFilterProxyModelPrivate::_q_sourceLayoutAboutToBeChanged(const QList<Q
 void QSortFilterProxyModelPrivate::_q_sourceLayoutChanged(const QList<QPersistentModelIndex> &sourceParents, QAbstractItemModel::LayoutChangeHint hint)
 {
     Q_Q(QSortFilterProxyModel);
+    Q_UNUSED(hint); // We can't forward Hint because we might filter additional rows or columns
+
+    if (!sourceParents.isEmpty() && saved_layoutChange_parents.isEmpty())
+        return;
 
     // Optimize: We only actually have to clear the mapping related to the contents of
     // sourceParents, not everything.
@@ -1347,21 +1460,8 @@ void QSortFilterProxyModelPrivate::_q_sourceLayoutChanged(const QList<QPersisten
         source_index_mapping.clear();
     }
 
-    QList<QPersistentModelIndex> parents;
-    foreach (const QPersistentModelIndex &parent, sourceParents) {
-        if (!parent.isValid()) {
-            parents << QPersistentModelIndex();
-            continue;
-        }
-        const QModelIndex mappedParent = q->mapFromSource(parent);
-        if (mappedParent.isValid())
-            parents << mappedParent;
-    }
-
-    if (!sourceParents.isEmpty() && parents.isEmpty())
-        return;
-
-    emit q->layoutChanged(parents, hint);
+    emit q->layoutChanged(saved_layoutChange_parents);
+    saved_layoutChange_parents.clear();
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceRowsAboutToBeInserted(
@@ -1369,18 +1469,60 @@ void QSortFilterProxyModelPrivate::_q_sourceRowsAboutToBeInserted(
 {
     Q_UNUSED(start);
     Q_UNUSED(end);
+
+    const bool toplevel = !source_parent.isValid();
+    const bool recursive_accepted = filter_recursive && !toplevel && filterAcceptsRowInternal(source_parent.row(), source_parent.parent());
     //Force the creation of a mapping now, even if its empty.
     //We need it because the proxy can be acessed at the moment it emits rowsAboutToBeInserted in insert_source_items
-    if (can_create_mapping(source_parent))
-        create_mapping(source_parent);
+    if (!filter_recursive || toplevel || recursive_accepted) {
+        if (can_create_mapping(source_parent))
+            create_mapping(source_parent);
+        if (filter_recursive)
+            complete_insert = true;
+    } else {
+        // The row could have been rejected or the parent might be not yet known... let's try to discover it
+        QModelIndex top_source_parent = source_parent;
+        QModelIndex parent = source_parent.parent();
+        QModelIndex grandParent = parent.parent();
+
+        while (parent.isValid() && !filterAcceptsRowInternal(parent.row(), grandParent)) {
+            top_source_parent = parent;
+            parent = grandParent;
+            grandParent = parent.parent();
+        }
+
+        last_top_source = top_source_parent;
+    }
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceRowsInserted(
     const QModelIndex &source_parent, int start, int end)
 {
-    source_items_inserted(source_parent, start, end, Qt::Vertical);
-    if (update_source_sort_column() && dynamic_sortfilter) //previous call to update_source_sort_column may fail if the model has no column.
-        sort();                      // now it should succeed so we need to make sure to sort again
+    if (!filter_recursive || complete_insert) {
+        if (filter_recursive)
+            complete_insert = false;
+        source_items_inserted(source_parent, start, end, Qt::Vertical);
+        if (update_source_sort_column() && dynamic_sortfilter) //previous call to update_source_sort_column may fail if the model has no column.
+            sort();                      // now it should succeed so we need to make sure to sort again
+        return;
+    }
+
+    if (filter_recursive) {
+        bool accept = false;
+
+        for (int row = start; row <= end; ++row) {
+            if (filterAcceptsRowInternal(row, source_parent)) {
+                accept = true;
+                break;
+            }
+        }
+
+        if (!accept) // the new rows have no descendants that match the filter, filter them out.
+            return;
+
+        // last_top_source should now become visible
+        _q_sourceDataChanged(last_top_source, last_top_source, QVector<int>());
+    }
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceRowsAboutToBeRemoved(
@@ -1396,54 +1538,53 @@ void QSortFilterProxyModelPrivate::_q_sourceRowsRemoved(
 {
     itemsBeingRemoved = QRowsRemoval();
     source_items_removed(source_parent, start, end, Qt::Vertical);
+
+    if (filter_recursive) {
+        // Find out if removing this visible row means that some ascendant
+        // row can now be hidden.
+        // We go up until we find a row that should still be visible
+        // and then make QSFPM re-evaluate the last one we saw before that, to hide it.
+
+        QModelIndex to_hide;
+        QModelIndex source_ascendant = source_parent;
+
+        while (source_ascendant.isValid()) {
+            if (filterAcceptsRowInternal(source_ascendant.row(), source_ascendant.parent()))
+                break;
+
+            to_hide = source_ascendant;
+            source_ascendant = source_ascendant.parent();
+        }
+
+        if (to_hide.isValid())
+            _q_sourceDataChanged(to_hide, to_hide, QVector<int>());
+    }
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceRowsAboutToBeMoved(
     const QModelIndex &sourceParent, int /* sourceStart */, int /* sourceEnd */, const QModelIndex &destParent, int /* dest */)
 {
-    Q_Q(QSortFilterProxyModel);
     // Because rows which are contiguous in the source model might not be contiguous
     // in the proxy due to sorting, the best thing we can do here is be specific about what
     // parents are having their children changed.
     // Optimize: Emit move signals if the proxy is not sorted. Will need to account for rows
     // being filtered out though.
 
-    saved_persistent_indexes.clear();
-
     QList<QPersistentModelIndex> parents;
-    parents << q->mapFromSource(sourceParent);
+    parents << sourceParent;
     if (sourceParent != destParent)
-      parents << q->mapFromSource(destParent);
-    emit q->layoutAboutToBeChanged(parents);
-    if (persistent.indexes.isEmpty())
-        return;
-    saved_persistent_indexes = store_persistent_indexes();
+        parents << destParent;
+    _q_sourceLayoutAboutToBeChanged(parents, QAbstractItemModel::NoLayoutChangeHint);
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceRowsMoved(
     const QModelIndex &sourceParent, int /* sourceStart */, int /* sourceEnd */, const QModelIndex &destParent, int /* dest */)
 {
-    Q_Q(QSortFilterProxyModel);
-
-    // Optimize: We only need to clear and update the persistent indexes which are children of
-    // sourceParent or destParent
-    qDeleteAll(source_index_mapping);
-    source_index_mapping.clear();
-
-    update_persistent_indexes(saved_persistent_indexes);
-    saved_persistent_indexes.clear();
-
-    if (dynamic_sortfilter && update_source_sort_column()) {
-        //update_source_sort_column might have created wrong mapping so we have to clear it again
-        qDeleteAll(source_index_mapping);
-        source_index_mapping.clear();
-    }
-
     QList<QPersistentModelIndex> parents;
-    parents << q->mapFromSource(sourceParent);
+    parents << sourceParent;
     if (sourceParent != destParent)
-      parents << q->mapFromSource(destParent);
-    emit q->layoutChanged(parents);
+        parents << destParent;
+    _q_sourceLayoutChanged(parents, QAbstractItemModel::NoLayoutChangeHint);
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceColumnsAboutToBeInserted(
@@ -1505,42 +1646,21 @@ void QSortFilterProxyModelPrivate::_q_sourceColumnsRemoved(
 void QSortFilterProxyModelPrivate::_q_sourceColumnsAboutToBeMoved(
     const QModelIndex &sourceParent, int /* sourceStart */, int /* sourceEnd */, const QModelIndex &destParent, int /* dest */)
 {
-    Q_Q(QSortFilterProxyModel);
-
-    saved_persistent_indexes.clear();
-
     QList<QPersistentModelIndex> parents;
-    parents << q->mapFromSource(sourceParent);
+    parents << sourceParent;
     if (sourceParent != destParent)
-      parents << q->mapFromSource(destParent);
-    emit q->layoutAboutToBeChanged(parents);
-
-    if (persistent.indexes.isEmpty())
-        return;
-    saved_persistent_indexes = store_persistent_indexes();
+        parents << destParent;
+    _q_sourceLayoutAboutToBeChanged(parents, QAbstractItemModel::NoLayoutChangeHint);
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceColumnsMoved(
     const QModelIndex &sourceParent, int /* sourceStart */, int /* sourceEnd */, const QModelIndex &destParent, int /* dest */)
 {
-    Q_Q(QSortFilterProxyModel);
-
-    qDeleteAll(source_index_mapping);
-    source_index_mapping.clear();
-
-    update_persistent_indexes(saved_persistent_indexes);
-    saved_persistent_indexes.clear();
-
-    if (dynamic_sortfilter && update_source_sort_column()) {
-        qDeleteAll(source_index_mapping);
-        source_index_mapping.clear();
-    }
-
     QList<QPersistentModelIndex> parents;
-    parents << q->mapFromSource(sourceParent);
+    parents << sourceParent;
     if (sourceParent != destParent)
-      parents << q->mapFromSource(destParent);
-    emit q->layoutChanged(parents);
+        parents << destParent;
+    _q_sourceLayoutChanged(parents, QAbstractItemModel::NoLayoutChangeHint);
 }
 
 /*!
@@ -1711,7 +1831,9 @@ QSortFilterProxyModel::QSortFilterProxyModel(QObject *parent)
     d->sort_localeaware = false;
     d->filter_column = 0;
     d->filter_role = Qt::DisplayRole;
+    d->filter_recursive = false;
     d->dynamic_sortfilter = true;
+    d->complete_insert = false;
     connect(this, SIGNAL(modelReset()), this, SLOT(_q_clearMapping()));
 }
 
@@ -1731,6 +1853,9 @@ QSortFilterProxyModel::~QSortFilterProxyModel()
 void QSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
 {
     Q_D(QSortFilterProxyModel);
+
+    if (sourceModel == d->model)
+        return;
 
     beginResetModel();
 
@@ -1785,6 +1910,7 @@ void QSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     disconnect(d->model, SIGNAL(modelAboutToBeReset()), this, SLOT(_q_sourceAboutToBeReset()));
     disconnect(d->model, SIGNAL(modelReset()), this, SLOT(_q_sourceReset()));
 
+    d->_q_sourceModelDestroyed();
     QAbstractProxyModel::setSourceModel(sourceModel);
 
     connect(d->model, SIGNAL(dataChanged(QModelIndex,QModelIndex,QVector<int>)),
@@ -1838,7 +1964,6 @@ void QSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     connect(d->model, SIGNAL(modelAboutToBeReset()), this, SLOT(_q_sourceAboutToBeReset()));
     connect(d->model, SIGNAL(modelReset()), this, SLOT(_q_sourceReset()));
 
-    d->_q_clearMapping();
     endResetModel();
     if (d->update_source_sort_column() && d->dynamic_sortfilter)
         d->sort();
@@ -2013,7 +2138,9 @@ QMimeData *QSortFilterProxyModel::mimeData(const QModelIndexList &indexes) const
 {
     Q_D(const QSortFilterProxyModel);
     QModelIndexList source_indexes;
-    for (int i = 0; i < indexes.count(); ++i)
+    const int numIndexes = indexes.count();
+    source_indexes.reserve(numIndexes);
+    for (int i = 0; i < numIndexes; ++i)
         source_indexes << mapToSource(indexes.at(i));
     return d->model->mimeData(source_indexes);
 }
@@ -2108,6 +2235,7 @@ bool QSortFilterProxyModel::removeRows(int row, int count, const QModelIndex &pa
     // remove corresponding source intervals
     // ### if this proves to be slow, we can switch to single-row removal
     QVector<int> rows;
+    rows.reserve(count);
     for (int i = row; i < row + count; ++i)
         rows.append(m->source_rows.at(i));
     std::sort(rows.begin(), rows.end());
@@ -2147,6 +2275,7 @@ bool QSortFilterProxyModel::removeColumns(int column, int count, const QModelInd
     }
     // remove corresponding source intervals
     QVector<int> columns;
+    columns.reserve(count);
     for (int i = column; i < column + count; ++i)
         columns.append(m->source_columns.at(i));
 
@@ -2298,6 +2427,7 @@ QRegExp QSortFilterProxyModel::filterRegExp() const
 void QSortFilterProxyModel::setFilterRegExp(const QRegExp &regExp)
 {
     Q_D(QSortFilterProxyModel);
+    d->filter_about_to_be_changed();
     d->filter_regexp = regExp;
     d->filter_changed();
 }
@@ -2319,6 +2449,7 @@ int QSortFilterProxyModel::filterKeyColumn() const
 void QSortFilterProxyModel::setFilterKeyColumn(int column)
 {
     Q_D(QSortFilterProxyModel);
+    d->filter_about_to_be_changed();
     d->filter_column = column;
     d->filter_changed();
 }
@@ -2344,6 +2475,7 @@ void QSortFilterProxyModel::setFilterCaseSensitivity(Qt::CaseSensitivity cs)
     Q_D(QSortFilterProxyModel);
     if (cs == d->filter_regexp.caseSensitivity())
         return;
+    d->filter_about_to_be_changed();
     d->filter_regexp.setCaseSensitivity(cs);
     d->filter_changed();
 }
@@ -2409,6 +2541,7 @@ void QSortFilterProxyModel::setSortLocaleAware(bool on)
 void QSortFilterProxyModel::setFilterRegExp(const QString &pattern)
 {
     Q_D(QSortFilterProxyModel);
+    d->filter_about_to_be_changed();
     d->filter_regexp.setPatternSyntax(QRegExp::RegExp);
     d->filter_regexp.setPattern(pattern);
     d->filter_changed();
@@ -2423,6 +2556,7 @@ void QSortFilterProxyModel::setFilterRegExp(const QString &pattern)
 void QSortFilterProxyModel::setFilterWildcard(const QString &pattern)
 {
     Q_D(QSortFilterProxyModel);
+    d->filter_about_to_be_changed();
     d->filter_regexp.setPatternSyntax(QRegExp::Wildcard);
     d->filter_regexp.setPattern(pattern);
     d->filter_changed();
@@ -2437,6 +2571,7 @@ void QSortFilterProxyModel::setFilterWildcard(const QString &pattern)
 void QSortFilterProxyModel::setFilterFixedString(const QString &pattern)
 {
     Q_D(QSortFilterProxyModel);
+    d->filter_about_to_be_changed();
     d->filter_regexp.setPatternSyntax(QRegExp::FixedString);
     d->filter_regexp.setPattern(pattern);
     d->filter_changed();
@@ -2516,10 +2651,38 @@ void QSortFilterProxyModel::setFilterRole(int role)
     Q_D(QSortFilterProxyModel);
     if (d->filter_role == role)
         return;
+    d->filter_about_to_be_changed();
     d->filter_role = role;
     d->filter_changed();
 }
 
+/*!
+    \since 5.10
+    \property QSortFilterProxyModel::recursiveFilteringEnabled
+    \brief whether the filter to be applied recursively on children, and for
+    any matching child, its parents will be visible as well.
+
+    The default value is false.
+
+    \sa filterAcceptsRow()
+*/
+bool QSortFilterProxyModel::isRecursiveFilteringEnabled() const
+{
+    Q_D(const QSortFilterProxyModel);
+    return d->filter_recursive;
+}
+
+void QSortFilterProxyModel::setRecursiveFilteringEnabled(bool recursive)
+{
+    Q_D(QSortFilterProxyModel);
+    if (d->filter_recursive == recursive)
+        return;
+    d->filter_about_to_be_changed();
+    d->filter_recursive = recursive;
+    d->filter_changed();
+}
+
+#if QT_DEPRECATED_SINCE(5, 11)
 /*!
     \obsolete
 
@@ -2527,12 +2690,9 @@ void QSortFilterProxyModel::setFilterRole(int role)
 */
 void QSortFilterProxyModel::clear()
 {
-    Q_D(QSortFilterProxyModel);
-    emit layoutAboutToBeChanged();
-    d->_q_clearMapping();
-    emit layoutChanged();
+    invalidate();
 }
-
+#endif
 /*!
    \since 4.3
 
@@ -2548,6 +2708,7 @@ void QSortFilterProxyModel::invalidate()
     emit layoutChanged();
 }
 
+#if QT_DEPRECATED_SINCE(5, 11)
 /*!
    \obsolete
 
@@ -2555,9 +2716,9 @@ void QSortFilterProxyModel::invalidate()
 */
 void QSortFilterProxyModel::filterChanged()
 {
-    Q_D(QSortFilterProxyModel);
-    d->filter_changed();
+    invalidateFilter();
 }
+#endif
 
 /*!
    \since 4.3
@@ -2617,40 +2778,7 @@ bool QSortFilterProxyModel::lessThan(const QModelIndex &source_left, const QMode
     Q_D(const QSortFilterProxyModel);
     QVariant l = (source_left.model() ? source_left.model()->data(source_left, d->sort_role) : QVariant());
     QVariant r = (source_right.model() ? source_right.model()->data(source_right, d->sort_role) : QVariant());
-    // Duplicated in QStandardItem::operator<()
-    if (l.userType() == QVariant::Invalid)
-        return false;
-    if (r.userType() == QVariant::Invalid)
-        return true;
-    switch (l.userType()) {
-    case QVariant::Int:
-        return l.toInt() < r.toInt();
-    case QVariant::UInt:
-        return l.toUInt() < r.toUInt();
-    case QVariant::LongLong:
-        return l.toLongLong() < r.toLongLong();
-    case QVariant::ULongLong:
-        return l.toULongLong() < r.toULongLong();
-    case QMetaType::Float:
-        return l.toFloat() < r.toFloat();
-    case QVariant::Double:
-        return l.toDouble() < r.toDouble();
-    case QVariant::Char:
-        return l.toChar() < r.toChar();
-    case QVariant::Date:
-        return l.toDate() < r.toDate();
-    case QVariant::Time:
-        return l.toTime() < r.toTime();
-    case QVariant::DateTime:
-        return l.toDateTime() < r.toDateTime();
-    case QVariant::String:
-    default:
-        if (d->sort_localeaware)
-            return l.toString().localeAwareCompare(r.toString()) < 0;
-        else
-            return l.toString().compare(r.toString(), d->sort_casesensitivity) < 0;
-    }
-    return false;
+    return QAbstractItemModelPrivate::isVariantLessThan(l, r, d->sort_casesensitivity, d->sort_localeaware);
 }
 
 /*!
@@ -2752,5 +2880,3 @@ QItemSelection QSortFilterProxyModel::mapSelectionFromSource(const QItemSelectio
 QT_END_NAMESPACE
 
 #include "moc_qsortfilterproxymodel.cpp"
-
-#endif // QT_NO_SORTFILTERPROXYMODEL

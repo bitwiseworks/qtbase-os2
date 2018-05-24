@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,13 +42,12 @@
 
 class Widget : public QWidget
 {
+    Q_OBJECT
 public:
-    Widget() { }
-
     QList<QEvent::Type> events;
 
 protected:
-    bool event(QEvent *ev) {
+    bool event(QEvent *ev) override {
         events.append(ev->type());
         return QWidget::event(ev);
     }
@@ -62,19 +56,14 @@ protected:
 
 class tst_QLabel : public QObject
 {
-Q_OBJECT
+    Q_OBJECT
 
-public:
-    tst_QLabel();
-    virtual ~tst_QLabel();
-
-
-public slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
     void cleanup();
-private slots:
+
     void getSetCheck();
     void setText_data();
     void setText();
@@ -107,11 +96,13 @@ private slots:
     void taskQTBUG_7902_contextMenuCrash();
 #endif
 
+    void taskQTBUG_48157_dprPixmap();
+    void taskQTBUG_48157_dprMovie();
+
 private:
     QLabel *testWidget;
     QPointer<Widget> test_box;
     QPointer<QLabel> test_label;
-    QLineEdit *test_edit;
 };
 
 // Testing get/set functions
@@ -144,15 +135,6 @@ void tst_QLabel::getSetCheck()
     delete var3;
 }
 
-
-tst_QLabel::tst_QLabel(): test_box(0)
-{
-}
-
-tst_QLabel::~tst_QLabel()
-{
-}
-
 void tst_QLabel::initTestCase()
 {
     // Create the test class
@@ -165,8 +147,7 @@ void tst_QLabel::cleanupTestCase()
 {
     delete testWidget;
     testWidget = 0;
-    if (test_box)
-        delete test_box;
+    delete test_box;
 }
 
 void tst_QLabel::init()
@@ -196,10 +177,12 @@ void tst_QLabel::setBuddy()
     test_box = new Widget;
     test_label= new QLabel( test_box );
     test_label->setText( "&Test with a buddy" );
-    test_edit = new QLineEdit( test_box );
+    QWidget *test_edit = new QLineEdit( test_box );
+    QWidget *test_edit2 = new QLineEdit( test_box );
     QVBoxLayout *layout = new QVBoxLayout(test_box);
     layout->addWidget(test_label);
     layout->addWidget(test_edit);
+    layout->addWidget(test_edit2);
     test_box->show();
     qApp->setActiveWindow(test_box);
     QVERIFY(test_box->isActiveWindow());
@@ -209,6 +192,16 @@ void tst_QLabel::setBuddy()
     QVERIFY( !test_edit->hasFocus() );
     QTest::keyClick( test_box, 't', Qt::AltModifier );
     QVERIFY( test_edit->hasFocus() );
+
+    // Setting a new buddy should disconnect the old one's destroyed() signal
+    test_label->setBuddy(test_edit2);
+    delete test_edit;
+    QCOMPARE(test_label->buddy(), test_edit2);
+
+    // And deleting our own buddy should disconnect and not crash
+    delete test_edit2;
+    QTest::keyClick(test_box, 't', Qt::AltModifier );
+
     delete test_box;
 }
 #endif
@@ -322,7 +315,7 @@ void tst_QLabel::eventPropagation()
     test_label->setText(text);
     test_box->events.clear();
     test_label->setTextInteractionFlags(Qt::TextInteractionFlags(textInteractionFlags));
-    QVERIFY(int(test_label->focusPolicy()) == focusPolicy);
+    QCOMPARE(int(test_label->focusPolicy()), focusPolicy);
     QTest::mousePress(test_label, Qt::LeftButton);
     QVERIFY(test_box->events.contains(QEvent::MouseButtonPress) == propagation); // should have propagated!
 }
@@ -562,6 +555,27 @@ void tst_QLabel::taskQTBUG_7902_contextMenuCrash()
     // No crash, it's allright.
 }
 #endif
+
+void tst_QLabel::taskQTBUG_48157_dprPixmap()
+{
+    QLabel label;
+    QPixmap pixmap;
+    pixmap.load(QFINDTESTDATA(QStringLiteral("red@2x.png")));
+    QCOMPARE(pixmap.devicePixelRatio(), 2.0);
+    label.setPixmap(pixmap);
+    QCOMPARE(label.sizeHint(), pixmap.rect().size() / pixmap.devicePixelRatio());
+}
+
+void tst_QLabel::taskQTBUG_48157_dprMovie()
+{
+    QLabel label;
+    QMovie movie;
+    movie.setFileName(QFINDTESTDATA(QStringLiteral("red@2x.png")));
+    movie.start();
+    QCOMPARE(movie.currentPixmap().devicePixelRatio(), 2.0);
+    label.setMovie(&movie);
+    QCOMPARE(label.sizeHint(), movie.currentPixmap().size() / movie.currentPixmap().devicePixelRatio());
+}
 
 QTEST_MAIN(tst_QLabel)
 #include "tst_qlabel.moc"

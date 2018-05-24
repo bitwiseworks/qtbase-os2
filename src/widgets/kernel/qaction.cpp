@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,13 +45,16 @@
 #include "qapplication.h"
 #include "qevent.h"
 #include "qlist.h"
-#include "qdebug.h"
+#include "qstylehints.h"
 #include <private/qshortcutmap_p.h>
 #include <private/qapplication_p.h>
+#if QT_CONFIG(menu)
 #include <private/qmenu_p.h>
+#endif
+#include <private/qdebug_p.h>
 
 #define QAPP_CHECK(functionName) \
-    if (!qApp) { \
+    if (Q_UNLIKELY(!qApp)) { \
         qWarning("QAction: Initialize QApplication before calling '" functionName "'."); \
         return; \
     }
@@ -57,7 +66,7 @@ QT_BEGIN_NAMESPACE
  */
 static QString qt_strippedText(QString s)
 {
-    s.remove( QString::fromLatin1("...") );
+    s.remove(QLatin1String("..."));
     for (int i = 0; i < s.size(); ++i) {
         if (s.at(i) == QLatin1Char('&'))
             s.remove(i, 1);
@@ -69,6 +78,7 @@ static QString qt_strippedText(QString s)
 QActionPrivate::QActionPrivate() : group(0), enabled(1), forceDisabled(0),
                                    visible(1), forceInvisible(0), checkable(0), checked(0), separator(0), fontSet(false),
                                    iconVisibleInMenu(-1),
+                                   shortcutVisibleInContextMenu(-1),
                                    menuRole(QAction::TextHeuristicRole),
                                    priority(QAction::NormalPriority)
 {
@@ -85,7 +95,7 @@ QActionPrivate::~QActionPrivate()
 
 bool QActionPrivate::showStatusText(QWidget *widget, const QString &str)
 {
-#ifdef QT_NO_STATUSTIP
+#if !QT_CONFIG(statustip)
     Q_UNUSED(widget);
     Q_UNUSED(str);
 #else
@@ -106,7 +116,7 @@ void QActionPrivate::sendDataChanged()
         QWidget *w = widgets.at(i);
         QApplication::sendEvent(w, &e);
     }
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
     for (int i = 0; i < graphicsWidgets.size(); ++i) {
         QGraphicsWidget *w = graphicsWidgets.at(i);
         QApplication::sendEvent(w, &e);
@@ -223,8 +233,9 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
 
     \snippet mainwindows/application/mainwindow.cpp 19
     \codeline
-    \snippet mainwindows/application/mainwindow.cpp 28
-    \snippet mainwindows/application/mainwindow.cpp 31
+    \code
+    fileMenu->addAction(openAct);
+    \endcode
 
     We recommend that actions are created as children of the window
     they are used in. In most cases actions will be children of
@@ -248,16 +259,16 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
 /*!
     \enum QAction::MenuRole
 
-    This enum describes how an action should be moved into the application menu on OS X.
+    This enum describes how an action should be moved into the application menu on \macos.
 
     \value NoRole This action should not be put into the application menu
     \value TextHeuristicRole This action should be put in the application menu based on the action's text
            as described in the QMenuBar documentation.
     \value ApplicationSpecificRole This action should be put in the application menu with an application specific role
-    \value AboutQtRole This action matches handles the "About Qt" menu item.
+    \value AboutQtRole This action handles the "About Qt" menu item.
     \value AboutRole This action should be placed where the "About" menu item is in the application menu. The text of
            the menu item will be set to "About <application name>". The application name is fetched from the
-           \c{Info.plist} file in the application's bundle (See \l{Qt for OS X - Deployment}).
+           \c{Info.plist} file in the application's bundle (See \l{Qt for macOS - Deployment}).
     \value PreferencesRole This action should be placed where the  "Preferences..." menu item is in the application menu.
     \value QuitRole This action should be placed where the Quit menu item is in the application menu.
 
@@ -270,14 +281,12 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
 /*!
     Constructs an action with \a parent. If \a parent is an action
     group the action will be automatically inserted into the group.
+
+    \note The \a parent argument is optional since Qt 5.7.
 */
 QAction::QAction(QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(*new QActionPrivate, parent)
 {
-    Q_D(QAction);
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 
@@ -295,13 +304,10 @@ QAction::QAction(QObject* parent)
 
 */
 QAction::QAction(const QString &text, QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(parent)
 {
     Q_D(QAction);
     d->text = text;
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 /*!
@@ -317,14 +323,10 @@ QAction::QAction(const QString &text, QObject* parent)
     setToolTip().
 */
 QAction::QAction(const QIcon &icon, const QString &text, QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(text, parent)
 {
     Q_D(QAction);
     d->icon = icon;
-    d->text = text;
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 /*!
@@ -362,7 +364,7 @@ QList<QWidget *> QAction::associatedWidgets() const
     return d->widgets;
 }
 
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
 /*!
   \since 4.5
   Returns a list of widgets this action has been added to.
@@ -567,7 +569,7 @@ QAction::~QAction()
         QWidget *w = d->widgets.at(i);
         w->removeAction(this);
     }
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
     for (int i = d->graphicsWidgets.size()-1; i >= 0; --i) {
         QGraphicsWidget *w = d->graphicsWidgets.at(i);
         w->removeAction(this);
@@ -605,6 +607,7 @@ void QAction::setActionGroup(QActionGroup *group)
     d->group = group;
     if(group)
         group->addAction(this);
+    d->sendDataChanged();
 }
 
 /*!
@@ -628,7 +631,7 @@ QActionGroup *QAction::actionGroup() const
     it is displayed to the left of the menu text. There is no default
     icon.
 
-    If a null icon (QIcon::isNull() is passed into this function,
+    If a null icon (QIcon::isNull()) is passed into this function,
     the icon of the action is cleared.
 */
 void QAction::setIcon(const QIcon &icon)
@@ -644,7 +647,7 @@ QIcon QAction::icon() const
     return d->icon;
 }
 
-#ifndef QT_NO_MENU
+#if QT_CONFIG(menu)
 /*!
   Returns the menu contained by this action. Actions that contain
   menus can be used to create menu items with submenus, or inserted
@@ -671,7 +674,7 @@ void QAction::setMenu(QMenu *menu)
         menu->d_func()->setOverrideMenuAction(this);
     d->sendDataChanged();
 }
-#endif // QT_NO_MENU
+#endif // QT_CONFIG(menu)
 
 /*!
   If \a b is true then this action will be considered a separator.
@@ -1085,7 +1088,7 @@ QAction::event(QEvent *e)
                    "QAction::event",
                    "Received shortcut event from incorrect shortcut");
         if (se->isAmbiguous())
-            qWarning("QAction::eventFilter: Ambiguous shortcut overload: %s", se->key().toString(QKeySequence::NativeText).toLatin1().constData());
+            qWarning("QAction::event: Ambiguous shortcut overload: %s", se->key().toString(QKeySequence::NativeText).toLatin1().constData());
         else
             activate(Trigger);
         return true;
@@ -1117,6 +1120,8 @@ void
 QAction::setData(const QVariant &data)
 {
     Q_D(QAction);
+    if (d->userData == data)
+        return;
     d->userData = data;
     d->sendDataChanged();
 }
@@ -1229,12 +1234,12 @@ void QAction::activate(ActionEvent event)
     \brief the action's menu role
     \since 4.2
 
-    This indicates what role the action serves in the application menu on Mac
-    OS X. By default all action have the TextHeuristicRole, which means that
+    This indicates what role the action serves in the application menu on
+    \macos. By default all actions have the TextHeuristicRole, which means that
     the action is added based on its text (see QMenuBar for more information).
 
     The menu role can only be changed before the actions are put into the menu
-    bar in OS X (usually just before the first application window is
+    bar in \macos (usually just before the first application window is
     shown).
 */
 void QAction::setMenuRole(MenuRole menuRole)
@@ -1269,7 +1274,7 @@ QAction::MenuRole QAction::menuRole() const
     For example:
     \snippet code/src_gui_kernel_qaction.cpp 0
 
-    \sa QAction::icon, QApplication::setAttribute()
+    \sa QAction::icon, QCoreApplication::setAttribute()
 */
 void QAction::setIconVisibleInMenu(bool visible)
 {
@@ -1279,8 +1284,7 @@ void QAction::setIconVisibleInMenu(bool visible)
         d->iconVisibleInMenu = visible;
         // Only send data changed if we really need to.
         if (oldValue != -1
-            || (oldValue == -1
-                && visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowIconsInMenus))) {
+            || visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowIconsInMenus)) {
             d->sendDataChanged();
         }
     }
@@ -1294,6 +1298,72 @@ bool QAction::isIconVisibleInMenu() const
     }
     return d->iconVisibleInMenu;
 }
+
+/*!
+    \property QAction::shortcutVisibleInContextMenu
+    \brief Whether or not an action should show a shortcut in a context menu
+    \since 5.10
+
+    In some applications, it may make sense to have actions with shortcuts in
+    context menus. If true, the shortcut (if valid) is shown when the action is
+    shown via a context menu, when it is false, it is not shown.
+
+    The default is to follow whether the Qt::AA_DontShowShortcutsInContextMenus attribute
+    is set for the application, falling back to the widget style hint.
+    Explicitly setting this property overrides the presence (or abscence) of the attribute.
+
+    \sa QAction::shortcut, QCoreApplication::setAttribute()
+*/
+void QAction::setShortcutVisibleInContextMenu(bool visible)
+{
+    Q_D(QAction);
+    if (d->shortcutVisibleInContextMenu == -1 || visible != bool(d->shortcutVisibleInContextMenu)) {
+        int oldValue = d->shortcutVisibleInContextMenu;
+        d->shortcutVisibleInContextMenu = visible;
+        // Only send data changed if we really need to.
+        if (oldValue != -1
+            || visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowShortcutsInContextMenus)) {
+            d->sendDataChanged();
+        }
+    }
+}
+
+bool QAction::isShortcutVisibleInContextMenu() const
+{
+    Q_D(const QAction);
+    if (d->shortcutVisibleInContextMenu == -1) {
+        return !QCoreApplication::testAttribute(Qt::AA_DontShowShortcutsInContextMenus)
+            && QGuiApplication::styleHints()->showShortcutsInContextMenus();
+    }
+    return d->shortcutVisibleInContextMenu;
+}
+
+#ifndef QT_NO_DEBUG_STREAM
+Q_WIDGETS_EXPORT QDebug operator<<(QDebug d, const QAction *action)
+{
+    QDebugStateSaver saver(d);
+    d.nospace();
+    d << "QAction(" << static_cast<const void *>(action);
+    if (action) {
+        d << " text=" << action->text();
+        if (!action->toolTip().isEmpty())
+            d << " toolTip=" << action->toolTip();
+        if (action->isCheckable())
+            d << " checked=" << action->isChecked();
+#ifndef QT_NO_SHORTCUT
+        if (!action->shortcut().isEmpty())
+            d << " shortcut=" << action->shortcut();
+#endif
+        d << " menuRole=";
+        QtDebugUtils::formatQEnum(d, action->menuRole());
+        d << " visible=" << action->isVisible();
+    } else {
+        d << '0';
+    }
+    d << ')';
+    return d;
+}
+#endif // QT_NO_DEBUG_STREAM
 
 QT_END_NAMESPACE
 

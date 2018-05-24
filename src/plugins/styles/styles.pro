@@ -1,3 +1,8 @@
 TEMPLATE = subdirs
+QT_FOR_CONFIG += widgets-private
 
-blackberry:SUBDIRS += bb10style
+qtConfig(style-android): SUBDIRS += android
+
+qtConfig(style-mac): SUBDIRS += mac
+
+qtConfig(style-windowsvista): SUBDIRS += windowsvista

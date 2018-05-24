@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2013 Intel Corporation
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,19 @@ QT_BEGIN_NAMESPACE
 enum { Endian = 0, Data = 1 };
 
 static const uchar utf8bom[] = { 0xef, 0xbb, 0xbf };
+
+#if (defined(__SSE2__) && defined(QT_COMPILER_SUPPORTS_SSE2)) \
+    || (defined(__ARM_NEON__) && defined(Q_PROCESSOR_ARM_64))
+static Q_ALWAYS_INLINE uint qBitScanReverse(unsigned v) Q_DECL_NOTHROW
+{
+    uint result = qCountLeadingZeroBits(v);
+    // Now Invert the result: clz will count *down* from the msb to the lsb, so the msb index is 31
+    // and the lsb index is 0. The result for _bit_scan_reverse is expected to be the index when
+    // counting up: msb index is 0 (because it starts there), and the lsb index is 31.
+    result ^= sizeof(unsigned) * 8 - 1;
+    return result;
+}
+#endif
 
 #if defined(__SSE2__) && defined(QT_COMPILER_SUPPORTS_SSE2)
 static inline bool simdEncodeAscii(uchar *&dst, const ushort *&nextAscii, const ushort *&src, const ushort *end)
@@ -75,9 +94,9 @@ static inline bool simdEncodeAscii(uchar *&dst, const ushort *&nextAscii, const 
             // find the next probable ASCII character
             // we don't want to load 32 bytes again in this loop if we know there are non-ASCII
             // characters still coming
-            nextAscii = src + _bit_scan_reverse(n) + 1;
+            nextAscii = src + qBitScanReverse(n) + 1;
 
-            n = _bit_scan_forward(n);
+            n = qCountTrailingZeroBits(n);
             dst += n;
             src += n;
             return false;
@@ -126,12 +145,146 @@ static inline bool simdDecodeAscii(ushort *&dst, const uchar *&nextAscii, const 
         // find the next probable ASCII character
         // we don't want to load 16 bytes again in this loop if we know there are non-ASCII
         // characters still coming
-        n = _bit_scan_reverse(n);
+        n = qBitScanReverse(n);
         nextAscii = src + (n / BitSpacing) + 1;
         return false;
 
     }
     return src == end;
+}
+
+static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, const uchar *&nextAscii)
+{
+    // do sixteen characters at a time
+    for ( ; end - src >= 16; src += 16) {
+        __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+
+        // check if everything is ASCII
+        // movemask extracts the high bit of every byte, so n is non-zero if something isn't ASCII
+        uint n = _mm_movemask_epi8(data);
+        if (!n)
+            continue;
+
+        // find the next probable ASCII character
+        // we don't want to load 16 bytes again in this loop if we know there are non-ASCII
+        // characters still coming
+        nextAscii = src + qBitScanReverse(n) + 1;
+
+        // return the non-ASCII character
+        return src + qCountTrailingZeroBits(n);
+    }
+
+    // do four characters at a time
+    for ( ; end - src >= 4; src += 4) {
+        quint32 data = qFromUnaligned<quint32>(src);
+        data &= 0x80808080U;
+        if (!data)
+            continue;
+
+        // We don't try to guess which of the three bytes is ASCII and which
+        // one isn't. The chance that at least two of them are non-ASCII is
+        // better than 75%.
+        nextAscii = src;
+        return src;
+    }
+    nextAscii = end;
+    return src;
+}
+#elif defined(__ARM_NEON__) && defined(Q_PROCESSOR_ARM_64) // vaddv is only available on Aarch64
+static inline bool simdEncodeAscii(uchar *&dst, const ushort *&nextAscii, const ushort *&src, const ushort *end)
+{
+    uint16x8_t maxAscii = vdupq_n_u16(0x7f);
+    uint16x8_t mask1 = { 1,      1 << 2, 1 << 4, 1 << 6, 1 << 8, 1 << 10, 1 << 12, 1 << 14 };
+    uint16x8_t mask2 = vshlq_n_u16(mask1, 1);
+
+    // do sixteen characters at a time
+    for ( ; end - src >= 16; src += 16, dst += 16) {
+        // load 2 lanes (or: "load interleaved")
+        uint16x8x2_t in = vld2q_u16(src);
+
+        // check if any of the elements > 0x7f, select 1 bit per element (element 0 -> bit 0, element 1 -> bit 1, etc),
+        // add those together into a scalar, and merge the scalars.
+        uint16_t nonAscii = vaddvq_u16(vandq_u16(vcgtq_u16(in.val[0], maxAscii), mask1))
+                          | vaddvq_u16(vandq_u16(vcgtq_u16(in.val[1], maxAscii), mask2));
+
+        // merge the two lanes by shifting the values of the second by 8 and inserting them
+        uint16x8_t out = vsliq_n_u16(in.val[0], in.val[1], 8);
+
+        // store, even if there are non-ASCII characters here
+        vst1q_u8(dst, vreinterpretq_u8_u16(out));
+
+        if (nonAscii) {
+            // find the next probable ASCII character
+            // we don't want to load 32 bytes again in this loop if we know there are non-ASCII
+            // characters still coming
+            nextAscii = src + qBitScanReverse(nonAscii) + 1;
+
+            nonAscii = qCountTrailingZeroBits(nonAscii);
+            dst += nonAscii;
+            src += nonAscii;
+            return false;
+        }
+    }
+    return src == end;
+}
+
+static inline bool simdDecodeAscii(ushort *&dst, const uchar *&nextAscii, const uchar *&src, const uchar *end)
+{
+    // do eight characters at a time
+    uint8x8_t msb_mask = vdup_n_u8(0x80);
+    uint8x8_t add_mask = { 1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7 };
+    for ( ; end - src >= 8; src += 8, dst += 8) {
+        uint8x8_t c = vld1_u8(src);
+        uint8_t n = vaddv_u8(vand_u8(vcge_u8(c, msb_mask), add_mask));
+        if (!n) {
+            // store
+            vst1q_u16(dst, vmovl_u8(c));
+            continue;
+        }
+
+        // copy the front part that is still ASCII
+        while (!(n & 1)) {
+            *dst++ = *src++;
+            n >>= 1;
+        }
+
+        // find the next probable ASCII character
+        // we don't want to load 16 bytes again in this loop if we know there are non-ASCII
+        // characters still coming
+        n = qBitScanReverse(n);
+        nextAscii = src + n + 1;
+        return false;
+
+    }
+    return src == end;
+}
+
+static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, const uchar *&nextAscii)
+{
+    // The SIMD code below is untested, so just force an early return until
+    // we've had the time to verify it works.
+    nextAscii = end;
+    return src;
+
+    // do eight characters at a time
+    uint8x8_t msb_mask = vdup_n_u8(0x80);
+    uint8x8_t add_mask = { 1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7 };
+    for ( ; end - src >= 8; src += 8) {
+        uint8x8_t c = vld1_u8(src);
+        uint8_t n = vaddv_u8(vand_u8(vcge_u8(c, msb_mask), add_mask));
+        if (!n)
+            continue;
+
+        // find the next probable ASCII character
+        // we don't want to load 16 bytes again in this loop if we know there are non-ASCII
+        // characters still coming
+        nextAscii = src + qBitScanReverse(n) + 1;
+
+        // return the non-ASCII character
+        return src + qCountTrailingZeroBits(n);
+    }
+    nextAscii = end;
+    return src;
 }
 #else
 static inline bool simdEncodeAscii(uchar *, const ushort *, const ushort *, const ushort *)
@@ -142,6 +295,12 @@ static inline bool simdEncodeAscii(uchar *, const ushort *, const ushort *, cons
 static inline bool simdDecodeAscii(ushort *, const uchar *, const uchar *, const uchar *)
 {
     return false;
+}
+
+static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, const uchar *&nextAscii)
+{
+    nextAscii = end;
+    return src;
 }
 #endif
 
@@ -256,8 +415,32 @@ QString QUtf8::convertToUnicode(const char *chars, int len)
     // The table holds for invalid sequences too: we'll insert one replacement char
     // per invalid byte.
     QString result(len, Qt::Uninitialized);
+    QChar *data = const_cast<QChar*>(result.constData()); // we know we're not shared
+    const QChar *end = convertToUnicode(data, chars, len);
+    result.truncate(end - data);
+    return result;
+}
 
-    ushort *dst = reinterpret_cast<ushort *>(const_cast<QChar *>(result.constData()));
+/*!
+    \since 5.7
+    \overload
+
+    Converts the UTF-8 sequence of \a len octets beginning at \a chars to
+    a sequence of QChar starting at \a buffer. The buffer is expected to be
+    large enough to hold the result. An upper bound for the size of the
+    buffer is \a len QChars.
+
+    If, during decoding, an error occurs, a QChar::ReplacementCharacter is
+    written.
+
+    Returns a pointer to one past the last QChar written.
+
+    This function never throws.
+*/
+
+QChar *QUtf8::convertToUnicode(QChar *buffer, const char *chars, int len) Q_DECL_NOTHROW
+{
+    ushort *dst = reinterpret_cast<ushort *>(buffer);
     const uchar *src = reinterpret_cast<const uchar *>(chars);
     const uchar *end = src + len;
 
@@ -288,15 +471,13 @@ QString QUtf8::convertToUnicode(const char *chars, int len)
         }
     }
 
-    result.truncate(dst - reinterpret_cast<const ushort *>(result.constData()));
-    return result;
+    return reinterpret_cast<QChar *>(dst);
 }
 
 QString QUtf8::convertToUnicode(const char *chars, int len, QTextCodec::ConverterState *state)
 {
     bool headerdone = false;
     ushort replacement = QChar::ReplacementCharacter;
-    int need = 0;
     int invalid = 0;
     int res;
     uchar ch = 0;
@@ -311,7 +492,7 @@ QString QUtf8::convertToUnicode(const char *chars, int len, QTextCodec::Converte
     //   1 of 2 bytes       invalid continuation        +1 (need to insert replacement and restart)
     //   2 of 3 bytes       same                        +1 (same)
     //   3 of 4 bytes       same                        +1 (same)
-    QString result(need + len + 1, Qt::Uninitialized);
+    QString result(len + 1, Qt::Uninitialized);
 
     ushort *dst = reinterpret_cast<ushort *>(const_cast<QChar *>(result.constData()));
     const uchar *src = reinterpret_cast<const uchar *>(chars);
@@ -364,6 +545,7 @@ QString QUtf8::convertToUnicode(const char *chars, int len, QTextCodec::Converte
     // main body, stateless decoding
     res = 0;
     const uchar *nextAscii = src;
+    const uchar *start = src;
     while (res >= 0 && src < end) {
         if (src >= nextAscii && simdDecodeAscii(dst, nextAscii, src, end))
             break;
@@ -372,9 +554,11 @@ QString QUtf8::convertToUnicode(const char *chars, int len, QTextCodec::Converte
         res = QUtf8Functions::fromUtf8<QUtf8BaseTraits>(ch, dst, src, end);
         if (!headerdone && res >= 0) {
             headerdone = true;
-            // eat the UTF-8 BOM
-            if (dst[-1] == 0xfeff)
-                --dst;
+            if (src == start + 3) { // 3 == sizeof(utf8-bom)
+                // eat the UTF-8 BOM (it can only appear at the beginning of the string).
+                if (dst[-1] == 0xfeff)
+                    --dst;
+            }
         }
         if (res == QUtf8BaseTraits::Error) {
             res = 0;
@@ -404,6 +588,95 @@ QString QUtf8::convertToUnicode(const char *chars, int len, QTextCodec::Converte
         }
     }
     return result;
+}
+
+struct QUtf8NoOutputTraits : public QUtf8BaseTraitsNoAscii
+{
+    struct NoOutput {};
+    static void appendUtf16(const NoOutput &, ushort) {}
+    static void appendUcs4(const NoOutput &, uint) {}
+};
+
+QUtf8::ValidUtf8Result QUtf8::isValidUtf8(const char *chars, qsizetype len)
+{
+    const uchar *src = reinterpret_cast<const uchar *>(chars);
+    const uchar *end = src + len;
+    const uchar *nextAscii = src;
+    bool isValidAscii = true;
+
+    while (src < end) {
+        if (src >= nextAscii)
+            src = simdFindNonAscii(src, end, nextAscii);
+        if (src == end)
+            break;
+
+        do {
+            uchar b = *src++;
+            if ((b & 0x80) == 0)
+                continue;
+
+            isValidAscii = false;
+            QUtf8NoOutputTraits::NoOutput output;
+            int res = QUtf8Functions::fromUtf8<QUtf8NoOutputTraits>(b, output, src, end);
+            if (res < 0) {
+                // decoding error
+                return { false, false };
+            }
+        } while (src < nextAscii);
+    }
+
+    return { true, isValidAscii };
+}
+
+int QUtf8::compareUtf8(const char *utf8, qsizetype u8len, const QChar *utf16, int u16len)
+{
+    uint uc1, uc2;
+    auto src1 = reinterpret_cast<const uchar *>(utf8);
+    auto end1 = src1 + u8len;
+    QStringIterator src2(utf16, utf16 + u16len);
+
+    while (src1 < end1 && src2.hasNext()) {
+        uchar b = *src1++;
+        uint *output = &uc1;
+        int res = QUtf8Functions::fromUtf8<QUtf8BaseTraits>(b, output, src1, end1);
+        if (res < 0) {
+            // decoding error
+            uc1 = QChar::ReplacementCharacter;
+        }
+
+        uc2 = src2.next();
+        if (uc1 != uc2)
+            return int(uc1) - int(uc2);
+    }
+
+    // the shorter string sorts first
+    return (end1 > src1) - int(src2.hasNext());
+}
+
+int QUtf8::compareUtf8(const char *utf8, qsizetype u8len, QLatin1String s)
+{
+    uint uc1;
+    auto src1 = reinterpret_cast<const uchar *>(utf8);
+    auto end1 = src1 + u8len;
+    auto src2 = reinterpret_cast<const uchar *>(s.latin1());
+    auto end2 = src2 + s.size();
+
+    while (src1 < end1 && src2 < end2) {
+        uchar b = *src1++;
+        uint *output = &uc1;
+        int res = QUtf8Functions::fromUtf8<QUtf8BaseTraits>(b, output, src1, end1);
+        if (res < 0) {
+            // decoding error
+            uc1 = QChar::ReplacementCharacter;
+        }
+
+        uint uc2 = *src2++;
+        if (uc1 != uc2)
+            return int(uc1) - int(uc2);
+    }
+
+    // the shorter string sorts first
+    return (end1 > src1) - (end2 > src2);
 }
 
 QByteArray QUtf16::convertFromUnicode(const QChar *uc, int len, QTextCodec::ConverterState *state, DataEndianness e)

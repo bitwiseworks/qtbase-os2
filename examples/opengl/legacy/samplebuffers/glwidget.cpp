@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -39,7 +49,7 @@
 ****************************************************************************/
 
 #include "glwidget.h"
-#include <math.h>
+#include <qmath.h>
 
 #ifndef GL_MULTISAMPLE
 #define GL_MULTISAMPLE  0x809D
@@ -106,7 +116,6 @@ void GLWidget::timerEvent(QTimerEvent *)
 void GLWidget::makeObject()
 {
     QColor qtGreen(QColor::fromCmykF(0.40, 0.0, 1.0, 0.0));
-    const double Pi = 3.14159265358979323846;
     const int NumSectors = 15;
     GLdouble x1 = +0.06;
     GLdouble y1 = -0.14;
@@ -120,18 +129,19 @@ void GLWidget::makeObject()
     list = glGenLists(1);
     glNewList(list, GL_COMPILE);
     {
+        const double sectorAngle = 2 * M_PI / NumSectors;
         for (int i = 0; i < NumSectors; ++i) {
-            double angle1 = (i * 2 * Pi) / NumSectors;
-            GLdouble x5 = 0.30 * sin(angle1);
-            GLdouble y5 = 0.30 * cos(angle1);
-            GLdouble x6 = 0.20 * sin(angle1);
-            GLdouble y6 = 0.20 * cos(angle1);
+            double angle = i * sectorAngle;
+            GLdouble x5 = 0.30 * sin(angle);
+            GLdouble y5 = 0.30 * cos(angle);
+            GLdouble x6 = 0.20 * sin(angle);
+            GLdouble y6 = 0.20 * cos(angle);
 
-            double angle2 = ((i + 1) * 2 * Pi) / NumSectors;
-            GLdouble x7 = 0.20 * sin(angle2);
-            GLdouble y7 = 0.20 * cos(angle2);
-            GLdouble x8 = 0.30 * sin(angle2);
-            GLdouble y8 = 0.30 * cos(angle2);
+            angle += sectorAngle;
+            GLdouble x7 = 0.20 * sin(angle);
+            GLdouble y7 = 0.20 * cos(angle);
+            GLdouble x8 = 0.30 * sin(angle);
+            GLdouble y8 = 0.30 * cos(angle);
 
             qglColor(qtGreen);
             quad(GL_QUADS, x5, y5, x6, y6, x7, y7, x8, y8);

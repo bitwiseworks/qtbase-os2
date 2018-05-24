@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -70,7 +65,7 @@ void tst_QMimeData::clear() const
     mimeData.setData("text/plain", "pirates");
     QVERIFY(mimeData.hasText());
     mimeData.clear();
-    QVERIFY(mimeData.hasText() == false);
+    QVERIFY(!mimeData.hasText());
 
     // repopulate, verify not empty
     mimeData.setData("text/plain", "pirates");
@@ -101,7 +96,7 @@ void tst_QMimeData::data() const
     // set text, verify
     mimeData.setData("text/plain", "pirates");
     QCOMPARE(mimeData.data("text/plain"), QByteArray("pirates"));
-    QVERIFY(mimeData.data("text/html").length() == 0);
+    QCOMPARE(mimeData.data("text/html").length(), 0);
 
     // html time
     mimeData.setData("text/html", "ninjas");
@@ -136,7 +131,7 @@ void tst_QMimeData::hasColor() const
     QMimeData mimeData;
 
     // initial state
-    QVERIFY(mimeData.hasColor() == false);
+    QVERIFY(!mimeData.hasColor());
 
     // set, verify
     mimeData.setColorData(QColor(Qt::red));
@@ -144,11 +139,11 @@ void tst_QMimeData::hasColor() const
 
     // clear, verify
     mimeData.clear();
-    QVERIFY(mimeData.hasColor() == false);
+    QVERIFY(!mimeData.hasColor());
 
     // set something else, verify
     mimeData.setData("text/plain", "pirates");
-    QVERIFY(mimeData.hasColor() == false);
+    QVERIFY(!mimeData.hasColor());
 }
 
 void tst_QMimeData::hasFormat() const
@@ -156,17 +151,17 @@ void tst_QMimeData::hasFormat() const
     QMimeData mimeData;
 
     // initial state
-    QVERIFY(mimeData.hasFormat("text/plain") == false);
+    QVERIFY(!mimeData.hasFormat("text/plain"));
 
     // add, verify
     mimeData.setData("text/plain", "pirates");
     QVERIFY(mimeData.hasFormat("text/plain"));
-    QVERIFY(mimeData.hasFormat("text/html") == false);
+    QVERIFY(!mimeData.hasFormat("text/html"));
 
     // clear, verify
     mimeData.clear();
-    QVERIFY(mimeData.hasFormat("text/plain") == false);
-    QVERIFY(mimeData.hasFormat("text/html") == false);
+    QVERIFY(!mimeData.hasFormat("text/plain"));
+    QVERIFY(!mimeData.hasFormat("text/html"));
 }
 
 void tst_QMimeData::hasHtml() const
@@ -174,11 +169,11 @@ void tst_QMimeData::hasHtml() const
     QMimeData mimeData;
 
     // initial state
-    QVERIFY(mimeData.hasHtml() == false);
+    QVERIFY(!mimeData.hasHtml());
 
     // add plain, verify false
     mimeData.setData("text/plain", "pirates");
-    QVERIFY(mimeData.hasHtml() == false);
+    QVERIFY(!mimeData.hasHtml());
 
     // add html, verify
     mimeData.setData("text/html", "ninjas");
@@ -186,7 +181,7 @@ void tst_QMimeData::hasHtml() const
 
     // clear, verify
     mimeData.clear();
-    QVERIFY(mimeData.hasHtml() == false);
+    QVERIFY(!mimeData.hasHtml());
 
     // readd, verify
     mimeData.setData("text/html", "ninjas");
@@ -198,11 +193,11 @@ void tst_QMimeData::hasImage() const
     QMimeData mimeData;
 
     // initial state
-    QVERIFY(mimeData.hasImage() == false);
+    QVERIFY(!mimeData.hasImage());
 
     // add text, verify false
     mimeData.setData("text/plain", "pirates");
-    QVERIFY(mimeData.hasImage() == false);
+    QVERIFY(!mimeData.hasImage());
 
     // add image
     mimeData.setImageData(QImage());
@@ -210,7 +205,7 @@ void tst_QMimeData::hasImage() const
 
     // clear, verify
     mimeData.clear();
-    QVERIFY(mimeData.hasImage() == false);
+    QVERIFY(!mimeData.hasImage());
 }
 
 void tst_QMimeData::imageData() const
@@ -244,13 +239,13 @@ void tst_QMimeData::removeFormat() const
 
     // remove, verify
     mimeData.removeFormat("text/plain");
-    QVERIFY(mimeData.hasFormat("text/plain") == false);
+    QVERIFY(!mimeData.hasFormat("text/plain"));
     QVERIFY(mimeData.hasFormat("text/html"));
 
     // remove, verify
     mimeData.removeFormat("text/html");
-    QVERIFY(mimeData.hasFormat("text/plain") == false);
-    QVERIFY(mimeData.hasFormat("text/html") == false);
+    QVERIFY(!mimeData.hasFormat("text/plain"));
+    QVERIFY(!mimeData.hasFormat("text/html"));
 }
 
 void tst_QMimeData::setHtml() const
@@ -258,7 +253,7 @@ void tst_QMimeData::setHtml() const
     QMimeData mimeData;
 
     // initial state
-    QVERIFY(mimeData.hasHtml() == false);
+    QVERIFY(!mimeData.hasHtml());
 
     // add html, verify
     mimeData.setHtml("ninjas");
@@ -277,7 +272,7 @@ void tst_QMimeData::setText() const
 
     // verify initial state
     QCOMPARE(mimeData.text(), QLatin1String(""));
-    QVERIFY(mimeData.hasText() == false);
+    QVERIFY(!mimeData.hasText());
 
     // set, verify
     mimeData.setText("pirates");
@@ -294,7 +289,7 @@ void tst_QMimeData::setText() const
     // clear, verify
     mimeData.clear();
     QCOMPARE(mimeData.text(), QLatin1String(""));
-    QVERIFY(mimeData.hasText() == false);
+    QVERIFY(!mimeData.hasText());
 }
 
 // Publish retrieveData for verifying content validity

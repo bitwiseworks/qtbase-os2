@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,24 +39,11 @@
 
 #include "qtconcurrentiteratekernel.h"
 
-#if defined(Q_OS_MAC)
-#include <mach/mach.h>
-#include <mach/mach_time.h>
-#include <unistd.h>
-#elif defined(Q_OS_UNIX)
-#if defined(Q_OS_HURD)
-#include <sys/time.h>
-#endif
-#include <time.h>
-#include <unistd.h>
-#elif defined(Q_OS_WIN)
-#include <qt_windows.h>
-#endif
-
+#include <qdeadlinetimer.h>
 #include "private/qfunctions_p.h"
 
 
-#ifndef QT_NO_CONCURRENT
+#if !defined(QT_NO_CONCURRENT) || defined(Q_CLANG_QDOC)
 
 QT_BEGIN_NAMESPACE
 
@@ -59,68 +52,10 @@ enum {
     MedianSize = 7
 };
 
-#if defined(Q_OS_MAC)
-
 static qint64 getticks()
 {
-    return mach_absolute_time();
+    return QDeadlineTimer::current(Qt::PreciseTimer).deadlineNSecs();
 }
-
-#elif defined(Q_OS_UNIX)
-
-
-static qint64 getticks()
-{
-#if defined(_POSIX_TIMERS) && (_POSIX_TIMERS > 0)
-    clockid_t clockId;
-
-#ifndef _POSIX_THREAD_CPUTIME
-    clockId = CLOCK_REALTIME;
-#elif (_POSIX_THREAD_CPUTIME-0 <= 0)
-    // if we don't have CLOCK_THREAD_CPUTIME_ID, we have to just use elapsed realtime instead
-    clockId = CLOCK_REALTIME;
-
-#  if (_POSIX_THREAD_CPUTIME-0 == 0)
-    // detect availablility of CLOCK_THREAD_CPUTIME_ID
-    static QBasicAtomicInt sUseThreadCpuTime = Q_BASIC_ATOMIC_INITIALIZER(-2);
-    int useThreadCpuTime = sUseThreadCpuTime.load();
-    if (useThreadCpuTime == -2) {
-        // sysconf() will return either -1L or _POSIX_VERSION
-        // (don't care about sysconf's exact return value)
-        useThreadCpuTime = sysconf(_SC_THREAD_CPUTIME) == -1L ? -1 : 0 ;
-        sUseThreadCpuTime.store(useThreadCpuTime); // might happen multiple times, but doesn't matter
-    }
-    if (useThreadCpuTime != -1)
-        clockId = CLOCK_THREAD_CPUTIME_ID;
-#  endif
-#else
-    clockId = CLOCK_THREAD_CPUTIME_ID;
-#endif
-
-    struct timespec ts;
-    if (clock_gettime(clockId, &ts) == -1)
-        return 0;
-    return (ts.tv_sec * 1000000000) + ts.tv_nsec;
-#else
-
-    // no clock_gettime(), fall back to wall time
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000000) + tv.tv_usec;
-#endif
-}
-
-#elif defined(Q_OS_WIN)
-
-static qint64 getticks()
-{
-    LARGE_INTEGER x;
-    if (!QueryPerformanceCounter(&x))
-        return 0;
-    return x.QuadPart;
-}
-
-#endif
 
 static double elapsed(qint64 after, qint64 before)
 {
@@ -128,6 +63,54 @@ static double elapsed(qint64 after, qint64 before)
 }
 
 namespace QtConcurrent {
+
+/*!
+  \class QtConcurrent::Median
+  \inmodule QtConcurrent
+  \internal
+ */
+
+/*!
+  \class QtConcurrent::MedianDouble
+  \inmodule QtConcurrent
+  \internal
+ */
+
+/*!
+  \class QtConcurrent::BlockSizeManager
+  \inmodule QtConcurrent
+  \internal
+ */
+
+/*!
+  \class QtConcurrent::BlockSizeManagerV2
+  \inmodule QtConcurrent
+  \internal
+ */
+
+/*!
+  \class QtConcurrent::ResultReporter
+  \inmodule QtConcurrent
+  \internal
+ */
+
+/*! \fn bool QtConcurrent::selectIteration(std::bidirectional_iterator_tag)
+  \internal
+ */
+
+/*! \fn bool QtConcurrent::selectIteration(std::forward_iterator_tag)
+  \internal
+ */
+
+/*! \fn bool QtConcurrent::selectIteration(std::random_access_iterator_tag)
+  \internal
+ */
+
+/*!
+  \class QtConcurrent::IterateKernel
+  \inmodule QtConcurrent
+  \internal
+ */
 
 /*! \internal
 
@@ -178,6 +161,58 @@ void BlockSizeManager::timeAfterUser()
 }
 
 int BlockSizeManager::blockSize()
+{
+    return m_blockSize;
+}
+
+/*! \internal
+
+*/
+BlockSizeManagerV2::BlockSizeManagerV2(int iterationCount)
+    : maxBlockSize(iterationCount / (QThreadPool::globalInstance()->maxThreadCount() * 2)),
+      beforeUser(0), afterUser(0),
+      m_blockSize(1)
+{ }
+
+// Records the time before user code.
+void BlockSizeManagerV2::timeBeforeUser()
+{
+    if (blockSizeMaxed())
+        return;
+
+    beforeUser = getticks();
+    controlPartElapsed.addValue(elapsed(beforeUser, afterUser));
+}
+
+ // Records the time after user code and adjust the block size if we are spending
+ // to much time in the for control code compared with the user code.
+void BlockSizeManagerV2::timeAfterUser()
+{
+    if (blockSizeMaxed())
+        return;
+
+    afterUser = getticks();
+    userPartElapsed.addValue(elapsed(afterUser, beforeUser));
+
+    if (controlPartElapsed.isMedianValid() == false)
+        return;
+
+    if (controlPartElapsed.median() * TargetRatio < userPartElapsed.median())
+        return;
+
+    m_blockSize = qMin(m_blockSize * 2,  maxBlockSize);
+
+#ifdef QTCONCURRENT_FOR_DEBUG
+    qDebug() << QThread::currentThread() << "adjusting block size" << controlPartElapsed.median() << userPartElapsed.median() << m_blockSize;
+#endif
+
+    // Reset the medians after adjusting the block size so we get
+    // new measurements with the new block size.
+    controlPartElapsed.reset();
+    userPartElapsed.reset();
+}
+
+int BlockSizeManagerV2::blockSize()
 {
     return m_blockSize;
 }

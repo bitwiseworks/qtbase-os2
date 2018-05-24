@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -64,13 +59,11 @@ class tst_QTextDocument : public QObject
 
 public:
     tst_QTextDocument();
-    virtual ~tst_QTextDocument();
 
-public slots:
+private slots:
     void init();
     void cleanup();
     void cleanupTestCase();
-private slots:
     void getSetCheck();
     void isEmpty();
     void find_data();
@@ -94,6 +87,8 @@ private slots:
     void mightBeRichText_data();
 
     void task240325();
+
+    void preFont();
 
     void stylesheetFont_data();
     void stylesheetFont();
@@ -139,7 +134,9 @@ private slots:
     void clearResources();
 
     void setPlainText();
+    void toPlainText_data();
     void toPlainText();
+    void toRawText();
 
     void deleteTextObjectsOnClear();
 
@@ -188,6 +185,9 @@ private slots:
 
     void textCursorUsageWithinContentsChange();
     void cssInheritance();
+
+    void lineHeightType();
+    void cssLineHeightMultiplier();
 private:
     void backgroundImage_checkExpectedHtml(const QTextDocument &doc);
     void buildRegExpData();
@@ -216,8 +216,8 @@ public:
 QString tst_QTextDocument::cssFontSizeString(const QFont &font)
 {
     return font.pointSize() >= 0
-            ? QStringLiteral("%1pt").arg(font.pointSizeF())
-            : QStringLiteral("%1px").arg(font.pixelSize());
+            ? QString::number(font.pointSizeF()) + QStringLiteral("pt")
+            : QString::number(font.pixelSize()) + QStringLiteral("px");
 }
 
 // Testing get/set functions
@@ -245,10 +245,6 @@ tst_QTextDocument::tst_QTextDocument()
 {
     QImage img(16, 16, QImage::Format_ARGB32_Premultiplied);
     img.save("foo.png");
-}
-
-tst_QTextDocument::~tst_QTextDocument()
-{
 }
 
 void tst_QTextDocument::init()
@@ -321,6 +317,8 @@ void tst_QTextDocument::find_data()
                                        << 15 << 6 << 11;
 
     QTest::newRow("nbsp") << "Hello" + QString(QChar(QChar::Nbsp)) +"World" << " " << int(QTextDocument::FindCaseSensitively) << 0 << 5 << 6;
+
+    QTest::newRow("from-the-end") << "Hello World" << "Hello World" << int(QTextDocument::FindCaseSensitively| QTextDocument::FindBackward) << 11 << 0 << 11;
 }
 
 void tst_QTextDocument::find()
@@ -464,6 +462,24 @@ void tst_QTextDocument::findMultiple()
     cursor = doc->find(expr, cursor);
     QCOMPARE(cursor.selectionStart(), text.lastIndexOf("bar"));
     QCOMPARE(cursor.selectionEnd(), cursor.selectionStart() + 3);
+
+    QRegularExpression regularExpression("bar");
+
+    cursor.movePosition(QTextCursor::End);
+    cursor = doc->find(regularExpression, cursor, QTextDocument::FindBackward);
+    QCOMPARE(cursor.selectionStart(), text.lastIndexOf("bar"));
+    QCOMPARE(cursor.selectionEnd(), cursor.selectionStart() + 3);
+    cursor = doc->find(regularExpression, cursor, QTextDocument::FindBackward);
+    QCOMPARE(cursor.selectionStart(), text.indexOf("bar"));
+    QCOMPARE(cursor.selectionEnd(), cursor.selectionStart() + 3);
+
+    cursor.movePosition(QTextCursor::Start);
+    cursor = doc->find(regularExpression, cursor);
+    QCOMPARE(cursor.selectionStart(), text.indexOf("bar"));
+    QCOMPARE(cursor.selectionEnd(), cursor.selectionStart() + 3);
+    cursor = doc->find(regularExpression, cursor);
+    QCOMPARE(cursor.selectionStart(), text.lastIndexOf("bar"));
+    QCOMPARE(cursor.selectionEnd(), cursor.selectionStart() + 3);
 }
 
 void tst_QTextDocument::basicIsModifiedChecks()
@@ -595,7 +611,7 @@ void tst_QTextDocument::task240325()
     QFontMetrics fm(p.font());
 
     // Set page size to contain image and one "Foobar"
-    doc->setPageSize(QSize(100 + fm.width("Foobar")*2, 1000));
+    doc->setPageSize(QSize(100 + fm.horizontalAdvance("Foobar")*2, 1000));
 
     // Force layout
     doc->drawContents(&p);
@@ -675,6 +691,30 @@ void tst_QTextDocument::stylesheetFont()
     QCOMPARE(actualFont.pixelSize(), font.pixelSize());
 }
 
+void tst_QTextDocument::preFont()
+{
+    const QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QString html = QString::fromLatin1(   "<html>"
+                                                "<body>"
+                                                "<pre>"
+                                                "Foobar"
+                                                "</pre>"
+                                                "</body>"
+                                                "</html>");
+
+    doc->setHtml(html);
+    QCOMPARE(doc->blockCount(), 1);
+
+    // First and only block
+    QTextBlock block = doc->firstBlock();
+
+    QString text = block.text();
+    QCOMPARE(text, QString::fromLatin1("Foobar"));
+
+    QFont actualFont = block.charFormat().font();
+    QCOMPARE(actualFont.family(), font.family());
+}
+
 void tst_QTextDocument::noundo_moreIsModified()
 {
     doc->setUndoRedoEnabled(false);
@@ -744,7 +784,7 @@ void tst_QTextDocument::mightBeRichText()
 {
     QFETCH(QString, input);
     QFETCH(bool, result);
-    QVERIFY(result == Qt::mightBeRichText(input));
+    QCOMPARE(result, Qt::mightBeRichText(input));
 }
 
 Q_DECLARE_METATYPE(QTextDocumentFragment)
@@ -2222,7 +2262,7 @@ void tst_QTextDocument::clonePreservesUserStates()
         b2 = b2.next();
         QCOMPARE(b1.userState(), b2.userState());
     }
-    QVERIFY(b2 == clone->end());
+    QCOMPARE(b2, clone->end());
     delete clone;
 }
 
@@ -2269,7 +2309,7 @@ void tst_QTextDocument::resolvedFontInEmptyFormat()
     doc->setDefaultFont(font);
     QTextCharFormat fmt = doc->begin().charFormat();
     QVERIFY(fmt.properties().isEmpty());
-    QVERIFY(fmt.font() == font);
+    QCOMPARE(fmt.font(), font);
 }
 
 void tst_QTextDocument::defaultRootFrameMargin()
@@ -2353,11 +2393,38 @@ void tst_QTextDocument::setPlainText()
     QCOMPARE(doc->toPlainText(), s);
 }
 
+void tst_QTextDocument::toPlainText_data()
+{
+    QTest::addColumn<QString>("html");
+    QTest::addColumn<QString>("expectedPlainText");
+
+    QTest::newRow("nbsp") << "Hello&nbsp;World" << "Hello World";
+    QTest::newRow("empty_div") << "<div></div>hello" << "hello";
+    QTest::newRow("br_and_p") << "<p>first<br></p><p>second<br></p>" << "first\n\nsecond\n";
+    QTest::newRow("div") << "first<div>second<br>third</div>fourth" << "first\nsecond\nthird\nfourth";                             // <div> and </div> become newlines...
+    QTest::newRow("br_text_end_of_div") << "<div><div>first<br>moretext</div>second<br></div>" << "first\nmoretext\nsecond\n";     // ... when there is text before <div>
+    QTest::newRow("br_end_of_div_like_gmail") << "<div><div><div>first<br></div>second<br></div>third<br></div>" << "first\nsecond\nthird\n"; // ... and when there is text before </div>
+    QTest::newRow("p_and_div") << "<div><div>first<p>second</p></div>third</div>" << "first\nsecond\nthird";
+}
+
 void tst_QTextDocument::toPlainText()
 {
-    doc->setHtml("Hello&nbsp;World");
-    QCOMPARE(doc->toPlainText(), QLatin1String("Hello World"));
+    QFETCH(QString, html);
+    QFETCH(QString, expectedPlainText);
+
+    doc->setHtml(html);
+    QCOMPARE(doc->toPlainText(), expectedPlainText);
 }
+
+void tst_QTextDocument::toRawText()
+{
+    doc->setHtml("&nbsp;");
+
+    QString rawText = doc->toRawText();
+    QCOMPARE(rawText.size(), 1);
+    QCOMPARE(rawText.at(0).unicode(), ushort(QChar::Nbsp));
+}
+
 
 void tst_QTextDocument::deleteTextObjectsOnClear()
 {
@@ -2369,6 +2436,7 @@ void tst_QTextDocument::deleteTextObjectsOnClear()
 
 void tst_QTextDocument::defaultStyleSheet()
 {
+    const QColor green("green");
     const QString sheet("p { background-color: green; }");
     QVERIFY(doc->defaultStyleSheet().isEmpty());
     doc->setDefaultStyleSheet(sheet);
@@ -2376,30 +2444,30 @@ void tst_QTextDocument::defaultStyleSheet()
 
     cursor.insertHtml("<p>test");
     QTextBlockFormat fmt = doc->begin().blockFormat();
-    QVERIFY(fmt.background().color() == QColor("green"));
+    QCOMPARE(fmt.background().color(), green);
 
     doc->clear();
     cursor.insertHtml("<p>test");
     fmt = doc->begin().blockFormat();
-    QVERIFY(fmt.background().color() == QColor("green"));
+    QCOMPARE(fmt.background().color(), green);
 
     QTextDocument *clone = doc->clone();
     QCOMPARE(clone->defaultStyleSheet(), sheet);
     cursor = QTextCursor(clone);
     cursor.insertHtml("<p>test");
     fmt = clone->begin().blockFormat();
-    QVERIFY(fmt.background().color() == QColor("green"));
+    QCOMPARE(fmt.background().color(), green);
     delete clone;
 
     cursor = QTextCursor(doc);
     cursor.insertHtml("<p>test");
     fmt = doc->begin().blockFormat();
-    QVERIFY(fmt.background().color() == QColor("green"));
+    QCOMPARE(fmt.background().color(), green);
 
     doc->clear();
     cursor.insertHtml("<style>p { background-color: red; }</style><p>test");
     fmt = doc->begin().blockFormat();
-    QVERIFY(fmt.background().color() == QColor("red"));
+    QCOMPARE(fmt.background().color(), QColor(Qt::red));
 
     doc->clear();
     doc->setDefaultStyleSheet("invalid style sheet....");
@@ -2567,7 +2635,7 @@ void tst_QTextDocument::setTextPreservesUndoRedoEnabled()
 void tst_QTextDocument::firstLast()
 {
     QCOMPARE(doc->blockCount(), 1);
-    QVERIFY(doc->firstBlock() == doc->lastBlock());
+    QCOMPARE(doc->firstBlock(), doc->lastBlock());
 
     doc->setPlainText("Hello\nTest\nWorld");
 
@@ -2883,14 +2951,27 @@ void tst_QTextDocument::testUndoBlocks()
     doc->undo();
     QCOMPARE(doc->toPlainText(), QString(""));
 
+    cursor.insertText("town");
+    cursor.beginEditBlock(); // Edit block 1 - Deletion/Insertion
+    cursor.setPosition(0, QTextCursor::KeepAnchor);
+    cursor.insertText("r");
+    cursor.endEditBlock();
+    cursor.insertText("est"); // Merged into edit block 1
+    QCOMPARE(doc->toPlainText(), QString("rest"));
+    doc->undo();
+    QCOMPARE(doc->toPlainText(), QString("town"));
+    doc->undo();
+    QCOMPARE(doc->toPlainText(), QString(""));
+
+    // This case would not happen in practice. If the user typed out this text, it would all be part of one
+    // edit block. This would cause the undo to clear all text. But for the purpose of testing the beginEditBlock
+    // and endEditBlock calls with respect to qtextdocument this is tested.
     cursor.insertText("quod");
-    cursor.beginEditBlock();
+    cursor.beginEditBlock(); // Edit block 1 - Insertion
     cursor.insertText(" erat");
     cursor.endEditBlock();
-    cursor.insertText(" demonstrandum");
+    cursor.insertText(" demonstrandum"); // Merged into edit block 1
     QCOMPARE(doc->toPlainText(), QString("quod erat demonstrandum"));
-    doc->undo();
-    QCOMPARE(doc->toPlainText(), QString("quod erat"));
     doc->undo();
     QCOMPARE(doc->toPlainText(), QString("quod"));
     doc->undo();
@@ -3013,8 +3094,8 @@ void tst_QTextDocument::QTBUG27354_spaceAndSoftSpace()
         QTextBlock block = td.begin();
         while (block.isValid()) {
             QTextBlockFormat fmt = block.blockFormat();
-            QVERIFY(fmt.lineHeightType() == QTextBlockFormat::SingleHeight);
-            QVERIFY(fmt.lineHeight() == 0);
+            QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::SingleHeight));
+            QCOMPARE(fmt.lineHeight(), qreal(0));
             block = block.next();
         }
     }
@@ -3081,7 +3162,7 @@ void tst_QTextDocument::baseUrl()
     document.setBaseUrl(base);
     QCOMPARE(document.baseUrl(), base);
 
-    document.setHtml(QString("<img src='%1'/>").arg(resource.toString()));
+    document.setHtml(QLatin1String("<img src='") + resource.toString() + QLatin1String("'/>"));
     document.resource(QTextDocument::ImageResource, resource);
     QCOMPARE(document.loadedResource(), loaded);
 }
@@ -3164,8 +3245,8 @@ void tst_QTextDocument::cssInheritance()
         QTextBlock block = td.begin();
         while (block.isValid()) {
             QTextBlockFormat fmt = block.blockFormat();
-            QVERIFY(fmt.lineHeightType() == QTextBlockFormat::ProportionalHeight);
-            QVERIFY(fmt.lineHeight() == 200);
+            QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::ProportionalHeight));
+            QCOMPARE(fmt.lineHeight(), qreal(200));
             block = block.next();
         }
     }
@@ -3175,12 +3256,12 @@ void tst_QTextDocument::cssInheritance()
                    "<p style=\"line-height: 40px\">Foo</p><p>Bar</p><p>Baz</p></body></html>");
         QTextBlock block = td.begin();
         QTextBlockFormat fmt = block.blockFormat();
-        QVERIFY(fmt.lineHeightType() == QTextBlockFormat::FixedHeight);
-        QVERIFY(fmt.lineHeight() == 40);
+        QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::MinimumHeight));
+        QCOMPARE(fmt.lineHeight(), qreal(40));
         block = block.next();
         fmt = block.blockFormat();
-        QVERIFY(fmt.lineHeightType() == QTextBlockFormat::ProportionalHeight);
-        QVERIFY(fmt.lineHeight() == 300);
+        QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(fmt.lineHeight(), qreal(300));
     }
     {
         QTextDocument td;
@@ -3188,7 +3269,7 @@ void tst_QTextDocument::cssInheritance()
             "<p>Foo</p><p>Bar</p><p>Baz</p></body></html>");
         QTextBlock block = td.begin();
         while (block.isValid()) {
-            QVERIFY(block.blockFormat().background() == QBrush());
+            QCOMPARE(block.blockFormat().background(), QBrush());
             QVERIFY(block.charFormat().font().bold());
             block = block.next();
         }
@@ -3257,6 +3338,138 @@ void tst_QTextDocument::cssInheritance()
         QVERIFY(currentFragment.isValid());
         fmt = currentFragment.charFormat();
         QVERIFY(fmt.font().bold());
+    }
+}
+
+void tst_QTextDocument::lineHeightType()
+{
+    {
+        QTextDocument td;
+        td.setHtml("<html><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::SingleHeight));
+        QCOMPARE(format.lineHeight(), 0.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 40px; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::MinimumHeight));
+        QCOMPARE(format.lineHeight(), 40.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 200%; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 200%; -qt-line-height-type: single; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::SingleHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 40px; -qt-line-height-type: proportional; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 40.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 10; -qt-line-height-type: fixed; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 10.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 10; -qt-line-height-type: fixed; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 10.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: proportional; line-height: 3; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 3.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 2.5; -qt-line-height-type: proportional; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 2.5);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 33; -qt-line-height-type: minimum; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::MinimumHeight));
+        QCOMPARE(format.lineHeight(), 33.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 200%; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 200px; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+}
+
+void tst_QTextDocument::cssLineHeightMultiplier()
+{
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 10; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 1000.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body {line-height: 1.38; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 138.0);
     }
 }
 

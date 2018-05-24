@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,8 +39,9 @@
 
 #include "qfbvthandler_p.h"
 #include <QtCore/QSocketNotifier>
+#include <QtCore/private/qglobal_p.h>
 
-#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID) && (!defined(QT_NO_EVDEV) || !defined(QT_NO_LIBINPUT))
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID) && (QT_CONFIG(evdev) || QT_CONFIG(libinput))
 
 #define VTH_ENABLED
 
@@ -43,7 +50,6 @@
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/signalfd.h>
 #include <sys/ioctl.h>
 #include <linux/kd.h>
 
@@ -79,55 +85,46 @@ static void setTTYCursor(bool enable)
 }
 #endif
 
+#ifdef VTH_ENABLED
+static QFbVtHandler *vth;
+
+void QFbVtHandler::signalHandler(int sigNo)
+{
+    char a = sigNo;
+    QT_WRITE(vth->m_sigFd[0], &a, sizeof(a));
+}
+#endif
+
 QFbVtHandler::QFbVtHandler(QObject *parent)
     : QObject(parent),
       m_tty(-1),
-      m_signalFd(-1),
       m_signalNotifier(0)
 {
 #ifdef VTH_ENABLED
-    setTTYCursor(false);
-
-    if (isatty(0)) {
+    if (isatty(0))
         m_tty = 0;
-        ioctl(m_tty, KDGKBMODE, &m_oldKbdMode);
 
-        if (!qEnvironmentVariableIntValue("QT_QPA_ENABLE_TERMINAL_KEYBOARD")) {
-            // Disable the tty keyboard.
-            ioctl(m_tty, KDSKBMUTE, 1);
-            ioctl(m_tty, KDSKBMODE, KBD_OFF_MODE);
-        }
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, m_sigFd)) {
+        qErrnoWarning(errno, "QFbVtHandler: socketpair() failed");
+        return;
     }
 
-    // SIGSEGV and such cannot safely be blocked. We cannot handle them in an
-    // async-safe manner either. Restoring the keyboard, video mode, etc. may
-    // all contain calls that cannot safely be made from a signal handler.
+    vth = this;
+    setTTYCursor(false);
+    setKeyboardEnabled(false);
 
-    // Other signals: block them and use signalfd.
-    sigset_t mask;
-    sigemptyset(&mask);
+    m_signalNotifier = new QSocketNotifier(m_sigFd[1], QSocketNotifier::Read, this);
+    connect(m_signalNotifier, &QSocketNotifier::activated, this, &QFbVtHandler::handleSignal);
 
-    // Catch Ctrl+C.
-    sigaddset(&mask, SIGINT);
-
-    // Ctrl+Z. Up to the platform plugins to handle it in a meaningful way.
-    sigaddset(&mask, SIGTSTP);
-    sigaddset(&mask, SIGCONT);
-
-    // Default signal used by kill. To overcome the common issue of no cleaning
-    // up when killing a locally started app via a remote session.
-    sigaddset(&mask, SIGTERM);
-
-    m_signalFd = signalfd(-1, &mask, SFD_CLOEXEC);
-    if (m_signalFd < 0) {
-        qErrnoWarning(errno, "signalfd() failed");
-    } else {
-        m_signalNotifier = new QSocketNotifier(m_signalFd, QSocketNotifier::Read, this);
-        connect(m_signalNotifier, &QSocketNotifier::activated, this, &QFbVtHandler::handleSignal);
-
-        // Block the signals that are handled via signalfd. Applies only to the current
-        // thread, but new threads will inherit the creator's signal mask.
-        pthread_sigmask(SIG_BLOCK, &mask, 0);
+    if (!qEnvironmentVariableIntValue("QT_QPA_NO_SIGNAL_HANDLER")) {
+        struct sigaction sa;
+        sa.sa_flags = 0;
+        sa.sa_handler = signalHandler;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGINT, &sa, 0); // Ctrl+C
+        sigaction(SIGTSTP, &sa, 0); // Ctrl+Z
+        sigaction(SIGCONT, &sa, 0);
+        sigaction(SIGTERM, &sa, 0); // default signal used by kill
     }
 #endif
 }
@@ -135,31 +132,34 @@ QFbVtHandler::QFbVtHandler(QObject *parent)
 QFbVtHandler::~QFbVtHandler()
 {
 #ifdef VTH_ENABLED
-    restoreKeyboard();
+    setKeyboardEnabled(true);
     setTTYCursor(true);
 
-    if (m_signalFd != -1)
-        close(m_signalFd);
+    if (m_signalNotifier) {
+        close(m_sigFd[0]);
+        close(m_sigFd[1]);
+    }
 #endif
 }
 
-void QFbVtHandler::restoreKeyboard()
+void QFbVtHandler::setKeyboardEnabled(bool enable)
 {
 #ifdef VTH_ENABLED
     if (m_tty == -1)
         return;
 
-    ioctl(m_tty, KDSKBMUTE, 0);
-    ioctl(m_tty, KDSKBMODE, m_oldKbdMode);
-#endif
-}
-
-// To be called from the slot connected to suspendRequested() in case the
-// platform plugin does in fact allow suspending on Ctrl+Z.
-void QFbVtHandler::suspend()
-{
-#ifdef VTH_ENABLED
-    kill(getpid(), SIGSTOP);
+    if (enable) {
+        ::ioctl(m_tty, KDSKBMUTE, 0);
+        ::ioctl(m_tty, KDSKBMODE, m_oldKbdMode);
+    } else {
+        ::ioctl(m_tty, KDGKBMODE, &m_oldKbdMode);
+        if (!qEnvironmentVariableIntValue("QT_QPA_ENABLE_TERMINAL_KEYBOARD")) {
+            ::ioctl(m_tty, KDSKBMUTE, 1);
+            ::ioctl(m_tty, KDSKBMODE, KBD_OFF_MODE);
+        }
+    }
+#else
+    Q_UNUSED(enable);
 #endif
 }
 
@@ -168,17 +168,22 @@ void QFbVtHandler::handleSignal()
 #ifdef VTH_ENABLED
     m_signalNotifier->setEnabled(false);
 
-    signalfd_siginfo sig;
-    if (read(m_signalFd, &sig, sizeof(sig)) == sizeof(sig)) {
-        switch (sig.ssi_signo) {
-        case SIGINT: // fallthrough
+    char sigNo;
+    if (QT_READ(m_sigFd[1], &sigNo, sizeof(sigNo)) == sizeof(sigNo)) {
+        switch (sigNo) {
+        case SIGINT:
         case SIGTERM:
             handleInt();
             break;
         case SIGTSTP:
-            emit suspendRequested();
+            emit aboutToSuspend();
+            setKeyboardEnabled(true);
+            setTTYCursor(true);
+            ::kill(getpid(), SIGSTOP);
             break;
         case SIGCONT:
+            setTTYCursor(false);
+            setKeyboardEnabled(false);
             emit resumed();
             break;
         default:
@@ -194,7 +199,7 @@ void QFbVtHandler::handleInt()
 {
 #ifdef VTH_ENABLED
     emit interrupted();
-    restoreKeyboard();
+    setKeyboardEnabled(true);
     setTTYCursor(true);
     _exit(1);
 #endif

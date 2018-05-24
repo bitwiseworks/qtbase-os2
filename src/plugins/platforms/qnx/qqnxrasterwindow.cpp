@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 - 2014 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -61,7 +67,7 @@ QQnxRasterWindow::QQnxRasterWindow(QWindow *window, screen_context_t context, bo
 
     const int val = SCREEN_USAGE_NATIVE | SCREEN_USAGE_READ | SCREEN_USAGE_WRITE;
     const int result = screen_set_window_property_iv(nativeHandle(), SCREEN_PROPERTY_USAGE, &val);
-    if (result != 0)
+    if (Q_UNLIKELY(result != 0))
         qFatal("QQnxRasterWindow: failed to set window alpha usage, errno=%d", errno);
 }
 
@@ -91,7 +97,7 @@ void QQnxRasterWindow::post(const QRegion &dirty)
 
     // Check if render buffer exists and something was rendered
     if (m_currentBufferIndex != -1 && !dirty.isEmpty()) {
-        qRasterWindowDebug() << Q_FUNC_INFO << "window =" << window();
+        qRasterWindowDebug() << "window =" << window();
         QQnxBuffer &currentBuffer = m_buffers[m_currentBufferIndex];
 
         // Copy unmodified region from old render buffer to new render buffer;
@@ -124,17 +130,18 @@ void QQnxRasterWindow::post(const QRegion &dirty)
 
 void QQnxRasterWindow::scroll(const QRegion &region, int dx, int dy, bool flush)
 {
-    qRasterWindowDebug() << Q_FUNC_INFO << "window =" << window();
+    qRasterWindowDebug() << "window =" << window();
     blitPreviousToCurrent(region, dx, dy, flush);
     m_scrolled += region;
 }
 
 QQnxBuffer &QQnxRasterWindow::renderBuffer()
 {
-    qRasterWindowDebug() << Q_FUNC_INFO << "window =" << window();
+    qRasterWindowDebug() << "window =" << window();
 
     // Check if render buffer is invalid
     if (m_currentBufferIndex == -1) {
+        auto platformScreen = static_cast<QQnxScreen *>(screen());
         // Get all buffers available for rendering
         screen_buffer_t buffers[MAX_BUFFER_COUNT];
         const int result = screen_get_window_property_pv(nativeHandle(), SCREEN_PROPERTY_RENDER_BUFFERS,
@@ -147,11 +154,11 @@ QQnxBuffer &QQnxRasterWindow::renderBuffer()
 
             // Clear Buffer
             int bg[] = { SCREEN_BLIT_COLOR, 0x00000000, SCREEN_BLIT_END };
-            Q_SCREEN_CHECKERROR(screen_fill(screen()->nativeContext(), buffers[i], bg),
+            Q_SCREEN_CHECKERROR(screen_fill(platformScreen->nativeContext(), buffers[i], bg),
                                 "Failed to clear window buffer");
         }
 
-        Q_SCREEN_CHECKERROR(screen_flush_blits(screen()->nativeContext(), 0),
+        Q_SCREEN_CHECKERROR(screen_flush_blits(platformScreen->nativeContext(), 0),
                             "Failed to flush blits");
 
         // Use the first available render buffer
@@ -172,14 +179,14 @@ void QQnxRasterWindow::adjustBufferSize()
 {
     // When having a raster window we don't need any buffers, since
     // Qt will draw to the parent TLW backing store.
-    const QSize windowSize = window()->parent() ? QSize(1,1) : window()->size();
+    const QSize windowSize = window()->parent() ? QSize(0,0) : window()->size();
     if (windowSize != bufferSize())
         setBufferSize(windowSize);
 }
 
 int QQnxRasterWindow::pixelFormat() const
 {
-    return screen()->nativeFormat();
+    return static_cast<QQnxScreen *>(screen())->nativeFormat();
 }
 
 void QQnxRasterWindow::resetBuffers()
@@ -188,11 +195,18 @@ void QQnxRasterWindow::resetBuffers()
     m_currentBufferIndex = -1;
     m_previousDirty = QRegion();
     m_scrolled = QRegion();
+    if (window()->parent() && bufferSize() == QSize(1,1)) {
+        // If we have a parent then we're not really rendering.  But if we don't render we'll
+        // be invisible and any children won't show up.  This should be harmless since we're
+        // rendering into a 1x1 window that has transparency set to discard.
+        renderBuffer();
+        post(QRegion(0,0,1,1));
+    }
 }
 
 void QQnxRasterWindow::blitPreviousToCurrent(const QRegion &region, int dx, int dy, bool flush)
 {
-    qRasterWindowDebug() << Q_FUNC_INFO << "window =" << window();
+    qRasterWindowDebug() << "window =" << window();
 
     // Abort if previous buffer is invalid or if nothing to copy
     if (m_previousBufferIndex == -1 || region.isEmpty())
@@ -202,10 +216,9 @@ void QQnxRasterWindow::blitPreviousToCurrent(const QRegion &region, int dx, int 
     QQnxBuffer &previousBuffer = m_buffers[m_previousBufferIndex];
 
     // Break down region into non-overlapping rectangles
-    const QVector<QRect> rects = region.rects();
-    for (int i = rects.size() - 1; i >= 0; i--) {
+    for (auto rit = region.rbegin(), rend = region.rend(); rit != rend; ++rit) {
         // Clip rectangle to bounds of target
-        const QRect rect = rects[i].intersected(currentBuffer.rect());
+        const QRect rect = rit->intersected(currentBuffer.rect());
 
         if (rect.isEmpty())
             continue;

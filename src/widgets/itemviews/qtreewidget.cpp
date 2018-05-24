@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,6 @@
 
 #include "qtreewidget.h"
 
-#ifndef QT_NO_TREEWIDGET
 #include <qheaderview.h>
 #include <qpainter.h>
 #include <qitemdelegate.h>
@@ -140,6 +145,7 @@ QTreeModel::QTreeModel(QTreeModelPrivate &dd, QTreeWidget *parent)
 QTreeModel::~QTreeModel()
 {
     clear();
+    headerItem->view = nullptr;
     delete headerItem;
     rootItem->view = 0;
     delete rootItem;
@@ -725,9 +731,9 @@ QMimeData *QTreeModel::internalMimeData()  const
 QMimeData *QTreeModel::mimeData(const QModelIndexList &indexes) const
 {
     QList<QTreeWidgetItem*> items;
-    for (int i = 0; i < indexes.count(); ++i) {
-        if (indexes.at(i).column() == 0) // only one item per row
-            items << item(indexes.at(i));
+    for (const auto &index : indexes) {
+        if (index.column() == 0) // only one item per row
+            items << item(index);
     }
 
     // cachedIndexes is a little hack to avoid copying from QModelIndexList to
@@ -1693,6 +1699,9 @@ Qt::ItemFlags QTreeWidgetItem::flags() const
 
     The \a role describes the type of data specified by \a value, and is defined by
     the Qt::ItemDataRole enum.
+
+    \note The default implementation treats Qt::EditRole and Qt::DisplayRole as
+    referring to the same data.
 */
 void QTreeWidgetItem::setData(int column, int role, const QVariant &value)
 {
@@ -1720,22 +1729,22 @@ void QTreeWidgetItem::setData(int column, int role, const QVariant &value)
         }
     } break;
     case Qt::CheckStateRole:
-        if ((itemFlags & Qt::ItemIsTristate) && value != Qt::PartiallyChecked) {
+        if ((itemFlags & Qt::ItemIsAutoTristate) && value != Qt::PartiallyChecked) {
             for (int i = 0; i < children.count(); ++i) {
                 QTreeWidgetItem *child = children.at(i);
                 if (child->data(column, role).isValid()) {// has a CheckState
                     Qt::ItemFlags f = itemFlags; // a little hack to avoid multiple dataChanged signals
-                    itemFlags &= ~Qt::ItemIsTristate;
+                    itemFlags &= ~Qt::ItemIsAutoTristate;
                     child->setData(column, role, value);
                     itemFlags = f;
                 }
             }
         }
-        // Don't break, but fall through
+        Q_FALLTHROUGH();
     default:
         if (column < values.count()) {
             bool found = false;
-            QVector<QWidgetItemData> column_values = values.at(column);
+            const QVector<QWidgetItemData> column_values = values.at(column);
             for (int i = 0; i < column_values.count(); ++i) {
                 if (column_values.at(i).role == role) {
                     if (column_values.at(i).value == value)
@@ -1760,7 +1769,7 @@ void QTreeWidgetItem::setData(int column, int role, const QVariant &value)
         model->emitDataChanged(this, column);
         if (role == Qt::CheckStateRole) {
             QTreeWidgetItem *p;
-            for (p = par; p && (p->itemFlags & Qt::ItemIsTristate); p = p->par)
+            for (p = par; p && (p->itemFlags & Qt::ItemIsAutoTristate); p = p->par)
                 model->emitDataChanged(p, column);
         }
     }
@@ -1779,15 +1788,16 @@ QVariant QTreeWidgetItem::data(int column, int role) const
         break;
     case Qt::CheckStateRole:
         // special case for check state in tristate
-        if (children.count() && (itemFlags & Qt::ItemIsTristate))
+        if (children.count() && (itemFlags & Qt::ItemIsAutoTristate))
             return childrenCheckState(column);
-        // fallthrough intended
+        Q_FALLTHROUGH();
    default:
         if (column >= 0 && column < values.size()) {
             const QVector<QWidgetItemData> &column_values = values.at(column);
-            for (int i = 0; i < column_values.count(); ++i)
-                if (column_values.at(i).role == role)
-                    return column_values.at(i).value;
+            for (const auto &column_value : column_values) {
+                if (column_value.role == role)
+                    return column_value.value;
+            }
         }
     }
     return QVariant();
@@ -2002,6 +2012,9 @@ void QTreeWidgetItem::addChildren(const QList<QTreeWidgetItem*> &children)
 */
 void QTreeWidgetItem::insertChildren(int index, const QList<QTreeWidgetItem*> &children)
 {
+    if (index < 0 || index > this->children.count() || children.isEmpty())
+        return;
+
     if (view && view->isSortingEnabled()) {
         for (int n = 0; n < children.count(); ++n)
             insertChild(index, children.at(n));
@@ -2136,8 +2149,8 @@ QVariant QTreeWidgetItem::childrenCheckState(int column) const
         return QVariant();
     bool checkedChildren = false;
     bool uncheckedChildren = false;
-    for (int i = 0; i < children.count(); ++i) {
-        QVariant value = children.at(i)->data(column, Qt::CheckStateRole);
+    for (const auto *child : children) {
+        QVariant value = child->data(column, Qt::CheckStateRole);
         if (!value.isValid())
             return QVariant();
 
@@ -2346,6 +2359,8 @@ void QTreeWidgetPrivate::_q_dataChanged(const QModelIndex &topLeft,
   \ingroup model-view
   \inmodule QtWidgets
 
+  \image windows-treeview.png
+
   The QTreeWidget class is a convenience class that provides a standard
   tree widget with a classic item-based interface similar to that used by
   the QListView class in Qt 3.
@@ -2378,15 +2393,6 @@ void QTreeWidgetPrivate::_q_dataChanged(const QModelIndex &topLeft,
   \l{QTreeView::setSortingEnabled()}{setSortingEnabled()}. The
   \l{QTreeView::isSortingEnabled()}{isSortingEnabled()} function indicates
   whether sorting is enabled.
-
-  \table 100%
-  \row \li \inlineimage windowsvista-treeview.png Screenshot of a Windows Vista style tree widget
-       \li \inlineimage macintosh-treeview.png Screenshot of a Macintosh style tree widget
-       \li \inlineimage fusion-treeview.png Screenshot of a Fusion style tree widget
-  \row \li A \l{Windows Vista Style Widget Gallery}{Windows Vista style} tree widget.
-       \li A \l{Macintosh Style Widget Gallery}{Macintosh style} tree widget.
-       \li A \l{Fusion Style Widget Gallery}{Fusion style} tree widget.
-  \endtable
 
   \sa QTreeWidgetItem, QTreeWidgetItemIterator, QTreeView,
   {Model/View Programming}, {Settings Editor Example}
@@ -2726,14 +2732,14 @@ void QTreeWidget::setHeaderItem(QTreeWidgetItem *item)
 
     int oldCount = columnCount();
     if (oldCount < item->columnCount())
-         d->treeModel()->beginInsertColumns(QModelIndex(), oldCount, item->columnCount());
-    else
-         d->treeModel()->beginRemoveColumns(QModelIndex(), item->columnCount(), oldCount);
+         d->treeModel()->beginInsertColumns(QModelIndex(), oldCount, item->columnCount() - 1);
+    else if (oldCount > item->columnCount())
+         d->treeModel()->beginRemoveColumns(QModelIndex(), item->columnCount(), oldCount - 1);
     delete d->treeModel()->headerItem;
     d->treeModel()->headerItem = item;
     if (oldCount < item->columnCount())
         d->treeModel()->endInsertColumns();
-    else
+    else if (oldCount > item->columnCount())
         d->treeModel()->endRemoveColumns();
     d->treeModel()->headerDataChanged(Qt::Horizontal, 0, oldCount);
 }
@@ -2856,11 +2862,11 @@ QRect QTreeWidget::visualItemRect(const QTreeWidgetItem *item) const
     Q_D(const QTreeWidget);
     //the visual rect for an item is across all columns. So we need to determine
     //what is the first and last column and get their visual index rects
-    QModelIndex base = d->index(item);
+    const QModelIndex base = d->index(item);
     const int firstVisiblesection = header()->logicalIndexAt(- header()->offset());
     const int lastVisibleSection = header()->logicalIndexAt(header()->length() - header()->offset() - 1);
-    QModelIndex first = base.sibling(base.row(), header()->logicalIndex(firstVisiblesection));
-    QModelIndex last = base.sibling(base.row(), header()->logicalIndex(lastVisibleSection));
+    const QModelIndex first = base.sibling(base.row(), firstVisiblesection);
+    const QModelIndex last = base.sibling(base.row(), lastVisibleSection);
     return visualRect(first) | visualRect(last);
 }
 
@@ -2906,7 +2912,7 @@ void QTreeWidget::editItem(QTreeWidgetItem *item, int column)
 /*!
   Opens a persistent editor for the \a item in the given \a column.
 
-  \sa closePersistentEditor()
+  \sa closePersistentEditor(), isPersistentEditorOpen()
 */
 
 void QTreeWidget::openPersistentEditor(QTreeWidgetItem *item, int column)
@@ -2921,13 +2927,28 @@ void QTreeWidget::openPersistentEditor(QTreeWidgetItem *item, int column)
   This function has no effect if no persistent editor is open for this
   combination of item and column.
 
-  \sa openPersistentEditor()
+  \sa openPersistentEditor(), isPersistentEditorOpen()
 */
 
 void QTreeWidget::closePersistentEditor(QTreeWidgetItem *item, int column)
 {
     Q_D(QTreeWidget);
     QAbstractItemView::closePersistentEditor(d->index(item, column));
+}
+
+/*!
+    \since 5.10
+
+    Returns whether a persistent editor is open for item \a item in
+    column \a column.
+
+    \sa openPersistentEditor(), closePersistentEditor()
+*/
+
+bool QTreeWidget::isPersistentEditorOpen(QTreeWidgetItem *item, int column) const
+{
+    Q_D(const QTreeWidget);
+    return QAbstractItemView::isPersistentEditorOpen(d->index(item, column));
 }
 
 /*!
@@ -3018,13 +3039,13 @@ void QTreeWidget::setItemSelected(const QTreeWidgetItem *item, bool select)
 QList<QTreeWidgetItem*> QTreeWidget::selectedItems() const
 {
     Q_D(const QTreeWidget);
-    QModelIndexList indexes = selectionModel()->selectedIndexes();
+    const QModelIndexList indexes = selectionModel()->selectedIndexes();
     QList<QTreeWidgetItem*> items;
     items.reserve(indexes.count());
     QSet<QTreeWidgetItem *> seen;
     seen.reserve(indexes.count());
-    for (int i = 0; i < indexes.count(); ++i) {
-        QTreeWidgetItem *item = d->item(indexes.at(i));
+    for (const auto &index : indexes) {
+        QTreeWidgetItem *item = d->item(index);
         if (isItemHidden(item) || seen.contains(item))
             continue;
         seen.insert(item);
@@ -3042,7 +3063,9 @@ QList<QTreeWidgetItem*> QTreeWidget::findItems(const QString &text, Qt::MatchFla
     QModelIndexList indexes = d->model->match(model()->index(0, column, QModelIndex()),
                                                 Qt::DisplayRole, text, -1, flags);
     QList<QTreeWidgetItem*> items;
-    for (int i = 0; i < indexes.size(); ++i)
+    const int indexesSize = indexes.size();
+    items.reserve(indexesSize);
+    for (int i = 0; i < indexesSize; ++i)
         items.append(d->item(indexes.at(i)));
     return items;
 }
@@ -3276,16 +3299,15 @@ QMimeData *QTreeWidget::mimeData(const QList<QTreeWidgetItem*> items) const
     Q_D(const QTreeWidget);
     if (d->treeModel()->cachedIndexes.isEmpty()) {
         QList<QModelIndex> indexes;
-        for (int i = 0; i < items.count(); ++i) {
-            QTreeWidgetItem *item = items.at(i);
-            if (!item) {
-                qWarning() << "QTreeWidget::mimeData: Null-item passed";
+        for (const auto *item : items) {
+            if (Q_UNLIKELY(!item)) {
+                qWarning("QTreeWidget::mimeData: Null-item passed");
                 return 0;
             }
 
             for (int c = 0; c < item->values.count(); ++c) {
                 const QModelIndex index = indexFromItem(item, c);
-                if (!index.isValid()) {
+                if (Q_UNLIKELY(!index.isValid())) {
                     qWarning() << "QTreeWidget::mimeData: No index associated with item :" << item;
                     return 0;
                 }
@@ -3338,18 +3360,31 @@ QList<QTreeWidgetItem*> QTreeWidget::items(const QMimeData *data) const
 }
 
 /*!
-    Returns the QModelIndex assocated with the given \a item in the given \a column.
+    Returns the QModelIndex associated with the given \a item in the given \a column.
+
+    \note In Qt versions prior to 5.7, this function took a non-\c{const} \a item.
 
     \sa itemFromIndex(), topLevelItem()
 */
-QModelIndex QTreeWidget::indexFromItem(QTreeWidgetItem *item, int column) const
+QModelIndex QTreeWidget::indexFromItem(const QTreeWidgetItem *item, int column) const
 {
     Q_D(const QTreeWidget);
     return d->index(item, column);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
-    Returns a pointer to the QTreeWidgetItem assocated with the given \a index.
+    \overload
+    \internal
+*/
+QModelIndex QTreeWidget::indexFromItem(QTreeWidgetItem *item, int column) const
+{
+    return indexFromItem(const_cast<const QTreeWidgetItem *>(item), column);
+}
+#endif
+
+/*!
+    Returns a pointer to the QTreeWidgetItem associated with the given \a index.
 
     \sa indexFromItem()
 */
@@ -3369,10 +3404,12 @@ void QTreeWidget::dropEvent(QDropEvent *event) {
         int col = -1;
         int row = -1;
         if (d->dropOn(event, &row, &col, &topIndex)) {
-            QList<QModelIndex> idxs = selectedIndexes();
+            const QList<QModelIndex> idxs = selectedIndexes();
             QList<QPersistentModelIndex> indexes;
-            for (int i = 0; i < idxs.count(); i++)
-                indexes.append(idxs.at(i));
+            const int indexesCount = idxs.count();
+            indexes.reserve(indexesCount);
+            for (const auto &idx : idxs)
+                indexes.append(idx);
 
             if (indexes.contains(topIndex))
                 return;
@@ -3382,12 +3419,12 @@ void QTreeWidget::dropEvent(QDropEvent *event) {
 
             // Remove the items
             QList<QTreeWidgetItem *> taken;
-            for (int i = indexes.count() - 1; i >= 0; --i) {
-                QTreeWidgetItem *parent = itemFromIndex(indexes.at(i));
+            for (const auto &index : indexes) {
+                QTreeWidgetItem *parent = itemFromIndex(index);
                 if (!parent || !parent->parent()) {
-                    taken.append(takeTopLevelItem(indexes.at(i).row()));
+                    taken.append(takeTopLevelItem(index.row()));
                 } else {
-                    taken.append(parent->parent()->takeChild(indexes.at(i).row()));
+                    taken.append(parent->parent()->takeChild(index.row()));
                 }
             }
 
@@ -3445,5 +3482,4 @@ bool QTreeWidget::event(QEvent *e)
 QT_END_NAMESPACE
 
 #include "moc_qtreewidget.cpp"
-
-#endif // QT_NO_TREEWIDGET
+#include "moc_qtreewidget_p.cpp"

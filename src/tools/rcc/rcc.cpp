@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -78,7 +73,7 @@ void RCCResourceLibrary::writeByteArray(const QByteArray &other)
 
 static inline QString msgOpenReadFailed(const QString &fname, const QString &why)
 {
-    return QString::fromLatin1("Unable to open %1 for reading: %2\n").arg(fname).arg(why);
+    return QString::fromLatin1("Unable to open %1 for reading: %2\n").arg(fname, why);
 }
 
 
@@ -208,6 +203,18 @@ void RCCFileInfo::writeDataInfo(RCCResourceLibrary &lib)
     }
     if (text || pass1)
         lib.writeChar('\n');
+
+    if (lib.formatVersion() >= 2) {
+        // last modified time stamp
+        const QDateTime lastModified = m_fileInfo.lastModified();
+        quint64 lastmod = quint64(lastModified.isValid() ? lastModified.toMSecsSinceEpoch() : 0);
+        static const quint64 sourceDate = 1000 * qgetenv("QT_RCC_SOURCE_DATE_OVERRIDE").toULongLong();
+        if (sourceDate != 0)
+            lastmod = sourceDate;
+        lib.writeNumber8(lastmod);
+        if (text || pass1)
+            lib.writeChar('\n');
+    }
 }
 
 qint64 RCCFileInfo::writeDataBlob(RCCResourceLibrary &lib, qint64 offset,
@@ -340,7 +347,7 @@ RCCResourceLibrary::Strings::Strings() :
 {
 }
 
-RCCResourceLibrary::RCCResourceLibrary()
+RCCResourceLibrary::RCCResourceLibrary(quint8 formatVersion)
   : m_root(0),
     m_format(C_Code),
     m_verbose(false),
@@ -351,7 +358,8 @@ RCCResourceLibrary::RCCResourceLibrary()
     m_dataOffset(0),
     m_useNameSpace(CONSTANT_USENAMESPACE),
     m_errorDevice(0),
-    m_outDevice(0)
+    m_outDevice(0),
+    m_formatVersion(formatVersion)
 {
     m_out.reserve(30 * 1000 * 1000);
 }
@@ -366,6 +374,7 @@ enum RCCXmlTag {
     ResourceTag,
     FileTag
 };
+Q_DECLARE_TYPEINFO(RCCXmlTag, Q_PRIMITIVE_TYPE);
 
 bool RCCResourceLibrary::interpretResourceFile(QIODevice *inputDevice,
     const QString &fname, QString currentPath, bool ignoreErrors)
@@ -495,37 +504,8 @@ bool RCCResourceLibrary::interpretResourceFile(QIODevice *inputDevice,
                 if (QDir::isRelativePath(absFileName))
                     absFileName.prepend(currentPath);
                 QFileInfo file(absFileName);
-                if (!file.exists()) {
-                    m_failedResources.push_back(absFileName);
-                    const QString msg = QString::fromLatin1("RCC: Error in '%1': Cannot find file '%2'\n").arg(fname).arg(fileName);
-                    m_errorDevice->write(msg.toUtf8());
-                    if (ignoreErrors)
-                        continue;
-                    else
-                        return false;
-                } else if (file.isFile()) {
-                    const bool arc =
-                        addFile(alias,
-                                RCCFileInfo(alias.section(slash, -1),
-                                            file,
-                                            language,
-                                            country,
-                                            RCCFileInfo::NoFlags,
-                                            compressLevel,
-                                            compressThreshold)
-                                );
-                    if (!arc)
-                        m_failedResources.push_back(absFileName);
-                } else {
-                    QDir dir;
-                    if (file.isDir()) {
-                        dir.setPath(file.filePath());
-                    } else {
-                        dir.setPath(file.path());
-                        dir.setNameFilters(QStringList(file.fileName()));
-                        if (alias.endsWith(file.fileName()))
-                            alias = alias.left(alias.length()-file.fileName().length());
-                    }
+                if (file.isDir()) {
+                    QDir dir(file.filePath());
                     if (!alias.endsWith(slash))
                         alias += slash;
                     QDirIterator it(dir, QDirIterator::FollowSymlinks|QDirIterator::Subdirectories);
@@ -547,6 +527,33 @@ bool RCCResourceLibrary::interpretResourceFile(QIODevice *inputDevice,
                                 m_failedResources.push_back(child.fileName());
                         }
                     }
+                } else if (file.isFile()) {
+                    const bool arc =
+                        addFile(alias,
+                                RCCFileInfo(alias.section(slash, -1),
+                                            file,
+                                            language,
+                                            country,
+                                            RCCFileInfo::NoFlags,
+                                            compressLevel,
+                                            compressThreshold)
+                                );
+                    if (!arc)
+                        m_failedResources.push_back(absFileName);
+                } else if (file.exists()) {
+                    m_failedResources.push_back(absFileName);
+                    const QString msg = QString::fromLatin1("RCC: Error in '%1': Entry '%2' is neither a file nor a directory\n")
+                                        .arg(fname, fileName);
+                    m_errorDevice->write(msg.toUtf8());
+                    return false;
+                } else {
+                    m_failedResources.push_back(absFileName);
+                    const QString msg = QString::fromLatin1("RCC: Error in '%1': Cannot find file '%2'\n")
+                                        .arg(fname, fileName);
+                    m_errorDevice->write(msg.toUtf8());
+                    if (ignoreErrors)
+                        continue;
+                    return false;
                 }
             }
             break;
@@ -616,9 +623,10 @@ bool RCCResourceLibrary::addFile(const QString &alias, const RCCFileInfo &file)
     for (ChildConstIterator it = cbegin; it != cend; ++it) {
         if (it.key() == filename && it.value()->m_language == s->m_language &&
             it.value()->m_country == s->m_country) {
-            foreach (const QString &name, m_fileNames)
+            for (const QString &name : qAsConst(m_fileNames)) {
                 qWarning("%s: Warning: potential duplicate alias detected: '%s'",
                 qPrintable(name), qPrintable(filename));
+            }
             break;
         }
     }
@@ -708,9 +716,7 @@ static void resourceDataFileMapRecursion(const RCCFileInfo *m_root, const QStrin
     const ChildConstIterator cend = m_root->m_children.constEnd();
     for (ChildConstIterator it = m_root->m_children.constBegin(); it != cend; ++it) {
         const RCCFileInfo *child = it.value();
-        QString childName = path;
-        childName += slash;
-        childName += child->m_name;
+        const QString childName = path + slash + child->m_name;
         if (child->m_flags & RCCFileInfo::Directory) {
             resourceDataFileMapRecursion(child, childName, m);
         } else {
@@ -838,6 +844,38 @@ void RCCResourceLibrary::writeNumber4(quint32 number)
     }
 }
 
+void RCCResourceLibrary::writeNumber8(quint64 number)
+{
+    if (m_format == RCCResourceLibrary::Pass2) {
+        m_outDevice->putChar(char(number >> 56));
+        m_outDevice->putChar(char(number >> 48));
+        m_outDevice->putChar(char(number >> 40));
+        m_outDevice->putChar(char(number >> 32));
+        m_outDevice->putChar(char(number >> 24));
+        m_outDevice->putChar(char(number >> 16));
+        m_outDevice->putChar(char(number >> 8));
+        m_outDevice->putChar(char(number));
+    } else if (m_format == RCCResourceLibrary::Binary) {
+        writeChar(number >> 56);
+        writeChar(number >> 48);
+        writeChar(number >> 40);
+        writeChar(number >> 32);
+        writeChar(number >> 24);
+        writeChar(number >> 16);
+        writeChar(number >> 8);
+        writeChar(number);
+    } else {
+        writeHex(number >> 56);
+        writeHex(number >> 48);
+        writeHex(number >> 40);
+        writeHex(number >> 32);
+        writeHex(number >> 24);
+        writeHex(number >> 16);
+        writeHex(number >> 8);
+        writeHex(number);
+    }
+}
+
 bool RCCResourceLibrary::writeHeader()
 {
     if (m_format == C_Code || m_format == Pass1) {
@@ -938,10 +976,14 @@ bool RCCResourceLibrary::writeDataNames()
     return true;
 }
 
-static bool qt_rcc_compare_hash(const RCCFileInfo *left, const RCCFileInfo *right)
+struct qt_rcc_compare_hash
 {
-    return qt_hash(left->m_name) < qt_hash(right->m_name);
-}
+    typedef bool result_type;
+    result_type operator()(const RCCFileInfo *left, const RCCFileInfo *right) const
+    {
+        return qt_hash(left->m_name) < qt_hash(right->m_name);
+    }
+};
 
 bool RCCResourceLibrary::writeDataStructure()
 {
@@ -963,7 +1005,7 @@ bool RCCResourceLibrary::writeDataStructure()
 
         //sort by hash value for binary lookup
         QList<RCCFileInfo*> m_children = file->m_children.values();
-        std::sort(m_children.begin(), m_children.end(), qt_rcc_compare_hash);
+        std::sort(m_children.begin(), m_children.end(), qt_rcc_compare_hash());
 
         //write out the actual data now
         for (int i = 0; i < m_children.size(); ++i) {
@@ -982,7 +1024,7 @@ bool RCCResourceLibrary::writeDataStructure()
 
         //sort by hash value for binary lookup
         QList<RCCFileInfo*> m_children = file->m_children.values();
-        std::sort(m_children.begin(), m_children.end(), qt_rcc_compare_hash);
+        std::sort(m_children.begin(), m_children.end(), qt_rcc_compare_hash());
 
         //write out the actual data now
         for (int i = 0; i < m_children.size(); ++i) {
@@ -1077,7 +1119,9 @@ bool RCCResourceLibrary::writeInitializer()
         if (m_root) {
             writeString("    ");
             writeAddNamespaceFunction("qRegisterResourceData");
-            writeString("\n        (0x01, qt_resource_struct, "
+            writeString("\n        (");
+            writeHex(m_formatVersion);
+            writeString(" qt_resource_struct, "
                        "qt_resource_name, qt_resource_data);\n");
         }
         writeString("    return 1;\n");
@@ -1098,7 +1142,9 @@ bool RCCResourceLibrary::writeInitializer()
         if (m_root) {
             writeString("    ");
             writeAddNamespaceFunction("qUnregisterResourceData");
-            writeString("\n       (0x01, qt_resource_struct, "
+            writeString("\n       (");
+            writeHex(m_formatVersion);
+            writeString(" qt_resource_struct, "
                       "qt_resource_name, qt_resource_data);\n");
         }
         writeString("    return 1;\n");
@@ -1115,10 +1161,10 @@ bool RCCResourceLibrary::writeInitializer()
     } else if (m_format == Binary) {
         int i = 4;
         char *p = m_out.data();
-        p[i++] = 0; // 0x01
         p[i++] = 0;
         p[i++] = 0;
-        p[i++] = 1;
+        p[i++] = 0;
+        p[i++] = m_formatVersion;
 
         p[i++] = (m_treeOffset >> 24) & 0xff;
         p[i++] = (m_treeOffset >> 16) & 0xff;

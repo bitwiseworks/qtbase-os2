@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,7 +52,7 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(qLcInput, "qt.qpa.input")
+Q_LOGGING_CATEGORY(qLcLibInput, "qt.qpa.input")
 
 static int liOpen(const char *path, int flags, void *user_data)
 {
@@ -75,7 +81,7 @@ static void liLogHandler(libinput *libinput, libinput_log_priority priority, con
     if (n > 0) {
         if (buf[n - 1] == '\n')
             buf[n - 1] = '\0';
-        qCDebug(qLcInput, "libinput: %s", buf);
+        qCDebug(qLcLibInput, "libinput: %s", buf);
     }
 }
 
@@ -85,30 +91,33 @@ QLibInputHandler::QLibInputHandler(const QString &key, const QString &spec)
     Q_UNUSED(spec);
 
     m_udev = udev_new();
-    if (!m_udev)
+    if (Q_UNLIKELY(!m_udev))
         qFatal("Failed to get udev context for libinput");
 
-    m_li = libinput_udev_create_context(&liInterface, Q_NULLPTR, m_udev);
-    if (!m_li)
+    m_li = libinput_udev_create_context(&liInterface, nullptr, m_udev);
+    if (Q_UNLIKELY(!m_li))
         qFatal("Failed to get libinput context");
 
     libinput_log_set_handler(m_li, liLogHandler);
-    if (qLcInput().isDebugEnabled())
+    if (qLcLibInput().isDebugEnabled())
         libinput_log_set_priority(m_li, LIBINPUT_LOG_PRIORITY_DEBUG);
 
-    if (libinput_udev_assign_seat(m_li, "seat0"))
+    if (Q_UNLIKELY(libinput_udev_assign_seat(m_li, "seat0")))
         qFatal("Failed to assign seat");
 
     m_liFd = libinput_get_fd(m_li);
     m_notifier.reset(new QSocketNotifier(m_liFd, QSocketNotifier::Read));
-    connect(m_notifier.data(), SIGNAL(activated(int)), SLOT(onReadyRead()));
+
+    connect(m_notifier.data(), &QSocketNotifier::activated, this, &QLibInputHandler::onReadyRead);
 
     m_pointer.reset(new QLibInputPointer);
     m_keyboard.reset(new QLibInputKeyboard);
     m_touch.reset(new QLibInputTouch);
 
-    connect(QGuiApplicationPrivate::inputDeviceManager(), SIGNAL(cursorPositionChangeRequested(QPoint)),
-            this, SLOT(onCursorPositionChangeRequested(QPoint)));
+    QInputDeviceManager *manager = QGuiApplicationPrivate::inputDeviceManager();
+    connect(manager, &QInputDeviceManager::cursorPositionChangeRequested, [=](const QPoint &pos) {
+        m_pointer->setPos(pos);
+    });
 
     // Process the initial burst of DEVICE_ADDED events.
     onReadyRead();
@@ -131,7 +140,7 @@ void QLibInputHandler::onReadyRead()
     }
 
     libinput_event *ev;
-    while ((ev = libinput_get_event(m_li)) != Q_NULLPTR) {
+    while ((ev = libinput_get_event(m_li)) != nullptr) {
         processEvent(ev);
         libinput_event_destroy(ev);
     }
@@ -148,10 +157,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
         // This is not just for hotplugging, it is also called for each input
         // device libinput reads from on startup. Hence it is suitable for doing
         // touch device registration.
-        const char *sysname = libinput_device_get_sysname(dev); // node name without path
-        const char *name = libinput_device_get_name(dev);
-        emit deviceAdded(QString::fromUtf8(sysname), QString::fromUtf8(name));
-
         QInputDeviceManagerPrivate *inputManagerPriv = QInputDeviceManagerPrivate::get(
             QGuiApplicationPrivate::inputDeviceManager());
         if (libinput_device_has_capability(dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
@@ -174,10 +179,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
     }
     case LIBINPUT_EVENT_DEVICE_REMOVED:
     {
-        const char *sysname = libinput_device_get_sysname(dev);
-        const char *name = libinput_device_get_name(dev);
-        emit deviceRemoved(QString::fromUtf8(sysname), QString::fromUtf8(name));
-
         QInputDeviceManagerPrivate *inputManagerPriv = QInputDeviceManagerPrivate::get(
             QGuiApplicationPrivate::inputDeviceManager());
         if (libinput_device_has_capability(dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
@@ -228,11 +229,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
     default:
         break;
     }
-}
-
-void QLibInputHandler::onCursorPositionChangeRequested(const QPoint &pos)
-{
-    m_pointer->setPos(pos);
 }
 
 QT_END_NAMESPACE

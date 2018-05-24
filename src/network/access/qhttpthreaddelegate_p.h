@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +52,7 @@
 // We mean it.
 //
 
+#include <QtNetwork/private/qtnetworkglobal_p.h>
 #include <QObject>
 #include <QThreadStorage>
 #include <QNetworkProxy>
@@ -56,11 +63,12 @@
 #include "qhttpnetworkrequest_p.h"
 #include "qhttpnetworkconnection_p.h"
 #include <QSharedPointer>
-#include "qsslconfiguration.h"
+#include <QScopedPointer>
 #include "private/qnoncontiguousbytedevice_p.h"
 #include "qnetworkaccessauthenticationmanager_p.h"
+#include <QtNetwork/private/http2protocol_p.h>
 
-#ifndef QT_NO_HTTP
+QT_REQUIRE_CONFIG(http);
 
 QT_BEGIN_NAMESPACE
 
@@ -81,7 +89,7 @@ public:
     // incoming
     bool ssl;
 #ifndef QT_NO_SSL
-    QSslConfiguration incomingSslConfiguration;
+    QScopedPointer<QSslConfiguration> incomingSslConfiguration;
 #endif
     QHttpNetworkRequest httpRequest;
     qint64 downloadBufferMaximumSize;
@@ -105,8 +113,10 @@ public:
     bool isPipeliningUsed;
     bool isSpdyUsed;
     qint64 incomingContentLength;
+    qint64 removedContentLength;
     QNetworkReply::NetworkError incomingErrorCode;
     QString incomingErrorDetail;
+    Http2::ProtocolParameters http2Parameters;
 #ifndef QT_NO_BEARERMANAGEMENT
     QSharedPointer<QNetworkSession> networkSession;
 #endif
@@ -130,15 +140,17 @@ signals:
 #ifndef QT_NO_SSL
     void encrypted();
     void sslErrors(const QList<QSslError> &, bool *, QList<QSslError> *);
-    void sslConfigurationChanged(const QSslConfiguration);
+    void sslConfigurationChanged(const QSslConfiguration &);
     void preSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *);
 #endif
-    void downloadMetaData(QList<QPair<QByteArray,QByteArray> >, int, QString, bool,
-                          QSharedPointer<char>, qint64, bool);
+    void downloadMetaData(const QList<QPair<QByteArray,QByteArray> > &, int, const QString &, bool,
+                          QSharedPointer<char>, qint64, qint64, bool);
     void downloadProgress(qint64, qint64);
-    void downloadData(QByteArray);
-    void error(QNetworkReply::NetworkError, const QString);
+    void downloadData(const QByteArray &);
+    void error(QNetworkReply::NetworkError, const QString &);
     void downloadFinished();
+    void redirected(const QUrl &url, int httpStatus, int maxRedirectsRemainig);
+
 public slots:
     // This are called via QueuedConnection from user thread
     void startRequest();
@@ -206,12 +218,12 @@ public:
     {
     }
 
-    qint64 pos() Q_DECL_OVERRIDE
+    qint64 pos() const override
     {
         return m_pos;
     }
 
-    const char* readPointer(qint64 maximumLength, qint64 &len) Q_DECL_OVERRIDE
+    const char* readPointer(qint64 maximumLength, qint64 &len) override
     {
         if (m_amount > 0) {
             len = m_amount;
@@ -231,7 +243,7 @@ public:
         return 0;
     }
 
-    bool advanceReadPointer(qint64 a) Q_DECL_OVERRIDE
+    bool advanceReadPointer(qint64 a) override
     {
         if (m_data == 0)
             return false;
@@ -246,7 +258,7 @@ public:
         return true;
     }
 
-    bool atEnd() Q_DECL_OVERRIDE
+    bool atEnd() const override
     {
         if (m_amount > 0)
             return false;
@@ -254,7 +266,7 @@ public:
             return m_atEnd;
     }
 
-    bool reset() Q_DECL_OVERRIDE
+    bool reset() override
     {
         m_amount = 0;
         m_data = 0;
@@ -276,14 +288,14 @@ public:
         return b;
     }
 
-    qint64 size() Q_DECL_OVERRIDE
+    qint64 size() const override
     {
         return m_size;
     }
 
 public slots:
     // From user thread:
-    void haveDataSlot(qint64 pos, QByteArray dataArray, bool dataAtEnd, qint64 dataSize)
+    void haveDataSlot(qint64 pos, const QByteArray &dataArray, bool dataAtEnd, qint64 dataSize)
     {
         if (pos != m_pos) {
             // Sometimes when re-sending a request in the qhttpnetwork* layer there is a pending haveData from the
@@ -314,7 +326,5 @@ signals:
 };
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_HTTP
 
 #endif // QHTTPTHREADDELEGATE_H

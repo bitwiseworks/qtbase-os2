@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -49,11 +59,9 @@
 #include "ping-common.h"
 #include "complexping.h"
 
-void Ping::start(const QString &name, const QString &oldValue, const QString &newValue)
+void Ping::start(const QString &name)
 {
-    Q_UNUSED(oldValue);
-
-    if (name != SERVICE_NAME || newValue.isEmpty())
+    if (name != SERVICE_NAME)
         return;
 
     // open stdin for reading
@@ -105,10 +113,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    QDBusServiceWatcher serviceWatcher(SERVICE_NAME, QDBusConnection::sessionBus(),
+                                       QDBusServiceWatcher::WatchForRegistration);
+
     Ping ping;
-    ping.connect(QDBusConnection::sessionBus().interface(),
-                 SIGNAL(serviceOwnerChanged(QString,QString,QString)),
-                 SLOT(start(QString,QString,QString)));
+    QObject::connect(&serviceWatcher, &QDBusServiceWatcher::serviceRegistered,
+                     &ping, &Ping::start);
 
     QProcess pong;
     pong.start("./complexpong");

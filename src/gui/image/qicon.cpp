@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,16 +47,15 @@
 #include "private/qiconloader_p.h"
 #include "qpainter.h"
 #include "qfileinfo.h"
+#include <qmimedatabase.h>
+#include <qmimetype.h>
 #include "qpixmapcache.h"
 #include "qvariant.h"
 #include "qcache.h"
 #include "qdebug.h"
+#include "qdir.h"
 #include "qpalette.h"
-
-#ifdef Q_DEAD_CODE_FROM_QT4_MAC
-#include <private/qt_mac_p.h>
-#include <private/qt_cocoa_helpers_mac_p.h>
-#endif
+#include "qmath.h"
 
 #include "private/qhexstring_p.h"
 #include "private/qguiapplication_p.h"
@@ -91,7 +97,11 @@ QT_BEGIN_NAMESPACE
   \value On  Display the pixmap when the widget is in an "on" state
 */
 
-static QBasicAtomicInt serialNumCounter = Q_BASIC_ATOMIC_INITIALIZER(1);
+static int nextSerialNumCounter()
+{
+    static QBasicAtomicInt serial = Q_BASIC_ATOMIC_INITIALIZER(0);
+    return 1 + serial.fetchAndAddRelaxed(1);
+}
 
 static void qt_cleanup_icon_cache();
 namespace {
@@ -131,10 +141,11 @@ static qreal qt_effective_device_pixel_ratio(QWindow *window = 0)
     return qApp->devicePixelRatio(); // Don't know which window to target.
 }
 
-QIconPrivate::QIconPrivate()
-    : engine(0), ref(1),
-    serialNum(serialNumCounter.fetchAndAddRelaxed(1)),
-    detach_no(0)
+QIconPrivate::QIconPrivate(QIconEngine *e)
+    : engine(e), ref(1),
+      serialNum(nextSerialNumCounter()),
+    detach_no(0),
+    is_mask(false)
 {
 }
 
@@ -279,7 +290,7 @@ QPixmap QPixmapIconEngine::pixmap(const QSize &size, QIcon::Mode mode, QIcon::St
     if (pm.isNull()) {
         int idx = pixmaps.count();
         while (--idx >= 0) {
-            if (pe == &pixmaps[idx]) {
+            if (pe == &pixmaps.at(idx)) {
                 pixmaps.remove(idx);
                 break;
             }
@@ -296,7 +307,7 @@ QPixmap QPixmapIconEngine::pixmap(const QSize &size, QIcon::Mode mode, QIcon::St
 
     QString key = QLatin1String("qt_")
                   % HexString<quint64>(pm.cacheKey())
-                  % HexString<uint>(pe->mode)
+                  % HexString<uint>(pe ? pe->mode : QIcon::Normal)
                   % HexString<quint64>(QGuiApplication::palette().cacheKey())
                   % HexString<uint>(actualSize.width())
                   % HexString<uint>(actualSize.height());
@@ -362,7 +373,7 @@ static inline int origIcoDepth(const QImage &image)
     return s.isEmpty() ? 32 : s.toInt();
 }
 
-static inline int findBySize(const QList<QImage> &images, const QSize &size)
+static inline int findBySize(const QVector<QImage> &images, const QSize &size)
 {
     for (int i = 0; i < images.size(); ++i) {
         if (images.at(i).size() == size)
@@ -426,7 +437,7 @@ void QPixmapIconEngine::addFile(const QString &fileName, const QSize &size, QIco
     // these files may contain low-resolution images. As this information is lost,
     // ICOReader sets the original format as an image text key value. Read all matching
     // images into a list trying to find the highest quality per size.
-    QList<QImage> icoImages;
+    QVector<QImage> icoImages;
     while (imageReader.read(&image)) {
         if (ignoreSize || image.size() == size) {
             const int position = findBySize(icoImages, image.size());
@@ -438,7 +449,7 @@ void QPixmapIconEngine::addFile(const QString &fileName, const QSize &size, QIco
             }
         }
     }
-    foreach (const QImage &i, icoImages)
+    for (const QImage &i : qAsConst(icoImages))
         pixmaps += QPixmapIconEngineEntry(abs, i, mode, state);
     if (icoImages.isEmpty() && !ignoreSize) // Add placeholder with the filename and empty pixmap for the size.
         pixmaps += QPixmapIconEngineEntry(abs, size, mode, state);
@@ -525,7 +536,6 @@ void QPixmapIconEngine::virtual_hook(int id, void *data)
     }
 }
 
-#ifndef QT_NO_LIBRARY
 Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
     (QIconEngineFactoryInterface_iid, QLatin1String("/iconengines"), Qt::CaseInsensitive))
 
@@ -533,8 +543,6 @@ QFactoryLoader *qt_iconEngineFactoryLoader()
 {
     return loader();
 }
-#endif
-
 
 
 /*!
@@ -568,11 +576,11 @@ QFactoryLoader *qt_iconEngineFactoryLoader()
   When you retrieve a pixmap using pixmap(QSize, Mode, State), and no
   pixmap for this given size, mode and state has been added with
   addFile() or addPixmap(), then QIcon will generate one on the
-  fly. This pixmap generation happens in a QIconEngineV2. The default
+  fly. This pixmap generation happens in a QIconEngine. The default
   engine scales pixmaps down if required, but never up, and it uses
   the current style to calculate a disabled appearance. By using
   custom icon engines, you can customize every aspect of generated
-  icons. With QIconEnginePluginV2 it is possible to register different
+  icons. With QIconEnginePlugin it is possible to register different
   icon engines for different file suffixes, making it possible for
   third parties to provide additional icon engines to those included
   with Qt.
@@ -598,6 +606,53 @@ QFactoryLoader *qt_iconEngineFactoryLoader()
   used to draw a different icon.
 
   \image icon.png QIcon
+
+  \note QIcon needs a QGuiApplication instance before the icon is created.
+
+  \section1 High DPI Icons
+
+  There are two ways that QIcon supports \l {High DPI Displays}{high DPI}
+  icons: via \l addFile() and \l fromTheme().
+
+  \l addFile() is useful if you have your own custom directory structure and do
+  not need to use the \l {Icon Theme Specification}{freedesktop.org Icon Theme
+  Specification}. Icons created via this approach use Qt's \l {High Resolution
+  Versions of Images}{"@nx" high DPI syntax}.
+
+  Using \l fromTheme() is necessary if you plan on following the Icon Theme
+  Specification. To make QIcon use the high DPI version of an image, add an
+  additional entry to the appropriate \c index.theme file:
+
+  \badcode
+  [Icon Theme]
+  Name=Test
+  Comment=Test Theme
+
+  Directories=32x32/actions,32x32@2/actions
+
+  [32x32/actions]
+  Size=32
+  Context=Actions
+  Type=Fixed
+
+  # High DPI version of the entry above.
+  [32x32@2/actions]
+  Size=32
+  Scale=2
+  Type=Fixed
+  \endcode
+
+  Your icon theme directory would then look something like this:
+
+  \badcode
+    ├── 32x32
+    │   └── actions
+    │       └── appointment-new.png
+    ├── 32x32@2
+    │   └── actions
+    │       └── appointment-new.png
+    └── index.theme
+  \endcode
 
   \sa {fowler}{GUI Design Handbook: Iconic Label}, {Icons Example}
 */
@@ -645,7 +700,7 @@ QIcon::QIcon(const QIcon &other)
     the relevant file must be found relative to the runtime working
     directory.
 
-    The file name can be either refer to an actual file on disk or to
+    The file name can refer to an actual file on disk or to
     one of the application's embedded resources.  See the
     \l{resources.html}{Resource System} overview for details on how to
     embed images and other resource files in the application's
@@ -667,9 +722,8 @@ QIcon::QIcon(const QString &fileName)
     ownership of the engine.
 */
 QIcon::QIcon(QIconEngine *engine)
-    :d(new QIconPrivate)
+    :d(new QIconPrivate(engine))
 {
-    d->engine = engine;
 }
 
 /*!
@@ -835,13 +889,17 @@ QPixmap QIcon::pixmap(QWindow *window, const QSize &size, Mode mode, State state
     qreal devicePixelRatio = qt_effective_device_pixel_ratio(window);
 
     // Handle the simple normal-dpi case:
-    if (!(devicePixelRatio > 1.0))
-        return d->engine->pixmap(size, mode, state);
+    if (!(devicePixelRatio > 1.0)) {
+        QPixmap pixmap = d->engine->pixmap(size, mode, state);
+        pixmap.setDevicePixelRatio(1.0);
+        return pixmap;
+    }
 
     // Try get a pixmap that is big enough to be displayed at device pixel resolution.
-    QPixmap pixmap = d->engine->pixmap(size * devicePixelRatio, mode, state);
-    pixmap.setDevicePixelRatio(d->pixmapDevicePixelRatio(devicePixelRatio, size, pixmap.size()));
-    return pixmap;
+    QIconEngine::ScaledPixmapArgument scalePixmapArg = { size * devicePixelRatio, mode, state, devicePixelRatio, QPixmap() };
+    d->engine->virtual_hook(QIconEngine::ScaledPixmapHook, reinterpret_cast<void*>(&scalePixmapArg));
+    scalePixmapArg.pixmap.setDevicePixelRatio(d->pixmapDevicePixelRatio(devicePixelRatio, size, scalePixmapArg.pixmap.size()));
+    return scalePixmapArg.pixmap;
 }
 
 /*!
@@ -920,7 +978,7 @@ void QIcon::paint(QPainter *painter, const QRect &rect, Qt::Alignment alignment,
 */
 bool QIcon::isNull() const
 {
-    return !d;
+    return !d || d->engine->isNull();
 }
 
 /*!\internal
@@ -935,9 +993,13 @@ bool QIcon::isDetached() const
 void QIcon::detach()
 {
     if (d) {
-        if (d->ref.load() != 1) {
-            QIconPrivate *x = new QIconPrivate;
-            x->engine = d->engine->clone();
+        if (d->engine->isNull()) {
+            if (!d->ref.deref())
+                delete d;
+            d = 0;
+            return;
+        } else if (d->ref.load() != 1) {
+            QIconPrivate *x = new QIconPrivate(d->engine->clone());
             if (!d->ref.deref())
                 delete d;
             d = x;
@@ -959,15 +1021,24 @@ void QIcon::addPixmap(const QPixmap &pixmap, Mode mode, State state)
 {
     if (pixmap.isNull())
         return;
-    if (!d) {
-        d = new QIconPrivate;
-        d->engine = new QPixmapIconEngine;
-    } else {
-        detach();
-    }
+    detach();
+    if (!d)
+        d = new QIconPrivate(new QPixmapIconEngine);
     d->engine->addPixmap(pixmap, mode, state);
 }
 
+static QIconEngine *iconEngineFromSuffix(const QString &fileName, const QString &suffix)
+{
+    if (!suffix.isEmpty()) {
+        const int index = loader()->indexOf(suffix);
+        if (index != -1) {
+            if (QIconEnginePlugin *factory = qobject_cast<QIconEnginePlugin*>(loader()->instance(index))) {
+                return factory->create(fileName);
+            }
+        }
+    }
+    return nullptr;
+}
 
 /*!  Adds an image from the file with the given \a fileName to the
      icon, as a specialization for \a size, \a mode and \a state. The
@@ -978,7 +1049,7 @@ void QIcon::addPixmap(const QPixmap &pixmap, Mode mode, State state)
      the relevant file must be found relative to the runtime working
      directory.
 
-    The file name can be either refer to an actual file on disk or to
+    The file name can refer to an actual file on disk or to
     one of the application's embedded resources. See the
     \l{resources.html}{Resource System} overview for details on how to
     embed images and other resource files in the application's
@@ -1003,44 +1074,24 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
 {
     if (fileName.isEmpty())
         return;
+    detach();
     if (!d) {
-#ifndef QT_NO_LIBRARY
+
         QFileInfo info(fileName);
-        QString suffix = info.suffix();
-        if (!suffix.isEmpty()) {
-            // first try version 2 engines..
-            const int index = loader()->indexOf(suffix);
-            if (index != -1) {
-                if (QIconEnginePlugin *factory = qobject_cast<QIconEnginePlugin*>(loader()->instance(index))) {
-                    if (QIconEngine *engine = factory->create(fileName)) {
-                        d = new QIconPrivate;
-                        d->engine = engine;
-                    }
-                }
-            }
-        }
-#endif
-        // ...then fall back to the default engine
-        if (!d) {
-            d = new QIconPrivate;
-            d->engine = new QPixmapIconEngine;
-        }
-    } else {
-        detach();
+        QIconEngine *engine = iconEngineFromSuffix(fileName, info.suffix());
+#ifndef QT_NO_MIMETYPE
+        if (!engine)
+            engine = iconEngineFromSuffix(fileName, QMimeDatabase().mimeTypeForFile(info).preferredSuffix());
+#endif // !QT_NO_MIMETYPE
+        d = new QIconPrivate(engine ? engine : new QPixmapIconEngine);
     }
+
     d->engine->addFile(fileName, size, mode, state);
 
-    // Check if a "@2x" file exists and add it.
-    static bool disable2xImageLoading = !qEnvironmentVariableIsEmpty("QT_HIGHDPI_DISABLE_2X_IMAGE_LOADING");
-    if (!disable2xImageLoading && qApp->devicePixelRatio() > 1.0) {
-        QString at2xfileName = fileName;
-        int dotIndex = fileName.lastIndexOf(QLatin1Char('.'));
-        if (dotIndex == -1) /* no dot */
-            dotIndex = fileName.size(); /* append */
-        at2xfileName.insert(dotIndex, QStringLiteral("@2x"));
-        if (QFile::exists(at2xfileName))
-            d->engine->addFile(at2xfileName, size, mode, state);
-    }
+    // Check if a "@Nx" file exists and add it.
+    QString atNxFileName = qt_findAtNxFile(fileName, qApp->devicePixelRatio());
+    if (atNxFileName != fileName)
+        d->engine->addFile(atNxFileName, size, mode, state);
 }
 
 /*!
@@ -1063,7 +1114,7 @@ QList<QSize> QIcon::availableSizes(Mode mode, State state) const
 
     Depending on the way the icon was created, it may have an associated
     name. This is the case for icons created with fromTheme() or icons
-    using a QIconEngine which supports the QIconEngineV2::IconNameHook.
+    using a QIconEngine which supports the QIconEngine::IconNameHook.
 
     \sa fromTheme(), QIconEngine
 */
@@ -1107,6 +1158,36 @@ QStringList QIcon::themeSearchPaths()
 }
 
 /*!
+    \since 5.11
+
+    Returns the fallback search paths for icons.
+
+    The default value will depend on the platform.
+
+    \sa setFallbackSearchPaths(), themeSearchPaths()
+*/
+QStringList QIcon::fallbackSearchPaths()
+{
+    return QIconLoader::instance()->fallbackSearchPaths();
+}
+
+/*!
+    \since 5.11
+
+    Sets the fallback search paths for icons to \a paths.
+
+    \note To add some path without replacing existing ones:
+
+    \snippet code/src_gui_image_qicon.cpp 5
+
+    \sa fallbackSearchPaths(), setThemeSearchPaths()
+*/
+void QIcon::setFallbackSearchPaths(const QStringList &paths)
+{
+    QIconLoader::instance()->setFallbackSearchPaths(paths);
+}
+
+/*!
     \since 4.6
 
     Sets the current icon theme to \a name.
@@ -1142,8 +1223,7 @@ QString QIcon::themeName()
     \since 4.6
 
     Returns the QIcon corresponding to \a name in the current
-    icon theme. If no such icon is found in the current theme
-    \a fallback is returned instead.
+    icon theme.
 
     The latest version of the freedesktop icon specification and naming
     specification can be obtained here:
@@ -1157,24 +1237,28 @@ QString QIcon::themeName()
 
     \snippet code/src_gui_image_qicon.cpp 3
 
-    Or if you want to provide a guaranteed fallback for platforms that
-    do not support theme icons, you can use the second argument:
-
-    \snippet code/src_gui_image_qicon.cpp 4
-
     \note By default, only X11 will support themed icons. In order to
     use themed icons on Mac and Windows, you will have to bundle a
     compliant theme in one of your themeSearchPaths() and set the
     appropriate themeName().
 
-    \sa themeName(), setThemeName(), themeSearchPaths()
+    \note Qt will make use of GTK's icon-theme.cache if present to speed up
+    the lookup. These caches can be generated using gtk-update-icon-cache:
+    \l{https://developer.gnome.org/gtk3/stable/gtk-update-icon-cache.html}.
+
+    \note If an icon can't be found in the current theme, then it will be
+    searched in fallbackSearchPaths() as an unthemed icon.
+
+    \sa themeName(), setThemeName(), themeSearchPaths(), fallbackSearchPaths()
 */
-QIcon QIcon::fromTheme(const QString &name, const QIcon &fallback)
+QIcon QIcon::fromTheme(const QString &name)
 {
     QIcon icon;
 
     if (qtIconCache()->contains(name)) {
         icon = *qtIconCache()->object(name);
+    } else if (QDir::isAbsolutePath(name)) {
+        return QIcon(name);
     } else {
         QPlatformTheme * const platformTheme = QGuiApplicationPrivate::platformTheme();
         bool hasUserTheme = QIconLoader::instance()->hasUserTheme();
@@ -1185,9 +1269,26 @@ QIcon QIcon::fromTheme(const QString &name, const QIcon &fallback)
         qtIconCache()->insert(name, cachedIcon);
     }
 
-    // Note the qapp check is to allow lazy loading of static icons
-    // Supporting fallbacks will not work for this case.
-    if (qApp && icon.availableSizes().isEmpty())
+    return icon;
+}
+
+/*!
+    \overload
+
+    Returns the QIcon corresponding to \a name in the current
+    icon theme. If no such icon is found in the current theme
+    \a fallback is returned instead.
+
+    If you want to provide a guaranteed fallback for platforms that
+    do not support theme icons, you can use the second argument:
+
+    \snippet code/src_gui_image_qicon.cpp 4
+*/
+QIcon QIcon::fromTheme(const QString &name, const QIcon &fallback)
+{
+    QIcon icon = fromTheme(name);
+
+    if (icon.isNull() || icon.availableSizes().isEmpty())
         return fallback;
 
     return icon;
@@ -1208,6 +1309,37 @@ bool QIcon::hasThemeIcon(const QString &name)
     return icon.name() == name;
 }
 
+/*!
+    \since 5.6
+
+    Indicate that this icon is a mask image(boolean \a isMask), and hence can
+    potentially be modified based on where it's displayed.
+    \sa isMask()
+*/
+void QIcon::setIsMask(bool isMask)
+{
+    if (!d)
+        d = new QIconPrivate(new QPixmapIconEngine);
+    else
+        detach();
+    d->is_mask = isMask;
+}
+
+/*!
+    \since 5.6
+
+    Returns \c true if this icon has been marked as a mask image.
+    Certain platforms render mask icons differently (for example,
+    menu icons on \macos).
+
+    \sa setIsMask()
+*/
+bool QIcon::isMask() const
+{
+    if (!d)
+        return false;
+    return d->is_mask;
+}
 
 /*****************************************************************************
   QIcon stream functions
@@ -1270,28 +1402,21 @@ QDataStream &operator>>(QDataStream &s, QIcon &icon)
         QString key;
         s >> key;
         if (key == QLatin1String("QPixmapIconEngine")) {
-            icon.d = new QIconPrivate;
-            QIconEngine *engine = new QPixmapIconEngine;
-            icon.d->engine = engine;
-            engine->read(s);
+            icon.d = new QIconPrivate(new QPixmapIconEngine);
+            icon.d->engine->read(s);
         } else if (key == QLatin1String("QIconLoaderEngine")) {
-            icon.d = new QIconPrivate;
-            QIconEngine *engine = new QIconLoaderEngine();
-            icon.d->engine = engine;
-            engine->read(s);
-#ifndef QT_NO_LIBRARY
+            icon.d = new QIconPrivate(new QIconLoaderEngine());
+            icon.d->engine->read(s);
         } else {
             const int index = loader()->indexOf(key);
             if (index != -1) {
                 if (QIconEnginePlugin *factory = qobject_cast<QIconEnginePlugin*>(loader()->instance(index))) {
                     if (QIconEngine *engine= factory->create()) {
-                        icon.d = new QIconPrivate;
-                        icon.d->engine = engine;
+                        icon.d = new QIconPrivate(engine);
                         engine->read(s);
                     } // factory
                 } // instance
             } // index
-#endif
         }
     } else if (s.version() == QDataStream::Qt_4_2) {
         icon = QIcon();
@@ -1353,6 +1478,52 @@ QDebug operator<<(QDebug dbg, const QIcon &i)
     \typedef QIcon::DataPtr
     \internal
 */
+
+/*!
+    \internal
+    \since 5.6
+    Attempts to find a suitable @Nx file for the given \a targetDevicePixelRatio
+    Returns the the \a baseFileName if no such file was found.
+
+    Given base foo.png and a target dpr of 2.5, this function will look for
+    foo@3x.png, then foo@2x, then fall back to foo.png if not found.
+
+    \a sourceDevicePixelRatio will be set to the value of N if the argument is
+    a non-null pointer
+*/
+QString qt_findAtNxFile(const QString &baseFileName, qreal targetDevicePixelRatio,
+                        qreal *sourceDevicePixelRatio)
+{
+    if (targetDevicePixelRatio <= 1.0)
+        return baseFileName;
+
+    static bool disableNxImageLoading = !qEnvironmentVariableIsEmpty("QT_HIGHDPI_DISABLE_2X_IMAGE_LOADING");
+    if (disableNxImageLoading)
+        return baseFileName;
+
+    int dotIndex = baseFileName.lastIndexOf(QLatin1Char('.'));
+    if (dotIndex == -1) { /* no dot */
+        dotIndex = baseFileName.size(); /* append */
+    } else if (dotIndex >= 2 && baseFileName[dotIndex - 1] == QLatin1Char('9')
+        && baseFileName[dotIndex - 2] == QLatin1Char('.')) {
+        // If the file has a .9.* (9-patch image) extension, we must ensure that the @nx goes before it.
+        dotIndex -= 2;
+    }
+
+    QString atNxfileName = baseFileName;
+    atNxfileName.insert(dotIndex, QLatin1String("@2x"));
+    // Check for @Nx, ..., @3x, @2x file versions,
+    for (int n = qMin(qCeil(targetDevicePixelRatio), 9); n > 1; --n) {
+        atNxfileName[dotIndex + 1] = QLatin1Char('0' + n);
+        if (QFile::exists(atNxfileName)) {
+            if (sourceDevicePixelRatio)
+                *sourceDevicePixelRatio = n;
+            return atNxfileName;
+        }
+    }
+
+    return baseFileName;
+}
 
 QT_END_NAMESPACE
 #endif //QT_NO_ICON

@@ -1,153 +1,77 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
+#include "rasterwindow.h"
+
 #include <QtGui>
-#include <QtDeclarative>
-
 #include <QtWidgets/QtWidgets>
-#include <private/qwidgetwindow_p.h>
-#include <QtGui/qpa/qplatformnativeinterface.h>
 
-#include <QtGui/QPixmap>
-
-#include "window.h"
-
-#include <Cocoa/Cocoa.h>
+#include <AppKit/AppKit.h>
 
 
-@interface FilledView : NSView
-{
-
-}
+@interface ContentView : NSView
 @end
 
-
-@implementation FilledView
-
+@implementation ContentView
 - (void)drawRect:(NSRect)dirtyRect {
-    // set any NSColor for filling, say white:
-    [[NSColor redColor] setFill];
+    [[NSColor whiteColor] setFill];
     NSRectFill(dirtyRect);
 }
 
-@end
-
-@interface QtMacToolbarDelegate : NSObject <NSToolbarDelegate>
+- (void)cursorUpdate:(NSEvent *)theEvent
 {
-@public
-    NSToolbar *toolbar;
+    Q_UNUSED(theEvent);
+    [[NSCursor pointingHandCursor] set];
 }
-
-- (id)init;
-- (NSToolbarItem *) toolbar: (NSToolbar *)toolbar itemForItemIdentifier: (NSString *) itemIdent willBeInsertedIntoToolbar:(BOOL) willBeInserted;
-- (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar*)tb;
-- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar;
-- (NSArray *)toolbarSelectableItemIdentifiers:(NSToolbar *)toolbar;
 @end
 
-@implementation QtMacToolbarDelegate
+@interface AppDelegate : NSObject <NSApplicationDelegate> {
+    QGuiApplication *m_app;
+    QWindow *m_window;
+}
+- (AppDelegate *) initWithArgc:(int)argc argv:(const char **)argv;
+- (void) applicationWillFinishLaunching: (NSNotification *)notification;
+- (void)applicationWillTerminate:(NSNotification *)notification;
+@end
 
-- (id)init
+
+@implementation AppDelegate
+- (AppDelegate *) initWithArgc:(int)argc argv:(const char **)argv
 {
-    self = [super init];
-    if (self) {
-    }
+    m_app = new QGuiApplication(argc, const_cast<char **>(argv));
     return self;
 }
 
-- (void)dealloc
+- (void) applicationWillFinishLaunching: (NSNotification *)notification
 {
-    [super dealloc];
-}
+    Q_UNUSED(notification);
 
-- (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar*)tb
-{
-    Q_UNUSED(tb);
-    NSMutableArray *array = [[[NSMutableArray alloc] init] autorelease];
-//    [array addObject : NSToolbarPrintItemIdentifier];
-//    [array addObject : NSToolbarShowColorsItemIdentifier];
-    [array addObject : @"filledView"];
-    return array;
-}
-
-- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar*)tb
-{
-    Q_UNUSED(tb);
-    NSMutableArray *array = [[[NSMutableArray alloc] init] autorelease];
-//    [array addObject : NSToolbarPrintItemIdentifier];
-//    [array addObject : NSToolbarShowColorsItemIdentifier];
-    [array addObject : @"filledView"];
-    return array;
-}
-
-- (NSArray *)toolbarSelectableItemIdentifiers: (NSToolbar *)tb
-{
-    Q_UNUSED(tb);
-    NSMutableArray *array = [[[NSMutableArray alloc] init] autorelease];
-    return array;
-}
-
-- (IBAction)itemClicked:(id)sender
-{
-
-}
-
-- (NSToolbarItem *) toolbar: (NSToolbar *)tb itemForItemIdentifier: (NSString *) itemIdentifier willBeInsertedIntoToolbar:(BOOL) willBeInserted
-{
-    Q_UNUSED(tb);
-    Q_UNUSED(willBeInserted);
-    //const QString identifier = toQString(itemIdentifier);
-    //NSToolbarItem *toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdentifier] autorelease];
-    //return toolbarItem;
-
-    //NSToolbarItem *toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdentifier] autorelease];
-    NSToolbarItem *toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdentifier] autorelease];
-    FilledView *theView = [[FilledView alloc] init];
-    [toolbarItem setView : theView];
-    [toolbarItem setMinSize : NSMakeSize(400, 40)];
-    [toolbarItem setMaxSize : NSMakeSize(4000, 40)];
-    return toolbarItem;
-}
-@end
-
-@interface WindowAndViewAndQtCreator : NSObject {}
-- (void)createWindowAndViewAndQt;
-@end
-
-@implementation WindowAndViewAndQtCreator
-- (void)createWindowAndViewAndQt {
-
-    // Create the window
+    // Create the NSWindow
     NSRect frame = NSMakeRect(500, 500, 500, 500);
     NSWindow* window  = [[NSWindow alloc] initWithContentRect:frame
                         styleMask:NSTitledWindowMask |  NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask
@@ -156,49 +80,54 @@
 
     NSString *title = @"This the NSWindow window";
     [window setTitle:title];
-
     [window setBackgroundColor:[NSColor blueColor]];
 
-    // Create a tool bar, set Qt delegate
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier : @"foobartoolbar"];
-    QtMacToolbarDelegate *delegate = [[QtMacToolbarDelegate alloc] init];
-    [toolbar setDelegate : delegate];
-    [window setToolbar : toolbar];
+    NSView *contentView = [[[ContentView alloc] initWithFrame:frame] autorelease];
+    [contentView addTrackingArea:[[NSTrackingArea alloc] initWithRect:[contentView frame]
+            options:NSTrackingActiveInActiveApp | NSTrackingInVisibleRect | NSTrackingCursorUpdate
+            owner:contentView userInfo:nil]];
 
-    // Create the QWindow, don't show it.
-    Window *qtWindow = new Window();
-    qtWindow->create();
+    // Create the QWindow, add its NSView to the content view
+    m_window = new RasterWindow;
+    m_window->setObjectName("RasterWindow");
+    m_window->setCursor(Qt::CrossCursor);
+    m_window->setGeometry(QRect(0, 0, 300, 300));
 
-    //QSGView *qtWindow = new QSGView();
-    //qtWindow->setSource(QUrl::fromLocalFile("/Users/msorvig/code/qt5/qtdeclarative/examples/declarative/samegame/samegame.qml"));
- //   qtWindow->setWindowFlags(Qt::WindowType(13)); // 13: NativeEmbeddedWindow
+    QWindow *childWindow = new RasterWindow;
+    childWindow->setObjectName("RasterWindowChild");
+    childWindow->setParent(m_window);
+    childWindow->setCursor(Qt::BusyCursor);
+    childWindow->setGeometry(50, 50, 100, 100);
 
-    // Get the nsview from the QWindow, set it as the content view
-    // on the NSWindow created above.
-    QPlatformNativeInterface *platformNativeInterface = QGuiApplication::platformNativeInterface();
-    NSView *qtView = (NSView *)platformNativeInterface->nativeResourceForWindow("nsview", qtWindow);
-    [window setContentView:qtView];
-    [window makeKeyAndOrderFront:NSApp];
+    NSTextField *textField = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 10, 80, 25)];
+    [(NSView*)childWindow->winId() addSubview:textField];
+
+    [contentView addSubview:reinterpret_cast<NSView *>(m_window->winId())];
+
+    window.contentView = contentView;
+
+    // Show the NSWindow delayed, so that we can verify that Qt picks up the right
+    // notifications to expose the window when it does become visible.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [window makeKeyAndOrderFront:NSApp];
+    });
 }
+
+- (void)applicationWillTerminate:(NSNotification *)notification
+{
+    Q_UNUSED(notification);
+    delete m_window;
+    delete m_app;
+}
+
 @end
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
-    QGuiApplication app(argc, argv);
-
-    // fake NSApplicationMain() implementation follows:
-    NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    [NSApplication sharedApplication];
-
-    // schedule call to create the UI.
-    WindowAndViewAndQtCreator *windowAndViewAndQtCreator= [WindowAndViewAndQtCreator alloc];
-    [NSTimer scheduledTimerWithTimeInterval:0 target:windowAndViewAndQtCreator selector:@selector(createWindowAndViewAndQt) userInfo:nil repeats:NO];
-
-    [(NSApplication *)NSApp run];
-    [NSApp release];
-    [pool release];
-    exit(0);
-    return 0;
+    // Create NSApplicaiton with delgate
+    NSApplication *app =[NSApplication sharedApplication];
+    app.delegate = [[AppDelegate alloc] initWithArgc:argc argv:argv];
+    return NSApplicationMain (argc, argv);
 }
 
 

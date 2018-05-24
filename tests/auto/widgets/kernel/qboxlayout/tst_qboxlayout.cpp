@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,29 +31,16 @@
 #include <QtGui>
 #include <QtWidgets>
 
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+#include <QtTest/private/qtesthelpers_p.h>
+
+using namespace QTestPrivate;
 
 class tst_QBoxLayout : public QObject
 {
     Q_OBJECT
 
-public:
-    tst_QBoxLayout();
-    virtual ~tst_QBoxLayout();
-
-public slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void init();
-    void cleanup();
-
 private slots:
+    void cleanup();
     void insertSpacerItem();
     void insertLayout();
     void sizeHint();
@@ -120,34 +102,15 @@ int CustomLayoutStyle::pixelMetric(PixelMetric metric, const QStyleOption * opti
     return QProxyStyle::pixelMetric(metric, option, widget);
 }
 
-
-tst_QBoxLayout::tst_QBoxLayout()
-{
-}
-
-tst_QBoxLayout::~tst_QBoxLayout()
-{
-}
-
-void tst_QBoxLayout::initTestCase()
-{
-}
-
-void tst_QBoxLayout::cleanupTestCase()
-{
-}
-
-void tst_QBoxLayout::init()
-{
-}
-
 void tst_QBoxLayout::cleanup()
 {
+    QVERIFY(QApplication::topLevelWidgets().isEmpty());
 }
 
 void tst_QBoxLayout::insertSpacerItem()
 {
-    QWidget *window = new QWidget;
+    QWidget window;
+    window.setWindowTitle(QTest::currentTestFunction());
 
     QSpacerItem *spacer1 = new QSpacerItem(20, 10, QSizePolicy::Expanding, QSizePolicy::Expanding);
     QSpacerItem *spacer2 = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -157,44 +120,43 @@ void tst_QBoxLayout::insertSpacerItem()
     layout->addSpacerItem(spacer1);
     layout->addWidget(new QLineEdit("Baaaaaaaaaaaaaaaaaaaaaaaaar"));
     layout->insertSpacerItem(0, spacer2);
-    window->setLayout(layout);
+    window.setLayout(layout);
 
-    QVERIFY(layout->itemAt(0) == spacer2);
-    QVERIFY(layout->itemAt(2) == spacer1);
+    QCOMPARE(layout->itemAt(0), spacer2);
+    QCOMPARE(layout->itemAt(2), spacer1);
 
-    window->show();
+    window.show();
 }
 
 void tst_QBoxLayout::insertLayout()
 {
-    QWidget *window = new QWidget;
-    QVBoxLayout *vbox = new QVBoxLayout(window);
-    QVBoxLayout *dummyParentLayout = new QVBoxLayout;
+    QWidget window;
+    QVBoxLayout *vbox = new QVBoxLayout(&window);
+    QScopedPointer<QVBoxLayout> dummyParentLayout(new QVBoxLayout);
     QHBoxLayout *subLayout = new QHBoxLayout;
     dummyParentLayout->addLayout(subLayout);
-    QCOMPARE(subLayout->parent(), dummyParentLayout);
+    QCOMPARE(subLayout->parent(), dummyParentLayout.data());
     QCOMPARE(dummyParentLayout->count(), 1);
 
     // add subLayout to another layout
     QTest::ignoreMessage(QtWarningMsg, "QLayout::addChildLayout: layout \"\" already has a parent");
     vbox->addLayout(subLayout);
     QCOMPARE((subLayout->parent() == vbox), (vbox->count() == 1));
-
-    delete dummyParentLayout;
-    delete window;
 }
 
 
 void tst_QBoxLayout::sizeHint()
 {
-    QWidget *window = new QWidget;
+    QWidget window;
+    window.setWindowTitle(QTest::currentTestFunction());
     QHBoxLayout *lay1 = new QHBoxLayout;
     QHBoxLayout *lay2 = new QHBoxLayout;
     QLabel *label = new QLabel("widget twooooooooooooooooooooooooooooooooooooooooooooooooooooooo");
     lay2->addWidget(label);
     lay1->addLayout(lay2);
-    window->setLayout(lay1);
-    window->show();
+    window.setLayout(lay1);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     label->setText("foooooooo baaaaaaar");
     QSize sh = lay1->sizeHint();
     QApplication::processEvents();
@@ -207,24 +169,26 @@ void tst_QBoxLayout::sizeHint()
 
 void tst_QBoxLayout::sizeConstraints()
 {
-    QWidget *window = new QWidget;
+    QWidget window;
+    window.setWindowTitle(QTest::currentTestFunction());
     QHBoxLayout *lay = new QHBoxLayout;
     lay->addWidget(new QLabel("foooooooooooooooooooooooooooooooooooo"));
     lay->addWidget(new QLabel("baaaaaaaaaaaaaaaaaaaaaaaaaaaaaar"));
     lay->setSizeConstraint(QLayout::SetFixedSize);
-    window->setLayout(lay);
-    window->show();
-    QApplication::processEvents();
-    QSize sh = window->sizeHint();
-    lay->takeAt(1);
-    QVERIFY(sh.width() >= window->sizeHint().width() &&
-            sh.height() >= window->sizeHint().height());
+    window.setLayout(lay);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QSize sh = window.sizeHint();
+    delete lay->takeAt(1);
+    QVERIFY(sh.width() >= window.sizeHint().width() &&
+            sh.height() >= window.sizeHint().height());
 
 }
 
 void tst_QBoxLayout::setGeometry()
 {
     QWidget toplevel;
+    toplevel.setWindowTitle(QTest::currentTestFunction());
     setFrameless(&toplevel);
     QWidget w(&toplevel);
     QVBoxLayout *lay = new QVBoxLayout;
@@ -247,33 +211,30 @@ void tst_QBoxLayout::setGeometry()
 void tst_QBoxLayout::setStyleShouldChangeSpacing()
 {
 
-    QWidget *window = new QWidget;
-    QHBoxLayout *hbox = new QHBoxLayout(window);
+    QWidget window;
+    window.setWindowTitle(QTest::currentTestFunction());
+    QHBoxLayout *hbox = new QHBoxLayout(&window);
     QPushButton *pb1 = new QPushButton(tr("The spacing between this"));
     QPushButton *pb2 = new QPushButton(tr("and this button should depend on the style of the parent widget"));;
     pb1->setAttribute(Qt::WA_LayoutUsesWidgetRect);
     pb2->setAttribute(Qt::WA_LayoutUsesWidgetRect);
     hbox->addWidget(pb1);
     hbox->addWidget(pb2);
-    CustomLayoutStyle *style1 = new CustomLayoutStyle;
+    QScopedPointer<CustomLayoutStyle> style1(new CustomLayoutStyle);
     style1->hspacing = 6;
-    window->setStyle(style1);
-    window->show();
+    window.setStyle(style1.data());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
 
-    QTest::qWait(100);
     int spacing = pb2->geometry().left() - pb1->geometry().right() - 1;
     QCOMPARE(spacing, 6);
 
-    CustomLayoutStyle *style2 = new CustomLayoutStyle();
+    QScopedPointer<CustomLayoutStyle> style2(new CustomLayoutStyle());
     style2->hspacing = 10;
-    window->setStyle(style2);
+    window.setStyle(style2.data());
     QTest::qWait(100);
     spacing = pb2->geometry().left() - pb1->geometry().right() - 1;
     QCOMPARE(spacing, 10);
-
-    delete window;
-    delete style1;
-    delete style2;
 }
 
 void tst_QBoxLayout::taskQTBUG_7103_minMaxWidthNotRespected()
@@ -287,6 +248,7 @@ void tst_QBoxLayout::taskQTBUG_7103_minMaxWidthNotRespected()
     layout->addSpacerItem(new QSpacerItem(1, 1, QSizePolicy::Fixed, QSizePolicy::Expanding));
 
     QWidget widget;
+    widget.setWindowTitle(QTest::currentTestFunction());
     widget.setLayout(layout);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -325,12 +287,13 @@ void tst_QBoxLayout::taskQTBUG_27420_takeAtShouldUnparentLayout()
 
 void tst_QBoxLayout::taskQTBUG_40609_addingWidgetToItsOwnLayout(){
     QWidget widget;
+    widget.setWindowTitle(QTest::currentTestFunction());
     widget.setObjectName("347b469225a24a0ef05150a");
     QVBoxLayout layout(&widget);
     layout.setObjectName("ef9e2b42298e0e6420105bb");
 
     QTest::ignoreMessage(QtWarningMsg, "QLayout: Cannot add a null widget to QVBoxLayout/ef9e2b42298e0e6420105bb");
-    layout.addWidget(Q_NULLPTR);
+    layout.addWidget(nullptr);
     QCOMPARE(layout.count(), 0);
 
     QTest::ignoreMessage(QtWarningMsg, "QLayout: Cannot add parent widget QWidget/347b469225a24a0ef05150a to its child layout QVBoxLayout/ef9e2b42298e0e6420105bb");
@@ -340,12 +303,13 @@ void tst_QBoxLayout::taskQTBUG_40609_addingWidgetToItsOwnLayout(){
 
 void tst_QBoxLayout::taskQTBUG_40609_addingLayoutToItself(){
     QWidget widget;
+    widget.setWindowTitle(QTest::currentTestFunction());
     widget.setObjectName("fe44e5cb6c08006597126a");
     QVBoxLayout layout(&widget);
     layout.setObjectName("cc751dd0f50f62b05a62da");
 
     QTest::ignoreMessage(QtWarningMsg, "QLayout: Cannot add a null layout to QVBoxLayout/cc751dd0f50f62b05a62da");
-    layout.addLayout(Q_NULLPTR);
+    layout.addLayout(nullptr);
     QCOMPARE(layout.count(), 0);
 
     QTest::ignoreMessage(QtWarningMsg, "QLayout: Cannot add layout QVBoxLayout/cc751dd0f50f62b05a62da to itself");
@@ -544,7 +508,7 @@ void tst_QBoxLayout::replaceWidget()
 
     QCOMPARE(boxLayout->indexOf(replaceFrom), 1);
     QCOMPARE(boxLayout->indexOf(replaceTo), -1);
-    boxLayout->replaceWidget(replaceFrom, replaceTo);
+    delete boxLayout->replaceWidget(replaceFrom, replaceTo);
 
     QCOMPARE(boxLayout->indexOf(replaceFrom), -1);
     QCOMPARE(boxLayout->indexOf(replaceTo), 1);

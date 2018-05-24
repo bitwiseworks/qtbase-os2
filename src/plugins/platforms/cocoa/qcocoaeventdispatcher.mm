@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -66,13 +72,11 @@
 ****************************************************************************/
 
 #include "qcocoaeventdispatcher.h"
-#include "qcocoaautoreleasepool.h"
 #include "qcocoawindow.h"
 
 #include "qcocoahelpers.h"
 #include "qguiapplication.h"
 #include "qevent.h"
-#include "qhash.h"
 #include "qmutex.h"
 #include "qsocketnotifier.h"
 #include <qpa/qplatformwindow.h>
@@ -81,9 +85,7 @@
 #include "private/qguiapplication_p.h"
 #include <qdebug.h>
 
-#undef slots
-#include <Cocoa/Cocoa.h>
-#include <Carbon/Carbon.h>
+#include <AppKit/AppKit.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -282,7 +284,7 @@ bool QCocoaEventDispatcher::hasPendingEvents()
 {
     extern uint qGlobalPostedEventsCount();
     extern bool qt_is_gui_used; //qapplication.cpp
-    return qGlobalPostedEventsCount() || (qt_is_gui_used && GetNumEventsInQueue(GetMainEventQueue()));
+    return qGlobalPostedEventsCount() || (qt_is_gui_used && !CFRunLoopIsWaiting(CFRunLoopGetMain()));
 }
 
 static bool IsMouseOrKeyEvent( NSEvent* event )
@@ -344,7 +346,7 @@ static inline void qt_mac_waitForMoreEvents(NSString *runLoopMode = NSDefaultRun
 bool QCocoaEventDispatcher::processEvents(QEventLoop::ProcessEventsFlags flags)
 {
     Q_D(QCocoaEventDispatcher);
-    d->interrupt = false;
+    QBoolBlocker interruptBlocker(d->interrupt, false);
 
     bool interruptLater = false;
     QtCocoaInterruptDispatcher::cancelInterruptLater();
@@ -365,7 +367,7 @@ bool QCocoaEventDispatcher::processEvents(QEventLoop::ProcessEventsFlags flags)
         if (d->interrupt)
             break;
 
-        QCocoaAutoReleasePool pool;
+        QMacAutoReleasePool pool;
         NSEvent* event = 0;
 
         // First, send all previously excluded input events, if any:
@@ -398,8 +400,18 @@ bool QCocoaEventDispatcher::processEvents(QEventLoop::ProcessEventsFlags flags)
             // [NSApp run], which is the normal code path for cocoa applications.
             if (NSModalSession session = d->currentModalSession()) {
                 QBoolBlocker execGuard(d->currentExecIsNSAppRun, false);
-                while ([NSApp runModalSession:session] == NSRunContinuesResponse && !d->interrupt)
+                while ([NSApp runModalSession:session] == NSModalResponseContinue && !d->interrupt) {
                     qt_mac_waitForMoreEvents(NSModalPanelRunLoopMode);
+                    if (session != d->currentModalSessionCached) {
+                        // It's possible to release the current modal session
+                        // while we are in this loop, for example, by closing all
+                        // windows from a slot via QApplication::closeAllWindows.
+                        // In this case we cannot use 'session' anymore. A warning
+                        // from Cocoa is: "Use of freed session detected. Do not
+                        // call runModalSession: after calling endModalSesion:."
+                        break;
+                    }
+                }
 
                 if (!d->interrupt && session == d->currentModalSessionCached) {
                     // Someone called [NSApp stopModal:] from outside the event
@@ -432,7 +444,7 @@ bool QCocoaEventDispatcher::processEvents(QEventLoop::ProcessEventsFlags flags)
                     if (flags & QEventLoop::WaitForMoreEvents)
                         qt_mac_waitForMoreEvents(NSModalPanelRunLoopMode);
                     NSInteger status = [NSApp runModalSession:session];
-                    if (status != NSRunContinuesResponse && session == d->currentModalSessionCached) {
+                    if (status != NSModalResponseContinue && session == d->currentModalSessionCached) {
                         // INVARIANT: Someone called [NSApp stopModal:] from outside the event
                         // dispatcher (e.g to stop a native dialog). But that call wrongly stopped
                         // 'session' as well. As a result, we need to restart all internal sessions:
@@ -623,7 +635,7 @@ NSModalSession QCocoaEventDispatcherPrivate::currentModalSession()
             continue;
 
         if (!info.session) {
-            QCocoaAutoReleasePool pool;
+            QMacAutoReleasePool pool;
             QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(info.window->handle());
             NSWindow *nswindow = cocoaWindow->nativeWindow();
             if (!nswindow)
@@ -671,7 +683,7 @@ void QCocoaEventDispatcherPrivate::updateChildrenWorksWhenModal()
     // Make the dialog children of the window
     // active. And make the dialog children of
     // the previous modal dialog unactive again:
-    QCocoaAutoReleasePool pool;
+    QMacAutoReleasePool pool;
     int size = cocoaModalSessionStack.size();
     if (size > 0){
         if (QWindow *prevModal = cocoaModalSessionStack[size-1].window)
@@ -692,7 +704,7 @@ void QCocoaEventDispatcherPrivate::cleanupModalSessions()
     // point they were marked as stopped), is that ending a session
     // when no other session runs below it on the stack will make cocoa
     // drop some events on the floor.
-    QCocoaAutoReleasePool pool;
+    QMacAutoReleasePool pool;
     int stackSize = cocoaModalSessionStack.size();
 
     for (int i=stackSize-1; i>=0; --i) {
@@ -887,21 +899,6 @@ void QCocoaEventDispatcherPrivate::processPostedEvents()
     }
 }
 
-void QCocoaEventDispatcherPrivate::removeQueuedUserInputEvents(int nsWinNumber)
-{
-    if (nsWinNumber) {
-        int eventIndex = queuedUserInputEvents.size();
-
-        while (--eventIndex >= 0) {
-            NSEvent * nsevent = static_cast<NSEvent *>(queuedUserInputEvents.at(eventIndex));
-            if ([nsevent windowNumber] == nsWinNumber) {
-                queuedUserInputEvents.removeAt(eventIndex);
-                [nsevent release];
-            }
-        }
-    }
-}
-
 void QCocoaEventDispatcherPrivate::firstLoopEntry(CFRunLoopObserverRef ref,
                                                 CFRunLoopActivity activity,
                                                 void *info)
@@ -927,7 +924,7 @@ void QCocoaEventDispatcherPrivate::cancelWaitForMoreEvents()
 {
     // In case the event dispatcher is waiting for more
     // events somewhere, we post a dummy event to wake it up:
-    QCocoaAutoReleasePool pool;
+    QMacAutoReleasePool pool;
     [NSApp postEvent:[NSEvent otherEventWithType:NSApplicationDefined location:NSZeroPoint
         modifierFlags:0 timestamp:0. windowNumber:0 context:0
         subtype:QtCocoaEventSubTypeWakeup data1:0 data2:0] atStart:NO];
@@ -961,6 +958,19 @@ void QCocoaEventDispatcher::interrupt()
 
 void QCocoaEventDispatcher::flush()
 { }
+
+// QTBUG-56746: The behavior of processEvents() has been changed to not clear
+// the interrupt flag. Use this function to clear it.
+ void QCocoaEventDispatcher::clearCurrentThreadCocoaEventDispatcherInterruptFlag()
+{
+    QCocoaEventDispatcher *cocoaEventDispatcher =
+            qobject_cast<QCocoaEventDispatcher *>(QThread::currentThread()->eventDispatcher());
+    if (!cocoaEventDispatcher)
+        return;
+    QCocoaEventDispatcherPrivate *cocoaEventDispatcherPrivate =
+            static_cast<QCocoaEventDispatcherPrivate *>(QObjectPrivate::get(cocoaEventDispatcher));
+    cocoaEventDispatcherPrivate->interrupt = false;
+}
 
 QCocoaEventDispatcher::~QCocoaEventDispatcher()
 {

@@ -1,6 +1,8 @@
 TEMPLATE = subdirs
 
 SUBDIRS = test
-!wince:!vxworks: SUBDIRS += stressTest
-
-requires(contains(QT_CONFIG,private_tests))
+!vxworks{
+SUBDIRS += stressTest
+test.depends = stressTest
+}
+requires(qtConfig(private_tests))

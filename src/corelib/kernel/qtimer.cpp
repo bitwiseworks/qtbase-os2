@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -101,7 +108,7 @@ QT_BEGIN_NAMESPACE
     in many real-world situations.
 
     The accuracy also depends on the \l{Qt::TimerType}{timer type}. For
-    Qt::PreciseTimer, QTimer will try to keep the accurance at 1 millisecond.
+    Qt::PreciseTimer, QTimer will try to keep the accuracy at 1 millisecond.
     Precise timers will also never time out earlier than expected.
 
     For Qt::CoarseTimer and Qt::VeryCoarseTimer types, QTimer may wake up
@@ -141,6 +148,7 @@ static const int INV_TIMER = -1;                // invalid timer id
 QTimer::QTimer(QObject *parent)
     : QObject(parent), id(INV_TIMER), inter(0), del(0), single(0), nulltimer(0), type(Qt::CoarseTimer)
 {
+    Q_UNUSED(del);  // ### Qt 6: remove field
 }
 
 
@@ -263,7 +271,7 @@ public:
 Q_SIGNALS:
     void timeout();
 protected:
-    void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
+    void timerEvent(QTimerEvent *) override;
 };
 
 QSingleShotTimer::QSingleShotTimer(int msec, Qt::TimerType timerType, const QObject *r, const char *member)
@@ -278,15 +286,10 @@ QSingleShotTimer::QSingleShotTimer(int msec, Qt::TimerType timerType, const QObj
 {
     timerId = startTimer(msec, timerType);
     if (r && thread() != r->thread()) {
-        // We need the invocation to happen in the receiver object's thread.
-        // So, move QSingleShotTimer to the correct thread. Before that occurs, we
-        // shall remove the parent from the object.
+        // Avoid leaking the QSingleShotTimer instance in case the application exits before the timer fires
+        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &QObject::deleteLater);
         setParent(0);
         moveToThread(r->thread());
-
-        // Given we're also parentless now, we should take defence against leaks
-        // in case the application quits before we expire.
-        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &QObject::deleteLater);
     }
 }
 
@@ -407,7 +410,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     }
 }
 
-/*!\fn void QTimer::singleShot(int msec, const QObject *receiver, PointerToMemberFunction method)
+/*! \fn template<typename PointerToMemberFunction> void QTimer::singleShot(int msec, const QObject *receiver, PointerToMemberFunction method)
 
     \since 5.4
 
@@ -429,7 +432,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     \sa start()
 */
 
-/*!\fn void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiver, PointerToMemberFunction method)
+/*! \fn template<typename PointerToMemberFunction> void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiver, PointerToMemberFunction method)
 
     \since 5.4
 
@@ -452,7 +455,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     \sa start()
 */
 
-/*!\fn void QTimer::singleShot(int msec, Functor functor)
+/*! \fn template<typename Functor> void QTimer::singleShot(int msec, Functor functor)
 
     \since 5.4
 
@@ -469,7 +472,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     \sa start()
 */
 
-/*!\fn void QTimer::singleShot(int msec, Qt::TimerType timerType, Functor functor)
+/*! \fn template<typename Functor> void QTimer::singleShot(int msec, Qt::TimerType timerType, Functor functor)
 
     \since 5.4
 
@@ -487,7 +490,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     \sa start()
 */
 
-/*!\fn void QTimer::singleShot(int msec, const QObject *context, Functor functor)
+/*! \fn template<typename Functor> void QTimer::singleShot(int msec, const QObject *context, Functor functor)
 
     \since 5.4
 
@@ -508,7 +511,7 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     \sa start()
 */
 
-/*!\fn void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *context, Functor functor)
+/*! \fn template<typename Functor> void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *context, Functor functor)
 
     \since 5.4
 
@@ -531,11 +534,85 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
 */
 
 /*!
+    \fn void QTimer::singleShot(std::chrono::milliseconds msec, const QObject *receiver, const char *member)
+    \since 5.8
+    \overload
+    \reentrant
+
+    This static function calls a slot after a given time interval.
+
+    It is very convenient to use this function because you do not need
+    to bother with a \l{QObject::timerEvent()}{timerEvent} or
+    create a local QTimer object.
+
+    The \a receiver is the receiving object and the \a member is the slot. The
+    time interval is given in the duration object \a msec.
+
+    \sa start()
+*/
+
+/*!
+    \fn void QTimer::singleShot(std::chrono::milliseconds msec, Qt::TimerType timerType, const QObject *receiver, const char *member)
+    \since 5.8
+    \overload
+    \reentrant
+
+    This static function calls a slot after a given time interval.
+
+    It is very convenient to use this function because you do not need
+    to bother with a \l{QObject::timerEvent()}{timerEvent} or
+    create a local QTimer object.
+
+    The \a receiver is the receiving object and the \a member is the slot. The
+    time interval is given in the duration object \a msec. The \a timerType affects the
+    accuracy of the timer.
+
+    \sa start()
+*/
+
+/*!
+    \fn void QTimer::start(std::chrono::milliseconds msec)
+    \since 5.8
+    \overload
+
+    Starts or restarts the timer with a timeout of duration \a msec milliseconds.
+
+    If the timer is already running, it will be
+    \l{QTimer::stop()}{stopped} and restarted.
+
+    If \l singleShot is true, the timer will be activated only once.
+*/
+
+/*!
+    \fn std::chrono::milliseconds QTimer::intervalAsDuration() const
+    \since 5.8
+
+    Returns the interval of this timer as a \c std::chrono::milliseconds object.
+
+    \sa interval
+*/
+
+/*!
+    \fn std::chrono::milliseconds QTimer::remainingTimeAsDuration() const
+    \since 5.8
+
+    Returns the time remaining in this timer object as a \c
+    std::chrono::milliseconds object. If this timer is due or overdue, the
+    returned value is \c std::chrono::milliseconds::zero(). If the remaining
+    time could not be found or the timer is not active, this function returns a
+    negative duration.
+
+    \sa remainingTime()
+*/
+
+/*!
     \property QTimer::singleShot
     \brief whether the timer is a single-shot timer
 
     A single-shot timer fires only once, non-single-shot timers fire
     every \l interval milliseconds.
+
+    The default value for this property is \c false.
 
     \sa interval, singleShot()
 */
@@ -593,3 +670,4 @@ int QTimer::remainingTime() const
 QT_END_NAMESPACE
 
 #include "qtimer.moc"
+#include "moc_qtimer.cpp"

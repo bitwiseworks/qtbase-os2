@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -50,22 +60,21 @@
 Server::Server(QWidget *parent)
     : QDialog(parent)
 {
-    statusLabel = new QLabel;
-    statusLabel->setWordWrap(true);
-    quitButton = new QPushButton(tr("Quit"));
-    quitButton->setAutoDefault(false);
+    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
     server = new QLocalServer(this);
     if (!server->listen("fortune")) {
-        QMessageBox::critical(this, tr("Fortune Server"),
+        QMessageBox::critical(this, tr("Local Fortune Server"),
                               tr("Unable to start the server: %1.")
                               .arg(server->errorString()));
         close();
         return;
     }
 
+    QLabel *statusLabel = new QLabel;
+    statusLabel->setWordWrap(true);
     statusLabel->setText(tr("The server is running.\n"
-                            "Run the Fortune Client example now."));
+                            "Run the Local Fortune Client example now."));
 
     fortunes << tr("You've been leading a dog's life. Stay off the furniture.")
              << tr("You've got to think about tomorrow.")
@@ -75,35 +84,36 @@ Server::Server(QWidget *parent)
              << tr("You cannot kill time without injuring eternity.")
              << tr("Computers are not intelligent. They only think they are.");
 
-    connect(quitButton, SIGNAL(clicked()), this, SLOT(close()));
-    connect(server, SIGNAL(newConnection()), this, SLOT(sendFortune()));
+    QPushButton *quitButton = new QPushButton(tr("Quit"));
+    quitButton->setAutoDefault(false);
+    connect(quitButton, &QPushButton::clicked, this, &Server::close);
+    connect(server, &QLocalServer::newConnection, this, &Server::sendFortune);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch(1);
     buttonLayout->addWidget(quitButton);
     buttonLayout->addStretch(1);
 
-    QVBoxLayout *mainLayout = new QVBoxLayout;
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(statusLabel);
     mainLayout->addLayout(buttonLayout);
-    setLayout(mainLayout);
 
-    setWindowTitle(tr("Fortune Server"));
+    setWindowTitle(QGuiApplication::applicationDisplayName());
 }
 
 void Server::sendFortune()
 {
     QByteArray block;
     QDataStream out(&block, QIODevice::WriteOnly);
-    out.setVersion(QDataStream::Qt_4_0);
-    out << (quint16)0;
-    out << fortunes.at(qrand() % fortunes.size());
-    out.device()->seek(0);
-    out << (quint16)(block.size() - sizeof(quint16));
+    out.setVersion(QDataStream::Qt_5_10);
+    const int fortuneIndex = QRandomGenerator::global()->bounded(0, fortunes.size());
+    const QString &message = fortunes.at(fortuneIndex);
+    out << quint32(message.size());
+    out << message;
 
     QLocalSocket *clientConnection = server->nextPendingConnection();
-    connect(clientConnection, SIGNAL(disconnected()),
-            clientConnection, SLOT(deleteLater()));
+    connect(clientConnection, &QLocalSocket::disconnected,
+            clientConnection, &QLocalSocket::deleteLater);
 
     clientConnection->write(block);
     clientConnection->flush();

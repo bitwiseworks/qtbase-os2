@@ -1,15 +1,14 @@
 TARGET = qdirect2d
 
-PLUGIN_TYPE = platforms
-PLUGIN_CLASS_NAME = QWindowsDirect2DIntegrationPlugin
-!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
-load(qt_plugin)
+QT += \
+    core-private gui-private \
+    eventdispatcher_support-private \
+    fontdatabase_support-private theme_support-private
 
-QT *= core-private
-QT *= gui-private
-QT *= platformsupport-private
+qtConfig(accessibility): QT += accessibility_support-private
+qtConfig(vulkan): QT += vulkan_support-private
 
-LIBS *= -ld2d1 -ld3d11 -ldwrite -lVersion -lgdi32
+LIBS += -ldwmapi -ld2d1 -ld3d11 -ldwrite -lversion -lgdi32
 
 include(../windows/windows.pri)
 
@@ -40,3 +39,8 @@ HEADERS += \
     qwindowsdirect2dwindow.h
 
 OTHER_FILES += direct2d.json
+
+PLUGIN_TYPE = platforms
+PLUGIN_CLASS_NAME = QWindowsDirect2DIntegrationPlugin
+!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
+load(qt_plugin)

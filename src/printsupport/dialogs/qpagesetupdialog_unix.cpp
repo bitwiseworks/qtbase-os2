@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,12 +39,13 @@
 
 #include "qpagesetupdialog.h"
 
-#ifndef QT_NO_PRINTDIALOG
 #include "qpagesetupdialog_unix_p.h"
 
 #include <private/qpagesetupdialog_p.h>
 #include <private/qprintdevice_p.h>
+#if QT_CONFIG(cups)
 #include <private/qcups_p.h>
+#endif
 
 #include "qpainter.h"
 #include "qprintdialog.h"
@@ -51,6 +58,8 @@
 #include <qpa/qplatformprintersupport.h>
 
 QT_BEGIN_NAMESPACE
+
+extern QMarginsF qt_convertMargins(const QMarginsF &margins, QPageLayout::Unit fromUnits, QPageLayout::Unit toUnits);
 
 // Disabled until we have support for papersources on unix
 // #define PSD_ENABLE_PAPERSOURCE
@@ -110,7 +119,7 @@ public:
     }
 
 protected:
-    void paintEvent(QPaintEvent *) Q_DECL_OVERRIDE
+    void paintEvent(QPaintEvent *) override
     {
         QSize pageSize = m_pageLayout.fullRectPoints().size();
         QSizeF scaledSize = pageSize.scaled(width() - 10, height() - 10, Qt::KeepAspectRatio);
@@ -203,7 +212,7 @@ void QUnixPageSetupDialogPrivate::init()
     Q_Q(QPageSetupDialog);
 
     widget = new QPageSetupWidget(q);
-    widget->setPrinter(printer);
+    widget->setPrinter(printer, nullptr, printer->outputFormat(), printer->printerName());
 
     QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok
                                                      | QDialogButtonBox::Cancel,
@@ -223,16 +232,23 @@ void QUnixPageSetupDialogPrivate::init()
 
 QPageSetupWidget::QPageSetupWidget(QWidget *parent)
     : QWidget(parent),
-      m_pagePreview(0),
-      m_printer(0),
+      m_pagePreview(nullptr),
+      m_printer(nullptr),
+      m_printDevice(nullptr),
       m_outputFormat(QPrinter::PdfFormat),
       m_units(QPageLayout::Point),
-      m_blockSignals(false)
+      m_savedUnits(QPageLayout::Point),
+      m_savedPagesPerSheet(-1),
+      m_savedPagesPerSheetLayout(-1),
+      m_blockSignals(false),
+      m_realCustomPageSizeIndex(-1)
 {
     m_ui.setupUi(this);
 
+    if (!QMetaType::hasRegisteredComparators<QPageSize>())
+        QMetaType::registerEqualsComparator<QPageSize>();
+
     QVBoxLayout *lay = new QVBoxLayout(m_ui.preview);
-    m_ui.preview->setLayout(lay);
     m_pagePreview = new QPagePreview(m_ui.preview);
     m_pagePreview->setPagePreviewLayout(1, 1);
 
@@ -254,21 +270,21 @@ QPageSetupWidget::QPageSetupWidget(QWidget *parent)
     initUnits();
     initPagesPerSheet();
 
-    connect(m_ui.unitCombo, SIGNAL(activated(int)), this, SLOT(unitChanged()));
+    connect(m_ui.unitCombo, QOverload<int>::of(&QComboBox::activated), this, &QPageSetupWidget::unitChanged);
 
-    connect(m_ui.pageSizeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(pageSizeChanged()));
-    connect(m_ui.pageWidth, SIGNAL(valueChanged(double)), this, SLOT(pageSizeChanged()));
-    connect(m_ui.pageHeight, SIGNAL(valueChanged(double)), this, SLOT(pageSizeChanged()));
+    connect(m_ui.pageSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &QPageSetupWidget::pageSizeChanged);
+    connect(m_ui.pageWidth, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::pageSizeChanged);
+    connect(m_ui.pageHeight, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::pageSizeChanged);
 
-    connect(m_ui.leftMargin, SIGNAL(valueChanged(double)), this, SLOT(leftMarginChanged(double)));
-    connect(m_ui.topMargin, SIGNAL(valueChanged(double)), this, SLOT(topMarginChanged(double)));
-    connect(m_ui.rightMargin, SIGNAL(valueChanged(double)), this, SLOT(rightMarginChanged(double)));
-    connect(m_ui.bottomMargin, SIGNAL(valueChanged(double)), this, SLOT(bottomMarginChanged(double)));
+    connect(m_ui.leftMargin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::leftMarginChanged);
+    connect(m_ui.topMargin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::topMarginChanged);
+    connect(m_ui.rightMargin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::rightMarginChanged);
+    connect(m_ui.bottomMargin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &QPageSetupWidget::bottomMarginChanged);
 
-    connect(m_ui.portrait, SIGNAL(clicked()), this, SLOT(pageOrientationChanged()));
-    connect(m_ui.landscape, SIGNAL(clicked()), this, SLOT(pageOrientationChanged()));
+    connect(m_ui.portrait, &QRadioButton::clicked, this, &QPageSetupWidget::pageOrientationChanged);
+    connect(m_ui.landscape, &QRadioButton::clicked, this, &QPageSetupWidget::pageOrientationChanged);
 
-    connect(m_ui.pagesPerSheetCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(pagesPerSheetChanged()));
+    connect(m_ui.pagesPerSheetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &QPageSetupWidget::pagesPerSheetChanged);
 }
 
 // Init the Units combo box
@@ -288,7 +304,7 @@ void QPageSetupWidget::initUnits()
 // Init the Pages Per Sheet (n-up) combo boxes if using CUPS
 void QPageSetupWidget::initPagesPerSheet()
 {
-#if !defined(QT_NO_CUPS)
+#if QT_CONFIG(cups)
     m_ui.pagesPerSheetLayoutCombo->addItem(QPrintDialog::tr("Left to Right, Top to Bottom"),
                                            QVariant::fromValue(QCUPSSupport::LeftToRightTopToBottom));
     m_ui.pagesPerSheetLayoutCombo->addItem(QPrintDialog::tr("Left to Right, Bottom to Top"),
@@ -335,15 +351,18 @@ void QPageSetupWidget::initPageSizes()
 
     m_ui.pageSizeCombo->clear();
 
+    m_realCustomPageSizeIndex = -1;
+
     if (m_outputFormat == QPrinter::NativeFormat && !m_printerName.isEmpty()) {
         QPlatformPrinterSupport *ps = QPlatformPrinterSupportPlugin::get();
         if (ps) {
             QPrintDevice printDevice = ps->createPrintDevice(m_printerName);
-            foreach (const QPageSize &pageSize, printDevice.supportedPageSizes()) {
-                m_ui.pageSizeCombo->addItem(pageSize.name(), QVariant::fromValue(pageSize.id()));
-            }
+            const auto pageSizes = printDevice.supportedPageSizes();
+            for (const QPageSize &pageSize : pageSizes)
+                m_ui.pageSizeCombo->addItem(pageSize.name(), QVariant::fromValue(pageSize));
             if (m_ui.pageSizeCombo->count() > 0 && printDevice.supportsCustomPageSizes()) {
-                m_ui.pageSizeCombo->addItem(tr("Custom"), QVariant::fromValue(QPageSize::Custom));
+                m_ui.pageSizeCombo->addItem(tr("Custom"));
+                m_realCustomPageSizeIndex = m_ui.pageSizeCombo->count() - 1;
                 m_blockSignals = false;
                 return;
             }
@@ -353,10 +372,11 @@ void QPageSetupWidget::initPageSizes()
     // If PdfFormat or no available printer page sizes, populate with all page sizes
     for (int id = 0; id < QPageSize::LastPageSize; ++id) {
         if (QPageSize::PageSizeId(id) == QPageSize::Custom) {
-            m_ui.pageSizeCombo->addItem(tr("Custom"), QVariant::fromValue(QPageSize::Custom));
+            m_ui.pageSizeCombo->addItem(tr("Custom"));
+            m_realCustomPageSizeIndex = m_ui.pageSizeCombo->count() - 1;
         } else {
             QPageSize pageSize = QPageSize(QPageSize::PageSizeId(id));
-            m_ui.pageSizeCombo->addItem(pageSize.name(), QVariant::fromValue(pageSize.id()));
+            m_ui.pageSizeCombo->addItem(pageSize.name(), QVariant::fromValue(pageSize));
         }
     }
 
@@ -365,12 +385,21 @@ void QPageSetupWidget::initPageSizes()
 
 // Set the dialog to use the given QPrinter
 // Usually only called on first creation
-void QPageSetupWidget::setPrinter(QPrinter *printer)
+void QPageSetupWidget::setPrinter(QPrinter *printer, QPrintDevice *printDevice,
+                                  QPrinter::OutputFormat outputFormat, const QString &printerName)
 {
     m_printer = printer;
+    m_printDevice = printDevice;
 
     // Initialize the layout to the current QPrinter layout
     m_pageLayout = m_printer->pageLayout();
+
+    if (printDevice) {
+        const QPageSize pageSize = printDevice->defaultPageSize();
+        const QMarginsF printable = printDevice->printableMargins(pageSize, m_pageLayout.orientation(), m_printer->resolution());
+        m_pageLayout.setPageSize(pageSize, qt_convertMargins(printable, QPageLayout::Point, m_pageLayout.units()));
+    }
+
     // Assume if margins are Points then is by default, so set to locale default units
     if (m_pageLayout.units() == QPageLayout::Point) {
         if (QLocale().measurementSystem() == QLocale::MetricSystem)
@@ -381,18 +410,11 @@ void QPageSetupWidget::setPrinter(QPrinter *printer)
     m_units = m_pageLayout.units();
     m_pagePreview->setPageLayout(m_pageLayout);
 
-    // Then update the widget with the current printer details
-    selectPrinter(m_printer->outputFormat(), m_printer->printerName());
-}
-
-// The printer selected in the QPrintDialog has been changed, update the widget to reflect this
-// Note the QPrinter is not updated at this time in case the user presses the Cancel button in QPrintDialog
-void QPageSetupWidget::selectPrinter(QPrinter::OutputFormat outputFormat, const QString &printerName)
-{
     m_outputFormat = outputFormat;
     m_printerName = printerName;
     initPageSizes();
     updateWidget();
+    updateSavedValues();
 }
 
 // Update the widget with the current settings
@@ -431,7 +453,9 @@ void QPageSetupWidget::updateWidget()
 
     m_ui.unitCombo->setCurrentIndex(m_ui.unitCombo->findData(QVariant::fromValue(m_units)));
 
-    m_ui.pageSizeCombo->setCurrentIndex(m_ui.pageSizeCombo->findData(QVariant::fromValue(m_pageLayout.pageSize().id())));
+    const bool isCustom = m_ui.pageSizeCombo->currentIndex() == m_realCustomPageSizeIndex && m_realCustomPageSizeIndex != -1;
+    if (!isCustom)
+        m_ui.pageSizeCombo->setCurrentIndex(m_ui.pageSizeCombo->findData(QVariant::fromValue(m_pageLayout.pageSize())));
 
     QMarginsF min;
     QMarginsF max;
@@ -464,8 +488,6 @@ void QPageSetupWidget::updateWidget()
     m_ui.bottomMargin->setMaximum(max.bottom());
     m_ui.bottomMargin->setValue(m_pageLayout.margins().bottom());
 
-    bool isCustom = m_ui.pageSizeCombo->currentData().value<QPageSize::PageSizeId>() == QPageSize::Custom;
-
     m_ui.pageWidth->setSuffix(suffix);
     m_ui.pageWidth->setValue(m_pageLayout.fullRect(m_units).width());
     m_ui.pageWidth->setEnabled(isCustom);
@@ -476,6 +498,7 @@ void QPageSetupWidget::updateWidget()
     m_ui.pageHeight->setEnabled(isCustom);
     m_ui.heightLabel->setEnabled(isCustom);
 
+    m_ui.portrait->setChecked(m_pageLayout.orientation() == QPageLayout::Portrait);
     m_ui.landscape->setChecked(m_pageLayout.orientation() == QPageLayout::Landscape);
 
     m_ui.pagesPerSheetButtonGroup->setEnabled(m_outputFormat == QPrinter::NativeFormat);
@@ -492,7 +515,7 @@ void QPageSetupWidget::updateWidget()
 void QPageSetupWidget::setupPrinter() const
 {
     m_printer->setPageLayout(m_pageLayout);
-#if !defined(QT_NO_CUPS)
+#if QT_CONFIG(cups)
     QCUPSSupport::PagesPerSheet pagesPerSheet = m_ui.pagesPerSheetCombo->currentData()
                                                     .value<QCUPSSupport::PagesPerSheet>();
     QCUPSSupport::PagesPerSheetLayout pagesPerSheetLayout = m_ui.pagesPerSheetLayoutCombo->currentData()
@@ -504,25 +527,46 @@ void QPageSetupWidget::setupPrinter() const
 #endif
 }
 
+void QPageSetupWidget::updateSavedValues()
+{
+    m_savedUnits = m_units;
+    m_savedPageLayout = m_pageLayout;
+    m_savedPagesPerSheet = m_ui.pagesPerSheetCombo->currentIndex();
+    m_savedPagesPerSheetLayout = m_ui.pagesPerSheetLayoutCombo->currentIndex();
+}
+
+void QPageSetupWidget::revertToSavedValues()
+{
+    m_units = m_savedUnits;
+    m_pageLayout = m_savedPageLayout;
+    m_pagePreview->setPageLayout(m_pageLayout);
+
+    updateWidget();
+
+    m_ui.pagesPerSheetCombo->setCurrentIndex(m_savedPagesPerSheet);
+    m_ui.pagesPerSheetLayoutCombo->setCurrentIndex(m_savedPagesPerSheetLayout);
+}
+
 // Updates size/preview after the combobox has been changed.
 void QPageSetupWidget::pageSizeChanged()
 {
     if (m_blockSignals)
         return;
 
-    QPageSize::PageSizeId id = m_ui.pageSizeCombo->currentData().value<QPageSize::PageSizeId>();
-    if (id != QPageSize::Custom) {
-        // TODO Set layout margin min/max to printer custom min/max
-        m_pageLayout.setPageSize(QPageSize(id));
+    QPageSize pageSize;
+    if (m_ui.pageSizeCombo->currentIndex() != m_realCustomPageSizeIndex) {
+        pageSize = m_ui.pageSizeCombo->currentData().value<QPageSize>();
     } else {
         QSizeF customSize;
         if (m_pageLayout.orientation() == QPageLayout::Landscape)
             customSize = QSizeF(m_ui.pageHeight->value(), m_ui.pageWidth->value());
         else
             customSize = QSizeF(m_ui.pageWidth->value(), m_ui.pageHeight->value());
-        // TODO Set layout margin min/max to printer min/max for page size
-        m_pageLayout.setPageSize(QPageSize(customSize, QPageSize::Unit(m_units)));
+        pageSize = QPageSize(customSize, QPageSize::Unit(m_units));
     }
+    const QMarginsF printable = m_printDevice ? m_printDevice->printableMargins(pageSize, m_pageLayout.orientation(), m_printer->resolution())
+                                              : QMarginsF();
+    m_pageLayout.setPageSize(pageSize, qt_convertMargins(printable, QPageLayout::Point, m_pageLayout.units()));
     m_pagePreview->setPageLayout(m_pageLayout);
 
     updateWidget();
@@ -539,7 +583,7 @@ void QPageSetupWidget::pageOrientationChanged()
 
 void QPageSetupWidget::pagesPerSheetChanged()
 {
-#if !defined(QT_NO_CUPS)
+#if QT_CONFIG(cups)
     switch (m_ui.pagesPerSheetCombo->currentData().toInt()) {
     case QCUPSSupport::OnePagePerSheet:
         m_pagePreview->setPagePreviewLayout(1, 1);
@@ -636,5 +680,3 @@ int QPageSetupDialog::exec()
 QT_END_NAMESPACE
 
 #include "moc_qpagesetupdialog.cpp"
-
-#endif // QT_NO_PRINTDIALOG

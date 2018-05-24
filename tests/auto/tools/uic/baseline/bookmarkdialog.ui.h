@@ -10,9 +10,7 @@
 #define BOOKMARKDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
@@ -150,13 +148,13 @@ public:
 
     void retranslateUi(QDialog *BookmarkDialog)
     {
-        BookmarkDialog->setWindowTitle(QApplication::translate("BookmarkDialog", "Add Bookmark", 0));
-        label->setText(QApplication::translate("BookmarkDialog", "Bookmark:", 0));
-        label_2->setText(QApplication::translate("BookmarkDialog", "Add in Folder:", 0));
-        toolButton->setText(QApplication::translate("BookmarkDialog", "+", 0));
+        BookmarkDialog->setWindowTitle(QApplication::translate("BookmarkDialog", "Add Bookmark", nullptr));
+        label->setText(QApplication::translate("BookmarkDialog", "Bookmark:", nullptr));
+        label_2->setText(QApplication::translate("BookmarkDialog", "Add in Folder:", nullptr));
+        toolButton->setText(QApplication::translate("BookmarkDialog", "+", nullptr));
         QTreeWidgetItem *___qtreewidgetitem = bookmarkWidget->headerItem();
-        ___qtreewidgetitem->setText(0, QApplication::translate("BookmarkDialog", "1", 0));
-        newFolderButton->setText(QApplication::translate("BookmarkDialog", "New Folder", 0));
+        ___qtreewidgetitem->setText(0, QApplication::translate("BookmarkDialog", "1", nullptr));
+        newFolderButton->setText(QApplication::translate("BookmarkDialog", "New Folder", nullptr));
     } // retranslateUi
 
 };

@@ -1,38 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qapplication.h"
-#ifndef QT_NO_EFFECTS
 #include "qdesktopwidget.h"
 #include "qeffects_p.h"
 #include "qevent.h"
@@ -44,6 +49,8 @@
 #include "qtimer.h"
 #include "qelapsedtimer.h"
 #include "qdebug.h"
+
+#include <private/qdesktopwidget_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -64,10 +71,10 @@ public:
     void run(int time);
 
 protected:
-    void paintEvent(QPaintEvent* e) Q_DECL_OVERRIDE;
-    void closeEvent(QCloseEvent*) Q_DECL_OVERRIDE;
+    void paintEvent(QPaintEvent* e) override;
+    void closeEvent(QCloseEvent*) override;
     void alphaBlend();
-    bool eventFilter(QObject *, QEvent *) Q_DECL_OVERRIDE;
+    bool eventFilter(QObject *, QEvent *) override;
 
 protected slots:
     void render();
@@ -91,9 +98,12 @@ static QAlphaWidget* q_blend = 0;
 /*
   Constructs a QAlphaWidget.
 */
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED // QDesktopWidget::screen()
 QAlphaWidget::QAlphaWidget(QWidget* w, Qt::WindowFlags f)
-    : QWidget(QApplication::desktop()->screen(QApplication::desktop()->screenNumber(w)), f)
+    : QWidget(QApplication::desktop()->screen(QDesktopWidgetPrivate::screenNumber(w)), f)
 {
+QT_WARNING_POP
 #ifndef Q_OS_WIN
     setEnabled(false);
 #endif
@@ -104,7 +114,7 @@ QAlphaWidget::QAlphaWidget(QWidget* w, Qt::WindowFlags f)
 
 QAlphaWidget::~QAlphaWidget()
 {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
     // Restore user-defined opacity value
     if (widget)
         widget->setWindowOpacity(1);
@@ -138,7 +148,7 @@ void QAlphaWidget::run(int time)
     checkTime.start();
 
     showWidget = true;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
     qApp->installEventFilter(this);
     widget->setWindowOpacity(0.0);
     widget->show();
@@ -190,16 +200,20 @@ bool QAlphaWidget::eventFilter(QObject *o, QEvent *e)
     case QEvent::Close:
        if (o != widget)
            break;
+       Q_FALLTHROUGH();
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonDblClick:
         showWidget = false;
         render();
         break;
     case QEvent::KeyPress: {
+#ifndef QT_NO_SHORTCUT
        QKeyEvent *ke = (QKeyEvent*)e;
-       if (ke->key() == Qt::Key_Escape) {
+       if (ke->matches(QKeySequence::Cancel)) {
            showWidget = false;
-       } else {
+       } else
+#endif
+       {
            duration = 0;
        }
        render();
@@ -245,7 +259,7 @@ void QAlphaWidget::render()
     else
         alpha = 1;
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
     if (alpha >= 1 || !showWidget) {
         anim.stop();
         qApp->removeEventFilter(this);
@@ -262,10 +276,6 @@ void QAlphaWidget::render()
 
         if (widget) {
             if (!showWidget) {
-#ifdef Q_OS_WIN
-                setEnabled(true);
-                setFocus();
-#endif // Q_OS_WIN
                 widget->hide();
             } else {
                 //Since we are faking the visibility of the widget
@@ -282,7 +292,7 @@ void QAlphaWidget::render()
         pm = QPixmap::fromImage(mixedImage);
         repaint();
     }
-#endif // defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#endif // defined(Q_OS_WIN)
 }
 
 /*
@@ -341,8 +351,8 @@ public:
     void run(int time);
 
 protected:
-    void paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
-    void closeEvent(QCloseEvent*) Q_DECL_OVERRIDE;
+    void paintEvent(QPaintEvent*) override;
+    void closeEvent(QCloseEvent*) override;
 
 private slots:
     void scroll();
@@ -599,5 +609,3 @@ QT_END_NAMESPACE
 */
 
 #include "qeffects.moc"
-
-#endif //QT_NO_EFFECTS

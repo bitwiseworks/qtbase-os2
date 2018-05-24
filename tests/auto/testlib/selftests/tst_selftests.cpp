@@ -1,44 +1,50 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include <QtCore/QCoreApplication>
+
+#if QT_CONFIG(temporaryfile) && QT_CONFIG(process)
+#  define USE_DIFF
+#endif
 #include <QtCore/QXmlStreamReader>
 #include <QtCore/QFileInfo>
 #include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
+#ifdef USE_DIFF
+#  include <QtCore/QTemporaryFile>
+#  include <QtCore/QStandardPaths>
+#endif
 #include <QtTest/QtTest>
 
 #include <private/cycle_p.h>
+
+#include "emulationdetector.h"
 
 struct LoggerSet;
 
@@ -177,6 +183,70 @@ static QList<QByteArray> expectedResult(const QString &fileName)
     return splitLines(file.readAll());
 }
 
+// Helpers for running the 'diff' tool in case comparison fails
+#ifdef USE_DIFF
+static inline void writeLines(QIODevice &d, const QByteArrayList &lines)
+{
+    for (const QByteArray &l : lines) {
+        d.write(l);
+        d.write("\n");
+    }
+}
+#endif // USE_DIFF
+
+static QByteArray runDiff(const QByteArrayList &expected, const QByteArrayList &actual)
+{
+    QByteArray result;
+#ifdef USE_DIFF
+#  ifndef Q_OS_WIN
+    const QString diff = QStandardPaths::findExecutable("diff");
+#  else
+    const QString diff = QStandardPaths::findExecutable("diff.exe");
+#  endif
+    if (diff.isEmpty())
+        return result;
+    QTemporaryFile expectedFile;
+    if (!expectedFile.open())
+        return result;
+    writeLines(expectedFile, expected);
+    expectedFile.close();
+    QTemporaryFile actualFile;
+    if (!actualFile.open())
+        return result;
+    writeLines(actualFile, actual);
+    actualFile.close();
+    QProcess diffProcess;
+    diffProcess.start(diff, {QLatin1String("-u"), expectedFile.fileName(), actualFile.fileName()});
+    if (!diffProcess.waitForStarted())
+        return result;
+    if (diffProcess.waitForFinished())
+        result = diffProcess.readAllStandardOutput();
+    else
+        diffProcess.kill();
+#endif // USE_DIFF
+    return result;
+}
+
+// Print the difference preferably using 'diff', else just print lines
+static void printDifference(const QByteArrayList &expected, const QByteArrayList &actual)
+{
+    QDebug info = qInfo();
+    info.noquote();
+    info.nospace();
+    const QByteArray diff = runDiff(expected, actual);
+    if (diff.isEmpty()) {
+        info << "<<<<<<\n";
+        for (const QByteArray &line : actual)
+            info << line << '\n';
+        info << "======\n";
+        for (const QByteArray &line : expected)
+            info << line << '\n';
+        info << ">>>>>>\n";
+    } else {
+        info << diff;
+    }
+}
+
 // Each test is run with a set of one or more test output loggers.
 // This struct holds information about one such test.
 struct LoggerSet
@@ -237,6 +307,14 @@ QList<LoggerSet> tst_Selftests::allLoggerSets() const
         << LoggerSet("old csv", // benchmarks only
                      QStringList() << "csv",
                      QStringList() << "-csv" << "-o" << logName("csv"))
+        << LoggerSet("old stdout teamcity",
+                     QStringList() << "stdout teamcity",
+                     QStringList() << "-teamcity"
+                    )
+        << LoggerSet("old teamcity",
+                     QStringList() << "teamcity",
+                     QStringList() << "-teamcity" << "-o" << logName("teamcity")
+                    )
         // Test with new-style options for a single logger
         << LoggerSet("new stdout txt",
                      QStringList() << "stdout txt",
@@ -276,6 +354,14 @@ QList<LoggerSet> tst_Selftests::allLoggerSets() const
         << LoggerSet("new csv", // benchmarks only
                      QStringList() << "csv",
                      QStringList() << "-o" << logName("csv")+",csv")
+        << LoggerSet("new stdout teamcity",
+                     QStringList() << "stdout teamcity",
+                     QStringList() << "-o" << "-,teamcity"
+                    )
+        << LoggerSet("new teamcity",
+                     QStringList() << "teamcity",
+                     QStringList() << "-o" << logName("teamcity")+",teamcity"
+                    )
         // Test with two loggers (don't test all 32 combinations, just a sample)
         << LoggerSet("stdout txt + txt",
                      QStringList() << "stdout txt" << "txt",
@@ -305,6 +391,7 @@ QList<LoggerSet> tst_Selftests::allLoggerSets() const
                                    << "-o" << logName("lightxml")+",lightxml"
                                    << "-o" << "-,txt"
                                    << "-o" << logName("xunitxml")+",xunitxml"
+                                   << "-o" << logName("teamcity")+",teamcity"
                     )
     ;
 }
@@ -316,6 +403,7 @@ tst_Selftests::tst_Selftests()
 
 void tst_Selftests::initTestCase()
 {
+    QVERIFY2(tempDir.isValid(), qPrintable(tempDir.errorString()));
     //Detect the location of the sub programs
     QString subProgram = QLatin1String("float/float");
 #if defined(Q_OS_WIN)
@@ -379,6 +467,7 @@ void tst_Selftests::runSubTest_data()
         << "longstring"
         << "maxwarnings"
         << "multiexec"
+        << "pairdiagnostics"
         << "printdatatags"
         << "printdatatagswithglobaltags"
         << "qexecstringlist"
@@ -505,6 +594,9 @@ void tst_Selftests::runSubTest_data()
             if (loggerSet.name.contains("csv") && !subtest.startsWith("benchlib"))
                 continue;
 
+            if (loggerSet.name.contains("teamcity") && subtest.startsWith("benchlib"))
+                continue;   // Skip benchmark for TeamCity logger
+
             const bool crashes = subtest == QLatin1String("assert") || subtest == QLatin1String("exceptionthrow")
                 || subtest == QLatin1String("fetchbogus") || subtest == QLatin1String("crashedterminate")
                 || subtest == QLatin1String("crashes") || subtest == QLatin1String("silent")
@@ -519,19 +611,21 @@ void tst_Selftests::runSubTest_data()
     }
 }
 
-#ifndef QT_NO_PROCESS
+#if QT_CONFIG(process)
 
 static QProcessEnvironment processEnvironment()
 {
     static QProcessEnvironment result;
     if (result.isEmpty()) {
         const QProcessEnvironment systemEnvironment = QProcessEnvironment::systemEnvironment();
+        const bool preserveLibPath = qEnvironmentVariableIsSet("QT_PRESERVE_TESTLIB_PATH");
         foreach (const QString &key, systemEnvironment.keys()) {
             const bool useVariable = key == QLatin1String("PATH") || key == QLatin1String("QT_QPA_PLATFORM")
 #if defined(Q_OS_QNX)
                 || key == QLatin1String("GRAPHICS_ROOT") || key == QLatin1String("TZ")
 #elif defined(Q_OS_UNIX)
                 || key == QLatin1String("HOME") || key == QLatin1String("USER") // Required for X11 on openSUSE
+                || key == QLatin1String("QEMU_SET_ENV") || key == QLatin1String("QEMU_LD_PREFIX") // Required for QEMU
 #  if !defined(Q_OS_MAC)
                 || key == QLatin1String("DISPLAY") || key == QLatin1String("XAUTHLOCALHOSTNAME")
                 || key.startsWith(QLatin1String("XDG_"))
@@ -540,10 +634,16 @@ static QProcessEnvironment processEnvironment()
 #ifdef __COVERAGESCANNER__
                 || key == QLatin1String("QT_TESTCOCOON_ACTIVE")
 #endif
+                || ( preserveLibPath && (key == QLatin1String("QT_PLUGIN_PATH")
+                                        || key == QLatin1String("LD_LIBRARY_PATH")))
                 ;
             if (useVariable)
                 result.insert(key, systemEnvironment.value(key));
         }
+        // Avoid interference from any qtlogging.ini files, e.g. in /etc/xdg/QtProject/:
+        result.insert(QStringLiteral("QT_LOGGING_RULES"),
+                      // Must match generate_expected_output.py's main()'s value:
+                      QStringLiteral("*.debug=true;qt.*=false"));
     }
     return result;
 }
@@ -571,7 +671,11 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
 #endif
 
     QProcess proc;
-    static const QProcessEnvironment environment = processEnvironment();
+    QProcessEnvironment environment = processEnvironment();
+    if (crashes) {
+        environment.insert("QTEST_DISABLE_CORE_DUMP", "1");
+        environment.insert("QTEST_DISABLE_STACK_DUMP", "1");
+    }
     proc.setProcessEnvironment(environment);
     const QString path = subdir + QLatin1Char('/') + subdir;
     proc.start(path, arguments);
@@ -618,16 +722,48 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
         && subdir != QLatin1String("blacklisted") // calls qFatal()
         && subdir != QLatin1String("silent") // calls qFatal()
 #endif
+#ifdef Q_OS_LINUX
+        // QEMU outputs to stderr about uncaught signals
+        && (!EmulationDetector::isRunningArmOnX86() ||
+                (subdir != QLatin1String("blacklisted")
+                 && subdir != QLatin1String("silent")
+                 && subdir != QLatin1String("assert")
+                 && subdir != QLatin1String("crashes")
+                )
+            )
+#endif
         && subdir != QLatin1String("benchlibcallgrind"))
         QVERIFY2(err.isEmpty(), err.constData());
 
     for (int n = 0; n < loggers.count(); ++n) {
         QString logger = loggers[n];
+        if (n == 0 && subdir == QLatin1String("crashes")) {
+            QByteArray &actual = actualOutputs[0];
+#ifndef Q_OS_WIN
+             // Remove digits of times to match the expected file.
+            const QLatin1String timePattern("Function time:");
+            int timePos = actual.indexOf(timePattern);
+            if (timePos >= 0) {
+                timePos += timePattern.size();
+                const int nextLinePos = actual.indexOf('\n', timePos);
+                for (int c = (nextLinePos != -1 ? nextLinePos : actual.size()) - 1; c >= timePos; --c) {
+                    if (actual.at(c) >= '0' && actual.at(c) <= '9')
+                        actual.remove(c, 1);
+                }
+            }
+#else // !Q_OS_WIN
+            // Remove stack trace which is output to stdout.
+            const int exceptionLogStart = actual.indexOf("A crash occurred in ");
+            if (exceptionLogStart >= 0)
+                actual.truncate(exceptionLogStart);
+#endif // Q_OS_WIN
+        }
+
         QList<QByteArray> res = splitLines(actualOutputs[n]);
         const QString expectedFileName = expectedFileNameFromTest(subdir, logger);
         QList<QByteArray> exp = expectedResult(expectedFileName);
-#if defined (Q_CC_MSVC) || defined(Q_CC_MINGW)
-        // MSVC, MinGW format double numbers differently
+#ifdef Q_CC_MINGW
+        // MinGW formats double numbers differently
         if (n == 0 && subdir == QStringLiteral("float")) {
             for (int i = 0; i < exp.size(); ++i) {
                 exp[i].replace("e-07", "e-007");
@@ -664,14 +800,7 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
             }
         } else {
             if (res.count() != exp.count()) {
-                qDebug() << "<<<<<<";
-                foreach (const QByteArray &line, res)
-                    qDebug() << line;
-                qDebug() << "======";
-                foreach (const QByteArray &line, exp)
-                    qDebug() << line;
-                qDebug() << ">>>>>>";
-
+                printDifference(exp, res);
                 QVERIFY2(res.count() == exp.count(),
                      qPrintable(QString::fromLatin1("Mismatch in line count: %1 != %2 (%3, %4).")
                                 .arg(res.count()).arg(exp.count()).arg(loggers.at(n), expectedFileName)));
@@ -723,8 +852,17 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
                     continue;
             }
 
+            QByteArray expLine = exp.at(i);
+
+            // Special handling for ignoring _FILE_ and _LINE_ if logger is teamcity
+            if (logFormat(logger) == "teamcity") {
+                QRegularExpression teamcityLocRegExp("\\|\\[Loc: .*\\(\\d*\\)\\|\\]");
+                line = QString(line).replace(teamcityLocRegExp, "|[Loc: _FILE_(_LINE_)|]").toLatin1();
+                expLine = QString(expLine).replace(teamcityLocRegExp, "|[Loc: _FILE_(_LINE_)|]").toLatin1();
+            }
+
             const QString output(QString::fromLatin1(line));
-            const QString expected(QString::fromLatin1(exp.at(i)).replace("@INSERT_QT_VERSION_HERE@", QT_VERSION_STR));
+            const QString expected(QString::fromLatin1(expLine).replace("@INSERT_QT_VERSION_HERE@", QT_VERSION_STR));
 
             if (subdir == "assert" && output.contains("ASSERT: ") && expected.contains("ASSERT: ") && output != expected)
                 // Q_ASSERT uses __FILE__, the exact contents of which are
@@ -750,6 +888,10 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
                 QRegularExpressionMatch match = durationRegExp.match(line);
                 QVERIFY2(match.hasMatch(), qPrintable(QString::fromLatin1("Invalid Duration tag at line %1 (%2): '%3'")
                                                       .arg(i).arg(loggers.at(n), output)));
+            } else if (line.startsWith("Totals:")) {
+                const int lastCommaPos = line.lastIndexOf(',');
+                if (lastCommaPos > 0)
+                    line.truncate(lastCommaPos); // Plain text logger: strip time (", 2323dms").
             } else {
                 QVERIFY2(output == expected,
                          qPrintable(QString::fromLatin1("Mismatch at line %1 (%2, %3):\n'%4'\n !=\n'%5'")
@@ -761,11 +903,11 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
     }
 }
 
-#endif // !QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 
 void tst_Selftests::runSubTest()
 {
-#ifdef QT_NO_PROCESS
+#if !QT_CONFIG(process)
     QSKIP("This test requires QProcess support");
 #else
     QFETCH(QString, subdir);
@@ -774,7 +916,7 @@ void tst_Selftests::runSubTest()
     QFETCH(bool, crashes);
 
     doRunSubTest(subdir, loggers, arguments, crashes);
-#endif // !QT_NO_PROCESS
+#endif // QT_CONFIG(process)
 }
 
 // attribute must contain ="

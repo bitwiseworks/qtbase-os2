@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -280,7 +275,7 @@ void tst_QSqlTableModel::init()
 
 void tst_QSqlTableModel::cleanup()
 {
-    repopulateTestTables();
+    recreateTestTables();
 }
 
 void tst_QSqlTableModel::select()
@@ -365,6 +360,8 @@ void tst_QSqlTableModel::selectRow()
     q.exec("UPDATE " + tbl + " SET a = 'Qt' WHERE id = 1");
     QCOMPARE(model.data(idx).toString(), QString("b"));
     model.selectRow(1);
+    if (tst_Databases::getDatabaseType(db) == QSqlDriver::PostgreSQL)
+        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QCOMPARE(model.data(idx).toString(), QString("Qt"));
 
     // Check if selectRow() refreshes a changed row.
@@ -421,6 +418,8 @@ void tst_QSqlTableModel::selectRowOverride()
     // both rows should have changed
     QCOMPARE(model.data(idx).toString(), QString("Qt"));
     idx = model.index(2, 1);
+    if (tst_Databases::getDatabaseType(db) == QSqlDriver::PostgreSQL)
+        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QCOMPARE(model.data(idx).toString(), QString("Qt"));
 
     q.exec("DELETE FROM " + tbl);
@@ -533,7 +532,7 @@ void tst_QSqlTableModel::setData()
     idx = model.index(0, 0);
     QVERIFY_SQL(model, setData(idx, QVariant(QVariant::Int)));
     val = model.data(idx);
-    QVERIFY(val == QVariant(QVariant::Int));
+    QCOMPARE(val, QVariant(QVariant::Int));
     QVERIFY(val.isNull());
     QVERIFY_SQL(model, isDirty(idx));
     QVERIFY_SQL(model, submitAll());
@@ -560,13 +559,13 @@ void tst_QSqlTableModel::setData()
     // initial state
     idx = model.index(0, 0);
     QSqlRecord rec = model.record(0);
-    QVERIFY(rec.value(0) == QVariant(QVariant::Int));
+    QCOMPARE(rec.value(0), QVariant(QVariant::Int));
     QVERIFY(rec.isNull(0));
     QVERIFY(!rec.isGenerated(0));
     // unchanged value, but causes column to be included in INSERT
     QVERIFY_SQL(model, setData(idx, QVariant(QVariant::Int)));
     rec = model.record(0);
-    QVERIFY(rec.value(0) == QVariant(QVariant::Int));
+    QCOMPARE(rec.value(0), QVariant(QVariant::Int));
     QVERIFY(rec.isNull(0));
     QVERIFY(rec.isGenerated(0));
     QVERIFY_SQL(model, submitAll());
@@ -831,6 +830,9 @@ void tst_QSqlTableModel::insertRowFailure()
     values.setGenerated(1, true);
 
     // populate 1 row
+    const QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
+    if (dbType == QSqlDriver::PostgreSQL && submitpolicy != QSqlTableModel::OnManualSubmit)
+        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QVERIFY_SQL(model, insertRecord(0, values));
     QVERIFY_SQL(model, submitAll());
     QVERIFY_SQL(model, select());
@@ -874,6 +876,8 @@ void tst_QSqlTableModel::insertRowFailure()
     // restore empty table
     model.revertAll();
     QVERIFY_SQL(model, removeRow(0));
+    if (dbType == QSqlDriver::PostgreSQL)
+        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QVERIFY_SQL(model, submitAll());
     QVERIFY_SQL(model, select());
     QCOMPARE(model.rowCount(), 0);
@@ -1136,8 +1140,8 @@ void tst_QSqlTableModel::removeRows()
     QVERIFY_SQL(model, removeRows(0, 1));
     QVERIFY_SQL(model, removeRows(1, 1));
     QCOMPARE(beforeDeleteSpy.count(), 2);
-    QVERIFY(beforeDeleteSpy.at(0).at(0).toInt() == 0);
-    QVERIFY(beforeDeleteSpy.at(1).at(0).toInt() == 1);
+    QCOMPARE(beforeDeleteSpy.at(0).at(0).toInt(), 0);
+    QCOMPARE(beforeDeleteSpy.at(1).at(0).toInt(), 1);
     // deleted rows shown as empty until select
     QCOMPARE(model.rowCount(), 3);
     QCOMPARE(model.data(model.index(0, 1)).toString(), QString(""));
@@ -1172,11 +1176,11 @@ void tst_QSqlTableModel::removeRows()
     QCOMPARE(headerDataChangedSpy.at(1).at(1).toInt(), 0);
     QCOMPARE(headerDataChangedSpy.at(1).at(2).toInt(), 0);
     QCOMPARE(model.rowCount(), 3);
-    QVERIFY(beforeDeleteSpy.count() == 0);
+    QCOMPARE(beforeDeleteSpy.count(), 0);
     QVERIFY(model.submitAll());
-    QVERIFY(beforeDeleteSpy.count() == 2);
-    QVERIFY(beforeDeleteSpy.at(0).at(0).toInt() == 0);
-    QVERIFY(beforeDeleteSpy.at(1).at(0).toInt() == 1);
+    QCOMPARE(beforeDeleteSpy.count(), 2);
+    QCOMPARE(beforeDeleteSpy.at(0).at(0).toInt(), 0);
+    QCOMPARE(beforeDeleteSpy.at(1).at(0).toInt(), 1);
     QCOMPARE(model.rowCount(), 1);
     QCOMPARE(model.data(model.index(0, 1)).toString(), QString("vohi"));
 }
@@ -1982,12 +1986,14 @@ void tst_QSqlTableModel::tableModifyWithBlank()
     //Should be equivalent to QSqlQuery INSERT INTO... command)
     QVERIFY_SQL(model, insertRow(0));
     QVERIFY_SQL(model, setData(model.index(0,0),timeString));
+    if (tst_Databases::getDatabaseType(db) == QSqlDriver::PostgreSQL)
+        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QVERIFY_SQL(model, submitAll());
 
     //set a filter on the table so the only record we get is the one we just made
     //I could just do another setData command, but I want to make sure the TableModel
     //matches exactly what is stored in the database
-    model.setFilter("column1='"+timeString+"'"); //filter to get just the newly entered row
+    model.setFilter("column1='" + timeString + QLatin1Char('\'')); //filter to get just the newly entered row
     QVERIFY_SQL(model, select());
 
     //Make sure we only get one record, and that it is the one we just made

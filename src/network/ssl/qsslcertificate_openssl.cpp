@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2016 Richard J. Moore <rich@kde.org>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -58,12 +65,14 @@ bool QSslCertificate::operator==(const QSslCertificate &other) const
 uint qHash(const QSslCertificate &key, uint seed) Q_DECL_NOTHROW
 {
     if (X509 * const x509 = key.d->x509) {
-        (void)q_X509_cmp(x509, x509); // populate x509->sha1_hash
-                                      // (if someone knows a better way...)
-        return qHashBits(x509->sha1_hash, SHA_DIGEST_LENGTH, seed);
-    } else {
-        return seed;
+        const EVP_MD *sha1 = q_EVP_sha1();
+        unsigned int len = 0;
+        unsigned char md[EVP_MAX_MD_SIZE];
+        q_X509_digest(x509, sha1, md, &len);
+        return qHashBits(md, len, seed);
     }
+
+    return seed;
 }
 
 bool QSslCertificate::isNull() const
@@ -83,8 +92,7 @@ QByteArray QSslCertificate::version() const
 {
     QMutexLocker lock(QMutexPool::globalInstanceGet(d.data()));
     if (d->versionString.isEmpty() && d->x509)
-        d->versionString =
-            QByteArray::number(qlonglong(q_ASN1_INTEGER_get(d->x509->cert_info->version)) + 1);
+        d->versionString = QByteArray::number(qlonglong(q_X509_get_version(d->x509)) + 1);
 
     return d->versionString;
 }
@@ -93,7 +101,7 @@ QByteArray QSslCertificate::serialNumber() const
 {
     QMutexLocker lock(QMutexPool::globalInstanceGet(d.data()));
     if (d->serialNumberString.isEmpty() && d->x509) {
-        ASN1_INTEGER *serialNumber = d->x509->cert_info->serialNumber;
+        ASN1_INTEGER *serialNumber = q_X509_get_serialNumber(d->x509);
         QByteArray hexString;
         hexString.reserve(serialNumber->length * 3);
         for (int a = 0; a < serialNumber->length; ++a) {
@@ -193,14 +201,15 @@ QMultiMap<QSsl::AlternativeNameEntryType, QString> QSslCertificate::subjectAlter
                 continue;
             }
 
-            const char *altNameStr = reinterpret_cast<const char *>(q_ASN1_STRING_data(genName->d.ia5));
+            const char *altNameStr = reinterpret_cast<const char *>(q_ASN1_STRING_get0_data(genName->d.ia5));
             const QString altName = QString::fromLatin1(altNameStr, len);
             if (genName->type == GEN_DNS)
                 result.insert(QSsl::DnsEntry, altName);
             else if (genName->type == GEN_EMAIL)
                 result.insert(QSsl::EmailEntry, altName);
         }
-        q_sk_pop_free((STACK*)altNames, reinterpret_cast<void(*)(void*)>(q_sk_free));
+
+        q_OPENSSL_sk_pop_free((OPENSSL_STACK*)altNames, reinterpret_cast<void(*)(void*)>(q_GENERAL_NAME_free));
     }
 
     return result;
@@ -229,25 +238,26 @@ QSslKey QSslCertificate::publicKey() const
     QSslKey key;
 
     key.d->type = QSsl::PublicKey;
-    X509_PUBKEY *xkey = d->x509->cert_info->key;
-    EVP_PKEY *pkey = q_X509_PUBKEY_get(xkey);
-    Q_ASSERT(pkey);
 
-    if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA) {
+    EVP_PKEY *pkey = q_X509_get_pubkey(d->x509);
+    Q_ASSERT(pkey);
+    const int keyType = q_EVP_PKEY_type(q_EVP_PKEY_base_id(pkey));
+
+    if (keyType == EVP_PKEY_RSA) {
         key.d->rsa = q_EVP_PKEY_get1_RSA(pkey);
         key.d->algorithm = QSsl::Rsa;
         key.d->isNull = false;
-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_DSA) {
+    } else if (keyType == EVP_PKEY_DSA) {
         key.d->dsa = q_EVP_PKEY_get1_DSA(pkey);
         key.d->algorithm = QSsl::Dsa;
         key.d->isNull = false;
 #ifndef OPENSSL_NO_EC
-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_EC) {
+    } else if (keyType == EVP_PKEY_EC) {
         key.d->ec = q_EVP_PKEY_get1_EC_KEY(pkey);
         key.d->algorithm = QSsl::Ec;
         key.d->isNull = false;
 #endif
-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_DH) {
+    } else if (keyType == EVP_PKEY_DH) {
         // DH unsupported
     } else {
         // error?
@@ -269,7 +279,7 @@ static QVariant x509UnknownExtensionToValue(X509_EXTENSION *ext)
     X509V3_EXT_METHOD *meth = const_cast<X509V3_EXT_METHOD *>(q_X509V3_EXT_get(ext));
     if (!meth) {
         ASN1_OCTET_STRING *value = q_X509_EXTENSION_get_data(ext);
-        QByteArray result( reinterpret_cast<const char *>(q_ASN1_STRING_data(value)),
+        QByteArray result( reinterpret_cast<const char *>(q_ASN1_STRING_get0_data(value)),
                            q_ASN1_STRING_length(value));
         return result;
     }
@@ -365,7 +375,7 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
                         continue;
                     }
 
-                    const char *uriStr = reinterpret_cast<const char *>(q_ASN1_STRING_data(name->d.uniformResourceIdentifier));
+                    const char *uriStr = reinterpret_cast<const char *>(q_ASN1_STRING_get0_data(name->d.uniformResourceIdentifier));
                     const QString uri = QString::fromUtf8(uriStr, len);
 
                     result[QString::fromUtf8(QSslCertificatePrivate::asn1ObjectName(ad->method))] = uri;
@@ -374,11 +384,7 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
                 }
             }
 
-#if OPENSSL_VERSION_NUMBER >= 0x10000000L
-            q_sk_pop_free((_STACK*)info, reinterpret_cast<void(*)(void*)>(q_sk_free));
-#else
-            q_sk_pop_free((STACK*)info, reinterpret_cast<void(*)(void*)>(q_sk_free));
-#endif
+            q_OPENSSL_sk_pop_free((OPENSSL_STACK*)info, reinterpret_cast<void(*)(void *)>(q_OPENSSL_sk_free));
             return result;
         }
         break;
@@ -464,8 +470,9 @@ QList<QSslCertificateExtension> QSslCertificate::extensions() const
         return result;
 
     int count = q_X509_get_ext_count(d->x509);
+    result.reserve(count);
 
-    for (int i=0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         X509_EXTENSION *ext = q_X509_get_ext(d->x509, i);
         result << QSslCertificatePrivate::convertExtension(ext);
     }
@@ -500,7 +507,7 @@ QString QSslCertificate::toText() const
 void QSslCertificatePrivate::init(const QByteArray &data, QSsl::EncodingFormat format)
 {
     if (!data.isEmpty()) {
-        QList<QSslCertificate> certs = (format == QSsl::Pem)
+        const QList<QSslCertificate> certs = (format == QSsl::Pem)
             ? certificatesFromPem(data, 1)
             : certificatesFromDer(data, 1);
         if (!certs.isEmpty()) {
@@ -600,7 +607,11 @@ static QMap<QByteArray, QString> _q_mapFromX509Name(X509_NAME *name)
         unsigned char *data = 0;
         int size = q_ASN1_STRING_to_UTF8(&data, q_X509_NAME_ENTRY_get_data(e));
         info.insertMulti(name, QString::fromUtf8((char*)data, size));
+#if QT_CONFIG(opensslv11)
+        q_CRYPTO_free(data, 0, 0);
+#else
         q_CRYPTO_free(data);
+#endif
     }
 
     return info;
@@ -612,8 +623,9 @@ QSslCertificate QSslCertificatePrivate::QSslCertificate_from_X509(X509 *x509)
     if (!x509 || !QSslSocket::supportsSsl())
         return certificate;
 
-    ASN1_TIME *nbef = q_X509_get_notBefore(x509);
-    ASN1_TIME *naft = q_X509_get_notAfter(x509);
+    ASN1_TIME *nbef = q_X509_getm_notBefore(x509);
+    ASN1_TIME *naft = q_X509_getm_notAfter(x509);
+
     certificate.d->notValidBefore = q_getTimeFromASN1(nbef);
     certificate.d->notValidAfter = q_getTimeFromASN1(naft);
     certificate.d->null = false;

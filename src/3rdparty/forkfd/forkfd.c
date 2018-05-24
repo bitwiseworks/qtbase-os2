@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 Intel Corporation
+** Copyright (C) 2016 Intel Corporation.
 ** Copyright (C) 2015 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com
 **
 ** Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -25,12 +25,14 @@
 
 #ifndef _GNU_SOURCE
 #  define _GNU_SOURCE
-#  define _POSIX_C_SOURCE 200809L
-#  define _XOPEN_SOURCE 700
 #endif
+
 #include "forkfd.h"
 
 #include <sys/types.h>
+#if defined(__OpenBSD__) || defined(__NetBSD__)
+#  include <sys/param.h>
+#endif
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -44,23 +46,38 @@
 #include <unistd.h>
 
 #ifdef __linux__
-#  if defined(__BIONIC__) || (defined(__GLIBC__) && (__GLIBC__ << 8) + __GLIBC_MINOR__ >= 0x207 && \
-       (!defined(__UCLIBC__) || ((__UCLIBC_MAJOR__ << 16) + (__UCLIBC_MINOR__ << 8) + __UCLIBC_SUBLEVEL__ > 0x921)))
+#  define HAVE_WAIT4    1
+#  if defined(__BIONIC__) || (defined(__GLIBC__) && (__GLIBC__ << 8) + __GLIBC_MINOR__ >= 0x208 && \
+       (!defined(__UCLIBC__) || ((__UCLIBC_MAJOR__ << 16) + (__UCLIBC_MINOR__ << 8) + __UCLIBC_SUBLEVEL__ > 0x90201)))
 #    include <sys/eventfd.h>
-#    define HAVE_EVENTFD  1
+#    ifdef EFD_CLOEXEC
+#      define HAVE_EVENTFD  1
+#    endif
 #  endif
 #  if defined(__BIONIC__) || (defined(__GLIBC__) && (__GLIBC__ << 8) + __GLIBC_MINOR__ >= 0x209 && \
-       (!defined(__UCLIBC__) || ((__UCLIBC_MAJOR__ << 16) + (__UCLIBC_MINOR__ << 8) + __UCLIBC_SUBLEVEL__ > 0x921)))
+       (!defined(__UCLIBC__) || ((__UCLIBC_MAJOR__ << 16) + (__UCLIBC_MINOR__ << 8) + __UCLIBC_SUBLEVEL__ > 0x90201)))
 #    define HAVE_PIPE2    1
 #  endif
+#endif
+#if defined(__FreeBSD__) && __FreeBSD__ >= 9
+#  include <sys/procdesc.h>
 #endif
 
 #if _POSIX_VERSION-0 >= 200809L || _XOPEN_VERSION-0 >= 500
 #  define HAVE_WAITID   1
 #endif
+#if !defined(WEXITED) || !defined(WNOWAIT)
+#  undef HAVE_WAITID
+#endif
 
-#if defined(__FreeBSD__)
+#if (defined(__FreeBSD__) && defined(__FreeBSD_version) && __FreeBSD_version >= 1000032) || \
+    (defined(__OpenBSD__) && OpenBSD >= 201505) || \
+    (defined(__NetBSD__) && __NetBSD_Version__ >= 600000000)
 #  define HAVE_PIPE2    1
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__) || \
+    defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
+#  define HAVE_WAIT4    1
 #endif
 
 #if defined(__APPLE__)
@@ -147,7 +164,7 @@ static ProcessInfo *tryAllocateInSection(Header *header, ProcessInfo entries[], 
     }
 
     /* there isn't an available entry, undo our increment */
-    ffd_atomic_add_fetch(&header->busyCount, -1, FFD_ATOMIC_RELAXED);
+    (void)ffd_atomic_add_fetch(&header->busyCount, -1, FFD_ATOMIC_RELAXED);
     return NULL;
 }
 
@@ -194,12 +211,33 @@ static int isChildReady(pid_t pid, siginfo_t *info)
 }
 #endif
 
+static void convertStatusToForkfdInfo(int status, struct forkfd_info *info)
+{
+    if (WIFEXITED(status)) {
+        info->code = CLD_EXITED;
+        info->status = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        info->code = CLD_KILLED;
+#  ifdef WCOREDUMP
+        if (WCOREDUMP(status))
+            info->code = CLD_DUMPED;
+#  endif
+        info->status = WTERMSIG(status);
+    }
+}
+
 static int tryReaping(pid_t pid, struct pipe_payload *payload)
 {
     /* reap the child */
-#ifdef HAVE_WAITID
+#if defined(HAVE_WAIT4)
+    int status;
+    if (wait4(pid, &status, WNOHANG, &payload->rusage) <= 0)
+        return 0;
+    convertStatusToForkfdInfo(status, &payload->info);
+#else
+#  if defined(HAVE_WAITID)
     if (waitid_works) {
-        // we have waitid(2), which fills in siginfo_t for us
+        /* we have waitid(2), which gets us some payload values on some systems */
         siginfo_t info;
         info.si_pid = 0;
         int ret = waitid(P_PID, pid, &info, WEXITED | WNOHANG) == 0 && info.si_pid == pid;
@@ -208,30 +246,20 @@ static int tryReaping(pid_t pid, struct pipe_payload *payload)
 
         payload->info.code = info.si_code;
         payload->info.status = info.si_status;
-#  ifdef __linux__
+#    ifdef __linux__
         payload->rusage.ru_utime.tv_sec = info.si_utime / CLOCKS_PER_SEC;
         payload->rusage.ru_utime.tv_usec = info.si_utime % CLOCKS_PER_SEC;
         payload->rusage.ru_stime.tv_sec = info.si_stime / CLOCKS_PER_SEC;
         payload->rusage.ru_stime.tv_usec = info.si_stime % CLOCKS_PER_SEC;
-#  endif
+#    endif
         return 1;
     }
-#endif
+#  endif // HAVE_WAITID
     int status;
     if (waitpid(pid, &status, WNOHANG) <= 0)
         return 0;     // child did not change state
-
-    if (WIFEXITED(status)) {
-        payload->info.code = CLD_EXITED;
-        payload->info.status = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        payload->info.code = CLD_KILLED;
-#  ifdef WCOREDUMP
-        if (WCOREDUMP(status))
-            payload->info.code = CLD_DUMPED;
-#  endif
-        payload->info.status = WTERMSIG(status);
-    }
+    convertStatusToForkfdInfo(status, &payload->info);
+#endif // !HAVE_WAIT4
 
     return 1;
 }
@@ -241,7 +269,7 @@ static void freeInfo(Header *header, ProcessInfo *entry)
     entry->deathPipe = -1;
     entry->pid = 0;
 
-    ffd_atomic_add_fetch(&header->busyCount, -1, FFD_ATOMIC_RELEASE);
+    (void)ffd_atomic_add_fetch(&header->busyCount, -1, FFD_ATOMIC_RELEASE);
     assert(header->busyCount >= 0);
 }
 
@@ -255,7 +283,7 @@ static void notifyAndFreeInfo(Header *header, ProcessInfo *entry,
     freeInfo(header, entry);
 }
 
-static void sigchld_handler(int signum)
+static void sigchld_handler(int signum, siginfo_t *handler_info, void *handler_context)
 {
     /*
      * This is a signal handler, so we need to be careful about which functions
@@ -263,7 +291,20 @@ static void sigchld_handler(int signum)
      * specification at:
      *   http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_04_03
      *
+     * The handler_info and handler_context parameters may not be valid, if
+     * we're a chained handler from another handler that did not use
+     * SA_SIGINFO. Therefore, we must obtain the siginfo ourselves directly by
+     * calling waitid.
+     *
+     * But we pass them anyway. Let's call the chained handler first, while
+     * those two arguments have a chance of being correct.
      */
+    if (old_sigaction.sa_handler != SIG_IGN && old_sigaction.sa_handler != SIG_DFL) {
+        if (old_sigaction.sa_flags & SA_SIGINFO)
+            old_sigaction.sa_sigaction(signum, handler_info, handler_context);
+        else
+            old_sigaction.sa_handler(signum);
+    }
 
     if (ffd_atomic_load(&forkfd_status, FFD_ATOMIC_RELAXED) == 1) {
         /* is this one of our children? */
@@ -291,9 +332,8 @@ search_next_child:
         waitid(P_ALL, 0, &info, WNOHANG | WNOWAIT | WEXITED);
         if (info.si_pid == 0) {
             /* there are no further un-waited-for children, so we can just exit.
-             * But before, transfer control to the chained SIGCHLD handler.
              */
-            goto chain_handler;
+            return;
         }
 
         for (i = 0; i < (int)sizeofarray(children.entries); ++i) {
@@ -381,12 +421,26 @@ search_arrays:
             array = ffd_atomic_load(&array->header.nextArray, FFD_ATOMIC_ACQUIRE);
         }
     }
+}
 
-#ifdef HAVE_WAITID
-chain_handler:
+static void ignore_sigpipe()
+{
+#ifdef O_NOSIGPIPE
+    static ffd_atomic_int done = FFD_ATOMIC_INIT(0);
+    if (ffd_atomic_load(&done, FFD_ATOMIC_RELAXED))
+        return;
 #endif
-    if (old_sigaction.sa_handler != SIG_IGN && old_sigaction.sa_handler != SIG_DFL)
-        old_sigaction.sa_handler(signum);
+
+    struct sigaction action;
+    memset(&action, 0, sizeof action);
+    sigemptyset(&action.sa_mask);
+    action.sa_handler = SIG_IGN;
+    action.sa_flags = 0;
+    sigaction(SIGPIPE, &action, NULL);
+
+#ifdef O_NOSIGPIPE
+    ffd_atomic_store(&done, 1, FFD_ATOMIC_RELAXED);
+#endif
 }
 
 static void forkfd_initialize()
@@ -411,8 +465,8 @@ static void forkfd_initialize()
     struct sigaction action;
     memset(&action, 0, sizeof action);
     sigemptyset(&action.sa_mask);
-    action.sa_flags = SA_NOCLDSTOP;
-    action.sa_handler = sigchld_handler;
+    action.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    action.sa_sigaction = sigchld_handler;
 
     /* ### RACE CONDITION
      * The sigaction function does a memcpy from an internal buffer
@@ -424,6 +478,11 @@ static void forkfd_initialize()
      * signal could be delivered to another thread.
      */
     sigaction(SIGCHLD, &action, &old_sigaction);
+
+#ifndef O_NOSIGPIPE
+    /* disable SIGPIPE too */
+    ignore_sigpipe();
+#endif
 
 #ifndef __GNUC__
     atexit(cleanup);
@@ -465,13 +524,23 @@ static void cleanup()
 
 static int create_pipe(int filedes[], int flags)
 {
-    int ret;
+    int ret = -1;
 #ifdef HAVE_PIPE2
     /* use pipe2(2) whenever possible, since it can thread-safely create a
      * cloexec pair of pipes. Without it, we have a race condition setting
      * FD_CLOEXEC
      */
-    ret = pipe2(filedes, O_CLOEXEC);
+
+#  ifdef O_NOSIGPIPE
+    /* try first with O_NOSIGPIPE */
+    ret = pipe2(filedes, O_CLOEXEC | O_NOSIGPIPE);
+    if (ret == -1) {
+        /* O_NOSIGPIPE not supported, ignore SIGPIPE */
+        ignore_sigpipe();
+    }
+#  endif
+    if (ret == -1)
+        ret = pipe2(filedes, O_CLOEXEC);
     if (ret == -1)
         return ret;
 
@@ -490,6 +559,55 @@ static int create_pipe(int filedes[], int flags)
         fcntl(filedes[0], F_SETFL, fcntl(filedes[0], F_GETFL) | O_NONBLOCK);
     return ret;
 }
+
+#if defined(FORKFD_NO_SPAWNFD) && defined(__FreeBSD__) && __FreeBSD__ >= 9
+#  if __FreeBSD__ == 9
+/* PROCDESC is an optional feature in the kernel and wasn't enabled
+ * by default on FreeBSD 9. So we need to check for it at runtime. */
+static ffd_atomic_int system_has_forkfd = FFD_ATOMIC_INIT(1);
+#  else
+/* On FreeBSD 10, PROCDESC was enabled by default. On v11, it's not an option
+ * anymore and can't be disabled. */
+static const int system_has_forkfd = 1;
+#  endif
+
+static int system_forkfd(int flags, pid_t *ppid)
+{
+    int ret;
+    pid_t pid;
+    pid = pdfork(&ret, PD_DAEMON);
+    if (__builtin_expect(pid == -1, 0)) {
+#  if __FreeBSD__ == 9
+        if (errno == ENOSYS) {
+            /* PROCDESC wasn't compiled into the kernel: don't try it again. */
+            ffd_atomic_store(&system_has_forkfd, 0, FFD_ATOMIC_RELAXED);
+        }
+#  endif
+        return -1;
+    }
+    if (pid == 0) {
+        /* child process */
+        return FFD_CHILD_PROCESS;
+    }
+
+    /* parent process */
+    if (flags & FFD_CLOEXEC)
+        fcntl(ret, F_SETFD, FD_CLOEXEC);
+    if (flags & FFD_NONBLOCK)
+        fcntl(ret, F_SETFL, fcntl(ret, F_GETFL) | O_NONBLOCK);
+    if (ppid)
+        *ppid = pid;
+    return ret;
+}
+#else
+static const int system_has_forkfd = 0;
+static int system_forkfd(int flags, pid_t *ppid)
+{
+    (void)flags;
+    (void)ppid;
+    return -1;
+}
+#endif
 
 #ifndef FORKFD_NO_FORKFD
 /**
@@ -537,6 +655,12 @@ int forkfd(int flags, pid_t *ppid)
 #ifdef __linux__
     int efd;
 #endif
+
+    if (system_has_forkfd) {
+        ret = system_forkfd(flags, ppid);
+        if (system_has_forkfd)
+            return ret;
+    }
 
     (void) pthread_once(&forkfd_initialization, forkfd_initialize);
 
@@ -661,6 +785,8 @@ int spawnfd(int flags, pid_t *ppid, const char *path, const posix_spawn_file_act
     /* we can only do work if we have a way to start the child in stopped mode;
      * otherwise, we have a major race condition. */
 
+    assert(!system_has_forkfd);
+
     (void) pthread_once(&forkfd_initialization, forkfd_initialize);
 
     info = allocateInfo(&header);
@@ -716,6 +842,26 @@ int forkfd_wait(int ffd, forkfd_info *info, struct rusage *rusage)
 {
     struct pipe_payload payload;
     int ret;
+
+    if (system_has_forkfd) {
+#if defined(__FreeBSD__) && __FreeBSD__ >= 9
+        pid_t pid;
+        int status;
+        int options = WEXITED;
+
+        ret = pdgetpid(ffd, &pid);
+        if (ret == -1)
+            return ret;
+        ret = fcntl(ffd, F_GETFL);
+        if (ret == -1)
+            return ret;
+        options |= (ret & O_NONBLOCK) ? WNOHANG : 0;
+        ret = wait4(pid, &status, options, rusage);
+        if (ret != -1 && info)
+            convertStatusToForkfdInfo(status, info);
+        return ret == -1 ? -1 : 0;
+#endif
+    }
 
     ret = read(ffd, &payload, sizeof(payload));
     if (ret == -1)

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -171,6 +177,19 @@ void QOpenUrlHandlerRegistry::handlerDestroyed(QObject *handler)
     still fail to launch or fail to open the requested URL. This result will not be reported back
     to the application.
 
+    \warning URLs passed to this function on iOS will not load unless their schemes are
+    listed in the \c LSApplicationQueriesSchemes key of the application's Info.plist file.
+    For more information, see the Apple Developer Documentation for
+    \l{https://developer.apple.com/documentation/uikit/uiapplication/1622952-canopenurl}{canOpenURL(_:)}.
+    For example, the following lines enable URLs with the HTTPS scheme:
+
+    \code
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>https</string>
+    </array>
+    \endcode
+
     \sa setUrlHandler()
 */
 bool QDesktopServices::openUrl(const QUrl &url)
@@ -192,16 +211,26 @@ bool QDesktopServices::openUrl(const QUrl &url)
         return false;
 
     QPlatformIntegration *platformIntegration = QGuiApplicationPrivate::platformIntegration();
-    if (!platformIntegration)
+    if (Q_UNLIKELY(!platformIntegration)) {
+        QCoreApplication *application = QCoreApplication::instance();
+        if (Q_UNLIKELY(!application))
+            qWarning("QDesktopServices::openUrl: Please instantiate the QGuiApplication object "
+                     "first");
+        else if (Q_UNLIKELY(!qobject_cast<QGuiApplication *>(application)))
+            qWarning("QDesktopServices::openUrl: Application is not a GUI application");
         return false;
+    }
 
     QPlatformServices *platformServices = platformIntegration->services();
     if (!platformServices) {
-        qWarning("%s: The platform plugin does not support services.", Q_FUNC_INFO);
+        qWarning("The platform plugin does not support services.");
         return false;
     }
-    return url.scheme() == QLatin1String("file") ?
-           platformServices->openDocument(url) : platformServices->openUrl(url);
+    // We only use openDocument if there is no fragment for the URL to
+    // avoid it being lost when using openDocument
+    if (url.isLocalFile() && !url.hasFragment())
+        return platformServices->openDocument(url);
+    return platformServices->openUrl(url);
 }
 
 /*!
@@ -231,13 +260,13 @@ void QDesktopServices::setUrlHandler(const QString &scheme, QObject *receiver, c
     QOpenUrlHandlerRegistry *registry = handlerRegistry();
     QMutexLocker locker(&registry->mutex);
     if (!receiver) {
-        registry->handlers.remove(scheme);
+        registry->handlers.remove(scheme.toLower());
         return;
     }
     QOpenUrlHandlerRegistry::Handler h;
     h.receiver = receiver;
     h.name = method;
-    registry->handlers.insert(scheme, h);
+    registry->handlers.insert(scheme.toLower(), h);
     QObject::connect(receiver, SIGNAL(destroyed(QObject*)),
                      registry, SLOT(handlerDestroyed(QObject*)));
 }
@@ -322,17 +351,17 @@ QString QDesktopServices::storageLocationImpl(QStandardPaths::StandardLocation t
         // * Unix data location is under the "data/" subdirectory
         const QString compatAppName = qt_applicationName_noFallback();
         const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+        const QString organizationName = QCoreApplication::organizationName();
 #if defined(Q_OS_WIN) || defined(Q_OS_MAC)
         QString result = baseDir;
-        if (!QCoreApplication::organizationName().isEmpty())
-            result += QLatin1Char('/') + QCoreApplication::organizationName();
+        if (!organizationName.isEmpty())
+            result += QLatin1Char('/') + organizationName;
         if (!compatAppName.isEmpty())
             result += QLatin1Char('/') + compatAppName;
         return result;
 #elif defined(Q_OS_UNIX)
         return baseDir + QLatin1String("/data/")
-            + QCoreApplication::organizationName() + QLatin1Char('/')
-            + compatAppName;
+            + organizationName + QLatin1Char('/') + compatAppName;
 #endif
     }
     return QStandardPaths::writableLocation(type);

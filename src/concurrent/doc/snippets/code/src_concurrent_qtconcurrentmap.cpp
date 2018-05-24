@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -147,20 +157,25 @@ QFuture<QSet<int> > totalColorDistribution = QtConcurrent::mappedReduced(images,
 QImage QImage::scaledToWidth(int width, Qt::TransformationMode) const;
 //! [10]
 
-
 //! [11]
-std::bind(&QImage::scaledToWidth, 100, Qt::SmoothTransformation)
+struct ImageTransform
+{
+    void operator()(QImage &result, const QImage &value);
+};
+
+QFuture<QImage> thumbNails =
+  QtConcurrent::mappedReduced<QImage>(images,
+                                      Scaled(100),
+                                      ImageTransform(),
+                                      QtConcurrent::SequentialReduce);
 //! [11]
-
-
-//! [12]
-QImage scaledToWith(const QImage &image)
-//! [12]
-
 
 //! [13]
 QList<QImage> images = ...;
-QFuture<QImage> thumbnails = QtConcurrent::mapped(images, std::bind(&QImage::scaledToWidth, 100 Qt::SmoothTransformation));
+std::function<QImage(const QImage &)> scale = [](const QImage &img) {
+    return img.scaledToWidth(100, Qt::SmoothTransformation);
+};
+QFuture<QImage> thumbnails = QtConcurrent::mapped(images, scale);
 //! [13]
 
 //! [14]

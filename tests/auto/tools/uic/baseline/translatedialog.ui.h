@@ -1,32 +1,27 @@
 /*
 *********************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the autotests of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,15 +40,12 @@
 #define TRANSLATEDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -213,34 +205,34 @@ public:
 
     void retranslateUi(QDialog *TranslateDialog)
     {
-        TranslateDialog->setWindowTitle(QApplication::translate("TranslateDialog", "Qt Linguist", 0));
+        TranslateDialog->setWindowTitle(QApplication::translate("TranslateDialog", "Qt Linguist", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        TranslateDialog->setWhatsThis(QApplication::translate("TranslateDialog", "This window allows you to search for some text in the translation source file.", 0));
+        TranslateDialog->setWhatsThis(QApplication::translate("TranslateDialog", "This window allows you to search for some text in the translation source file.", nullptr));
 #endif // QT_NO_WHATSTHIS
 #ifndef QT_NO_WHATSTHIS
-        ledTranslateTo->setWhatsThis(QApplication::translate("TranslateDialog", "Type in the text to search for.", 0));
+        ledTranslateTo->setWhatsThis(QApplication::translate("TranslateDialog", "Type in the text to search for.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        findWhat->setText(QApplication::translate("TranslateDialog", "Find &source text:", 0));
-        translateTo->setText(QApplication::translate("TranslateDialog", "&Translate to:", 0));
+        findWhat->setText(QApplication::translate("TranslateDialog", "Find &source text:", nullptr));
+        translateTo->setText(QApplication::translate("TranslateDialog", "&Translate to:", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        ledFindWhat->setWhatsThis(QApplication::translate("TranslateDialog", "Type in the text to search for.", 0));
+        ledFindWhat->setWhatsThis(QApplication::translate("TranslateDialog", "Type in the text to search for.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        groupBox->setTitle(QApplication::translate("TranslateDialog", "Search options", 0));
+        groupBox->setTitle(QApplication::translate("TranslateDialog", "Search options", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        ckMatchCase->setWhatsThis(QApplication::translate("TranslateDialog", "Texts such as 'TeX' and 'tex' are considered as different when checked.", 0));
+        ckMatchCase->setWhatsThis(QApplication::translate("TranslateDialog", "Texts such as 'TeX' and 'tex' are considered as different when checked.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        ckMatchCase->setText(QApplication::translate("TranslateDialog", "Match &case", 0));
-        ckMarkFinished->setText(QApplication::translate("TranslateDialog", "Mark new translation as &finished", 0));
+        ckMatchCase->setText(QApplication::translate("TranslateDialog", "Match &case", nullptr));
+        ckMarkFinished->setText(QApplication::translate("TranslateDialog", "Mark new translation as &finished", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        findNxt->setWhatsThis(QApplication::translate("TranslateDialog", "Click here to find the next occurrence of the text you typed in.", 0));
+        findNxt->setWhatsThis(QApplication::translate("TranslateDialog", "Click here to find the next occurrence of the text you typed in.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        findNxt->setText(QApplication::translate("TranslateDialog", "Find Next", 0));
-        translate->setText(QApplication::translate("TranslateDialog", "Translate", 0));
-        translateAll->setText(QApplication::translate("TranslateDialog", "Translate All", 0));
+        findNxt->setText(QApplication::translate("TranslateDialog", "Find Next", nullptr));
+        translate->setText(QApplication::translate("TranslateDialog", "Translate", nullptr));
+        translateAll->setText(QApplication::translate("TranslateDialog", "Translate All", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        cancel->setWhatsThis(QApplication::translate("TranslateDialog", "Click here to close this window.", 0));
+        cancel->setWhatsThis(QApplication::translate("TranslateDialog", "Click here to close this window.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        cancel->setText(QApplication::translate("TranslateDialog", "Cancel", 0));
+        cancel->setText(QApplication::translate("TranslateDialog", "Cancel", nullptr));
     } // retranslateUi
 
 };

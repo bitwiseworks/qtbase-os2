@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,6 +40,10 @@
 #include "qcocoadrag.h"
 #include "qmacclipboard.h"
 #include "qcocoahelpers.h"
+#ifndef QT_NO_WIDGETS
+#include <QtWidgets/qwidget.h>
+#endif
+#include <QtGui/private/qcoregraphics_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -58,7 +68,7 @@ void QCocoaDrag::setLastMouseEvent(NSEvent *event, NSView *view)
     m_lastView = view;
 }
 
-QMimeData *QCocoaDrag::platformDropData()
+QMimeData *QCocoaDrag::dragMimeData()
 {
     if (m_drag)
         return m_drag->mimeData();
@@ -120,23 +130,26 @@ Qt::DropAction QCocoaDrag::drag(QDrag *o)
 
     QPoint hotSpot = m_drag->hotSpot();
     QPixmap pm = dragPixmap(m_drag, hotSpot);
+    QSize pmDeviceIndependentSize = pm.size() / pm.devicePixelRatio();
     NSImage *nsimage = qt_mac_create_nsimage(pm);
+    [nsimage setSize:NSSizeFromCGSize(pmDeviceIndependentSize.toCGSize())];
 
     QMacPasteboard dragBoard((CFStringRef) NSDragPboard, QMacInternalPasteboardMime::MIME_DND);
     m_drag->mimeData()->setData(QLatin1String("application/x-qt-mime-type-name"), QByteArray("dummy"));
     dragBoard.setMimeData(m_drag->mimeData(), QMacPasteboard::LazyRequest);
 
     NSPoint event_location = [m_lastEvent locationInWindow];
-    NSPoint local_point = [m_lastView convertPoint:event_location fromView:nil];
-    local_point.x -= hotSpot.x();
-    CGFloat flippedY = pm.height() - hotSpot.y();
-    local_point.y += flippedY;
-    NSSize mouseOffset = NSMakeSize(0.0, 0.0);
+    NSWindow *theWindow = [m_lastEvent window];
+    Q_ASSERT(theWindow != nil);
+    event_location.x -= hotSpot.x();
+    CGFloat flippedY = pmDeviceIndependentSize.height() - hotSpot.y();
+    event_location.y -= flippedY;
+    NSSize mouseOffset_unused = NSMakeSize(0.0, 0.0);
     NSPasteboard *pboard = [NSPasteboard pasteboardWithName:NSDragPboard];
 
-    [m_lastView dragImage:nsimage
-        at:local_point
-        offset:mouseOffset
+    [theWindow dragImage:nsimage
+        at:event_location
+        offset:mouseOffset_unused
         event:m_lastEvent
         pasteboard:pboard
         source:m_lastView
@@ -175,10 +188,25 @@ QPixmap QCocoaDrag::dragPixmap(QDrag *drag, QPoint &hotSpot) const
             if (s.length() > dragImageMaxChars)
                 s = s.left(dragImageMaxChars -3) + QChar(0x2026);
             if (!s.isEmpty()) {
-                const int width = fm.width(s);
+                const int width = fm.horizontalAdvance(s);
                 const int height = fm.height();
                 if (width > 0 && height > 0) {
-                    pm = QPixmap(width, height);
+                    qreal dpr = 1.0;
+                    if (const QWindow *sourceWindow = qobject_cast<QWindow *>(drag->source())) {
+                        dpr = sourceWindow->devicePixelRatio();
+                    }
+#ifndef QT_NO_WIDGETS
+                    else if (const QWidget *sourceWidget = qobject_cast<QWidget *>(drag->source())) {
+                        if (const QWindow *sourceWindow = sourceWidget->window()->windowHandle())
+                            dpr = sourceWindow->devicePixelRatio();
+                    }
+#endif
+                    else {
+                        if (const QWindow *focusWindow = qApp->focusWindow())
+                            dpr = focusWindow->devicePixelRatio();
+                    }
+                    pm = QPixmap(width * dpr, height * dpr);
+                    pm.setDevicePixelRatio(dpr);
                     QPainter p(&pm);
                     p.fillRect(0, 0, pm.width(), pm.height(), Qt::color0);
                     p.setPen(Qt::color1);

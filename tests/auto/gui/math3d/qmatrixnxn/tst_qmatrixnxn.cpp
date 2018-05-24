@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -673,7 +668,7 @@ void tst_QMatrixNxN::compare2x2()
     QMatrix2x2 m2(uniqueValues2);
     QMatrix2x2 m3(transposedValues2);
 
-    QVERIFY(m1 == m2);
+    QCOMPARE(m1, m2);
     QVERIFY(!(m1 != m2));
     QVERIFY(m1 != m3);
     QVERIFY(!(m1 == m3));
@@ -686,7 +681,7 @@ void tst_QMatrixNxN::compare3x3()
     QMatrix3x3 m2(uniqueValues3);
     QMatrix3x3 m3(transposedValues3);
 
-    QVERIFY(m1 == m2);
+    QCOMPARE(m1, m2);
     QVERIFY(!(m1 != m2));
     QVERIFY(m1 != m3);
     QVERIFY(!(m1 == m3));
@@ -699,7 +694,7 @@ void tst_QMatrixNxN::compare4x4()
     QMatrix4x4 m2(uniqueValues4);
     QMatrix4x4 m3(transposedValues4);
 
-    QVERIFY(m1 == m2);
+    QCOMPARE(m1, m2);
     QVERIFY(!(m1 != m2));
     QVERIFY(m1 != m3);
     QVERIFY(!(m1 == m3));
@@ -712,7 +707,7 @@ void tst_QMatrixNxN::compare4x3()
     QMatrix4x3 m2(uniqueValues4x3);
     QMatrix4x3 m3(transposedValues3x4);
 
-    QVERIFY(m1 == m2);
+    QCOMPARE(m1, m2);
     QVERIFY(!(m1 != m2));
     QVERIFY(m1 != m3);
     QVERIFY(!(m1 == m3));
@@ -1232,6 +1227,10 @@ void tst_QMatrixNxN::multiply4x4()
     QMatrix4x4 m5;
     m5 = m1 * m2;
     QVERIFY(isSame(m5, (const float *)m3Values));
+
+    QMatrix4x4 m1xm1 = m1 * m1;
+    m1 *= m1;
+    QCOMPARE(m1, m1xm1);
 }
 
 // Test matrix multiplication for 4x3 matrices.
@@ -1858,7 +1857,7 @@ void tst_QMatrixNxN::inverted4x4()
     if (invertible)
         QVERIFY(m1.determinant() != 0.0f);
     else
-        QVERIFY(m1.determinant() == 0.0f);
+        QCOMPARE(m1.determinant(), 0.0f);
 
     Matrix4 m1alt;
     memcpy(m1alt.v, (const float *)m1Values, sizeof(m1alt.v));
@@ -1992,7 +1991,7 @@ void tst_QMatrixNxN::scale4x4()
     if (z == 1.0f) {
         QMatrix4x4 m2b;
         m2b.scale(x, y);
-        QVERIFY(m2b == m2);
+        QCOMPARE(m2b, m2);
     }
 
     QVector3D v1(2.0f, 3.0f, -4.0f);
@@ -2051,7 +2050,7 @@ void tst_QMatrixNxN::scale4x4()
     if (z == 1.0f) {
         QMatrix4x4 m4b(m3);
         m4b.scale(x, y);
-        QVERIFY(m4b == m4);
+        QCOMPARE(m4b, m4);
     }
 
     // Test coverage when the special matrix type is unknown.
@@ -2138,7 +2137,7 @@ void tst_QMatrixNxN::translate4x4()
     if (z == 0.0f) {
         QMatrix4x4 m2b;
         m2b.translate(x, y);
-        QVERIFY(m2b == m2);
+        QCOMPARE(m2b, m2);
     }
 
     QVector3D v1(2.0f, 3.0f, -4.0f);
@@ -2179,7 +2178,7 @@ void tst_QMatrixNxN::translate4x4()
     if (z == 0.0f) {
         QMatrix4x4 m4b(m3);
         m4b.translate(x, y);
-        QVERIFY(m4b == m4);
+        QCOMPARE(m4b, m4);
     }
 }
 
@@ -2279,8 +2278,8 @@ void tst_QMatrixNxN::rotate4x4_data()
     float y = 2.0f;
     float z = -6.0f;
     float angle = -45.0f;
-    float c = std::cos(angle * M_PI / 180.0f);
-    float s = std::sin(angle * M_PI / 180.0f);
+    float c = std::cos(qDegreesToRadians(angle));
+    float s = std::sin(qDegreesToRadians(angle));
     float len = std::sqrt(x * x + y * y + z * z);
     float xu = x / len;
     float yu = y / len;
@@ -3073,7 +3072,7 @@ void tst_QMatrixNxN::convertQMatrix()
     QPointF p2 = m2 * QPointF(100.0, 150.0);
     QCOMPARE((double)p2.x(), 100.0 - 3.5);
     QCOMPARE((double)p2.y(), 150.0 + 2.0);
-    QVERIFY(m1 == m2.toAffine());
+    QCOMPARE(m1, m2.toAffine());
 
     QMatrix m3;
     m3.scale(1.5, -2.0);
@@ -3085,7 +3084,7 @@ void tst_QMatrixNxN::convertQMatrix()
     QPointF p4 = m4 * QPointF(100.0, 150.0);
     QCOMPARE((double)p4.x(), 1.5 * 100.0);
     QCOMPARE((double)p4.y(), -2.0 * 150.0);
-    QVERIFY(m3 == m4.toAffine());
+    QCOMPARE(m3, m4.toAffine());
 
     QMatrix m5;
     m5.rotate(45.0);
@@ -3120,7 +3119,7 @@ void tst_QMatrixNxN::convertQTransform()
     QPointF p2 = m2 * QPointF(100.0, 150.0);
     QCOMPARE((double)p2.x(), 100.0 - 3.5);
     QCOMPARE((double)p2.y(), 150.0 + 2.0);
-    QVERIFY(m1 == m2.toTransform());
+    QCOMPARE(m1, m2.toTransform());
 
     QTransform m3;
     m3.scale(1.5, -2.0);
@@ -3132,7 +3131,7 @@ void tst_QMatrixNxN::convertQTransform()
     QPointF p4 = m4 * QPointF(100.0, 150.0);
     QCOMPARE((double)p4.x(), 1.5 * 100.0);
     QCOMPARE((double)p4.y(), -2.0 * 150.0);
-    QVERIFY(m3 == m4.toTransform());
+    QCOMPARE(m3, m4.toTransform());
 
     QTransform m5;
     m5.rotate(45.0);
@@ -3206,16 +3205,16 @@ void tst_QMatrixNxN::mapRect()
     QRect recti(qRound(x), qRound(y), qRound(width), qRound(height));
 
     QMatrix4x4 m1;
-    QVERIFY(m1.mapRect(rect) == rect);
-    QVERIFY(m1.mapRect(recti) == recti);
+    QCOMPARE(m1.mapRect(rect), rect);
+    QCOMPARE(m1.mapRect(recti), recti);
 
     QMatrix4x4 m2;
     m2.translate(-100.5f, 64.0f);
     QRectF translated = rect.translated(-100.5f, 64.0f);
     QRect translatedi = QRect(qRound(recti.x() - 100.5f), recti.y() + 64,
                               recti.width(), recti.height());
-    QVERIFY(m2.mapRect(rect) == translated);
-    QVERIFY(m2.mapRect(recti) == translatedi);
+    QCOMPARE(m2.mapRect(rect), translated);
+    QCOMPARE(m2.mapRect(recti), translatedi);
 
     QMatrix4x4 m3;
     m3.scale(-100.5f, 64.0f);
@@ -3232,7 +3231,7 @@ void tst_QMatrixNxN::mapRect()
         scaley -= scaleht;
     }
     QRectF scaled(scalex, scaley, scalewid, scaleht);
-    QVERIFY(m3.mapRect(rect) == scaled);
+    QCOMPARE(m3.mapRect(rect), scaled);
     scalex = recti.x() * -100.5f;
     scaley = recti.y() * 64.0f;
     scalewid = recti.width() * -100.5f;
@@ -3247,7 +3246,7 @@ void tst_QMatrixNxN::mapRect()
     }
     QRect scaledi(qRound(scalex), qRound(scaley),
                   qRound(scalewid), qRound(scaleht));
-    QVERIFY(m3.mapRect(recti) == scaledi);
+    QCOMPARE(m3.mapRect(recti), scaledi);
 
     QMatrix4x4 m4;
     m4.translate(-100.5f, 64.0f);
@@ -3261,7 +3260,7 @@ void tst_QMatrixNxN::mapRect()
     if (transy1 > transy2)
         qSwap(transy1, transy2);
     QRectF trans(transx1, transy1, transx2 - transx1, transy2 - transy1);
-    QVERIFY(m4.mapRect(rect) == trans);
+    QCOMPARE(m4.mapRect(rect), trans);
     transx1 = recti.x() * -2.5f - 100.5f;
     transy1 = recti.y() * 4.0f + 64.0f;
     transx2 = (recti.x() + recti.width()) * -2.5f - 100.5f;
@@ -3273,7 +3272,7 @@ void tst_QMatrixNxN::mapRect()
     QRect transi(qRound(transx1), qRound(transy1),
                  qRound(transx2) - qRound(transx1),
                  qRound(transy2) - qRound(transy1));
-    QVERIFY(m4.mapRect(recti) == transi);
+    QCOMPARE(m4.mapRect(recti), transi);
 
     m4.rotate(45.0f, 0.0f, 0.0f, 1.0f);
 
@@ -3290,7 +3289,7 @@ void tst_QMatrixNxN::mapRect()
 
     QRect mri = m4.mapRect(recti);
     QRect tri = t4.mapRect(recti);
-    QVERIFY(mri == tri);
+    QCOMPARE(mri, tri);
 }
 
 void tst_QMatrixNxN::mapVector_data()
@@ -3389,14 +3388,14 @@ void tst_QMatrixNxN::properties()
 
 void tst_QMatrixNxN::metaTypes()
 {
-    QVERIFY(QMetaType::type("QMatrix4x4") == QMetaType::QMatrix4x4);
+    QCOMPARE(QMetaType::type("QMatrix4x4"), int(QMetaType::QMatrix4x4));
 
     QCOMPARE(QByteArray(QMetaType::typeName(QMetaType::QMatrix4x4)),
              QByteArray("QMatrix4x4"));
 
     QVERIFY(QMetaType::isRegistered(QMetaType::QMatrix4x4));
 
-    QVERIFY(qMetaTypeId<QMatrix4x4>() == QMetaType::QMatrix4x4);
+    QCOMPARE(qMetaTypeId<QMatrix4x4>(), int(QMetaType::QMatrix4x4));
 }
 
 QTEST_APPLESS_MAIN(tst_QMatrixNxN)

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtTest module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,14 +46,18 @@
 #include <QtTest/private/qcsvbenchmarklogger_p.h>
 #include <QtTest/private/qxunittestlogger_p.h>
 #include <QtTest/private/qxmltestlogger_p.h>
+#include <QtTest/private/qteamcitylogger_p.h>
 #if defined(HAVE_XCTEST)
 #include <QtTest/private/qxctestlogger_p.h>
 #endif
 
 #include <QtCore/qatomic.h>
 #include <QtCore/qbytearray.h>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QVariant>
+#if QT_CONFIG(regularexpression)
 #include <QtCore/QRegularExpression>
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -74,6 +84,9 @@ static void saveCoverageTool(const char * appname, bool testfailed, bool install
     Q_UNUSED(installedTestCoverage);
 #endif
 }
+
+static QElapsedTimer elapsedFunctionTime;
+static QElapsedTimer elapsedTotalTime;
 
 namespace QTest {
 
@@ -128,7 +141,7 @@ namespace QTest {
             return tp == type
                    && (pattern.type() == QVariant::String ?
                        stringsMatch(pattern.toString(), message) :
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
                        pattern.toRegularExpression().match(message).hasMatch());
 #else
                        false);
@@ -209,6 +222,12 @@ namespace QTest {
             FOREACH_LOGGER(logger->addBenchmarkResult(result));
         }
 
+        static void addMessage(QtMsgType type, const QMessageLogContext &context,
+                               const QString &message)
+        {
+            FOREACH_LOGGER(logger->addMessage(type, context, message));
+        }
+
         static void addMessage(QAbstractTestLogger::MessageTypes type, const QString &message,
                                const char *file = 0, int line = 0)
         {
@@ -278,11 +297,10 @@ namespace QTest {
             QTEST_ASSERT(QTest::TestLoggers::loggerCount() != 0);
         }
 
-        if (handleIgnoredMessage(type, message))
+        if (handleIgnoredMessage(type, message)) {
             // the message is expected, so just swallow it.
             return;
-
-        QString msg = qFormatLogMessage(type, context, message);
+        }
 
         if (type != QtFatalMsg) {
             if (counter.load() <= 0)
@@ -295,22 +313,10 @@ namespace QTest {
             }
         }
 
-        switch (type) {
-        case QtDebugMsg:
-            QTest::TestLoggers::addMessage(QAbstractTestLogger::QDebug, msg);
-            break;
-        case QtInfoMsg:
-            QTest::TestLoggers::addMessage(QAbstractTestLogger::QInfo, msg);
-            break;
-        case QtCriticalMsg:
-            QTest::TestLoggers::addMessage(QAbstractTestLogger::QSystem, msg);
-            break;
-        case QtWarningMsg:
-            QTest::TestLoggers::addMessage(QAbstractTestLogger::QWarning, msg);
-            break;
-        case QtFatalMsg:
-            QTest::TestLoggers::addMessage(QAbstractTestLogger::QFatal, msg);
-            /* Right now, we're inside the custom message handler and we're
+        QTest::TestLoggers::addMessage(type, context, message);
+
+        if (type == QtFatalMsg) {
+             /* Right now, we're inside the custom message handler and we're
              * being qt_message_output in qglobal.cpp. After we return from
              * this function, it will proceed with calling exit() and abort()
              * and hence crash. Therefore, we call these logging functions such
@@ -318,13 +324,13 @@ namespace QTest {
             QTestResult::addFailure("Received a fatal error.", "Unknown file", 0);
             QTestLog::leaveTestFunction();
             QTestLog::stopLogging();
-            break;
         }
     }
 }
 
 void QTestLog::enterTestFunction(const char* function)
 {
+    elapsedFunctionTime.restart();
     if (printAvailableTags)
         return;
 
@@ -360,7 +366,7 @@ void QTestLog::printUnhandledIgnoreMessages()
         if (list->pattern.type() == QVariant::String) {
             message = QStringLiteral("Did not receive message: \"") + list->pattern.toString() + QLatin1Char('"');
         } else {
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
             message = QStringLiteral("Did not receive any message matching: \"") + list->pattern.toRegularExpression().pattern() + QLatin1Char('"');
 #endif
         }
@@ -450,6 +456,8 @@ void QTestLog::addBenchmarkResult(const QBenchmarkResult &result)
 
 void QTestLog::startLogging()
 {
+    elapsedTotalTime.start();
+    elapsedFunctionTime.start();
     QTest::TestLoggers::startLogging();
     QTest::oldMessageHandler = qInstallMessageHandler(QTest::messageHandler);
 }
@@ -486,6 +494,9 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
         break;
     case QTestLog::XunitXML:
         logger = new QXunitTestLogger(filename);
+        break;
+    case QTestLog::TeamCity:
+        logger = new QTeamCityLogger(filename);
         break;
 #if defined(HAVE_XCTEST)
     case QTestLog::XCTest:
@@ -539,14 +550,14 @@ void QTestLog::ignoreMessage(QtMsgType type, const char *msg)
     QTest::IgnoreResultList::append(QTest::ignoreResultList, type, QString::fromLocal8Bit(msg));
 }
 
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 void QTestLog::ignoreMessage(QtMsgType type, const QRegularExpression &expression)
 {
     QTEST_ASSERT(expression.isValid());
 
     QTest::IgnoreResultList::append(QTest::ignoreResultList, type, QVariant(expression));
 }
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
 
 void QTestLog::setMaxWarnings(int m)
 {
@@ -595,6 +606,16 @@ void QTestLog::setInstalledTestCoverage(bool installed)
 bool QTestLog::installedTestCoverage()
 {
     return QTest::installedTestCoverage;
+}
+
+qint64 QTestLog::nsecsTotalTime()
+{
+    return elapsedTotalTime.nsecsElapsed();
+}
+
+qint64 QTestLog::nsecsFunctionTime()
+{
+    return elapsedFunctionTime.nsecsElapsed();
 }
 
 QT_END_NAMESPACE

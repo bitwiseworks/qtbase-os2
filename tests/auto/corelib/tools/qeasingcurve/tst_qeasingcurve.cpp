@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -59,6 +54,7 @@ private slots:
     void testCbrtDouble();
     void testCbrtFloat();
     void cpp11();
+    void quadraticEquation();
 };
 
 void tst_QEasingCurve::type()
@@ -807,6 +803,75 @@ void tst_QEasingCurve::cpp11()
     QCOMPARE( ec.type(), type );
     }
 #endif
+}
+
+void tst_QEasingCurve::quadraticEquation() {
+    // We find the value for a given time by solving a cubic equation.
+    //     ax^3 + bx^2 + cx + d = 0
+    // However, the solver also needs to take care of cases where a = 0,
+    // b = 0 or c = 0, and the equation becomes quadratic, linear or invalid.
+    // A naive cubic solver might divide by zero and return nan, even
+    // when the solution is a real number.
+    // This test should triggers those cases.
+
+    {
+        // If the control points are spaced 1/3 apart of the distance of the
+        // start- and endpoint, the equation becomes linear.
+        QEasingCurve test(QEasingCurve::BezierSpline);
+        const qreal p1 = 1.0 / 3.0;
+        const qreal p2 = 1.0 - 1.0 / 3.0;
+        const qreal p3 = 1.0;
+
+        test.addCubicBezierSegment(QPointF(p1, 0.0), QPointF(p2, 1.0), QPointF(p3, 1.0));
+        QVERIFY(qAbs(test.valueForProgress(0.25) - 0.15625) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.5) - 0.5) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.75) - 0.84375) < 1e-6);
+    }
+
+    {
+        // If both the start point and the first control point
+        // are placed a 0.0, and the second control point is
+        // placed at 1/3, we get a case where a = 0 and b != 0
+        // i.e. a quadratic equation.
+        QEasingCurve test(QEasingCurve::BezierSpline);
+        const qreal p1 = 0.0;
+        const qreal p2 = 1.0 / 3.0;
+        const qreal p3 = 1.0;
+        test.addCubicBezierSegment(QPointF(p1, 0.0), QPointF(p2, 1.0), QPointF(p3, 1.0));
+        QVERIFY(qAbs(test.valueForProgress(0.25) - 0.5) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.5) - 0.792893) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.75) - 0.950962) < 1e-6);
+    }
+
+    {
+        // If both the start point and the first control point
+        // are placed a 0.0, and the second control point is
+        // placed close to 1/3, we get a case where a = ~0 and b != 0.
+        // It's not truly a quadratic equation, but should be treated
+        // as one, because it causes some cubic solvers to fail.
+        QEasingCurve test(QEasingCurve::BezierSpline);
+        const qreal p1 = 0.0;
+        const qreal p2 = 1.0 / 3.0 + 1e-6;
+        const qreal p3 = 1.0;
+        test.addCubicBezierSegment(QPointF(p1, 0.0), QPointF(p2, 1.0), QPointF(p3, 1.0));
+        QVERIFY(qAbs(test.valueForProgress(0.25) - 0.499999) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.5) - 0.792892) < 1e-6);
+        QVERIFY(qAbs(test.valueForProgress(0.75) - 0.950961) < 1e-6);
+    }
+
+    {
+        // A bad case, where the segment is of zero length.
+        // However, it might still happen in user code,
+        // and we should return a sensible answer.
+        QEasingCurve test(QEasingCurve::BezierSpline);
+        const qreal p0 = 0.0;
+        const qreal p1 = p0;
+        const qreal p2 = p0;
+        const qreal p3 = p0;
+        test.addCubicBezierSegment(QPointF(p1, 0.0), QPointF(p2, 1.0), QPointF(p3, 1.0));
+        test.addCubicBezierSegment(QPointF(p3, 1.0), QPointF(1.0, 1.0), QPointF(1.0, 1.0));
+        QCOMPARE(test.valueForProgress(0.0), 0.0);
+    }
 }
 
 QTEST_MAIN(tst_QEasingCurve)

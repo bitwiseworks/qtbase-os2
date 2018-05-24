@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,15 +41,13 @@
 #include <qboxlayout.h>
 #include <qtabwidget.h>
 #include <qlabel.h>
+#include <qmainwindow.h>
+#include <qtoolbar.h>
 #include <private/qwindow_p.h>
 
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+#include <QtTest/private/qtesthelpers_p.h>
+
+using namespace QTestPrivate;
 
 class tst_QWidget_window : public QObject
 {
@@ -86,6 +79,7 @@ private slots:
 
     void tst_showWithoutActivating();
     void tst_paintEventOnSecondShow();
+    void tst_paintEventOnResize_QTBUG50796();
 
 #ifndef QT_NO_DRAGANDDROP
     void tst_dnd();
@@ -97,6 +91,17 @@ private slots:
 
     void tst_resize_count();
     void tst_move_count();
+
+    void tst_eventfilter_on_toplevel();
+
+    void QTBUG_50561_QCocoaBackingStore_paintDevice_crash();
+
+    void setWindowState_data();
+    void setWindowState();
+
+    void nativeShow();
+
+    void QTBUG_56277_resize_on_showEvent();
 };
 
 void tst_QWidget_window::initTestCase()
@@ -204,32 +209,20 @@ void tst_QWidget_window::tst_show_resize_hide_show()
 //    QCoreApplication::processEvents(QEventLoop::AllEvents, 1000);
 }
 
-class TestWidget : public QWidget
+class PaintTestWidget : public QWidget
 {
 public:
-    int m_first, m_next;
-    bool paintEventReceived;
+    int paintEventCount;
 
-    void reset(){ m_first = m_next = 0; paintEventReceived = false; }
-    bool event(QEvent *event)
+    explicit PaintTestWidget(QWidget *parent = nullptr)
+        : QWidget(parent)
+        , paintEventCount(0)
+    {}
+
+    void paintEvent(QPaintEvent *event) override
     {
-        switch (event->type()) {
-        case QEvent::WindowActivate:
-        case QEvent::WindowDeactivate:
-        case QEvent::Hide:
-        case QEvent::Show:
-            if (m_first)
-                m_next = event->type();
-            else
-                m_first = event->type();
-            break;
-        case QEvent::Paint:
-            paintEventReceived = true;
-            break;
-        default:
-            break;
-        }
-        return QWidget::event(event);
+        ++paintEventCount;
+        QWidget::paintEvent(event);
     }
 };
 
@@ -336,43 +329,68 @@ void tst_QWidget_window::tst_windowFilePath()
 
 void tst_QWidget_window::tst_showWithoutActivating()
 {
-#ifndef Q_DEAD_CODE_FROM_QT4_X11
-    QSKIP("This test is X11-only.");
-#else
-    QWidget w;
-    w.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&w));
-    QApplication::processEvents();
+    QString platformName = QGuiApplication::platformName().toLower();
+    if (platformName == "cocoa")
+        QSKIP("Cocoa: This fails. Figure out why.");
+    else if (platformName != QStringLiteral("xcb")
+            && platformName != QStringLiteral("windows")
+            && platformName != QStringLiteral("ios")
+            && platformName != QStringLiteral("tvos")
+            && platformName != QStringLiteral("watchos"))
+        QSKIP("Qt::WA_ShowWithoutActivating is currently supported only on xcb, windows, and ios/tvos/watchos platforms.");
 
-    QApplication::clipboard();
-    QLineEdit *lineEdit = new QLineEdit;
-    lineEdit->setAttribute(Qt::WA_ShowWithoutActivating, true);
-    lineEdit->show();
-    lineEdit->setAttribute(Qt::WA_ShowWithoutActivating, false);
-    lineEdit->raise();
-    lineEdit->activateWindow();
+    QWidget w1;
+    w1.setAttribute(Qt::WA_ShowWithoutActivating);
+    w1.show();
+    QVERIFY(!QTest::qWaitForWindowActive(&w1));
 
-    Window window;
-    int revertto;
-    QTRY_COMPARE(lineEdit->winId(),
-                 (XGetInputFocus(QX11Info::display(), &window, &revertto), window) );
-    // Note the use of the , before window because we want the XGetInputFocus to be re-executed
-    //     in each iteration of the inside loop of the QTRY_COMPARE macro
+    QWidget w2;
+    w2.show();
+    QVERIFY(QTest::qWaitForWindowActive(&w2));
 
-#endif // Q_DEAD_CODE_FROM_QT4_X11
+    QWidget w3;
+    w3.setAttribute(Qt::WA_ShowWithoutActivating);
+    w3.show();
+    QVERIFY(!QTest::qWaitForWindowActive(&w3));
+
+    w3.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&w3));
 }
 
 void tst_QWidget_window::tst_paintEventOnSecondShow()
 {
-    TestWidget w;
+    PaintTestWidget w;
     w.show();
     w.hide();
 
-    w.reset();
+    w.paintEventCount = 0;
     w.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w));
     QApplication::processEvents();
-    QTRY_VERIFY(w.paintEventReceived);
+    QTRY_VERIFY(w.paintEventCount > 0);
+}
+
+void tst_QWidget_window::tst_paintEventOnResize_QTBUG50796()
+{
+    const QRect availableGeo = QGuiApplication::primaryScreen()->availableGeometry();
+
+    QWidget root;
+    root.setGeometry(availableGeo.width()/2 - 100, availableGeo.height()/2 - 100,
+                     200, 200);
+
+    PaintTestWidget *native = new PaintTestWidget(&root);
+    native->winId(); // We're testing native widgets
+    native->setGeometry(10, 10, 50, 50);
+
+    root.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&root));
+    QVERIFY(QTest::qWaitForWindowActive(&root));
+    QVERIFY(native->isVisible());
+
+    native->paintEventCount = 0;
+    native->resize(native->width() + 10, native->height() + 10);
+    QTest::qWait(50); // Wait for paint events
+    QTRY_COMPARE(native->paintEventCount, 1); // Only one paint event must occur
 }
 
 #ifndef QT_NO_DRAGANDDROP
@@ -674,7 +692,7 @@ public:
     int resizeCount;
 
 protected:
-    void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE
+    void resizeEvent(QResizeEvent *) override
     {
         resizeCount++;
     }
@@ -741,7 +759,7 @@ public:
         , moveCount(0)
     { }
 
-    void moveEvent(QMoveEvent *) Q_DECL_OVERRIDE
+    void moveEvent(QMoveEvent *) override
     {
         moveCount++;
     }
@@ -760,6 +778,185 @@ void tst_QWidget_window::tst_move_count()
 
     move.move(220,250);
     QTRY_VERIFY(move.moveCount >= 1);
+}
+
+class EventFilter : public QObject
+{
+public:
+    int eventCount;
+
+    EventFilter()
+        : QObject(),
+          eventCount(0)
+    {
+    }
+
+    static QEvent::Type filterEventType()
+    {
+        static int type = QEvent::registerEventType();
+        return static_cast<QEvent::Type>(type);
+    }
+
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override
+    {
+        if (e->type() == filterEventType())
+            ++eventCount;
+
+        return QObject::eventFilter(o, e);
+    }
+};
+
+void tst_QWidget_window::tst_eventfilter_on_toplevel()
+{
+    QWidget w;
+    EventFilter filter;
+    w.installEventFilter(&filter);
+    w.show();
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+    QVERIFY(w.isWindow());
+    QCOMPARE(filter.eventCount, 0);
+
+    // send an event not handled in a special way by QWidgetWindow::event,
+    // and check that it's received by the event filter
+    QCoreApplication::postEvent(w.windowHandle(), new QEvent(EventFilter::filterEventType()));
+    QTRY_COMPARE(filter.eventCount, 1);
+}
+
+class ApplicationStateSaver
+{
+public:
+    ApplicationStateSaver()
+    {
+        QApplication::setAttribute(Qt::AA_NativeWindows, true);
+        QApplication::setQuitOnLastWindowClosed(false);
+    }
+
+    ~ApplicationStateSaver()
+    {
+        QApplication::setAttribute(Qt::AA_NativeWindows, false);
+        QApplication::setQuitOnLastWindowClosed(true);
+    }
+};
+
+void tst_QWidget_window::QTBUG_50561_QCocoaBackingStore_paintDevice_crash()
+{
+    // Keep application state clean if testcase fails
+    ApplicationStateSaver as;
+
+    QMainWindow w;
+    w.addToolBar(new QToolBar(&w));
+    w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+    // Simulate window system close
+    QCloseEvent *e = new QCloseEvent;
+    e->accept();
+    qApp->postEvent(w.windowHandle(), e);
+    qApp->processEvents();
+
+    // Show again
+    w.show();
+    qApp->processEvents();
+
+    // No crash, all good.
+    // Wrap up and leave
+    w.close();
+}
+
+void tst_QWidget_window::setWindowState_data()
+{
+    QString platformName = QGuiApplication::platformName().toLower();
+
+    QTest::addColumn<Qt::WindowStates>("state");
+    QTest::newRow("0") << Qt::WindowStates();
+    QTest::newRow("Qt::WindowMaximized") << Qt::WindowStates(Qt::WindowMaximized);
+    QTest::newRow("Qt::WindowMinimized") << Qt::WindowStates(Qt::WindowMinimized);
+    QTest::newRow("Qt::WindowFullScreen") << Qt::WindowStates(Qt::WindowFullScreen);
+
+    if (platformName != "xcb" && platformName != "windows" && !platformName.startsWith("wayland")
+        && platformName != "offscreen")
+        return; // Combination of states is not preserved on all platforms.
+    if (platformName == "xcb" && qgetenv("XDG_CURRENT_DESKTOP") != "KDE"
+        && qgetenv("XDG_CURRENT_DESKTOP") != "Unity")
+        return; // Not all window managers support state combinations.
+
+    QTest::newRow("Qt::WindowMaximized|Qt::WindowMinimized")
+        << (Qt::WindowMaximized | Qt::WindowMinimized);
+    QTest::newRow("Qt::WindowFullScreen|Qt::WindowMinimized")
+        << (Qt::WindowFullScreen | Qt::WindowMinimized);
+    QTest::newRow("Qt::WindowMaximized|Qt::WindowFullScreen")
+        << (Qt::WindowMaximized | Qt::WindowFullScreen);
+    QTest::newRow("Qt::WindowMaximized|Qt::WindowFullScreen|Qt::WindowMinimized")
+        << (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized);
+}
+
+void tst_QWidget_window::setWindowState()
+{
+    QFETCH(Qt::WindowStates, state);
+
+    // This tests make sure that the states are preserved when the window is shown.
+
+    QWidget w;
+    w.setWindowState(state);
+    QCOMPARE(w.windowState(), state);
+    w.show();
+    QCOMPARE(w.windowState(), state);
+    QCOMPARE(w.windowHandle()->windowStates(), state);
+    if (!(state & Qt::WindowMinimized))
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+    QTRY_COMPARE(w.windowState(), state);
+    QCOMPARE(w.windowHandle()->windowStates(), state);
+
+    // Minimizing keeps other states
+    w.showMinimized();
+    QCOMPARE(w.windowState(), state | Qt::WindowMinimized);
+    QTest::qWait(200);
+    QCOMPARE(w.windowState(), state | Qt::WindowMinimized);
+    QCOMPARE(w.windowHandle()->windowStates(), state | Qt::WindowMinimized);
+}
+
+void tst_QWidget_window::nativeShow()
+{
+    // Verify that a native widget can be shown using the QWindow::setVisible() API
+    QWidget w;
+    w.winId();
+    w.windowHandle()->setVisible(true);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+    QVERIFY(w.isVisible());
+
+    // ... and that we can hide it
+    w.windowHandle()->setVisible(false);
+    QTRY_VERIFY(!w.isVisible());
+}
+
+class ResizedOnShowEventWidget : public QWidget
+{
+public:
+    void showEvent(QShowEvent *) override
+    {
+        const auto *primaryScreen = QApplication::primaryScreen();
+        auto newSize = primaryScreen->availableGeometry().size() / 4;
+        if (newSize == geometry().size())
+            newSize -= QSize(10, 10);
+        resize(newSize);
+    }
+};
+
+void tst_QWidget_window::QTBUG_56277_resize_on_showEvent()
+{
+    const auto platformName = QGuiApplication::platformName().toLower();
+    if (platformName != "cocoa" && platformName != "windows")
+        QSKIP("This can only be consistently tested on desktop platforms with well-known behavior.");
+
+    ResizedOnShowEventWidget w;
+    w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+    const auto *screen = w.windowHandle()->screen();
+    const auto geometry = w.geometry();
+    const int frameHeight = geometry.top() - w.frameGeometry().top();
+    const int topmostY = screen->availableGeometry().top() + frameHeight;
+    QVERIFY(geometry.top() > topmostY || geometry.left() > screen->availableGeometry().left());
 }
 
 QTEST_MAIN(tst_QWidget_window)

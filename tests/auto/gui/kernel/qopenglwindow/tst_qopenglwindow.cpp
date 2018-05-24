@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,19 +31,29 @@
 #include <QtGui/QOpenGLFunctions>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QPainter>
+#include <private/qguiapplication_p.h>
+#include <qpa/qplatformintegration.h>
 
 class tst_QOpenGLWindow : public QObject
 {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void create();
     void basic();
+    void resize();
     void painter();
     void partial_data();
     void partial();
     void underOver();
 };
+
+void tst_QOpenGLWindow::initTestCase()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL))
+        QSKIP("OpenGL is not supported on this platform.");
+}
 
 void tst_QOpenGLWindow::create()
 {
@@ -58,7 +63,7 @@ void tst_QOpenGLWindow::create()
     w.resize(640, 480);
     w.show();
 
-    QTest::qWaitForWindowExposed(&w);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     QVERIFY(w.isValid());
 }
@@ -70,17 +75,17 @@ public:
         initCount = resizeCount = paintCount = 0;
     }
 
-    void initializeGL() Q_DECL_OVERRIDE {
+    void initializeGL() override {
         ++initCount;
     }
 
-    void resizeGL(int w, int h) Q_DECL_OVERRIDE {
+    void resizeGL(int w, int h) override {
         ++resizeCount;
         QCOMPARE(w, size().width());
         QCOMPARE(h, size().height());
     }
 
-    void paintGL() Q_DECL_OVERRIDE {
+    void paintGL() override {
         ++paintCount;
 
         QOpenGLContext *ctx = QOpenGLContext::currentContext();
@@ -107,12 +112,11 @@ void tst_QOpenGLWindow::basic()
     w.reset();
     w.resize(640, 480);
     w.show();
-    QTest::qWaitForWindowExposed(&w);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     // Check that the virtuals are invoked.
     QCOMPARE(w.initCount, 1);
-    int resCount = w.resizeCount;
-    QVERIFY(resCount >= 1);
+    QVERIFY(w.resizeCount >= 1);
     QVERIFY(w.paintCount >= 1);
 
     // Check that something has been drawn;
@@ -128,19 +132,37 @@ void tst_QOpenGLWindow::basic()
     QCOMPARE(v[2], GLint(w.width() * w.devicePixelRatio()));
     QCOMPARE(v[3], GLint(w.height() * w.devicePixelRatio()));
     w.doneCurrent();
+}
+
+static bool isPlatformWayland()
+{
+    return QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive);
+}
+
+void tst_QOpenGLWindow::resize()
+{
+    if (isPlatformWayland())
+        QSKIP("Wayland: Crashes on Intel Mesa due to a driver bug (QTBUG-66848).");
+
+    Window w;
+    w.reset();
+    w.resize(640, 480);
+    w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+    // Check that the virtuals are invoked.
+    int resCount = w.resizeCount;
+    QVERIFY(resCount >= 1);
 
     // Check that a future resize triggers resizeGL.
     w.resize(800, 600);
-    int maxWait = 1000;
-    while (w.resizeCount == resCount && maxWait-- >= 0)
-        QTest::qWait(10);
-    QVERIFY(w.resizeCount > resCount);
+    QTRY_VERIFY(w.resizeCount > resCount);
 }
 
 class PainterWindow : public QOpenGLWindow
 {
 public:
-    void paintGL() Q_DECL_OVERRIDE {
+    void paintGL() override {
         QOpenGLContext *ctx = QOpenGLContext::currentContext();
         QVERIFY(ctx);
         QCOMPARE(ctx, context());
@@ -166,7 +188,7 @@ void tst_QOpenGLWindow::painter()
     PainterWindow w;
     w.resize(400, 400);
     w.show();
-    QTest::qWaitForWindowExposed(&w);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     QCOMPARE(w.img.size(), w.size() * w.devicePixelRatio());
     QVERIFY(w.img.pixel(QPoint(5, 5) * w.devicePixelRatio()) == qRgb(0, 0, 255));
@@ -179,7 +201,7 @@ public:
     PartialPainterWindow(QOpenGLWindow::UpdateBehavior u)
         : QOpenGLWindow(u), x(0) { }
 
-    void paintGL() Q_DECL_OVERRIDE {
+    void paintGL() override {
         ++paintCount;
 
         QPainter p(this);
@@ -208,15 +230,13 @@ void tst_QOpenGLWindow::partial()
     PartialPainterWindow w(u);
     w.resize(800, 400);
     w.show();
-    QTest::qWaitForWindowExposed(&w);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     // Add a couple of small blue rects.
     for (int i = 0; i < 10; ++i) {
         w.paintCount = 0;
         w.update();
-        int maxWait = 1000;
-        while (w.paintCount == 0 && maxWait-- >= 0)
-            QTest::qWait(10);
+        QTRY_VERIFY(w.paintCount > 0);
     }
 
     // Now since the painting went to an extra framebuffer, all the rects should
@@ -240,7 +260,7 @@ public:
         Error
     } m_state;
 
-    void paintUnderGL() Q_DECL_OVERRIDE {
+    void paintUnderGL() override {
         if (m_state == None || m_state == PaintOver)
             m_state = PaintUnder;
         else
@@ -248,10 +268,10 @@ public:
 
         GLuint fbo = 0xFFFF;
         QOpenGLContext::currentContext()->functions()->glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &fbo);
-        QVERIFY(fbo == 0);
+        QCOMPARE(fbo, QOpenGLContext::currentContext()->defaultFramebufferObject());
     }
 
-    void paintGL() Q_DECL_OVERRIDE {
+    void paintGL() override {
         if (m_state == PaintUnder)
             m_state = Paint;
         else
@@ -260,11 +280,11 @@ public:
         // Using PartialUpdateBlend so paintGL() targets a user fbo, not the default.
         GLuint fbo = 0xFFFF;
         QOpenGLContext::currentContext()->functions()->glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &fbo);
-        QVERIFY(fbo != 0);
+        QVERIFY(fbo != QOpenGLContext::currentContext()->defaultFramebufferObject());
         QCOMPARE(fbo, defaultFramebufferObject());
     }
 
-    void paintOverGL() Q_DECL_OVERRIDE {
+    void paintOverGL() override {
         if (m_state == Paint)
             m_state = PaintOver;
         else
@@ -272,7 +292,7 @@ public:
 
         GLuint fbo = 0xFFFF;
         QOpenGLContext::currentContext()->functions()->glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &fbo);
-        QVERIFY(fbo == 0);
+        QCOMPARE(fbo, QOpenGLContext::currentContext()->defaultFramebufferObject());
     }
 };
 
@@ -281,7 +301,7 @@ void tst_QOpenGLWindow::underOver()
     PaintUnderOverWindow w;
     w.resize(400, 400);
     w.show();
-    QTest::qWaitForWindowExposed(&w);
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     // under -> paint -> over -> under -> paint -> ... is the only acceptable sequence
     QCOMPARE(w.m_state, PaintUnderOverWindow::PaintOver);

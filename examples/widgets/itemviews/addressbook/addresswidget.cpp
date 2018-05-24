@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -49,8 +59,8 @@ AddressWidget::AddressWidget(QWidget *parent)
 {
     table = new TableModel(this);
     newAddressTab = new NewAddressTab(this);
-    connect(newAddressTab, SIGNAL(sendDetails(QString, QString)),
-        this, SLOT(addEntry(QString, QString)));
+    connect(newAddressTab, &NewAddressTab::sendDetails,
+        this, &AddressWidget::addEntry);
 
     addTab(newAddressTab, "Address Book");
 
@@ -59,7 +69,7 @@ AddressWidget::AddressWidget(QWidget *parent)
 //! [0]
 
 //! [2]
-void AddressWidget::addEntry()
+void AddressWidget::showAddEntryDialog()
 {
     AddDialog aDialog;
 
@@ -75,10 +85,7 @@ void AddressWidget::addEntry()
 //! [3]
 void AddressWidget::addEntry(QString name, QString address)
 {
-    QList<QPair<QString, QString> >list = table->getList();
-    QPair<QString, QString> pair(name, address);
-
-    if (!list.contains(pair)) {
+    if (!table->getContacts().contains({ name, address })) {
         table->insertRows(0, 1, QModelIndex());
 
         QModelIndex index = table->index(0, 0, QModelIndex());
@@ -182,8 +189,14 @@ void AddressWidget::setupTabs()
         tableView->setSortingEnabled(true);
 
         connect(tableView->selectionModel(),
-            SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
-            this, SIGNAL(selectionChanged(QItemSelection)));
+            &QItemSelectionModel::selectionChanged,
+            this, &AddressWidget::selectionChanged);
+
+        connect(this, &QTabWidget::currentChanged, this, [this](int tabIndex) {
+            auto *tableView = qobject_cast<QTableView *>(widget(tabIndex));
+            if (tableView)
+                emit selectionChanged(tableView->selectionModel()->selection());
+        });
 
         addTab(tableView, str);
     }
@@ -201,18 +214,16 @@ void AddressWidget::readFromFile(const QString &fileName)
         return;
     }
 
-    QList<QPair<QString, QString> > pairs = table->getList();
+    QList<Contact> contacts;
     QDataStream in(&file);
-    in >> pairs;
+    in >> contacts;
 
-    if (pairs.isEmpty()) {
+    if (contacts.isEmpty()) {
         QMessageBox::information(this, tr("No contacts in file"),
                                  tr("The file you are attempting to open contains no contacts."));
     } else {
-        for (int i=0; i<pairs.size(); ++i) {
-            QPair<QString, QString> p = pairs.at(i);
-            addEntry(p.first, p.second);
-        }
+        for (const auto &contact: qAsConst(contacts))
+            addEntry(contact.name, contact.address);
     }
 }
 //! [7]
@@ -227,8 +238,7 @@ void AddressWidget::writeToFile(const QString &fileName)
         return;
     }
 
-    QList<QPair<QString, QString> > pairs = table->getList();
     QDataStream out(&file);
-    out << pairs;
+    out << table->getContacts();
 }
 //! [6]

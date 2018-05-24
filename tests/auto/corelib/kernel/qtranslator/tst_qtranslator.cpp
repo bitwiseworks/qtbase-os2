@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -55,9 +50,11 @@ private slots:
     void loadFromResource();
     void loadDirectory();
     void dependencies();
+    void translationInThreadWhileInstallingTranslator();
 
 private:
     int languageChangeEventCounter;
+    QSharedPointer<QTemporaryDir> dataDir;
 };
 
 tst_QTranslator::tst_QTranslator()
@@ -68,7 +65,7 @@ tst_QTranslator::tst_QTranslator()
 
 void tst_QTranslator::initTestCase()
 {
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     QString sourceDir(":/android_testdata/");
     QDirIterator it(sourceDir, QDirIterator::Subdirectories);
     while (it.hasNext()) {
@@ -90,8 +87,16 @@ void tst_QTranslator::initTestCase()
 
     // chdir into the directory containing our testdata,
     // to make the code simpler (load testdata via relative paths)
+#ifdef Q_OS_WINRT
+    // ### TODO: Use this for all platforms in 5.7
+    dataDir = QEXTRACTTESTDATA(QStringLiteral("/"));
+    QVERIFY2(!dataDir.isNull(), qPrintable("Could not extract test data"));
+    QVERIFY2(QDir::setCurrent(dataDir->path()), qPrintable("Could not chdir to " + dataDir->path()));
+#else // !Q_OS_WINRT
     QString testdata_dir = QFileInfo(QFINDTESTDATA("hellotr_la.qm")).absolutePath();
     QVERIFY2(QDir::setCurrent(testdata_dir), qPrintable("Could not chdir to " + testdata_dir));
+#endif // !Q_OS_WINRT
+
 }
 
 bool tst_QTranslator::eventFilter(QObject *, QEvent *event)
@@ -107,7 +112,7 @@ void tst_QTranslator::load()
     QTranslator tor( 0 );
     tor.load("hellotr_la");
     QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QString::fromLatin1("Hallo Welt!"));
+    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
 }
 
 void tst_QTranslator::load2()
@@ -118,7 +123,7 @@ void tst_QTranslator::load2()
     QByteArray data = file.readAll();
     tor.load((const uchar *)data.constData(), data.length());
     QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QString::fromLatin1("Hallo Welt!"));
+    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
 }
 
 class TranslatorThread : public QThread
@@ -129,7 +134,7 @@ class TranslatorThread : public QThread
 
         if (tor.isEmpty())
             qFatal("Could not load translation");
-        if (tor.translate("QPushButton", "Hello world!") !=  QString::fromLatin1("Hallo Welt!"))
+        if (tor.translate("QPushButton", "Hello world!") !=  QLatin1String("Hallo Welt!"))
             qFatal("Test string was not translated correctlys");
     }
 };
@@ -212,9 +217,9 @@ void tst_QTranslator::plural()
     tor.load("hellotr_la");
     QVERIFY(!tor.isEmpty());
     QCoreApplication::installTranslator(&tor);
-    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0), QString::fromLatin1("Hallo 0 Welten!"));
-    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 1), QString::fromLatin1("Hallo 1 Welt!"));
-    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 2), QString::fromLatin1("Hallo 2 Welten!"));
+    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0), QLatin1String("Hallo 0 Welten!"));
+    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 1), QLatin1String("Hallo 1 Welt!"));
+    QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 2), QLatin1String("Hallo 2 Welten!"));
 }
 
 void tst_QTranslator::translate_qm_file_generated_with_msgfmt()
@@ -240,7 +245,7 @@ void tst_QTranslator::loadFromResource()
     QTranslator tor;
     tor.load(":/tst_qtranslator/hellotr_la.qm");
     QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QString::fromLatin1("Hallo Welt!"));
+    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
 }
 
 void tst_QTranslator::loadDirectory()
@@ -260,16 +265,16 @@ void tst_QTranslator::dependencies()
         QTranslator tor;
         tor.load("dependencies_la");
         QVERIFY(!tor.isEmpty());
-        QCOMPARE(tor.translate("QPushButton", "Hello world!"), QString::fromLatin1("Hallo Welt!"));
+        QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
 
         // plural
         QCoreApplication::installTranslator(&tor);
-        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0), QString::fromLatin1("Hallo 0 Welten!"));
-        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 1), QString::fromLatin1("Hallo 1 Welt!"));
-        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 2), QString::fromLatin1("Hallo 2 Welten!"));
+        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0), QLatin1String("Hallo 0 Welten!"));
+        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 1), QLatin1String("Hallo 1 Welt!"));
+        QCOMPARE(QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 2), QLatin1String("Hallo 2 Welten!"));
 
         // pick up translation from the file with dependencies
-        QCOMPARE(tor.translate("QPushButton", "It's a small world"), QString::fromLatin1("Es ist eine kleine Welt"));
+        QCOMPARE(tor.translate("QPushButton", "It's a small world"), QLatin1String("Es ist eine kleine Welt"));
     }
 
     {
@@ -279,10 +284,56 @@ void tst_QTranslator::dependencies()
         QByteArray data = file.readAll();
         tor.load((const uchar *)data.constData(), data.length());
         QVERIFY(!tor.isEmpty());
-        QCOMPARE(tor.translate("QPushButton", "Hello world!"), QString::fromLatin1("Hallo Welt!"));
+        QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
     }
 }
 
+struct TranslateThread : public QThread
+{
+    bool ok = false;
+    QAtomicInt terminate;
+    QMutex startupLock;
+    QWaitCondition runningCondition;
+
+    void run() {
+        bool startSignalled = false;
+
+        while (terminate.load() == 0) {
+            const QString result =  QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0);
+
+            if (!startSignalled) {
+                QMutexLocker startupLocker(&startupLock);
+                runningCondition.wakeAll();
+                startSignalled = true;
+            }
+
+            ok = (result == QLatin1String("Hallo 0 Welten!"))
+                  || (result == QLatin1String("Hello 0 world(s)!"));
+            if (!ok)
+                break;
+        }
+    }
+};
+
+void tst_QTranslator::translationInThreadWhileInstallingTranslator()
+{
+    TranslateThread thread;
+
+    QMutexLocker startupLocker(&thread.startupLock);
+
+    thread.start();
+
+    thread.runningCondition.wait(&thread.startupLock);
+
+    QTranslator *tor = new QTranslator;
+    tor->load("hellotr_la");
+    QCoreApplication::installTranslator(tor);
+
+    ++thread.terminate;
+
+    QVERIFY(thread.wait());
+    QVERIFY(thread.ok);
+}
 
 QTEST_MAIN(tst_QTranslator)
 #include "tst_qtranslator.moc"

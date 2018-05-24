@@ -11,9 +11,11 @@ unix:!embedded:QMAKE_PKGCONFIG_DESCRIPTION = Qt \
 
 QMAKE_DOCS = $$PWD/doc/qttestlib.qdocconf
 
-HEADERS = qbenchmark.h \
+HEADERS = \
+    qbenchmark.h \
     qbenchmark_p.h \
     qbenchmarkmeasurement_p.h \
+    qbenchmarktimemeasurers_p.h \
     qbenchmarkvalgrind_p.h \
     qbenchmarkevent_p.h \
     qbenchmarkperfevents_p.h \
@@ -26,8 +28,8 @@ HEADERS = qbenchmark.h \
     qtestdata.h \
     qtestevent.h \
     qtesteventloop.h \
-    qtest_global.h \
     qtest_gui.h \
+    qtest_network.h \
     qtest_widgets.h \
     qtest.h \
     qtestkeyboard.h \
@@ -35,9 +37,12 @@ HEADERS = qbenchmark.h \
     qtestspontaneevent.h \
     qtestsystem.h \
     qtesttouch.h \
-    qtestblacklist_p.h
+    qtestblacklist_p.h \
+    qtesthelpers_p.h \
+    qttestglobal.h
 
-SOURCES = qtestcase.cpp \
+SOURCES = \
+    qtestcase.cpp \
     qtestlog.cpp \
     qtesttable.cpp \
     qtestdata.cpp \
@@ -54,30 +59,39 @@ SOURCES = qtestcase.cpp \
     qbenchmarkperfevents.cpp \
     qbenchmarkmetric.cpp \
     qcsvbenchmarklogger.cpp \
+    qteamcitylogger.cpp \
     qtestelement.cpp \
     qtestelementattribute.cpp \
+    qtestmouse.cpp \
     qtestxunitstreamer.cpp \
     qxunittestlogger.cpp \
     qtestblacklist.cpp
 
+qtConfig(itemmodeltester) {
+    HEADERS += \
+        qabstractitemmodeltester.h
+
+    SOURCES += \
+        qabstractitemmodeltester.cpp
+}
+
 DEFINES *= QT_NO_CAST_TO_ASCII \
     QT_NO_CAST_FROM_ASCII \
+    QT_NO_FOREACH \
     QT_NO_DATASTREAM
 embedded:QMAKE_CXXFLAGS += -fno-rtti
-wince: LIBS += \
-    ole32.lib \
-    oleaut32.lib \
-    uuid.lib \
-    commctrl.lib \
-    coredll.lib \
-    winsock.lib
 
 mac {
     LIBS += -framework Security
-    osx: LIBS += -framework ApplicationServices -framework IOKit
 
-    # XCTest support
-    !lessThan(QMAKE_XCODE_VERSION, "6.0") {
+    macos {
+        HEADERS += qtestutil_macos_p.h
+        OBJECTIVE_SOURCES += qtestutil_macos.mm
+        LIBS += -framework Foundation -framework ApplicationServices -framework IOKit
+    }
+
+    # XCTest support (disabled for now)
+    false:!lessThan(QMAKE_XCODE_VERSION, "6.0") {
         OBJECTIVE_SOURCES += qxctestlogger.mm
         HEADERS += qxctestlogger_p.h
 
@@ -85,14 +99,16 @@ mac {
         LIBS += -framework Foundation
 
         load(sdk)
-        platform_dev_frameworks_path = $${QMAKE_MAC_SDK_PLATFORM_PATH}/Developer/Library/Frameworks
+        !isEmpty(QMAKE_MAC_SDK_PLATFORM_PATH) {
+            platform_dev_frameworks_path = $${QMAKE_MAC_SDK_PLATFORM_PATH}/Developer/Library/Frameworks
 
-        # We can't put this path into LIBS (so that it propagates to the prl file), as we
-        # don't know yet if the target that links to testlib will build under Xcode or not.
-        # The corresponding flags for the target lives in xctest.prf, where we do know.
-        QMAKE_LFLAGS += -F$${platform_dev_frameworks_path} -weak_framework XCTest
-        QMAKE_OBJECTIVE_CFLAGS += -F$${platform_dev_frameworks_path}
-        MODULE_CONFIG += xctest
+            # We can't put this path into LIBS (so that it propagates to the prl file), as we
+            # don't know yet if the target that links to testlib will build under Xcode or not.
+            # The corresponding flags for the target lives in xctest.prf, where we do know.
+            QMAKE_LFLAGS += -F$${platform_dev_frameworks_path} -weak_framework XCTest
+            QMAKE_CXXFLAGS += -F$${platform_dev_frameworks_path}
+            MODULE_CONFIG += xctest
+        }
     }
 }
 
@@ -107,5 +123,7 @@ mac {
 }
 
 !qtHaveModule(widgets): HEADERSCLEAN_EXCLUDE += qtest_widgets.h
+
+!qtHaveModule(network): HEADERSCLEAN_EXCLUDE += qtest_network.h
 
 load(qt_module)

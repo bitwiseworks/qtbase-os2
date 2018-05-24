@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,7 @@
 // We mean it.
 //
 
+#include <QtGui/private/qtguiglobal_p.h>
 #include <QtGui/qguiapplication.h>
 
 #include <QtCore/QPointF>
@@ -59,10 +66,10 @@
 
 QT_BEGIN_NAMESPACE
 
+class QColorProfile;
 class QPlatformIntegration;
 class QPlatformTheme;
 class QPlatformDragQtResponse;
-struct QDrawHelperGammaTables;
 #ifndef QT_NO_DRAGANDDROP
 class QDrag;
 #endif // QT_NO_DRAGANDDROP
@@ -75,14 +82,16 @@ public:
     QGuiApplicationPrivate(int &argc, char **argv, int flags);
     ~QGuiApplicationPrivate();
 
+    void init();
+
     void createPlatformIntegration();
-    void createEventDispatcher() Q_DECL_OVERRIDE;
-    void eventDispatcherReady() Q_DECL_OVERRIDE;
+    void createEventDispatcher() override;
+    void eventDispatcherReady() override;
 
     virtual void notifyLayoutDirectionChange();
     virtual void notifyActiveWindowChange(QWindow *previous);
 
-    virtual bool shouldQuit() Q_DECL_OVERRIDE;
+    virtual bool shouldQuit() override;
 
     bool shouldQuitInternal(const QWindowList &processedWindows);
     virtual bool tryCloseAllWindows();
@@ -123,6 +132,8 @@ public:
     static void processActivatedEvent(QWindowSystemInterfacePrivate::ActivatedWindowEvent *e);
     static void processWindowStateChangedEvent(QWindowSystemInterfacePrivate::WindowStateChangedEvent *e);
     static void processWindowScreenChangedEvent(QWindowSystemInterfacePrivate::WindowScreenChangedEvent *e);
+
+    static void processSafeAreaMarginsChangedEvent(QWindowSystemInterfacePrivate::SafeAreaMarginsChangedEvent *e);
 
     static void processWindowSystemEvent(QWindowSystemInterfacePrivate::WindowSystemEvent *e);
 
@@ -183,25 +194,34 @@ public:
     static QIcon *app_icon;
     static QString *platform_name;
     static QString *displayName;
+    static QString *desktopFileName;
 
     QWindowList modalWindowList;
     static void showModalWindow(QWindow *window);
     static void hideModalWindow(QWindow *window);
     static void updateBlockedStatus(QWindow *window);
     virtual bool isWindowBlocked(QWindow *window, QWindow **blockingWindow = 0) const;
+    virtual bool popupActive() { return false; }
 
-    static Qt::MouseButtons buttons;
     static ulong mousePressTime;
     static Qt::MouseButton mousePressButton;
     static int mousePressX;
     static int mousePressY;
     static int mouse_double_click_distance;
     static QPointF lastCursorPosition;
-    static Qt::MouseButtons tabletState;
-    static QWindow *tabletPressTarget;
     static QWindow *currentMouseWindow;
     static QWindow *currentMousePressWindow;
     static Qt::ApplicationState applicationState;
+    static bool highDpiScalingUpdated;
+
+    struct TabletPointData {
+        TabletPointData(qint64 devId = 0) : deviceId(devId), state(Qt::NoButton), target(nullptr) {}
+        qint64 deviceId;
+        Qt::MouseButtons state;
+        QWindow *target;
+    };
+    static QVector<TabletPointData> tabletDevicePoints;
+    static TabletPointData &tabletDevicePoint(qint64 deviceId);
 
 #ifndef QT_NO_CLIPBOARD
     static QClipboard *qt_clipboard;
@@ -219,6 +239,7 @@ public:
 
     static QFont *app_font;
 
+    static QString styleOverride;
     static QStyleHints *styleHints;
     static bool obey_desktop_settings;
     QInputMethod *inputMethod;
@@ -232,6 +253,7 @@ public:
 #endif
 
 #ifndef QT_NO_SESSIONMANAGER
+    static bool is_fallback_session_management_enabled;
     QSessionManager *session_manager;
     bool is_session_restored;
     bool is_saving_session;
@@ -272,7 +294,8 @@ public:
 
     static QInputDeviceManager *inputDeviceManager();
 
-    const QDrawHelperGammaTables *gammaTables();
+    const QColorProfile *colorProfileForA8Text();
+    const QColorProfile *colorProfileForA32Text();
 
     // hook reimplemented in QApplication to apply the QStyle function on the QIcon
     virtual QPixmap applyQIconStyleHelper(QIcon::Mode, const QPixmap &basePixmap) const { return basePixmap; }
@@ -293,12 +316,11 @@ protected:
 private:
     friend class QDragManager;
 
-    void init();
-
     static QGuiApplicationPrivate *self;
     static QTouchDevice *m_fakeTouchDevice;
     static int m_fakeMouseSourcePointId;
-    QAtomicPointer<QDrawHelperGammaTables> m_gammaTables;
+    QAtomicPointer<QColorProfile> m_a8ColorProfile;
+    QAtomicPointer<QColorProfile> m_a32ColorProfile;
 
     bool ownGlobalShareContext;
 

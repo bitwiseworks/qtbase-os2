@@ -1,32 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2015 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -61,7 +56,7 @@ class ThreadedEventReceiver : public QObject
     Q_OBJECT
 public:
     QList<int> recordedEvents;
-    bool event(QEvent *event) Q_DECL_OVERRIDE
+    bool event(QEvent *event) override
     {
         if (event->type() != QEvent::Type(QEvent::User + 1))
             return QObject::event(event);
@@ -71,6 +66,21 @@ public:
         moveToThread(0);
         return true;
     }
+};
+
+class Thread : public QDaemonThread
+{
+    void run() override
+    {
+        QThreadData *data = QThreadData::current();
+        QVERIFY(!data->requiresCoreApplication);        // daemon thread
+        data->requiresCoreApplication = requiresCoreApplication;
+        QThread::run();
+    }
+
+public:
+    Thread() : requiresCoreApplication(true) {}
+    bool requiresCoreApplication;
 };
 
 void tst_QCoreApplication::sendEventsOnProcessEvents()
@@ -143,9 +153,46 @@ void tst_QCoreApplication::qAppName()
     QCOMPARE(QCoreApplication::applicationName(), QString());
 }
 
+void tst_QCoreApplication::qAppVersion()
+{
+#if defined(Q_OS_WINRT)
+    const char appVersion[] = "1.0.0.0";
+#elif defined(Q_OS_WIN)
+    const char appVersion[] = "1.2.3.4";
+#elif defined(Q_OS_DARWIN) || defined(Q_OS_ANDROID)
+    const char appVersion[] = "1.2.3";
+#else
+    const char appVersion[] = "";
+#endif
+
+    {
+        int argc = 0;
+        char *argv[] = { nullptr };
+        TestApplication app(argc, argv);
+        QCOMPARE(QCoreApplication::applicationVersion(), QString::fromLatin1(appVersion));
+    }
+    // The application version should still be available after destruction
+    QCOMPARE(QCoreApplication::applicationVersion(), QString::fromLatin1(appVersion));
+
+    // Setting the appversion before creating the application should work
+    const QString wantedAppVersion("0.0.1");
+    {
+        int argc = 0;
+        char *argv[] = { nullptr };
+        QCoreApplication::setApplicationVersion(wantedAppVersion);
+        TestApplication app(argc, argv);
+        QCOMPARE(QCoreApplication::applicationVersion(), wantedAppVersion);
+    }
+    QCOMPARE(QCoreApplication::applicationVersion(), wantedAppVersion);
+
+    // Restore to initial value
+    QCoreApplication::setApplicationVersion(QString());
+    QCOMPARE(QCoreApplication::applicationVersion(), QString());
+}
+
 void tst_QCoreApplication::argc()
 {
-#if defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
+#if defined(Q_OS_WINRT)
     QSKIP("QCoreApplication::arguments() parses arguments from actual command line on this platform.");
 #endif
     {
@@ -427,14 +474,14 @@ public slots:
     void threadProgress(int v)
     {
         ++count;
-        QVERIFY(v == count);
+        QCOMPARE(v, count);
 
         QCoreApplication::postEvent(this, new QEvent(QEvent::MaxUser), -1);
     }
 
     void threadFinished()
     {
-        QVERIFY(count == 7);
+        QCOMPARE(count, 7);
         count = 0;
         thread->deleteLater();
 
@@ -847,6 +894,73 @@ void tst_QCoreApplication::applicationEventFilters_auxThread()
     QVERIFY(receiver.recordedEvents.contains(QEvent::User + 1));
     QVERIFY(!spy.recordedEvents.contains(QEvent::User + 1));
 }
+
+void tst_QCoreApplication::threadedEventDelivery_data()
+{
+    QTest::addColumn<bool>("requiresCoreApplication");
+    QTest::addColumn<bool>("createCoreApplication");
+    QTest::addColumn<bool>("eventsReceived");
+
+    // invalid combination:
+    //QTest::newRow("default-without-coreapp") << true << false << false;
+    QTest::newRow("default") << true << true << true;
+    QTest::newRow("independent-without-coreapp") << false << false << true;
+    QTest::newRow("independent-with-coreapp") << false << true << true;
+}
+
+// posts the event before the QCoreApplication is destroyed, starts thread after
+void tst_QCoreApplication::threadedEventDelivery()
+{
+    QFETCH(bool, requiresCoreApplication);
+    QFETCH(bool, createCoreApplication);
+    QFETCH(bool, eventsReceived);
+
+    int argc = 1;
+    char *argv[] = { const_cast<char*>(QTest::currentAppName()) };
+    QScopedPointer<TestApplication> app(createCoreApplication ? new TestApplication(argc, argv) : 0);
+
+    Thread thread;
+    thread.requiresCoreApplication = requiresCoreApplication;
+    ThreadedEventReceiver receiver;
+    receiver.moveToThread(&thread);
+    QCoreApplication::postEvent(&receiver, new QEvent(QEvent::Type(QEvent::User + 1)));
+
+    thread.start();
+    QVERIFY(thread.wait(1000));
+    QCOMPARE(receiver.recordedEvents.contains(QEvent::User + 1), eventsReceived);
+}
+
+#if QT_CONFIG(library)
+void tst_QCoreApplication::addRemoveLibPaths()
+{
+    QStringList paths = QCoreApplication::libraryPaths();
+    if (paths.isEmpty())
+        QSKIP("Cannot add/remove library paths if there are none.");
+
+    QString currentDir = QDir().absolutePath();
+    QCoreApplication::addLibraryPath(currentDir);
+    QVERIFY(QCoreApplication::libraryPaths().contains(currentDir));
+
+    QCoreApplication::removeLibraryPath(paths[0]);
+    QVERIFY(!QCoreApplication::libraryPaths().contains(paths[0]));
+
+    int argc = 1;
+    char *argv[] = { const_cast<char*>(QTest::currentAppName()) };
+    TestApplication app(argc, argv);
+
+    // If libraryPaths only contains currentDir, neither will be in libraryPaths now.
+    if (paths.length() != 1 && currentDir != paths[0]) {
+        // Check that modifications stay alive across the creation of an application.
+        QVERIFY(QCoreApplication::libraryPaths().contains(currentDir));
+        QVERIFY(!QCoreApplication::libraryPaths().contains(paths[0]));
+    }
+
+    QStringList replace;
+    replace << currentDir << paths[0];
+    QCoreApplication::setLibraryPaths(replace);
+    QCOMPARE(QCoreApplication::libraryPaths(), replace);
+}
+#endif
 
 static void createQObjectOnDestruction()
 {

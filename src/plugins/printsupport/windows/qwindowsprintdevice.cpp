@@ -1,31 +1,38 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,8 +47,6 @@
 #endif
 
 QT_BEGIN_NAMESPACE
-
-#ifndef QT_NO_PRINTER
 
 QT_WARNING_DISABLE_GCC("-Wsign-compare")
 
@@ -76,6 +81,22 @@ static QPrint::InputSlot paperBinToInputSlot(int windowsId, const QString &name)
     return slot;
 }
 
+static LPDEVMODE getDevmode(HANDLE hPrinter, const QString &printerId)
+{
+    LPWSTR printerIdUtf16 = const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(printerId.utf16()));
+    // Allocate the required DEVMODE buffer
+    LONG dmSize = DocumentProperties(NULL, hPrinter, printerIdUtf16, NULL, NULL, 0);
+    if (dmSize <= 0)
+        return nullptr;
+    LPDEVMODE pDevMode = reinterpret_cast<LPDEVMODE>(malloc(dmSize));
+     // Get the default DevMode
+    LONG result = DocumentProperties(NULL, hPrinter, printerIdUtf16, pDevMode, NULL, DM_OUT_BUFFER);
+    if (result != IDOK) {
+        free(pDevMode);
+        pDevMode = nullptr;
+    }
+    return pDevMode;
+}
 
 QWindowsPrintDevice::QWindowsPrintDevice()
     : QPlatformPrintDevice(),
@@ -193,26 +214,21 @@ QPageSize QWindowsPrintDevice::defaultPageSize() const
 
     QPageSize pageSize;
 
-    // Allocate the required DEVMODE buffer
-    DWORD dmSize = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), NULL, NULL, 0);
-    LPDEVMODE pDevMode = (LPDEVMODE)malloc(dmSize);
-
-     // Get the default DevMode
-    DWORD result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), pDevMode, NULL, DM_OUT_BUFFER);
-
-    // Get the default paper size
-    if (result == IDOK && pDevMode->dmFields & DM_PAPERSIZE) {
-        // Find the supported page size that matches, in theory default should be one of them
-        foreach (const QPageSize &ps, m_pageSizes) {
-            if (ps.windowsId() == pDevMode->dmPaperSize) {
-                pageSize = ps;
-                break;
+    if (LPDEVMODE pDevMode = getDevmode(m_hPrinter, m_id)) {
+        // Get the default paper size
+        if (pDevMode->dmFields & DM_PAPERSIZE) {
+            // Find the supported page size that matches, in theory default should be one of them
+            foreach (const QPageSize &ps, m_pageSizes) {
+                if (ps.windowsId() == pDevMode->dmPaperSize) {
+                    pageSize = ps;
+                    break;
+                }
             }
         }
+        // Clean-up
+        free(pDevMode);
     }
 
-    // Clean-up
-    free(pDevMode);
     return pageSize;
 }
 
@@ -228,20 +244,14 @@ QMarginsF QWindowsPrintDevice::printableMargins(const QPageSize &pageSize,
     QScopedArrayPointer<BYTE> buffer(new BYTE[needed]);
     if (GetPrinter(m_hPrinter, 2, buffer.data(), needed, &needed)) {
         PPRINTER_INFO_2 info = reinterpret_cast<PPRINTER_INFO_2>(buffer.data());
-        DEVMODE *devMode = info->pDevMode;
+        LPDEVMODE devMode = info->pDevMode;
         bool separateDevMode = false;
         if (!devMode) {
             // GetPrinter() didn't include the DEVMODE. Get it a different way.
-            LONG result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(),
-                                             NULL, NULL, 0);
-            devMode = (DEVMODE *)malloc(result);
-            separateDevMode = true;
-            result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(),
-                                        devMode, NULL, DM_OUT_BUFFER);
-            if (result != IDOK) {
-                free(devMode);
+            devMode = getDevmode(m_hPrinter, m_id);
+            if (!devMode)
                 return margins;
-            }
+            separateDevMode = true;
         }
 
         HDC pDC = CreateDC(NULL, (LPWSTR)m_id.utf16(), NULL, devMode);
@@ -293,23 +303,17 @@ int QWindowsPrintDevice::defaultResolution() const
 {
     int resolution = 72;  // TODO Set a sensible default?
 
-    // Allocate the required DEVMODE buffer
-    DWORD dmSize = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), NULL, NULL, 0);
-    LPDEVMODE pDevMode = (LPDEVMODE)malloc(dmSize);
-
-     // Get the default DevMode
-    DWORD result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), pDevMode, NULL, DM_OUT_BUFFER);
-
-    // Get the default resolution
-    if (result == IDOK && pDevMode->dmFields & DM_YRESOLUTION) {
-        if (pDevMode->dmPrintQuality > 0)
-            resolution = pDevMode->dmPrintQuality;
-        else
-            resolution = pDevMode->dmYResolution;
+    if (LPDEVMODE pDevMode = getDevmode(m_hPrinter, m_id)) {
+        // Get the default resolution
+        if (pDevMode->dmFields & DM_YRESOLUTION) {
+            if (pDevMode->dmPrintQuality > 0)
+                resolution = pDevMode->dmPrintQuality;
+            else
+                resolution = pDevMode->dmYResolution;
+        }
+        // Clean-up
+        free(pDevMode);
     }
-
-    // Clean-up
-    free(pDevMode);
     return resolution;
 }
 
@@ -342,26 +346,20 @@ QPrint::InputSlot QWindowsPrintDevice::defaultInputSlot() const
 {
     QPrint::InputSlot inputSlot = QPlatformPrintDevice::defaultInputSlot();;
 
-    // Allocate the required DEVMODE buffer
-    DWORD dmSize = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), NULL, NULL, 0);
-    LPDEVMODE pDevMode = (LPDEVMODE)malloc(dmSize);
-
-     // Get the default DevMode
-    DWORD result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), pDevMode, NULL, DM_OUT_BUFFER);
-
-    // Get the default input slot
-    if (result == IDOK && pDevMode->dmFields & DM_DEFAULTSOURCE) {
-        QPrint::InputSlot tempSlot = paperBinToInputSlot(pDevMode->dmDefaultSource, QString());
-        foreach (const QPrint::InputSlot &slot, supportedInputSlots()) {
-            if (slot.key == tempSlot.key) {
-                inputSlot = slot;
-                break;
+    if (LPDEVMODE pDevMode = getDevmode(m_hPrinter, m_id)) {
+        // Get the default input slot
+        if (pDevMode->dmFields & DM_DEFAULTSOURCE) {
+            QPrint::InputSlot tempSlot = paperBinToInputSlot(pDevMode->dmDefaultSource, QString());
+            foreach (const QPrint::InputSlot &slot, supportedInputSlots()) {
+                if (slot.key == tempSlot.key) {
+                    inputSlot = slot;
+                    break;
+                }
             }
         }
+        // Clean-up
+        free(pDevMode);
     }
-
-    // Clean-up
-    free(pDevMode);
     return inputSlot;
 }
 
@@ -388,23 +386,17 @@ QPrint::DuplexMode QWindowsPrintDevice::defaultDuplexMode() const
 {
     QPrint::DuplexMode duplexMode = QPrint::DuplexNone;
 
-    // Allocate the required DEVMODE buffer
-    DWORD dmSize = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), NULL, NULL, 0);
-    LPDEVMODE pDevMode = (LPDEVMODE)malloc(dmSize);
-
-     // Get the default DevMode
-    DWORD result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), pDevMode, NULL, DM_OUT_BUFFER);
-
-    // Get the default duplex mode
-    if (result == IDOK && pDevMode->dmFields & DM_DUPLEX) {
-        if (pDevMode->dmDuplex == DMDUP_VERTICAL)
-            duplexMode = QPrint::DuplexLongSide;
-        else if (pDevMode->dmDuplex == DMDUP_HORIZONTAL)
-            duplexMode = QPrint::DuplexShortSide;
+    if (LPDEVMODE pDevMode = getDevmode(m_hPrinter, m_id)) {
+        // Get the default duplex mode
+        if (pDevMode->dmFields & DM_DUPLEX) {
+            if (pDevMode->dmDuplex == DMDUP_VERTICAL)
+                duplexMode = QPrint::DuplexLongSide;
+            else if (pDevMode->dmDuplex == DMDUP_HORIZONTAL)
+                duplexMode = QPrint::DuplexShortSide;
+        }
+        // Clean-up
+        free(pDevMode);
     }
-
-    // Clean-up
-    free(pDevMode);
     return duplexMode;
 }
 
@@ -426,21 +418,13 @@ QPrint::ColorMode QWindowsPrintDevice::defaultColorMode() const
 
     QPrint::ColorMode colorMode = QPrint::GrayScale;
 
-    // Allocate the required DEVMODE buffer
-    DWORD dmSize = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), NULL, NULL, 0);
-    LPDEVMODE pDevMode = (LPDEVMODE)malloc(dmSize);
-
-     // Get the default DevMode
-    DWORD result = DocumentProperties(NULL, m_hPrinter, (LPWSTR)m_id.utf16(), pDevMode, NULL, DM_OUT_BUFFER);
-
-    // Get the default color mode
-    if (result == IDOK && pDevMode->dmFields & DM_COLOR) {
-        if (pDevMode->dmColor == DMCOLOR_COLOR)
+    if (LPDEVMODE pDevMode = getDevmode(m_hPrinter, m_id)) {
+        // Get the default color mode
+        if (pDevMode->dmFields & DM_COLOR && pDevMode->dmColor == DMCOLOR_COLOR)
             colorMode = QPrint::Color;
+        // Clean-up
+        free(pDevMode);
     }
-
-    // Clean-up
-    free(pDevMode);
     return colorMode;
 }
 
@@ -465,12 +449,12 @@ QStringList QWindowsPrintDevice::availablePrintDeviceIds()
 QString QWindowsPrintDevice::defaultPrintDeviceId()
 {
     DWORD size = 0;
-    GetDefaultPrinter(NULL, &size);
+    if (GetDefaultPrinter(NULL, &size) == ERROR_FILE_NOT_FOUND)
+       return QString();
+
     QScopedArrayPointer<wchar_t> name(new wchar_t[size]);
     GetDefaultPrinter(name.data(), &size);
     return QString::fromWCharArray(name.data());
 }
-
-#endif // QT_NO_PRINTER
 
 QT_END_NAMESPACE

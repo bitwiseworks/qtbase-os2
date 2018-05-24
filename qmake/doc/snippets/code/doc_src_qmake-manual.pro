@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -110,7 +120,7 @@ qmake -spec macx-g++
 
 
 #! [14]
-QMAKE_LFLAGS += -F/path/to/framework/directory/
+LIBS += -F/path/to/framework/directory/
 #! [14]
 
 
@@ -184,21 +194,6 @@ newstuff {
 #! [27]
 DEFINES += USE_MY_STUFF
 #! [27]
-
-
-#! [28]
-myFiles.files = path\*.png
-DEPLOYMENT += myFiles
-#! [28]
-
-
-#! [29]
-myFiles.files = path\file1.ext1 path2\file2.ext1 path3\*
-myFiles.path = \some\path\on\device
-someother.files = C:\additional\files\*
-someother.path = \myFiles\path2
-DEPLOYMENT += myFiles someother
-#! [29]
 
 
 #! [30]
@@ -426,7 +421,7 @@ This is a test.
 
 
 #! [71]
-system(ls /bin):HAS_BIN=FALSE
+system("ls /bin"): HAS_BIN = TRUE
 #! [71]
 
 
@@ -789,10 +784,6 @@ CONFIG(debug, debug|release) {
 }
 #! [127]
 
-#! [142]
-DEPLOYMENT_PLUGIN += qjpeg
-#! [142]
-
 #! [149]
 SUBDIRS += my_executable my_library
 my_executable.subdir = app
@@ -989,8 +980,12 @@ VERSION_PE_HEADER = 1.2
 #! [185]
 
 #! [186]
+RC_DEFINES += USE_MY_STUFF
+#! [186]
+
+#! [187]
 win32-g++:contains(QMAKE_HOST.arch, x86_64):{
     message("Host is 64bit")
     ...
 }
-#! [186]
+#! [187]

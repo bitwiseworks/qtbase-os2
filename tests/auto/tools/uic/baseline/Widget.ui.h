@@ -10,11 +10,8 @@
 #define WIDGET_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QGroupBox>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QVBoxLayout>
@@ -60,13 +57,13 @@ public:
 
     void retranslateUi(QWidget *Form)
     {
-        Form->setWindowTitle(QApplication::translate("Form", "Form", 0));
+        Form->setWindowTitle(QApplication::translate("Form", "Form", nullptr));
         Alabel->setText(QApplication::translate("Form", "A label.\n"
 "One new line.\n"
 "Another new line.\n"
-"Last line.", 0));
-        groupBox->setTitle(QApplication::translate("Form", "A Group Box", 0));
-        pushButton->setText(QApplication::translate("Form", "PushButton", 0));
+"Last line.", nullptr));
+        groupBox->setTitle(QApplication::translate("Form", "A Group Box", nullptr));
+        pushButton->setText(QApplication::translate("Form", "PushButton", nullptr));
     } // retranslateUi
 
 };

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -53,8 +48,6 @@
 #include "qplaintextedit.h"
 #include "../../../shared/platformclipboard.h"
 
-#include "../../../qtest-config.h"
-
 //Used in copyAvailable
 typedef QPair<Qt::Key, Qt::KeyboardModifier> keyPairType;
 typedef QList<keyPairType> pairListType;
@@ -69,7 +62,6 @@ public:
     tst_QPlainTextEdit();
 
 public slots:
-    void initTestCase();
     void init();
     void cleanup();
 private slots:
@@ -109,7 +101,7 @@ private slots:
     void shiftDownInLineLastShouldSelectToEnd();
     void undoRedoShouldRepositionTextEditCursor();
     void lineWrapModes();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void mouseCursorShape();
 #endif
     void implicitClear();
@@ -154,6 +146,7 @@ private slots:
 #ifndef QT_NO_CONTEXTMENU
     void contextMenu();
 #endif
+    void inputMethodCursorRect();
 
 private:
     void createSelection();
@@ -212,16 +205,8 @@ void tst_QPlainTextEdit::getSetCheck()
     QCOMPARE(0, obj1.tabStopWidth());
     obj1.setTabStopWidth(INT_MIN);
     QCOMPARE(0, obj1.tabStopWidth()); // Makes no sense to set a negative tabstop value
-#if defined(Q_OS_WINCE)
-    // due to rounding error in qRound when qreal==float
-    // we cannot use INT_MAX for this check
-    obj1.setTabStopWidth(SHRT_MAX*2);
-    QCOMPARE(SHRT_MAX*2, obj1.tabStopWidth());
-#else
     obj1.setTabStopWidth(INT_MAX);
     QCOMPARE(INT_MAX, obj1.tabStopWidth());
-#endif
-
 }
 
 class QtTestDocumentLayout : public QAbstractTextDocumentLayout
@@ -254,13 +239,6 @@ public:
 
 tst_QPlainTextEdit::tst_QPlainTextEdit()
 {}
-
-void tst_QPlainTextEdit::initTestCase()
-{
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
-}
 
 void tst_QPlainTextEdit::init()
 {
@@ -333,7 +311,7 @@ void tst_QPlainTextEdit::selectAllSetsNotSelection()
         QSKIP("Test only relevant for systems with selection");
 
     QApplication::clipboard()->setText(QString("foobar"), QClipboard::Selection);
-    QVERIFY(QApplication::clipboard()->text(QClipboard::Selection) == QString("foobar"));
+    QCOMPARE(QApplication::clipboard()->text(QClipboard::Selection), QString("foobar"));
 
     ed->insertPlainText("Hello World");
     ed->selectAll();
@@ -384,7 +362,7 @@ void tst_QPlainTextEdit::emptyAppend()
 {
     ed->appendPlainText("Blah");
     QCOMPARE(blockCount(), 1);
-    ed->appendPlainText(QString::null);
+    ed->appendPlainText(QString());
     QCOMPARE(blockCount(), 2);
     ed->appendPlainText(QString("   "));
     QCOMPARE(blockCount(), 3);
@@ -892,7 +870,7 @@ void tst_QPlainTextEdit::lineWrapModes()
     // QPlainTextEdit does lazy line layout on resize, only for the visible blocks.
     // We thus need to make it wide enough to show something visible.
     int minimumWidth = 2 * ed->document()->documentMargin();
-    minimumWidth += ed->fontMetrics().width(QLatin1Char('a'));
+    minimumWidth += ed->fontMetrics().horizontalAdvance(QLatin1Char('a'));
     minimumWidth += ed->frameWidth();
     ed->resize(minimumWidth, 1000);
     QCOMPARE(lineCount(), 26);
@@ -900,18 +878,18 @@ void tst_QPlainTextEdit::lineWrapModes()
     delete window;
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QPlainTextEdit::mouseCursorShape()
 {
     // always show an IBeamCursor, see change 170146
     QVERIFY(!ed->isReadOnly());
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 
     ed->setReadOnly(true);
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 
     ed->setPlainText("Foo");
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 }
 #endif
 
@@ -1183,12 +1161,19 @@ void tst_QPlainTextEdit::selectWordsFromStringsContainingSeparators_data()
     QTest::addColumn<QString>("testString");
     QTest::addColumn<QString>("selectedWord");
 
-    QStringList wordSeparators;
-    wordSeparators << "." << "," << "?" << "!" << ":" << ";" << "-" << "<" << ">" << "["
-                   << "]" << "(" << ")" << "{" << "}" << "=" << "\t"<< QString(QChar::Nbsp);
+    const ushort wordSeparators[] =
+        {'.', ',', '?', '!', ':', ';', '-', '<', '>', '[', ']', '(', ')', '{', '}',
+         '=', '\t', ushort(QChar::Nbsp)};
 
-    foreach (QString s, wordSeparators)
-        QTest::newRow(QString("separator: " + s).toLocal8Bit()) << QString("foo") + s + QString("bar") << QString("foo");
+    for (size_t i = 0, count = sizeof(wordSeparators) / sizeof(wordSeparators[0]); i < count; ++i) {
+        const ushort u = wordSeparators[i];
+        QByteArray rowName = QByteArrayLiteral("separator: ");
+        if (u >= 32 && u < 128)
+            rowName += char(u);
+        else
+            rowName += QByteArrayLiteral("0x") + QByteArray::number(u, 16);
+        QTest::newRow(rowName.constData()) << QString("foo") + QChar(u) + QString("bar") << QString("foo");
+    }
 }
 
 void tst_QPlainTextEdit::selectWordsFromStringsContainingSeparators()
@@ -1324,7 +1309,7 @@ void tst_QPlainTextEdit::preserveCharFormatAfterSetPlainText()
     QTextBlock block = ed->document()->begin();
     block = block.next();
     QCOMPARE(block.text(), QString("This should still be blue"));
-    QVERIFY(block.begin().fragment().charFormat().foreground().color() == QColor(Qt::blue));
+    QCOMPARE(block.begin().fragment().charFormat().foreground().color(), QColor(Qt::blue));
 }
 
 void tst_QPlainTextEdit::extraSelections()
@@ -1444,7 +1429,7 @@ void tst_QPlainTextEdit::wordWrapProperty()
         doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
         edit.setDocument(doc);
         edit.setWordWrapMode(QTextOption::NoWrap);
-        QVERIFY(doc->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+        QCOMPARE(doc->defaultTextOption().wrapMode(), QTextOption::NoWrap);
     }
     {
         QPlainTextEdit edit;
@@ -1452,18 +1437,18 @@ void tst_QPlainTextEdit::wordWrapProperty()
         doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
         edit.setWordWrapMode(QTextOption::NoWrap);
         edit.setDocument(doc);
-        QVERIFY(doc->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+        QCOMPARE(doc->defaultTextOption().wrapMode(), QTextOption::NoWrap);
     }
 }
 
 void tst_QPlainTextEdit::lineWrapProperty()
 {
-    QVERIFY(ed->wordWrapMode() == QTextOption::WrapAtWordBoundaryOrAnywhere);
-    QVERIFY(ed->lineWrapMode() == QPlainTextEdit::WidgetWidth);
+    QCOMPARE(ed->wordWrapMode(), QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QCOMPARE(ed->lineWrapMode(), QPlainTextEdit::WidgetWidth);
     ed->setLineWrapMode(QPlainTextEdit::NoWrap);
-    QVERIFY(ed->lineWrapMode() == QPlainTextEdit::NoWrap);
-    QVERIFY(ed->wordWrapMode() == QTextOption::WrapAtWordBoundaryOrAnywhere);
-    QVERIFY(ed->document()->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+    QCOMPARE(ed->lineWrapMode(), QPlainTextEdit::NoWrap);
+    QCOMPARE(ed->wordWrapMode(), QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QCOMPARE(ed->document()->defaultTextOption().wrapMode(), QTextOption::NoWrap);
 }
 
 void tst_QPlainTextEdit::selectionChanged()
@@ -1560,7 +1545,7 @@ void tst_QPlainTextEdit::findWithRegExp()
 
     bool found = ed->find(rx);
 
-    QVERIFY(found == true);
+    QVERIFY(found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("text"));
 }
 
@@ -1574,7 +1559,7 @@ void tst_QPlainTextEdit::findBackwardWithRegExp()
 
     bool found = ed->find(rx, QTextDocument::FindBackward);
 
-    QVERIFY(found == true);
+    QVERIFY(found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("arbit"));
 }
 
@@ -1586,7 +1571,7 @@ void tst_QPlainTextEdit::findWithRegExpReturnsFalseIfNoMoreResults()
 
     bool found = ed->find(rx);
 
-    QVERIFY(found == false);
+    QVERIFY(!found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("text"));
 }
 #endif
@@ -1726,6 +1711,18 @@ void tst_QPlainTextEdit::contextMenu()
     QVERIFY(!ed->findChild<QAction *>(QStringLiteral("link-copy")));
 }
 #endif // QT_NO_CONTEXTMENU
+
+// QTBUG-51923: Verify that the cursor rectangle returned by the input
+// method query correctly reflects the viewport offset.
+void tst_QPlainTextEdit::inputMethodCursorRect()
+{
+    ed->setPlainText("Line1\nLine2Line3\nLine3");
+    ed->moveCursor(QTextCursor::End);
+    const QRectF cursorRect = ed->cursorRect();
+    const QVariant cursorRectV = ed->inputMethodQuery(Qt::ImCursorRectangle);
+    QCOMPARE(cursorRectV.type(), QVariant::RectF);
+    QCOMPARE(cursorRectV.toRect(), cursorRect.toRect());
+}
 
 QTEST_MAIN(tst_QPlainTextEdit)
 #include "tst_qplaintextedit.moc"

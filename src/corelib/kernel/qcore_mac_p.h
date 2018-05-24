@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -55,17 +61,14 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#include "qglobal.h"
-
-#ifdef Q_OS_MACX
-#include <CoreServices/CoreServices.h>
-#endif
+#include "private/qglobal_p.h"
 
 #ifdef __OBJC__
 #include <Foundation/Foundation.h>
 #endif
 
 #include "qstring.h"
+#include "qscopedpointer.h"
 
 #if defined( __OBJC__) && defined(QT_NAMESPACE)
 #define QT_NAMESPACE_ALIAS_OBJC_CLASS(__KLASS__) @compatibility_alias __KLASS__ QT_MANGLE_NAMESPACE(__KLASS__)
@@ -74,6 +77,37 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+template <typename T, typename U, U (*RetainFunction)(U), void (*ReleaseFunction)(U)>
+class QAppleRefCounted
+{
+public:
+    QAppleRefCounted(const T &t = T()) : value(t) {}
+    QAppleRefCounted(QAppleRefCounted &&other) : value(other.value) { other.value = T(); }
+    QAppleRefCounted(const QAppleRefCounted &other) : value(other.value) { if (value) RetainFunction(value); }
+    ~QAppleRefCounted() { if (value) ReleaseFunction(value); }
+    operator T() { return value; }
+    void swap(QAppleRefCounted &other) Q_DECL_NOEXCEPT_EXPR(noexcept(qSwap(value, other.value)))
+    { qSwap(value, other.value); }
+    QAppleRefCounted &operator=(const QAppleRefCounted &other)
+    { QAppleRefCounted copy(other); swap(copy); return *this; }
+    QAppleRefCounted &operator=(QAppleRefCounted &&other)
+    { QAppleRefCounted moved(std::move(other)); swap(moved); return *this; }
+    T *operator&() { return &value; }
+protected:
+    T value;
+};
+
+
+#ifdef Q_OS_MACOS
+class QMacRootLevelAutoReleasePool
+{
+public:
+    QMacRootLevelAutoReleasePool();
+    ~QMacRootLevelAutoReleasePool();
+private:
+    QScopedPointer<QMacAutoReleasePool> pool;
+};
+#endif
 
 /*
     Helper class that automates refernce counting for CFtypes.
@@ -88,32 +122,17 @@ QT_BEGIN_NAMESPACE
     HIThemeGet*Shape functions, which in reality are "Copy" functions.
 */
 template <typename T>
-class Q_CORE_EXPORT QCFType
+class QCFType : public QAppleRefCounted<T, CFTypeRef, CFRetain, CFRelease>
 {
 public:
-    inline QCFType(const T &t = 0) : type(t) {}
-    inline QCFType(const QCFType &helper) : type(helper.type) { if (type) CFRetain(type); }
-    inline ~QCFType() { if (type) CFRelease(type); }
-    inline operator T() { return type; }
-    inline QCFType operator =(const QCFType &helper)
-    {
-        if (helper.type)
-            CFRetain(helper.type);
-        CFTypeRef type2 = type;
-        type = helper.type;
-        if (type2)
-            CFRelease(type2);
-        return *this;
-    }
-    inline T *operator&() { return &type; }
-    template <typename X> X as() const { return reinterpret_cast<X>(type); }
+    using QAppleRefCounted<T, CFTypeRef, CFRetain, CFRelease>::QAppleRefCounted;
+    template <typename X> X as() const { return reinterpret_cast<X>(this->value); }
     static QCFType constructFromGet(const T &t)
     {
-        CFRetain(t);
+        if (t)
+            CFRetain(t);
         return QCFType<T>(t);
     }
-protected:
-    T type;
 };
 
 class Q_CORE_EXPORT QCFString : public QCFType<CFStringRef>
@@ -124,22 +143,52 @@ public:
     inline QCFString(const QCFType<CFStringRef> &other) : QCFType<CFStringRef>(other) {}
     operator QString() const;
     operator CFStringRef() const;
-    static QString toQString(CFStringRef cfstr);
-    static CFStringRef toCFStringRef(const QString &str);
-#ifdef __OBJC__
-    static QString toQString(const NSString *nsstr);
-    static  NSString *toNSString(const QString &string);
-#endif
 
 private:
     QString string;
 };
 
-typedef struct {
-    int major, minor, patch;
-} QAppleOperatingSystemVersion;
+#ifdef Q_OS_OSX
+Q_CORE_EXPORT QChar qt_mac_qtKey2CocoaKey(Qt::Key key);
+Q_CORE_EXPORT Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode);
+#endif
 
-QAppleOperatingSystemVersion qt_apple_os_version();
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QMacAutoReleasePool *pool);
+#endif
+
+Q_CORE_EXPORT void qt_apple_check_os_version();
+
+// --------------------------------------------------------------------------
+
+#if !defined(QT_BOOTSTRAPPED) && (QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_12) || !defined(Q_OS_MACOS))
+#define QT_USE_APPLE_UNIFIED_LOGGING
+
+QT_END_NAMESPACE
+#include <os/log.h>
+
+// The compiler isn't smart enough to realize that we're calling these functions
+// guarded by __builtin_available, so we need to also tag each function with the
+// runtime requirements.
+#include <os/availability.h>
+#define OS_LOG_AVAILABILITY API_AVAILABLE(macos(10.12), ios(10.0), tvos(10.0), watchos(3.0))
+QT_BEGIN_NAMESPACE
+
+class Q_CORE_EXPORT AppleUnifiedLogger
+{
+public:
+    static bool messageHandler(QtMsgType msgType, const QMessageLogContext &context, const QString &message,
+        const QString &subsystem = QString()) OS_LOG_AVAILABILITY;
+private:
+    static os_log_type_t logTypeForMessageType(QtMsgType msgType) OS_LOG_AVAILABILITY;
+    static os_log_t cachedLog(const QString &subsystem, const QString &category) OS_LOG_AVAILABILITY;
+};
+
+#undef OS_LOG_AVAILABILITY
+
+#endif
+
+// --------------------------------------------------------------------------
 
 QT_END_NAMESPACE
 

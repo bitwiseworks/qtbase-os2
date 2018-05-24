@@ -10,13 +10,10 @@
 #define PROXY_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 
@@ -90,11 +87,11 @@ public:
 
     void retranslateUi(QDialog *ProxyDialog)
     {
-        ProxyDialog->setWindowTitle(QApplication::translate("ProxyDialog", "Proxy Authentication", 0));
-        iconLabel->setText(QApplication::translate("ProxyDialog", "ICON", 0));
-        introLabel->setText(QApplication::translate("ProxyDialog", "Connect to proxy", 0));
-        usernameLabel->setText(QApplication::translate("ProxyDialog", "Username:", 0));
-        passwordLabel->setText(QApplication::translate("ProxyDialog", "Password:", 0));
+        ProxyDialog->setWindowTitle(QApplication::translate("ProxyDialog", "Proxy Authentication", nullptr));
+        iconLabel->setText(QApplication::translate("ProxyDialog", "ICON", nullptr));
+        introLabel->setText(QApplication::translate("ProxyDialog", "Connect to proxy", nullptr));
+        usernameLabel->setText(QApplication::translate("ProxyDialog", "Username:", nullptr));
+        passwordLabel->setText(QApplication::translate("ProxyDialog", "Password:", nullptr));
     } // retranslateUi
 
 };

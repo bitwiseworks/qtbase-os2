@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,6 +47,7 @@
 #include <QtCore/QSysInfo>
 #include <QtCore/qfunctions_winrt.h>
 #include <private/qnativesocketengine_winrt_p.h>
+#include <private/qeventdispatcher_winrt_p.h>
 
 #include <windows.networking.h>
 #include <windows.networking.sockets.h>
@@ -99,7 +106,7 @@ struct SslSocketGlobal
     void syncCaCertificates(const QSet<QSslCertificate> &add, const QSet<QSslCertificate> &remove)
     {
         QMutexLocker locker(&certificateMutex);
-        foreach (const QSslCertificate &certificate, add) {
+        for (const QSslCertificate &certificate : add) {
             QHash<QSslCertificate, QAtomicInt>::iterator it = additionalCertificates.find(certificate);
             if (it != additionalCertificates.end()) {
                 it.value().ref(); // Add a reference
@@ -111,7 +118,7 @@ struct SslSocketGlobal
                 additionalCertificates.insert(certificate, 1);
             }
         }
-        foreach (const QSslCertificate &certificate, remove) {
+        for (const QSslCertificate &certificate : remove) {
             QHash<QSslCertificate, QAtomicInt>::iterator it = additionalCertificates.find(certificate);
             if (it != additionalCertificates.end() && !it.value().deref()) {
                 // no more references, remove certificate
@@ -175,13 +182,7 @@ long QSslSocketPrivate::sslLibraryVersionNumber()
 
 QString QSslSocketPrivate::sslLibraryVersionString()
 {
-    switch (QSysInfo::windowsVersion()) {
-    case QSysInfo::WV_WINDOWS8_1:
-        return QStringLiteral("Windows Runtime 8.1 SSL library");
-    default:
-        break;
-    }
-    return QStringLiteral("Windows Runtime SSL library");
+    return QStringLiteral("Windows Runtime, ") + QSysInfo::prettyProductName();
 }
 
 long QSslSocketPrivate::sslLibraryBuildVersionNumber()
@@ -209,7 +210,9 @@ QList<QSslCipher> QSslSocketBackendPrivate::defaultCiphers()
     const QString protocolStrings[] = { QStringLiteral("SSLv3"), QStringLiteral("TLSv1"),
                                         QStringLiteral("TLSv1.1"), QStringLiteral("TLSv1.2") };
     const QSsl::SslProtocol protocols[] = { QSsl::SslV3, QSsl::TlsV1_0, QSsl::TlsV1_1, QSsl::TlsV1_2 };
-    for (int i = 0; i < ARRAYSIZE(protocols); ++i) {
+    const int size = static_cast<int>(ARRAYSIZE(protocols));
+    ciphers.reserve(size);
+    for (int i = 0; i < size; ++i) {
         QSslCipher cipher;
         cipher.d->isNull = false;
         cipher.d->name = QStringLiteral("WINRT");
@@ -233,10 +236,9 @@ void QSslSocketBackendPrivate::startClientEncryption()
     switch (q->protocol()) {
     case QSsl::AnyProtocol:
     case QSsl::SslV3:
+    case QSsl::TlsV1SslV3:
         protectionLevel = SocketProtectionLevel_Ssl; // Only use this value if weak cipher support is required
         break;
-    case QSsl::SecureProtocols:
-    case QSsl::TlsV1SslV3:
     case QSsl::TlsV1_0:
         protectionLevel = SocketProtectionLevel_Tls10;
         break;
@@ -251,10 +253,14 @@ void QSslSocketBackendPrivate::startClientEncryption()
     case QSsl::TlsV1_2OrLater:
         // TlsV1_0OrLater, TlsV1_1OrLater and TlsV1_2OrLater are disabled on WinRT
         // because there is no good way to map them to the native API.
-        q->setErrorString(QStringLiteral("unsupported protocol"));
-        q->setSocketError(QAbstractSocket::SslInvalidUserDataError);
-        emit q->error(QAbstractSocket::SslInvalidUserDataError);
+        setErrorAndEmit(QAbstractSocket::SslInvalidUserDataError,
+                        QStringLiteral("unsupported protocol"));
         return;
+    case QSsl::SecureProtocols:
+        // SocketProtectionLevel_Tls12 actually means "use TLS1.0, 1.1 or 1.2"
+        // https://docs.microsoft.com/en-us/uwp/api/windows.networking.sockets.socketprotectionlevel
+        protectionLevel = SocketProtectionLevel_Tls12;
+        break;
     default:
         protectionLevel = SocketProtectionLevel_Tls12; // default to highest
         protocol = QSsl::TlsV1_2;
@@ -301,6 +307,7 @@ void QSslSocketBackendPrivate::transmit()
                 emit q->bytesWritten(totalBytesWritten);
                 emittedBytesWritten = false;
             }
+            emit q->channelBytesWritten(0, totalBytesWritten);
         }
     }
 
@@ -318,6 +325,7 @@ void QSslSocketBackendPrivate::transmit()
         if (readyReadEmittedPointer)
             *readyReadEmittedPointer = true;
         emit q->readyRead();
+        emit q->channelReadyRead(0);
     }
 
     if (pendingClose) {
@@ -347,13 +355,10 @@ QSsl::SslProtocol QSslSocketBackendPrivate::sessionProtocol() const
 
 void QSslSocketBackendPrivate::continueHandshake()
 {
-    Q_Q(QSslSocket);
-
     IStreamSocket *socket = reinterpret_cast<IStreamSocket *>(plainSocket->socketDescriptor());
     if (qintptr(socket) == -1) {
-        q->setErrorString(QStringLiteral("At attempt was made to continue the handshake on an invalid socket."));
-        q->setSocketError(QAbstractSocket::SslInternalError);
-        emit q->error(QAbstractSocket::SslInternalError);
+        setErrorAndEmit(QAbstractSocket::SslInternalError,
+                        QStringLiteral("At attempt was made to continue the handshake on an invalid socket."));
         return;
     }
 
@@ -372,9 +377,7 @@ void QSslSocketBackendPrivate::continueHandshake()
         Q_ASSERT_SUCCEEDED(hr);
     }
     if (FAILED(hr)) {
-        q->setErrorString(qt_error_string(hr));
-        q->setSocketError(QAbstractSocket::SslInvalidUserDataError);
-        emit q->error(QAbstractSocket::SslInvalidUserDataError);
+        setErrorAndEmit(QAbstractSocket::SslInvalidUserDataError, qt_error_string(hr));
         return;
     }
 
@@ -440,15 +443,16 @@ void QSslSocketBackendPrivate::continueHandshake()
     ComPtr<IAsyncAction> op;
     hr = socket->UpgradeToSslAsync(protectionLevel, hostName.Get(), &op);
     if (FAILED(hr)) {
-        q->setErrorString(QSslSocket::tr("Error creating SSL session: %1")
-                          .arg(qt_error_string(hr)));
-        q->setSocketError(QAbstractSocket::SslInternalError);
-        emit q->error(QAbstractSocket::SslInternalError);
+        setErrorAndEmit(QAbstractSocket::SslInternalError,
+                        QSslSocket::tr("Error creating SSL session: %1").arg(qt_error_string(hr)));
         return;
     }
 
-    hr = op->put_Completed(Callback<IAsyncActionCompletedHandler>(
-                               this, &QSslSocketBackendPrivate::onSslUpgrade).Get());
+    hr = QEventDispatcherWinRT::runOnXamlThread([this, op]() {
+        HRESULT hr = op->put_Completed(Callback<IAsyncActionCompletedHandler>(
+            this, &QSslSocketBackendPrivate::onSslUpgrade).Get());
+        return hr;
+    });
     Q_ASSERT_SUCCEEDED(hr);
 }
 
@@ -467,9 +471,7 @@ HRESULT QSslSocketBackendPrivate::onSslUpgrade(IAsyncAction *action, AsyncStatus
     QSet<QSslError> errors;
     switch (hr) {
     case SEC_E_INVALID_TOKEN: // Occurs when the server doesn't support the requested protocol
-        q->setErrorString(qt_error_string(hr));
-        q->setSocketError(QAbstractSocket::SslHandshakeFailedError);
-        emit q->error(QAbstractSocket::SslHandshakeFailedError);
+        setErrorAndEmit(QAbstractSocket::SslHandshakeFailedError, qt_error_string(hr));
         q->disconnectFromHost();
         return S_OK;
     default:
@@ -524,7 +526,7 @@ HRESULT QSslSocketBackendPrivate::onSslUpgrade(IAsyncAction *action, AsyncStatus
     QList<QSslCertificate> peerCertificateChain;
     if (certificate) {
         ComPtr<IAsyncOperation<CertificateChain *>> op;
-        hr = certificate->BuildChainAsync(Q_NULLPTR, &op);
+        hr = certificate->BuildChainAsync(nullptr, &op);
         Q_ASSERT_SUCCEEDED(hr);
         ComPtr<ICertificateChain> certificateChain;
         hr = QWinRTFunctions::await(op, certificateChain.GetAddressOf());
@@ -617,7 +619,7 @@ HRESULT QSslSocketBackendPrivate::onSslUpgrade(IAsyncAction *action, AsyncStatus
     }
 
     // Peer chain validation
-    foreach (const QSslCertificate &certificate, peerCertificateChain) {
+    for (const QSslCertificate &certificate : qAsConst(peerCertificateChain)) {
         if (!QSslCertificatePrivate::isBlacklisted(certificate))
             continue;
 
@@ -628,12 +630,10 @@ HRESULT QSslSocketBackendPrivate::onSslUpgrade(IAsyncAction *action, AsyncStatus
 
     if (!sslErrors.isEmpty()) {
         emit q->sslErrors(sslErrors);
-        q->setErrorString(sslErrors.first().errorString());
-        q->setSocketError(QAbstractSocket::SslHandshakeFailedError);
-        emit q->error(QAbstractSocket::SslHandshakeFailedError);
+        setErrorAndEmit(QAbstractSocket::SslHandshakeFailedError, sslErrors.constFirst().errorString());
 
         // Disconnect if there are any non-ignorable errors
-        foreach (const QSslError &error, sslErrors) {
+        for (const QSslError &error : qAsConst(sslErrors)) {
             if (ignoreErrorsList.contains(error))
                 continue;
             q->disconnectFromHost();

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,15 +46,13 @@
 #include <qxmlstream.h>
 #include <qfileinfo.h>
 #include <qtextstream.h>
-#include <qdatetime.h>
 
 QT_BEGIN_NAMESPACE
 
 Uic::Uic(Driver *d)
      : drv(d),
        out(d->output()),
-       opt(d->option()),
-       externalPix(true)
+       opt(d->option())
 {
 }
 
@@ -90,7 +83,8 @@ bool Uic::printDependencies()
     }
 
     if (DomIncludes *includes = ui->elementIncludes()) {
-        foreach (DomInclude *incl, includes->elementInclude()) {
+        const auto incls = includes->elementInclude();
+        for (DomInclude *incl : incls) {
             QString file = incl->text();
             if (file.isEmpty())
                 continue;
@@ -100,7 +94,8 @@ bool Uic::printDependencies()
     }
 
     if (DomCustomWidgets *customWidgets = ui->elementCustomWidgets()) {
-        foreach (DomCustomWidget *customWidget, customWidgets->elementCustomWidget()) {
+        const auto elementCustomWidget = customWidgets->elementCustomWidget();
+        for (DomCustomWidget *customWidget : elementCustomWidget) {
             if (DomHeader *header = customWidget->elementHeader()) {
                 QString file = header->text();
                 if (file.isEmpty())
@@ -122,13 +117,13 @@ void Uic::writeCopyrightHeader(DomUI *ui)
     if (comment.size())
         out << "/*\n" << comment << "\n*/\n\n";
 
-        out << "/********************************************************************************\n";
-        out << "** Form generated from reading UI file '" << QFileInfo(opt.inputFile).fileName() << "'\n";
-        out << "**\n";
-        out << "** Created by: Qt User Interface Compiler version " << QLatin1String(QT_VERSION_STR) << "\n";
-        out << "**\n";
-        out << "** WARNING! All changes made in this file will be lost when recompiling UI file!\n";
-        out << "********************************************************************************/\n\n";
+    out << "/********************************************************************************\n";
+    out << "** Form generated from reading UI file '" << QFileInfo(opt.inputFile).fileName() << "'\n";
+    out << "**\n";
+    out << "** Created by: Qt User Interface Compiler version " << QLatin1String(QT_VERSION_STR) << "\n";
+    out << "**\n";
+    out << "** WARNING! All changes made in this file will be lost when recompiling UI file!\n";
+    out << "********************************************************************************/\n\n";
 }
 
 // Check the version with a stream reader at the <ui> element.
@@ -203,7 +198,7 @@ bool Uic::write(QIODevice *in)
     }
 
     QString language = ui->attributeLanguage();
-
+    driver()->setUseIdBasedTranslations(ui->attributeIdbasedtr());
 
     bool rtn = false;
 
@@ -257,15 +252,13 @@ bool Uic::write(DomUI *ui)
     if (pixFunction == QLatin1String("QPixmap::fromMimeSource"))
         pixFunction = QLatin1String("qPixmapFromMimeSource");
 
-    externalPix = ui->elementImages() == 0;
-
     info.acceptUI(ui);
     cWidgetsInfo.acceptUI(ui);
     WriteIncludes writeIncludes(this);
     writeIncludes.acceptUI(ui);
 
     Validator(this).acceptUI(ui);
-    WriteDeclaration(this, writeIncludes.scriptsActivated()).acceptUI(ui);
+    WriteDeclaration(this).acceptUI(ui);
 
     if (opt.headerProtection)
         writeHeaderProtectionEnd();

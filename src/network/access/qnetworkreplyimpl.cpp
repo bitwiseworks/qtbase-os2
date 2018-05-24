@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -65,11 +71,9 @@ inline QNetworkReplyImplPrivate::QNetworkReplyImplPrivate()
 
 void QNetworkReplyImplPrivate::_q_startOperation()
 {
-    Q_Q(QNetworkReplyImpl);
-
     // ensure this function is only being called once
     if (state == Working || state == Finished) {
-        qDebug("QNetworkReplyImpl::_q_startOperation was called more than once");
+        qDebug() << "QNetworkReplyImpl::_q_startOperation was called more than once" << url;
         return;
     }
     state = Working;
@@ -85,6 +89,7 @@ void QNetworkReplyImplPrivate::_q_startOperation()
     }
 
 #ifndef QT_NO_BEARERMANAGEMENT
+    Q_Q(QNetworkReplyImpl);
     // Do not start background requests if they are not allowed by session policy
     QSharedPointer<QNetworkSession> session(manager->d_func()->getNetworkSession());
     QVariant isBackground = backend->request().attribute(QNetworkRequest::BackgroundRequestAttribute, QVariant::fromValue(false));
@@ -128,8 +133,10 @@ void QNetworkReplyImplPrivate::_q_startOperation()
         return;
     } else {
 #ifndef QT_NO_BEARERMANAGEMENT
-        QObject::connect(session.data(), SIGNAL(stateChanged(QNetworkSession::State)),
-                         q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)), Qt::QueuedConnection);
+        if (session) {
+            QObject::connect(session.data(), SIGNAL(stateChanged(QNetworkSession::State)),
+                             q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)), Qt::QueuedConnection);
+        }
 #endif
     }
 
@@ -177,17 +184,13 @@ void QNetworkReplyImplPrivate::_q_copyReadyRead()
             break;
 
         bytesToRead = qBound<qint64>(1, bytesToRead, copyDevice->bytesAvailable());
-        QByteArray byteData;
-        byteData.resize(bytesToRead);
-        qint64 bytesActuallyRead = copyDevice->read(byteData.data(), byteData.size());
+        qint64 bytesActuallyRead = copyDevice->read(buffer.reserve(bytesToRead), bytesToRead);
         if (bytesActuallyRead == -1) {
-            byteData.clear();
+            buffer.chop(bytesToRead);
             backendNotify(NotifyCopyFinished);
             break;
         }
-
-        byteData.resize(bytesActuallyRead);
-        readBuffer.append(byteData);
+        buffer.chop(bytesToRead - bytesActuallyRead);
 
         if (!copyDevice->isSequential() && copyDevice->atEnd()) {
             backendNotify(NotifyCopyFinished);
@@ -318,7 +321,7 @@ void QNetworkReplyImplPrivate::_q_networkSessionConnected()
 void QNetworkReplyImplPrivate::_q_networkSessionStateChanged(QNetworkSession::State sessionState)
 {
     if (sessionState == QNetworkSession::Disconnected
-            && (state != Idle || state != Reconnecting)) {
+        && state != Idle && state != Reconnecting) {
         error(QNetworkReplyImpl::NetworkSessionFailedError,
               QCoreApplication::translate("QNetworkReply", "Network session error."));
         finished();
@@ -516,7 +519,7 @@ void QNetworkReplyImplPrivate::setCachingEnabled(bool enable)
         return;                 // nothing to do either!
 
     if (enable) {
-        if (bytesDownloaded) {
+        if (Q_UNLIKELY(bytesDownloaded)) {
             // refuse to enable in this case
             qCritical("QNetworkReplyImpl: backend error: caching was enabled after some bytes had been written");
             return;
@@ -575,7 +578,7 @@ qint64 QNetworkReplyImplPrivate::nextDownstreamBlockSize() const
     if (readBufferMaxSize == 0)
         return DesiredBufferSize;
 
-    return qMax<qint64>(0, readBufferMaxSize - readBuffer.byteAmount());
+    return qMax<qint64>(0, readBufferMaxSize - buffer.size());
 }
 
 void QNetworkReplyImplPrivate::initCacheSaveDevice()
@@ -605,7 +608,7 @@ void QNetworkReplyImplPrivate::initCacheSaveDevice()
     cacheSaveDevice = networkCache()->prepare(metaData);
 
     if (!cacheSaveDevice || (cacheSaveDevice && !cacheSaveDevice->isOpen())) {
-        if (cacheSaveDevice && !cacheSaveDevice->isOpen())
+        if (Q_UNLIKELY(cacheSaveDevice && !cacheSaveDevice->isOpen()))
             qCritical("QNetworkReplyImpl: network cache returned a device that is not open -- "
                   "class %s probably needs to be fixed",
                   networkCache()->metaObject()->className());
@@ -617,7 +620,7 @@ void QNetworkReplyImplPrivate::initCacheSaveDevice()
 }
 
 // we received downstream data and send this to the cache
-// and to our readBuffer (which in turn gets read by the user of QNetworkReply)
+// and to our buffer (which in turn gets read by the user of QNetworkReply)
 void QNetworkReplyImplPrivate::appendDownstreamData(QByteDataBuffer &data)
 {
     Q_Q(QNetworkReplyImpl);
@@ -634,7 +637,7 @@ void QNetworkReplyImplPrivate::appendDownstreamData(QByteDataBuffer &data)
 
         if (cacheSaveDevice)
             cacheSaveDevice->write(item.constData(), item.size());
-        readBuffer.append(item);
+        buffer.append(item);
 
         bytesWritten += item.size();
     }
@@ -679,7 +682,7 @@ void QNetworkReplyImplPrivate::appendDownstreamData(QIODevice *data)
         return;
 
     // read until EOF from data
-    if (copyDevice) {
+    if (Q_UNLIKELY(copyDevice)) {
         qCritical("QNetworkReplyImpl: copy from QIODevice already in progress -- "
                   "backend probly needs to be fixed");
         return;
@@ -864,16 +867,20 @@ void QNetworkReplyImplPrivate::metaDataChanged()
     Q_Q(QNetworkReplyImpl);
     // 1. do we have cookies?
     // 2. are we allowed to set them?
-    if (cookedHeaders.contains(QNetworkRequest::SetCookieHeader) && !manager.isNull()
-        && (static_cast<QNetworkRequest::LoadControl>
-            (request.attribute(QNetworkRequest::CookieSaveControlAttribute,
-                               QNetworkRequest::Automatic).toInt()) == QNetworkRequest::Automatic)) {
-        QList<QNetworkCookie> cookies =
-            qvariant_cast<QList<QNetworkCookie> >(cookedHeaders.value(QNetworkRequest::SetCookieHeader));
-        QNetworkCookieJar *jar = manager->cookieJar();
-        if (jar)
-            jar->setCookiesFromUrl(cookies, url);
+    if (!manager.isNull()) {
+        const auto it = cookedHeaders.constFind(QNetworkRequest::SetCookieHeader);
+        if (it != cookedHeaders.cend()
+            && request.attribute(QNetworkRequest::CookieSaveControlAttribute,
+                                 QNetworkRequest::Automatic).toInt() == QNetworkRequest::Automatic) {
+            QNetworkCookieJar *jar = manager->cookieJar();
+            if (jar) {
+                QList<QNetworkCookie> cookies =
+                    qvariant_cast<QList<QNetworkCookie> >(it.value());
+                jar->setCookiesFromUrl(cookies, url);
+            }
+        }
     }
+
     emit q->metaDataChanged();
 }
 
@@ -930,13 +937,11 @@ void QNetworkReplyImpl::abort()
 
     QNetworkReply::close();
 
-    if (d->state != QNetworkReplyPrivate::Finished) {
-        // call finished which will emit signals
-        d->error(OperationCanceledError, tr("Operation canceled"));
-        if (d->state == QNetworkReplyPrivate::WaitingForSession)
-            d->state = QNetworkReplyPrivate::Working;
-        d->finished();
-    }
+    // call finished which will emit signals
+    d->error(OperationCanceledError, tr("Operation canceled"));
+    if (d->state == QNetworkReplyPrivate::WaitingForSession)
+        d->state = QNetworkReplyPrivate::Working;
+    d->finished();
     d->state = QNetworkReplyPrivate::Aborted;
 
     // finished may access the backend
@@ -966,13 +971,6 @@ void QNetworkReplyImpl::close()
     d->finished();
 }
 
-bool QNetworkReplyImpl::canReadLine () const
-{
-    Q_D(const QNetworkReplyImpl);
-    return QNetworkReply::canReadLine() || d->readBuffer.canReadLine();
-}
-
-
 /*!
     Returns the number of bytes available for reading with
     QIODevice::read(). The number of bytes available may grow until
@@ -987,14 +985,14 @@ qint64 QNetworkReplyImpl::bytesAvailable() const
         return QNetworkReply::bytesAvailable() + maxAvail;
     }
 
-    return QNetworkReply::bytesAvailable() + d_func()->readBuffer.byteAmount();
+    return QNetworkReply::bytesAvailable();
 }
 
 void QNetworkReplyImpl::setReadBufferSize(qint64 size)
 {
     Q_D(QNetworkReplyImpl);
     if (size > d->readBufferMaxSize &&
-        size > d->readBuffer.byteAmount())
+        size > d->buffer.size())
         d->backendNotify(QNetworkReplyImplPrivate::NotifyDownstreamReadyWrite);
 
     QNetworkReply::setReadBufferSize(size);
@@ -1052,19 +1050,12 @@ qint64 QNetworkReplyImpl::readData(char *data, qint64 maxlen)
     }
 
 
-    if (d->readBuffer.isEmpty())
-        return d->state == QNetworkReplyPrivate::Finished ? -1 : 0;
     // FIXME what about "Aborted" state?
+    if (d->state == QNetworkReplyPrivate::Finished)
+        return -1;
 
     d->backendNotify(QNetworkReplyImplPrivate::NotifyDownstreamReadyWrite);
-    if (maxlen == 1) {
-        // optimization for getChar()
-        *data = d->readBuffer.getChar();
-        return 1;
-    }
-
-    maxlen = qMin<qint64>(maxlen, d->readBuffer.byteAmount());
-    return d->readBuffer.read(data, maxlen);
+    return 0;
 }
 
 /*!
@@ -1101,21 +1092,17 @@ bool QNetworkReplyImplPrivate::migrateBackend()
         return true;
 
     // Backend does not support resuming download.
-    if (!backend->canResume())
+    if (backend && !backend->canResume())
         return false;
 
     state = QNetworkReplyPrivate::Reconnecting;
-
-    if (backend) {
-        delete backend;
-        backend = 0;
-    }
 
     cookedHeaders.clear();
     rawHeaders.clear();
 
     preMigrationDownloaded = bytesDownloaded;
 
+    delete backend;
     backend = manager->d_func()->findBackend(operation, request);
 
     if (backend) {
@@ -1138,6 +1125,7 @@ QDisabledNetworkReply::QDisabledNetworkReply(QObject *parent,
     setRequest(req);
     setUrl(req.url());
     setOperation(op);
+    setFinished(true);
 
     qRegisterMetaType<QNetworkReply::NetworkError>();
 

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -44,9 +50,13 @@
 //
 // We mean it.
 //
+
+#include <QtNetwork/private/qtnetworkglobal_p.h>
 #include <QtCore/QEventLoop>
 #include <QtCore/QBuffer>
+#include <QtCore/QLoggingCategory>
 #include <QtCore/QMutex>
+#include <QtCore/QAtomicInteger>
 #include "QtNetwork/qhostaddress.h"
 #include "private/qabstractsocketengine_p.h"
 #include <wrl.h>
@@ -54,12 +64,48 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcNetworkSocket)
+Q_DECLARE_LOGGING_CATEGORY(lcNetworkSocketVerbose)
+
+namespace WinRTSocketEngine {
+    enum ErrorString {
+        NonBlockingInitFailedErrorString,
+        BroadcastingInitFailedErrorString,
+        NoIpV6ErrorString,
+        RemoteHostClosedErrorString,
+        TimeOutErrorString,
+        ResourceErrorString,
+        OperationUnsupportedErrorString,
+        ProtocolUnsupportedErrorString,
+        InvalidSocketErrorString,
+        HostUnreachableErrorString,
+        NetworkUnreachableErrorString,
+        AccessErrorString,
+        ConnectionTimeOutErrorString,
+        ConnectionRefusedErrorString,
+        AddressInuseErrorString,
+        AddressNotAvailableErrorString,
+        AddressProtectedErrorString,
+        DatagramTooLargeErrorString,
+        SendDatagramErrorString,
+        ReceiveDatagramErrorString,
+        WriteErrorString,
+        ReadErrorString,
+        PortInuseErrorString,
+        NotSocketErrorString,
+        InvalidProxyTypeString,
+        TemporaryErrorString,
+
+        UnknownSocketErrorString = -1
+    };
+}
+
 class QNativeSocketEnginePrivate;
+class SocketEngineWorker;
 
 struct WinRtDatagram {
     QByteArray data;
-    int port;
-    QHostAddress address;
+    QIpPacketHeader header;
 };
 
 class Q_AUTOTEST_EXPORT QNativeSocketEngine : public QAbstractSocketEngine
@@ -97,10 +143,8 @@ public:
     qint64 read(char *data, qint64 maxlen);
     qint64 write(const char *data, qint64 len);
 
-    qint64 readDatagram(char *data, qint64 maxlen, QHostAddress *addr = 0,
-                            quint16 *port = 0);
-    qint64 writeDatagram(const char *data, qint64 len, const QHostAddress &addr,
-                             quint16 port);
+    qint64 readDatagram(char *data, qint64 maxlen, QIpPacketHeader * = 0, PacketHeaderOptions = WantNone);
+    qint64 writeDatagram(const char *data, qint64 len, const QIpPacketHeader &header);
     bool hasPendingDatagrams() const;
     qint64 pendingDatagramSize() const;
 
@@ -132,9 +176,15 @@ signals:
     void connectionReady();
     void readReady();
     void writeReady();
+    void newDatagramReceived(const WinRtDatagram &datagram);
 
 private slots:
     void establishRead();
+    void handleConnectOpFinished(bool success, QAbstractSocket::SocketError error,
+                                 WinRTSocketEngine::ErrorString errorString);
+    void handleNewData();
+    void handleTcpError(QAbstractSocket::SocketError error);
+    void processReadReady();
 
 private:
     Q_DECLARE_PRIVATE(QNativeSocketEngine)
@@ -149,42 +199,12 @@ public:
     ~QNativeSocketEnginePrivate();
 
     qintptr socketDescriptor;
+    SocketEngineWorker *worker;
 
     bool notifyOnRead, notifyOnWrite, notifyOnException;
-    bool closingDown;
+    QAtomicInt closingDown;
 
-    enum ErrorString {
-        NonBlockingInitFailedErrorString,
-        BroadcastingInitFailedErrorString,
-        NoIpV6ErrorString,
-        RemoteHostClosedErrorString,
-        TimeOutErrorString,
-        ResourceErrorString,
-        OperationUnsupportedErrorString,
-        ProtocolUnsupportedErrorString,
-        InvalidSocketErrorString,
-        HostUnreachableErrorString,
-        NetworkUnreachableErrorString,
-        AccessErrorString,
-        ConnectionTimeOutErrorString,
-        ConnectionRefusedErrorString,
-        AddressInuseErrorString,
-        AddressNotAvailableErrorString,
-        AddressProtectedErrorString,
-        DatagramTooLargeErrorString,
-        SendDatagramErrorString,
-        ReceiveDatagramErrorString,
-        WriteErrorString,
-        ReadErrorString,
-        PortInuseErrorString,
-        NotSocketErrorString,
-        InvalidProxyTypeString,
-        TemporaryErrorString,
-
-        UnknownSocketErrorString = -1
-    };
-
-    void setError(QAbstractSocket::SocketError error, ErrorString errorString) const;
+    void setError(QAbstractSocket::SocketError error, WinRTSocketEngine::ErrorString errorString) const;
 
     // native functions
     int option(QNativeSocketEngine::SocketOption option) const;
@@ -201,27 +221,23 @@ private:
     inline ABI::Windows::Networking::Sockets::IDatagramSocket *udpSocket() const
         { return reinterpret_cast<ABI::Windows::Networking::Sockets::IDatagramSocket *>(socketDescriptor); }
     Microsoft::WRL::ComPtr<ABI::Windows::Networking::Sockets::IStreamSocketListener> tcpListener;
-    Microsoft::WRL::ComPtr<ABI::Windows::Foundation::IAsyncAction> connectOp;
-    QBuffer readBytes;
-    QMutex readMutex;
 
-    QList<WinRtDatagram> pendingDatagrams;
     QList<ABI::Windows::Networking::Sockets::IStreamSocket *> pendingConnections;
     QList<ABI::Windows::Networking::Sockets::IStreamSocket *> currentConnections;
     QEventLoop eventLoop;
     QAbstractSocket *sslSocket;
     EventRegistrationToken connectionToken;
 
-    HRESULT handleBindCompleted(ABI::Windows::Foundation::IAsyncAction *, ABI::Windows::Foundation::AsyncStatus);
-    HRESULT handleNewDatagram(ABI::Windows::Networking::Sockets::IDatagramSocket *socket,
-                              ABI::Windows::Networking::Sockets::IDatagramSocketMessageReceivedEventArgs *args);
+    bool emitReadReady = true;
+    bool pendingReadNotification = false;
+
     HRESULT handleClientConnection(ABI::Windows::Networking::Sockets::IStreamSocketListener *tcpListener,
                                    ABI::Windows::Networking::Sockets::IStreamSocketListenerConnectionReceivedEventArgs *args);
-    HRESULT handleConnectToHost(ABI::Windows::Foundation::IAsyncAction *, ABI::Windows::Foundation::AsyncStatus);
-    void handleConnectionEstablished(ABI::Windows::Foundation::IAsyncAction *action);
-    HRESULT handleReadyRead(ABI::Windows::Foundation::IAsyncOperationWithProgress<ABI::Windows::Storage::Streams::IBuffer *, UINT32> *asyncInfo, ABI::Windows::Foundation::AsyncStatus);
 };
 
 QT_END_NAMESPACE
+
+Q_DECLARE_METATYPE(WinRtDatagram)
+Q_DECLARE_METATYPE(WinRTSocketEngine::ErrorString)
 
 #endif // QNATIVESOCKETENGINE_WINRT_P_H

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -143,7 +138,7 @@ public:
 
         makeCurrent();
         QPainter p(this);
-        p.fillRect(rect(), QColor(rand() % 256, rand() % 256, rand() % 256));
+        p.fillRect(rect(), QColor(QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256)));
         p.setPen(Qt::red);
         p.setFont(QFont("SansSerif", 24));
         p.drawText(rect(), Qt::AlignCenter, "This is an autotest");
@@ -190,139 +185,6 @@ void tst_QGLThreads::swapInThread()
     QVERIFY(true);
 }
 
-
-
-
-
-
-
-/*
-   textureUploadInThread
-
-   The purpose of this testcase is to verify that doing texture uploads in a background
-   thread is possible and that it works.
- */
-
-class CreateAndUploadThread : public QThread
-{
-    Q_OBJECT
-public:
-    CreateAndUploadThread(QGLWidget *shareWidget, QSemaphore *semaphore)
-        : m_semaphore(semaphore)
-    {
-        m_gl = new QGLWidget(0, shareWidget);
-        moveToThread(this);
-
-    }
-
-    void moveContextToThread()
-    {
-        m_gl->context()->moveToThread(this);
-    }
-
-    ~CreateAndUploadThread()
-    {
-        delete m_gl;
-    }
-
-    void run() {
-        m_gl->makeCurrent();
-        QTime time;
-        time.start();
-        while (time.elapsed() < RUNNING_TIME) {
-            int width = 400;
-            int height = 300;
-            QImage image(width, height, QImage::Format_RGB32);
-            QPainter p(&image);
-            p.fillRect(image.rect(), QColor(rand() % 256, rand() % 256, rand() % 256));
-            p.setPen(Qt::red);
-            p.setFont(QFont("SansSerif", 24));
-            p.drawText(image.rect(), Qt::AlignCenter, "This is an autotest");
-            p.end();
-            m_gl->bindTexture(image, GL_TEXTURE_2D, GL_RGBA, QGLContext::InternalBindOption);
-
-            m_semaphore->acquire(1);
-
-            createdAndUploaded(image);
-        }
-    }
-
-signals:
-    void createdAndUploaded(const QImage &image);
-
-private:
-    QGLWidget *m_gl;
-    QSemaphore *m_semaphore;
-};
-
-class TextureDisplay : public QGLWidget
-{
-    Q_OBJECT
-public:
-    TextureDisplay(QSemaphore *semaphore)
-        : m_semaphore(semaphore)
-    {
-    }
-
-    void paintEvent(QPaintEvent *) {
-        QPainter p(this);
-        for (int i=0; i<m_images.size(); ++i) {
-            p.drawImage(m_positions.at(i), m_images.at(i));
-            m_positions[i] += QPoint(1, 1);
-        }
-        update();
-    }
-
-public slots:
-    void receiveImage(const QImage &image) {
-        m_images << image;
-        m_positions << QPoint(-rand() % width() / 2, -rand() % height() / 2);
-
-        m_semaphore->release(1);
-
-        if (m_images.size() > 100) {
-            m_images.takeFirst();
-            m_positions.takeFirst();
-        }
-    }
-
-private:
-    QList <QImage> m_images;
-    QList <QPoint> m_positions;
-
-    QSemaphore *m_semaphore;
-};
-
-void tst_QGLThreads::textureUploadInThread()
-{
-    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL))
-        QSKIP("No platformsupport for ThreadedOpenGL");
-
-    // prevent producer thread from queuing up too many images
-    QSemaphore semaphore(100);
-    TextureDisplay display(&semaphore);
-    CreateAndUploadThread thread(&display, &semaphore);
-
-    connect(&thread, SIGNAL(createdAndUploaded(QImage)), &display, SLOT(receiveImage(QImage)));
-
-    display.show();
-    QVERIFY(QTest::qWaitForWindowActive(&display));
-
-    thread.moveContextToThread();
-    thread.start();
-
-    while (thread.isRunning()) {
-        qApp->processEvents();
-    }
-
-    QVERIFY(true);
-}
-
-
-
-
-
-
 /*
    renderInThread
 
@@ -331,7 +193,7 @@ void tst_QGLThreads::textureUploadInThread()
    if that works, we're in good shape..
  */
 
-static inline float qrandom() { return (rand() % 100) / 100.f; }
+static inline float qrandom() { return (QRandomGenerator::global()->bounded(100)) / 100.f; }
 
 void renderAScene(int w, int h)
 {
@@ -350,12 +212,12 @@ void renderAScene(int w, int h)
 
         for (int i=0; i<1000; ++i) {
             GLfloat pos[] = {
-                (rand() % 100) / 100.f,
-                (rand() % 100) / 100.f,
-                (rand() % 100) / 100.f,
-                (rand() % 100) / 100.f,
-                (rand() % 100) / 100.f,
-                (rand() % 100) / 100.f
+                (QRandomGenerator::global()->bounded(100)) / 100.f,
+                (QRandomGenerator::global()->bounded(100)) / 100.f,
+                (QRandomGenerator::global()->bounded(100)) / 100.f,
+                (QRandomGenerator::global()->bounded(100)) / 100.f,
+                (QRandomGenerator::global()->bounded(100)) / 100.f,
+                (QRandomGenerator::global()->bounded(100)) / 100.f
             };
 
             funcs->glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos);
@@ -528,7 +390,7 @@ public:
     GLWidgetWrapper() {
         widget.resize(150, 150);
         widget.show();
-        QTest::qWaitForWindowExposed(&widget);
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
         widget.doneCurrent();
     }
     QPaintDevice *realPaintDevice() { return &widget; }
@@ -702,6 +564,9 @@ private:
 */
 void tst_QGLThreads::painterOnGLWidgetInThread()
 {
+    //QTBUG-46446 tst_qglthreads is unstable on windows 7
+    if (QGuiApplication::platformName().compare("windows 7", Qt::CaseInsensitive))
+        QSKIP("Doesn't work on this platform. QTBUG-46446");
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL))
         QSKIP("No platformsupport for ThreadedOpenGL");
     if (!((QGLFormat::openGLVersionFlags() & QGLFormat::OpenGL_Version_2_0) ||
@@ -728,7 +593,7 @@ void tst_QGLThreads::painterOnPixmapInThread()
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL)
         || !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedPixmaps))
         QSKIP("No platformsupport for ThreadedOpenGL or ThreadedPixmaps");
-#ifdef Q_DEAD_CODE_FROM_QT4_X11
+#if 0 // Used to be included in Qt4 for Q_WS_X11
     QSKIP("Drawing text in threads onto X11 drawables currently crashes on some X11 servers.");
 #endif
     PaintThreadManager<PixmapWrapper> painterThreads(5);
@@ -746,6 +611,9 @@ void tst_QGLThreads::painterOnPixmapInThread()
 */
 void tst_QGLThreads::painterOnPboInThread()
 {
+    //QTBUG-46446 tst_qglthreads is unstable on windows 7
+    if (QGuiApplication::platformName().compare("windows 7", Qt::CaseInsensitive))
+        QSKIP("Doesn't work on this platform. QTBUG-46446");
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL))
         QSKIP("No platformsupport for ThreadedOpenGL");
     if (!((QGLFormat::openGLVersionFlags() & QGLFormat::OpenGL_Version_2_0) ||
@@ -773,6 +641,9 @@ void tst_QGLThreads::painterOnPboInThread()
 */
 void tst_QGLThreads::painterOnFboInThread()
 {
+    //QTBUG-46446 tst_qglthreads is unstable on windows 7
+    if (QGuiApplication::platformName().compare("windows 7", Qt::CaseInsensitive))
+        QSKIP("Doesn't work on this platform. QTBUG-46446");
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL))
         QSKIP("No platformsupport for ThreadedOpenGL");
     if (!((QGLFormat::openGLVersionFlags() & QGLFormat::OpenGL_Version_2_0) ||
@@ -796,7 +667,6 @@ void tst_QGLThreads::painterOnFboInThread()
 
 int main(int argc, char **argv)
 {
-    QApplication::setAttribute(Qt::AA_X11InitThreads);
     QApplication app(argc, argv);
     QTEST_DISABLE_KEYPAD_NAVIGATION \
 

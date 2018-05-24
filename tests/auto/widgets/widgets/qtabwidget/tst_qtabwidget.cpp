@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,7 +35,7 @@
 #include <qlabel.h>
 #include <QtWidgets/qboxlayout.h>
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #  include <qt_windows.h>
 #define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
@@ -76,13 +71,11 @@ class QTabWidgetChild:public QTabWidget {
 
 class tst_QTabWidget:public QObject {
   Q_OBJECT
-  public:
-    tst_QTabWidget();
 
-  public slots:
+private slots:
     void init();
     void cleanup();
-  private slots:
+
     void getSetCheck();
     void testChild();
     void addRemoveTab();
@@ -105,6 +98,7 @@ class tst_QTabWidget:public QObject {
     void heightForWidth();
     void tabBarClicked();
     void moveCurrentTab();
+    void autoHide();
 
   private:
     int addPage();
@@ -156,16 +150,12 @@ void tst_QTabWidget::getSetCheck()
     QCOMPARE(w5, obj1.currentWidget()); // current not changed
 }
 
-tst_QTabWidget::tst_QTabWidget()
-{
-}
-
 void tst_QTabWidget::init()
 {
     tw = new QTabWidget(0);
     QCOMPARE(tw->count(), 0);
     QCOMPARE(tw->currentIndex(), -1);
-    QVERIFY(tw->currentWidget() == NULL);
+    QVERIFY(!tw->currentWidget());
 }
 
 void tst_QTabWidget::cleanup()
@@ -208,7 +198,7 @@ void tst_QTabWidget::addRemoveTab()
     QCOMPARE(tw->count(), 0);
     tw->removeTab(-1);
     QCOMPARE(tw->count(), 0);
-    QVERIFY(tw->widget(-1) == 0);
+    QVERIFY(!tw->widget(-1));
 
     QWidget *w = new QWidget();
     int index = tw->addTab(w, LABEL);
@@ -216,7 +206,7 @@ void tst_QTabWidget::addRemoveTab()
     QCOMPARE(tw->indexOf(w), index);
 
     QCOMPARE(tw->count(), 1);
-    QVERIFY(tw->widget(index) == w);
+    QCOMPARE(tw->widget(index), w);
     QCOMPARE(tw->tabText(index), QString(LABEL));
 
     removePage(index);
@@ -238,7 +228,7 @@ void tst_QTabWidget::tabPosition()
 void tst_QTabWidget::tabEnabled()
 {
     // Test bad arguments
-    QVERIFY(tw->isTabEnabled(-1) == false);
+    QVERIFY(!tw->isTabEnabled(-1));
     tw->setTabEnabled(-1, false);
 
     int index = addPage();
@@ -333,21 +323,21 @@ void tst_QTabWidget::currentWidget()
 {
     // Test bad arguments
     tw->setCurrentWidget(NULL);
-    QVERIFY(tw->currentWidget() == NULL);
+    QVERIFY(!tw->currentWidget());
 
     int index = addPage();
     QWidget *w = tw->widget(index);
-    QVERIFY(tw->currentWidget() == w);
+    QCOMPARE(tw->currentWidget(), w);
     QCOMPARE(tw->currentIndex(), index);
 
     tw->setCurrentWidget(NULL);
-    QVERIFY(tw->currentWidget() == w);
+    QCOMPARE(tw->currentWidget(), w);
     QCOMPARE(tw->currentIndex(), index);
 
     int index2 = addPage();
     QWidget *w2 = tw->widget(index2);
     Q_UNUSED(w2);
-    QVERIFY(tw->currentWidget() == w);
+    QCOMPARE(tw->currentWidget(), w);
     QCOMPARE(tw->currentIndex(), index);
 
     removePage(index2);
@@ -372,7 +362,7 @@ void tst_QTabWidget::currentIndex()
     QCOMPARE(tw->currentIndex(), firstIndex);
     QCOMPARE(spy.count(), 1);
     QList<QVariant> arguments = spy.takeFirst();
-    QVERIFY(arguments.at(0).toInt() == firstIndex);
+    QCOMPARE(arguments.at(0).toInt(), firstIndex);
 
     int index = addPage();
     QCOMPARE(tw->currentIndex(), firstIndex);
@@ -380,19 +370,19 @@ void tst_QTabWidget::currentIndex()
     QCOMPARE(tw->currentIndex(), index);
     QCOMPARE(spy.count(), 1);
     arguments = spy.takeFirst();
-    QVERIFY(arguments.at(0).toInt() == index);
+    QCOMPARE(arguments.at(0).toInt(), index);
 
     removePage(index);
     QCOMPARE(tw->currentIndex(), firstIndex);
     QCOMPARE(spy.count(), 1);
     arguments = spy.takeFirst();
-    QVERIFY(arguments.at(0).toInt() == firstIndex);
+    QCOMPARE(arguments.at(0).toInt(), firstIndex);
 
     removePage(firstIndex);
     QCOMPARE(tw->currentIndex(), -1);
     QCOMPARE(spy.count(), 1);
     arguments = spy.takeFirst();
-    QVERIFY(arguments.at(0).toInt() == -1);
+    QCOMPARE(arguments.at(0).toInt(), -1);
 }
 
 void tst_QTabWidget::cornerWidget()
@@ -400,24 +390,24 @@ void tst_QTabWidget::cornerWidget()
     // Test bad arguments
     tw->setCornerWidget(NULL, Qt::TopRightCorner);
 
-    QVERIFY(tw->cornerWidget(Qt::TopLeftCorner) == 0);
-    QVERIFY(tw->cornerWidget(Qt::TopRightCorner) == 0);
-    QVERIFY(tw->cornerWidget(Qt::BottomLeftCorner) == 0);
-    QVERIFY(tw->cornerWidget(Qt::BottomRightCorner) == 0);
+    QVERIFY(!tw->cornerWidget(Qt::TopLeftCorner));
+    QVERIFY(!tw->cornerWidget(Qt::TopRightCorner));
+    QVERIFY(!tw->cornerWidget(Qt::BottomLeftCorner));
+    QVERIFY(!tw->cornerWidget(Qt::BottomRightCorner));
 
     QWidget *w = new QWidget(0);
     tw->setCornerWidget(w, Qt::TopLeftCorner);
     QCOMPARE(w->parent(), (QObject *)tw);
-    QVERIFY(tw->cornerWidget(Qt::TopLeftCorner) == w);
+    QCOMPARE(tw->cornerWidget(Qt::TopLeftCorner), w);
     tw->setCornerWidget(w, Qt::TopRightCorner);
-    QVERIFY(tw->cornerWidget(Qt::TopRightCorner) == w);
+    QCOMPARE(tw->cornerWidget(Qt::TopRightCorner), w);
     tw->setCornerWidget(w, Qt::BottomLeftCorner);
-    QVERIFY(tw->cornerWidget(Qt::BottomLeftCorner) == w);
+    QCOMPARE(tw->cornerWidget(Qt::BottomLeftCorner), w);
     tw->setCornerWidget(w, Qt::BottomRightCorner);
-    QVERIFY(tw->cornerWidget(Qt::BottomRightCorner) == w);
+    QCOMPARE(tw->cornerWidget(Qt::BottomRightCorner), w);
 
     tw->setCornerWidget(0, Qt::TopRightCorner);
-    QVERIFY(tw->cornerWidget(Qt::TopRightCorner) == 0);
+    QVERIFY(!tw->cornerWidget(Qt::TopRightCorner));
     QCOMPARE(w->isHidden(), true);
 }
 
@@ -564,9 +554,7 @@ void tst_QTabWidget::paintEventCount()
 
     // Mac, Windows and Windows CE get multiple repaints on the first show, so use those as a starting point.
     static const int MaxInitialPaintCount =
-#if defined(Q_OS_WINCE)
-        4;
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
         2;
 #elif defined(Q_OS_MAC)
         5;
@@ -724,6 +712,34 @@ void tst_QTabWidget::moveCurrentTab()
 
     QCOMPARE(tabWidget.currentIndex(), 0);
     QCOMPARE(tabWidget.currentWidget(), secondTab);
+}
+
+void tst_QTabWidget::autoHide()
+{
+    QTabWidget tabWidget;
+    QWidget* firstTab = new QWidget(&tabWidget);
+    tabWidget.addTab(firstTab, "0");
+    const auto sizeHint1 = tabWidget.sizeHint();
+    const auto minSizeHint1 = tabWidget.minimumSizeHint();
+    const auto heightForWidth1 = tabWidget.heightForWidth(20);
+
+    QWidget* secondTab = new QWidget(&tabWidget);
+    tabWidget.addTab(secondTab, "1");
+    const auto sizeHint2 = tabWidget.sizeHint();
+    const auto minSizeHint2 = tabWidget.minimumSizeHint();
+    const auto heightForWidth2 = tabWidget.heightForWidth(20);
+
+    tabWidget.setTabBarAutoHide(true);
+    // size should not change
+    QCOMPARE(sizeHint2, tabWidget.sizeHint());
+    QCOMPARE(minSizeHint2, tabWidget.minimumSizeHint());
+    QCOMPARE(heightForWidth2, tabWidget.heightForWidth(20));
+
+    tabWidget.removeTab(1);
+    // this size should change now since the tab should be hidden
+    QVERIFY(sizeHint1.height() > tabWidget.sizeHint().height());
+    QVERIFY(minSizeHint1.height() > tabWidget.sizeHint().height());
+    QVERIFY(heightForWidth1 > tabWidget.heightForWidth(20));
 }
 
 QTEST_MAIN(tst_QTabWidget)

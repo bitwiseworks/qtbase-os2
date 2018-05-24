@@ -1,48 +1,59 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qtextedit_p.h"
+#if QT_CONFIG(lineedit)
 #include "qlineedit.h"
+#endif
+#if QT_CONFIG(textbrowser)
 #include "qtextbrowser.h"
+#endif
 
-#ifndef QT_NO_TEXTEDIT
 #include <qfont.h>
 #include <qpainter.h>
 #include <qevent.h>
 #include <qdebug.h>
 #include <qdrag.h>
 #include <qclipboard.h>
+#if QT_CONFIG(menu)
 #include <qmenu.h>
+#endif
 #include <qstyle.h>
 #include <qtimer.h>
 #ifndef QT_NO_ACCESSIBILITY
@@ -61,12 +72,8 @@
 #include <qtexttable.h>
 #include <qvariant.h>
 
-#endif
-
 QT_BEGIN_NAMESPACE
 
-
-#ifndef QT_NO_TEXTEDIT
 static inline bool shouldEnableInputMethod(QTextEdit *textedit)
 {
     return !textedit->isReadOnly();
@@ -77,19 +84,19 @@ class QTextEditControl : public QWidgetTextControl
 public:
     inline QTextEditControl(QObject *parent) : QWidgetTextControl(parent) {}
 
-    virtual QMimeData *createMimeDataFromSelection() const Q_DECL_OVERRIDE {
+    virtual QMimeData *createMimeDataFromSelection() const override {
         QTextEdit *ed = qobject_cast<QTextEdit *>(parent());
         if (!ed)
             return QWidgetTextControl::createMimeDataFromSelection();
         return ed->createMimeDataFromSelection();
     }
-    virtual bool canInsertFromMimeData(const QMimeData *source) const Q_DECL_OVERRIDE {
+    virtual bool canInsertFromMimeData(const QMimeData *source) const override {
         QTextEdit *ed = qobject_cast<QTextEdit *>(parent());
         if (!ed)
             return QWidgetTextControl::canInsertFromMimeData(source);
         return ed->canInsertFromMimeData(source);
     }
-    virtual void insertFromMimeData(const QMimeData *source) Q_DECL_OVERRIDE {
+    virtual void insertFromMimeData(const QMimeData *source) override {
         QTextEdit *ed = qobject_cast<QTextEdit *>(parent());
         if (!ed)
             QWidgetTextControl::insertFromMimeData(source);
@@ -171,14 +178,14 @@ void QTextEditPrivate::init(const QString &html)
 
     viewport->setBackgroundRole(QPalette::Base);
     q->setAcceptDrops(true);
-    q->setFocusPolicy(Qt::WheelFocus);
+    q->setFocusPolicy(Qt::StrongFocus);
     q->setAttribute(Qt::WA_KeyCompression);
     q->setAttribute(Qt::WA_InputMethodEnabled);
     q->setInputMethodHints(Qt::ImhMultiLine);
 #ifndef QT_NO_CURSOR
     viewport->setCursor(Qt::IBeamCursor);
 #endif
-#ifdef Q_DEAD_CODE_FROM_QT4_WIN
+#if 0 // Used to be included in Qt4 for Q_WS_WIN
     setSingleFingerPanEnabled(true);
 #endif
 }
@@ -237,7 +244,7 @@ void QTextEditPrivate::pageUpDown(QTextCursor::MoveOperation op, QTextCursor::Mo
     control->setTextCursor(cursor);
 }
 
-#ifndef QT_NO_SCROLLBAR
+#if QT_CONFIG(scrollbar)
 static QSize documentSize(QWidgetTextControl *control)
 {
     QTextDocument *doc = control->document();
@@ -1060,6 +1067,8 @@ bool QTextEdit::event(QEvent *e)
                || e->type() == QEvent::ToolTip) {
         d->sendControlEvent(e);
     }
+#else
+    Q_UNUSED(d)
 #endif // QT_NO_CONTEXTMENU
 #ifdef QT_KEYPAD_NAVIGATION
     if (e->type() == QEvent::EnterEditFocus || e->type() == QEvent::LeaveEditFocus) {
@@ -1506,7 +1515,7 @@ void QTextEditPrivate::paint(QPainter *p, QPaintEvent *e)
     if (layout)
         layout->setViewport(QRect());
 
-    if (!placeholderText.isEmpty() && doc->isEmpty()) {
+    if (!placeholderText.isEmpty() && doc->isEmpty() && !control->isPreediting()) {
         QColor col = control->palette().text().color();
         col.setAlpha(128);
         p->setPen(col);
@@ -1705,6 +1714,7 @@ void QTextEdit::scrollContentsBy(int dx, int dy)
     if (isRightToLeft())
         dx = -dx;
     d->viewport->scroll(dx, dy);
+    QGuiApplication::inputMethod()->update(Qt::ImCursorRectangle | Qt::ImAnchorRectangle);
 }
 
 /*!\reimp
@@ -1719,24 +1729,45 @@ QVariant QTextEdit::inputMethodQuery(Qt::InputMethodQuery property) const
 QVariant QTextEdit::inputMethodQuery(Qt::InputMethodQuery query, QVariant argument) const
 {
     Q_D(const QTextEdit);
-    QVariant v;
     switch (query) {
-    case Qt::ImHints:
-        v = QWidget::inputMethodQuery(query);
-        break;
+        case Qt::ImHints:
+        case Qt::ImInputItemClipRectangle:
+        return QWidget::inputMethodQuery(query);
     default:
-        v = d->control->inputMethodQuery(query, argument);
-        const QPoint offset(-d->horizontalOffset(), -d->verticalOffset());
-        if (v.type() == QVariant::RectF)
-            v = v.toRectF().toRect().translated(offset);
-        else if (v.type() == QVariant::PointF)
-            v = v.toPointF().toPoint() + offset;
-        else if (v.type() == QVariant::Rect)
-            v = v.toRect().translated(offset);
-        else if (v.type() == QVariant::Point)
-            v = v.toPoint() + offset;
+        break;
     }
 
+    const QPointF offset(-d->horizontalOffset(), -d->verticalOffset());
+    switch (argument.type()) {
+    case QVariant::RectF:
+        argument = argument.toRectF().translated(-offset);
+        break;
+    case QVariant::PointF:
+        argument = argument.toPointF() - offset;
+        break;
+    case QVariant::Rect:
+        argument = argument.toRect().translated(-offset.toPoint());
+        break;
+    case QVariant::Point:
+        argument = argument.toPoint() - offset;
+        break;
+    default:
+        break;
+    }
+
+    const QVariant v = d->control->inputMethodQuery(query, argument);
+    switch (v.type()) {
+    case QVariant::RectF:
+        return v.toRectF().translated(offset);
+    case QVariant::PointF:
+        return v.toPointF() + offset;
+    case QVariant::Rect:
+        return v.toRect().translated(offset.toPoint());
+    case QVariant::Point:
+        return v.toPoint() + offset.toPoint();
+    default:
+        break;
+    }
     return v;
 }
 
@@ -1801,7 +1832,7 @@ void QTextEdit::changeEvent(QEvent *e)
 
 /*! \reimp
 */
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 void QTextEdit::wheelEvent(QWheelEvent *e)
 {
     Q_D(QTextEdit);
@@ -1924,27 +1955,48 @@ void QTextEdit::setOverwriteMode(bool overwrite)
     d->control->setOverwriteMode(overwrite);
 }
 
+#if QT_DEPRECATED_SINCE(5, 10)
 /*!
     \property QTextEdit::tabStopWidth
     \brief the tab stop width in pixels
     \since 4.1
+    \deprecated in Qt 5.10. Use tabStopDistance instead.
 
     By default, this property contains a value of 80 pixels.
 */
 
 int QTextEdit::tabStopWidth() const
 {
-    Q_D(const QTextEdit);
-    return qRound(d->control->document()->defaultTextOption().tabStop());
+    return qRound(tabStopDistance());
 }
 
 void QTextEdit::setTabStopWidth(int width)
 {
+    setTabStopDistance(width);
+}
+#endif
+
+/*!
+    \property QTextEdit::tabStopDistance
+    \brief the tab stop distance in pixels
+    \since 5.10
+
+    By default, this property contains a value of 80 pixels.
+*/
+
+qreal QTextEdit::tabStopDistance() const
+{
+    Q_D(const QTextEdit);
+    return d->control->document()->defaultTextOption().tabStopDistance();
+}
+
+void QTextEdit::setTabStopDistance(qreal distance)
+{
     Q_D(QTextEdit);
     QTextOption opt = d->control->document()->defaultTextOption();
-    if (opt.tabStop() == width || width < 0)
+    if (opt.tabStopDistance() == distance || distance < 0)
         return;
-    opt.setTabStop(width);
+    opt.setTabStopDistance(distance);
     d->control->document()->setDefaultTextOption(opt);
 }
 
@@ -2104,7 +2156,7 @@ void QTextEdit::setReadOnly(bool ro)
     Qt::TextInteractionFlags flags = Qt::NoTextInteraction;
     if (ro) {
         flags = Qt::TextSelectableByMouse;
-#ifndef QT_NO_TEXTBROWSER
+#if QT_CONFIG(textbrowser)
         if (qobject_cast<QTextBrowser *>(this))
             flags |= Qt::TextBrowserInteraction;
 #endif
@@ -2548,6 +2600,8 @@ void QTextEdit::setText(const QString &text)
     if (format == Qt::RichText)
         setHtml(text);
     else
+#else
+    Q_UNUSED(format);
 #endif
         setPlainText(text);
 }
@@ -2602,8 +2656,6 @@ void QTextEdit::ensureCursorVisible()
     This signal is emitted whenever redo operations become available
     (\a available is true) or unavailable (\a available is false).
 */
-
-#endif // QT_NO_TEXTEDIT
 
 QT_END_NAMESPACE
 

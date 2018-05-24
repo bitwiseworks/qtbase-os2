@@ -10,9 +10,7 @@
 #define BOOKWINDOW_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFormLayout>
 #include <QtWidgets/QGroupBox>
@@ -159,15 +157,15 @@ public:
 
     void retranslateUi(QMainWindow *BookWindow)
     {
-        BookWindow->setWindowTitle(QApplication::translate("BookWindow", "Books", 0));
-        groupBox->setTitle(QApplication::translate("BookWindow", "Books", 0));
-        groupBox_2->setTitle(QApplication::translate("BookWindow", "Details", 0));
-        label_5->setText(QApplication::translate("BookWindow", "<b>Title:</b>", 0));
-        label_2_2_2_2->setText(QApplication::translate("BookWindow", "<b>Author: </b>", 0));
-        label_3->setText(QApplication::translate("BookWindow", "<b>Genre:</b>", 0));
-        label_4->setText(QApplication::translate("BookWindow", "<b>Year:</b>", 0));
+        BookWindow->setWindowTitle(QApplication::translate("BookWindow", "Books", nullptr));
+        groupBox->setTitle(QApplication::translate("BookWindow", "Books", nullptr));
+        groupBox_2->setTitle(QApplication::translate("BookWindow", "Details", nullptr));
+        label_5->setText(QApplication::translate("BookWindow", "<b>Title:</b>", nullptr));
+        label_2_2_2_2->setText(QApplication::translate("BookWindow", "<b>Author: </b>", nullptr));
+        label_3->setText(QApplication::translate("BookWindow", "<b>Genre:</b>", nullptr));
+        label_4->setText(QApplication::translate("BookWindow", "<b>Year:</b>", nullptr));
         yearEdit->setPrefix(QString());
-        label->setText(QApplication::translate("BookWindow", "<b>Rating:</b>", 0));
+        label->setText(QApplication::translate("BookWindow", "<b>Rating:</b>", nullptr));
     } // retranslateUi
 
 };

@@ -1,41 +1,63 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the demonstration applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** "Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include <QtWidgets>
-#ifndef QT_NO_PRINTER
+#if defined(QT_PRINTSUPPORT_LIB)
+#include <QtPrintSupport/qtprintsupportglobal.h>
+#if QT_CONFIG(printdialog)
 #include <QPrinter>
 #include <QPrintDialog>
+#endif
+#if QT_CONFIG(printpreviewdialog)
 #include <QPrintPreviewDialog>
+#endif
 #endif
 
 #include "spreadsheet.h"
@@ -73,17 +95,17 @@ SpreadSheet::SpreadSheet(int rows, int cols, QWidget *parent)
     setCentralWidget(table);
 
     statusBar();
-    connect(table, SIGNAL(currentItemChanged(QTableWidgetItem*,QTableWidgetItem*)),
-            this, SLOT(updateStatus(QTableWidgetItem*)));
-    connect(table, SIGNAL(currentItemChanged(QTableWidgetItem*,QTableWidgetItem*)),
-            this, SLOT(updateColor(QTableWidgetItem*)));
-    connect(table, SIGNAL(currentItemChanged(QTableWidgetItem*,QTableWidgetItem*)),
-            this, SLOT(updateLineEdit(QTableWidgetItem*)));
-    connect(table, SIGNAL(itemChanged(QTableWidgetItem*)),
-            this, SLOT(updateStatus(QTableWidgetItem*)));
-    connect(formulaInput, SIGNAL(returnPressed()), this, SLOT(returnPressed()));
-    connect(table, SIGNAL(itemChanged(QTableWidgetItem*)),
-            this, SLOT(updateLineEdit(QTableWidgetItem*)));
+    connect(table, &QTableWidget::currentItemChanged,
+            this, &SpreadSheet::updateStatus);
+    connect(table, &QTableWidget::currentItemChanged,
+            this, &SpreadSheet::updateColor);
+    connect(table, &QTableWidget::currentItemChanged,
+            this, &SpreadSheet::updateLineEdit);
+    connect(table, &QTableWidget::itemChanged,
+            this, &SpreadSheet::updateStatus);
+    connect(formulaInput, &QLineEdit::returnPressed, this, &SpreadSheet::returnPressed);
+    connect(table, &QTableWidget::itemChanged,
+            this, &SpreadSheet::updateLineEdit);
 
     setWindowTitle(tr("Spreadsheet"));
 }
@@ -91,43 +113,43 @@ SpreadSheet::SpreadSheet(int rows, int cols, QWidget *parent)
 void SpreadSheet::createActions()
 {
     cell_sumAction = new QAction(tr("Sum"), this);
-    connect(cell_sumAction, SIGNAL(triggered()), this, SLOT(actionSum()));
+    connect(cell_sumAction, &QAction::triggered, this, &SpreadSheet::actionSum);
 
     cell_addAction = new QAction(tr("&Add"), this);
     cell_addAction->setShortcut(Qt::CTRL | Qt::Key_Plus);
-    connect(cell_addAction, SIGNAL(triggered()), this, SLOT(actionAdd()));
+    connect(cell_addAction, &QAction::triggered, this, &SpreadSheet::actionAdd);
 
     cell_subAction = new QAction(tr("&Subtract"), this);
     cell_subAction->setShortcut(Qt::CTRL | Qt::Key_Minus);
-    connect(cell_subAction, SIGNAL(triggered()), this, SLOT(actionSubtract()));
+    connect(cell_subAction, &QAction::triggered, this, &SpreadSheet::actionSubtract);
 
     cell_mulAction = new QAction(tr("&Multiply"), this);
     cell_mulAction->setShortcut(Qt::CTRL | Qt::Key_multiply);
-    connect(cell_mulAction, SIGNAL(triggered()), this, SLOT(actionMultiply()));
+    connect(cell_mulAction, &QAction::triggered, this, &SpreadSheet::actionMultiply);
 
     cell_divAction = new QAction(tr("&Divide"), this);
     cell_divAction->setShortcut(Qt::CTRL | Qt::Key_division);
-    connect(cell_divAction, SIGNAL(triggered()), this, SLOT(actionDivide()));
+    connect(cell_divAction, &QAction::triggered, this, &SpreadSheet::actionDivide);
 
     fontAction = new QAction(tr("Font..."), this);
     fontAction->setShortcut(Qt::CTRL | Qt::Key_F);
-    connect(fontAction, SIGNAL(triggered()), this, SLOT(selectFont()));
+    connect(fontAction, &QAction::triggered, this, &SpreadSheet::selectFont);
 
     colorAction = new QAction(QPixmap(16, 16), tr("Background &Color..."), this);
-    connect(colorAction, SIGNAL(triggered()), this, SLOT(selectColor()));
+    connect(colorAction, &QAction::triggered, this, &SpreadSheet::selectColor);
 
     clearAction = new QAction(tr("Clear"), this);
     clearAction->setShortcut(Qt::Key_Delete);
-    connect(clearAction, SIGNAL(triggered()), this, SLOT(clear()));
+    connect(clearAction, &QAction::triggered, this, &SpreadSheet::clear);
 
     aboutSpreadSheet = new QAction(tr("About Spreadsheet"), this);
-    connect(aboutSpreadSheet, SIGNAL(triggered()), this, SLOT(showAbout()));
+    connect(aboutSpreadSheet, &QAction::triggered, this, &SpreadSheet::showAbout);
 
     exitAction = new QAction(tr("E&xit"), this);
-    connect(exitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+    connect(exitAction, &QAction::triggered, qApp, &QCoreApplication::quit);
 
     printAction = new QAction(tr("&Print"), this);
-    connect(printAction, SIGNAL(triggered()), this, SLOT(print()));
+    connect(printAction, &QAction::triggered, this, &SpreadSheet::print);
 
     firstSeparator = new QAction(this);
     firstSeparator->setSeparator(true);
@@ -309,11 +331,11 @@ bool SpreadSheet::runInputDialog(const QString &title,
     outColInput.setCurrentIndex(outCol);
 
     QPushButton cancelButton(tr("Cancel"), &addDialog);
-    connect(&cancelButton, SIGNAL(clicked()), &addDialog, SLOT(reject()));
+    connect(&cancelButton, &QAbstractButton::clicked, &addDialog, &QDialog::reject);
 
     QPushButton okButton(tr("OK"), &addDialog);
     okButton.setDefault(true);
-    connect(&okButton, SIGNAL(clicked()), &addDialog, SLOT(accept()));
+    connect(&okButton, &QAbstractButton::clicked, &addDialog, &QDialog::accept);
 
     QHBoxLayout *buttonsLayout = new QHBoxLayout;
     buttonsLayout->addStretch(1);
@@ -620,12 +642,12 @@ QString encode_pos(int row, int col)
 
 void SpreadSheet::print()
 {
-#if !defined(QT_NO_PRINTER) && !defined(QT_NO_PRINTDIALOG)
+#if QT_CONFIG(printpreviewdialog)
     QPrinter printer(QPrinter::ScreenResolution);
     QPrintPreviewDialog dlg(&printer);
     PrintView view;
     view.setModel(table->model());
-    connect(&dlg, SIGNAL(paintRequested(QPrinter*)), &view, SLOT(print(QPrinter*)));
+    connect(&dlg, &QPrintPreviewDialog::paintRequested, &view, &PrintView::print);
     dlg.exec();
 #endif
 }

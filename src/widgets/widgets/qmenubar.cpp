@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,24 +49,24 @@
 #include <qpainter.h>
 #include <qstylepainter.h>
 #include <qevent.h>
+#if QT_CONFIG(mainwindow)
 #include <qmainwindow.h>
+#endif
 #include <qtoolbar.h>
+#if QT_CONFIG(toolbutton)
 #include <qtoolbutton.h>
+#endif
+#if QT_CONFIG(whatsthis)
 #include <qwhatsthis.h>
+#endif
 #include <qpa/qplatformtheme.h>
 #include "private/qguiapplication_p.h"
 #include "qpa/qplatformintegration.h"
-
-#ifndef QT_NO_MENUBAR
-
+#include <private/qdesktopwidget_p.h>
 
 #include "qmenu_p.h"
 #include "qmenubar_p.h"
 #include "qdebug.h"
-
-#ifdef Q_OS_WINCE
-extern bool qt_wince_is_mobile(); //defined in qguifunctions_wce.cpp
-#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -69,8 +75,8 @@ class QMenuBarExtension : public QToolButton
 public:
     explicit QMenuBarExtension(QWidget *parent);
 
-    QSize sizeHint() const Q_DECL_OVERRIDE;
-    void paintEvent(QPaintEvent *) Q_DECL_OVERRIDE;
+    QSize sizeHint() const override;
+    void paintEvent(QPaintEvent *) override;
 };
 
 QMenuBarExtension::QMenuBarExtension(QWidget *parent)
@@ -78,7 +84,7 @@ QMenuBarExtension::QMenuBarExtension(QWidget *parent)
 {
     setObjectName(QLatin1String("qt_menubar_ext_button"));
     setAutoRaise(true);
-#ifndef QT_NO_MENU
+#if QT_CONFIG(menu)
     setPopupMode(QToolButton::InstantPopup);
 #endif
     setIcon(style()->standardIcon(QStyle::SP_ToolBarHorizontalExtensionButton, 0, parentWidget()));
@@ -194,8 +200,10 @@ void QMenuBarPrivate::updateGeometries()
     if(itemsDirty) {
         for(int j = 0; j < shortcutIndexMap.size(); ++j)
             q->releaseShortcut(shortcutIndexMap.value(j));
-        shortcutIndexMap.resize(0); // faster than clear
-        for(int i = 0; i < actions.count(); i++)
+        shortcutIndexMap.clear();
+        const int actionsCount = actions.count();
+        shortcutIndexMap.reserve(actionsCount);
+        for (int i = 0; i < actionsCount; i++)
             shortcutIndexMap.append(q->grabShortcut(QKeySequence::mnemonic(actions.at(i)->text())));
     }
 #endif
@@ -281,7 +289,7 @@ void QMenuBarPrivate::setKeyboardMode(bool b)
     keyboardState = b;
     if(b) {
         QWidget *fw = QApplication::focusWidget();
-        if (fw != q)
+        if (fw && fw != q && fw->window() != QApplication::activePopupWidget())
             keyboardFocusWidget = fw;
         focusFirstAction();
         q->setFocus(Qt::MenuBarFocusReason);
@@ -314,7 +322,7 @@ void QMenuBarPrivate::popupAction(QAction *action, bool activateFirst)
         QSize popup_size = activeMenu->sizeHint();
 
         //we put the popup menu on the screen containing the bottom-center of the action rect
-        QRect screenRect = QApplication::desktop()->screenGeometry(pos + QPoint(adjustedActionRect.width() / 2, 0));
+        QRect screenRect = QDesktopWidgetPrivate::screenGeometry(pos + QPoint(adjustedActionRect.width() / 2, 0));
         pos = QPoint(qMax(pos.x(), screenRect.x()), qMax(pos.y(), screenRect.y()));
 
         const bool fitUp = (q->mapToGlobal(adjustedActionRect.topLeft()).y() >= popup_size.height());
@@ -372,7 +380,7 @@ void QMenuBarPrivate::setCurrentAction(QAction *action, bool popup, bool activat
         q->update(actionRect(currentAction));
 
     popupState = popup;
-#ifndef QT_NO_STATUSTIP
+#if QT_CONFIG(statustip)
     QAction *previousAction = currentAction;
 #endif
     currentAction = action;
@@ -381,7 +389,7 @@ void QMenuBarPrivate::setCurrentAction(QAction *action, bool popup, bool activat
         if(popup)
             popupAction(action, activateFirst);
         q->update(actionRect(action));
-#ifndef QT_NO_STATUSTIP
+#if QT_CONFIG(statustip)
     }  else if (previousAction) {
         QString empty;
         QStatusTipEvent tip(empty);
@@ -608,15 +616,16 @@ void QMenuBar::initStyleOption(QStyleOptionMenuItem *option, const QAction *acti
     for items in the menu bar are only shown when the \uicontrol{Alt} key is
     pressed.
 
-    \section1 QMenuBar on OS X
+    \section1 QMenuBar as a Global Menu Bar
 
-    QMenuBar on OS X is a wrapper for using the system-wide menu bar.
+    On \macos and on certain Linux desktop environments such as
+    Ubuntu Unity, QMenuBar is a wrapper for using the system-wide menu bar.
     If you have multiple menu bars in one dialog the outermost menu bar
     (normally inside a widget with widget flag Qt::Window) will
     be used for the system-wide menu bar.
 
-    Qt for OS X also provides a menu bar merging feature to make
-    QMenuBar conform more closely to accepted OS X menu bar layout.
+    Qt for \macos also provides a menu bar merging feature to make
+    QMenuBar conform more closely to accepted \macos menu bar layout.
     The merging functionality is based on string matching the title of
     a QMenu entry. These strings are translated (using QObject::tr())
     in the "QMenuBar" context. If an entry is moved its slots will still
@@ -636,7 +645,7 @@ void QMenuBar::initStyleOption(QStyleOptionMenuItem *option, const QAction *acti
     \row \li quit or exit
          \li Application Menu | Quit <application name>
          \li If this entry is not found a default Quit item will be
-            created to call QApplication::quit()
+            created to call QCoreApplication::quit()
     \endtable
 
     You can override this behavior by using the QAction::menuRole()
@@ -653,22 +662,15 @@ void QMenuBar::initStyleOption(QStyleOptionMenuItem *option, const QAction *acti
     as its parent. That menu bar would only be displayed for the
     parent QMainWindow.
 
-    \b{Note:} The text used for the application name in the menu
+    \b{Note:} The text used for the application name in the \macos menu
     bar is obtained from the value set in the \c{Info.plist} file in
-    the application's bundle. See \l{Qt for OS X - Deployment}
+    the application's bundle. See \l{Qt for macOS - Deployment}
     for more information.
 
-    \section1 QMenuBar on Windows CE
-
-    QMenuBar on Windows CE is a wrapper for using the system-wide menu bar,
-    similar to the Mac.  This feature is activated for Windows Mobile
-    and integrates QMenuBar with the native soft keys. The left soft
-    key can be controlled with QMenuBar::setDefaultAction() and the
-    right soft key can be used to access the menu bar.
-
-    The hovered() signal is not supported for the native menu
-    integration. Also, it is not possible to display an icon in a
-    native menu on Windows Mobile.
+    \b{Note:} On Linux, if the com.canonical.AppMenu.Registrar
+    service is available on the D-Bus session bus, then Qt will
+    communicate with it to install the application's menus into the
+    global menu bar, as described.
 
     \section1 Examples
 
@@ -688,22 +690,12 @@ void QMenuBarPrivate::init()
     q->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
     q->setAttribute(Qt::WA_CustomWhatsThis);
 
-    platformMenuBar = QGuiApplicationPrivate::platformTheme()->createPlatformMenuBar();
+    if (!QApplication::instance()->testAttribute(Qt::AA_DontUseNativeMenuBar))
+        platformMenuBar = QGuiApplicationPrivate::platformTheme()->createPlatformMenuBar();
 
     if (platformMenuBar)
         q->hide();
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile()) {
-        wceCreateMenuBar(q->parentWidget());
-        if(wce_menubar)
-            q->hide();
-    }
-    else {
-        QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar, true);
-    }
-#endif
     q->setBackgroundRole(QPalette::Button);
-    oldWindow = oldParent = 0;
     handleReparent();
     q->setMouseTracking(q->style()->styleHint(QStyle::SH_MenuBar_MouseTracking, 0, q));
 
@@ -752,11 +744,6 @@ QMenuBar::~QMenuBar()
     Q_D(QMenuBar);
     delete d->platformMenuBar;
     d->platformMenuBar = 0;
-
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile())
-        d->wceDestroyMenuBar();
-#endif
 }
 
 /*!
@@ -792,6 +779,40 @@ QAction *QMenuBar::addAction(const QString &text, const QObject *receiver, const
     addAction(ret);
     return ret;
 }
+
+/*!
+    \fn template<typename Obj, typename PointerToMemberFunctionOrFunctor> QAction *QMenuBar::addAction(const QString &text, const Obj *receiver, PointerToMemberFunctionOrFunctor method)
+
+    \since 5.11
+
+    \overload
+
+    This convenience function creates a new action with the given \a
+    text. The action's triggered() signal is connected to the
+    \a method of the \a receiver. The function adds the newly created
+    action to the menu's list of actions and returns it.
+
+    QMenuBar takes ownership of the returned QAction.
+
+    \sa QWidget::addAction(), QWidget::actions()
+*/
+
+/*!
+    \fn template<typename Functor> QAction *QMenuBar::addAction(const QString &text, Functor functor)
+
+    \since 5.11
+
+    \overload
+
+    This convenience function creates a new action with the given \a
+    text. The action's triggered() signal is connected to the
+    \a functor. The function adds the newly created
+    action to the menu's list of actions and returns it.
+
+    QMenuBar takes ownership of the returned QAction.
+
+    \sa QWidget::addAction(), QWidget::actions()
+*/
 
 /*!
   Appends a new QMenu with \a title to the menu bar. The menu bar
@@ -900,7 +921,7 @@ void QMenuBar::setActiveAction(QAction *act)
 /*!
     Removes all the actions from the menu bar.
 
-    \note On OS X, menu items that have been merged to the system
+    \note On \macos, menu items that have been merged to the system
     menu bar are not removed by this function. One way to handle this
     would be to remove the extra actions yourself. You can set the
     \l{QAction::MenuRole}{menu role} on the different menus, so that
@@ -1008,13 +1029,11 @@ void QMenuBar::paintEvent(QPaintEvent *e)
 */
 void QMenuBar::setVisible(bool visible)
 {
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
     if (isNativeMenuBar()) {
         if (!visible)
             QWidget::setVisible(false);
         return;
     }
-#endif
     QWidget::setVisible(visible);
 }
 
@@ -1032,7 +1051,7 @@ void QMenuBar::mousePressEvent(QMouseEvent *e)
     QAction *action = d->actionAt(e->pos());
     if (!action || !d->isVisible(action) || !action->isEnabled()) {
         d->setCurrentAction(0);
-#ifndef QT_NO_WHATSTHIS
+#if QT_CONFIG(whatsthis)
         if (QWhatsThis::inWhatsThisMode())
             QWhatsThis::showText(e->globalPos(), d->whatsThis, this);
 #endif
@@ -1061,6 +1080,10 @@ void QMenuBar::mouseReleaseEvent(QMouseEvent *e)
 
     d->mouseDown = false;
     QAction *action = d->actionAt(e->pos());
+
+    // do noting if the action is hidden
+    if (!d->isVisible(action))
+        return;
     if((d->closePopupMode && action == d->currentAction) || !action || !action->menu()) {
         //we set the current action before activating
         //so that we let the leave event set the current back to 0
@@ -1120,15 +1143,17 @@ void QMenuBar::keyPressEvent(QKeyEvent *e)
         }
         break; }
 
-    case Qt::Key_Escape:
-        d->setCurrentAction(0);
-        d->setKeyboardMode(false);
-        key_consumed = true;
-        break;
-
     default:
         key_consumed = false;
     }
+
+#ifndef QT_NO_SHORTCUT
+    if (!key_consumed && e->matches(QKeySequence::Cancel)) {
+        d->setCurrentAction(0);
+        d->setKeyboardMode(false);
+        key_consumed = true;
+    }
+#endif
 
     if(!key_consumed &&
        (!e->modifiers() ||
@@ -1136,7 +1161,7 @@ void QMenuBar::keyPressEvent(QKeyEvent *e)
         int clashCount = 0;
         QAction *first = 0, *currentSelected = 0, *firstAfterCurrent = 0;
         {
-            QChar c = e->text()[0].toUpper();
+            const QChar c = e->text().at(0).toUpper();
             for(int i = 0; i < d->actions.size(); ++i) {
                 if (d->actionRects.at(i).isNull())
                     continue;
@@ -1201,12 +1226,42 @@ void QMenuBar::leaveEvent(QEvent *)
         d->setCurrentAction(0);
 }
 
-QPlatformMenu *getPlatformMenu(QAction *action)
+QPlatformMenu *QMenuBarPrivate::getPlatformMenu(const QAction *action)
 {
     if (!action || !action->menu())
         return 0;
 
-    return action->menu()->platformMenu();
+    QPlatformMenu *platformMenu = action->menu()->platformMenu();
+    if (!platformMenu && platformMenuBar) {
+        platformMenu = platformMenuBar->createMenu();
+        if (platformMenu)
+            action->menu()->setPlatformMenu(platformMenu);
+    }
+
+    return platformMenu;
+}
+
+QPlatformMenu *QMenuBarPrivate::findInsertionPlatformMenu(const QAction *action)
+{
+    Q_Q(QMenuBar);
+    QPlatformMenu *beforeMenu = nullptr;
+    for (int beforeIndex = indexOf(const_cast<QAction *>(action)) + 1;
+         !beforeMenu && (beforeIndex < q->actions().size());
+         ++beforeIndex) {
+        beforeMenu = getPlatformMenu(q->actions().at(beforeIndex));
+    }
+
+    return beforeMenu;
+}
+
+void QMenuBarPrivate::copyActionToPlatformMenu(const QAction *action, QPlatformMenu *menu)
+{
+    const auto tag = reinterpret_cast<quintptr>(action);
+    if (menu->tag() != tag)
+        menu->setTag(tag);
+    menu->setText(action->text());
+    menu->setVisible(action->isVisible());
+    menu->setEnabled(action->isEnabled());
 }
 
 /*!
@@ -1218,36 +1273,25 @@ void QMenuBar::actionEvent(QActionEvent *e)
     d->itemsDirty = true;
 
     if (d->platformMenuBar) {
-#if !defined(Q_OS_WINCE)
         QPlatformMenuBar *nativeMenuBar = d->platformMenuBar;
-#else
-        QMenuBarPrivate::QWceMenuBarPrivate *nativeMenuBar = d->wce_menubar;
-#endif
         if (!nativeMenuBar)
             return;
 
         if (e->type() == QEvent::ActionAdded) {
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
             if (menu) {
-                QPlatformMenu* beforeMenu = NULL;
-                for (int beforeIndex = d->indexOf(e->action()) + 1;
-                     !beforeMenu && (beforeIndex < actions().size());
-                     ++beforeIndex)
-                {
-                    beforeMenu = getPlatformMenu(actions().at(beforeIndex));
-                }
+                d->copyActionToPlatformMenu(e->action(), menu);
 
-                menu->setTag(reinterpret_cast<quintptr>(e->action()));
-                menu->setText(e->action()->text());
+                QPlatformMenu *beforeMenu = d->findInsertionPlatformMenu(e->action());
                 d->platformMenuBar->insertMenu(menu, beforeMenu);
             }
         } else if (e->type() == QEvent::ActionRemoved) {
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
             if (menu)
                 d->platformMenuBar->removeMenu(menu);
         } else if (e->type() == QEvent::ActionChanged) {
-            QPlatformMenu* cur = d->platformMenuBar->menuForTag(reinterpret_cast<quintptr>(e->action()));
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *cur = d->platformMenuBar->menuForTag(reinterpret_cast<quintptr>(e->action()));
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
 
             // the menu associated with the action can change, need to
             // remove and/or insert the new platform menu
@@ -1255,21 +1299,13 @@ void QMenuBar::actionEvent(QActionEvent *e)
                 if (cur)
                     d->platformMenuBar->removeMenu(cur);
                 if (menu) {
-                    menu->setTag(reinterpret_cast<quintptr>(e->action()));
+                    d->copyActionToPlatformMenu(e->action(), menu);
 
-                    QPlatformMenu* beforeMenu = NULL;
-                    for (int beforeIndex = d->indexOf(e->action()) + 1;
-                         !beforeMenu && (beforeIndex < actions().size());
-                         ++beforeIndex)
-                    {
-                        beforeMenu = getPlatformMenu(actions().at(beforeIndex));
-                    }
+                    QPlatformMenu *beforeMenu = d->findInsertionPlatformMenu(e->action());
                     d->platformMenuBar->insertMenu(menu, beforeMenu);
                 }
             } else if (menu) {
-                menu->setText(e->action()->text());
-                menu->setVisible(e->action()->isVisible());
-                menu->setEnabled(e->action()->isEnabled());
+                d->copyActionToPlatformMenu(e->action(), menu);
                 d->platformMenuBar->syncMenu(menu);
             }
         }
@@ -1281,10 +1317,12 @@ void QMenuBar::actionEvent(QActionEvent *e)
     } else if(e->type() == QEvent::ActionRemoved) {
         e->action()->disconnect(this);
     }
-    if (isVisible()) {
+    // updateGeometries() is also needed for native menu bars because
+    // it updates shortcutIndexMap
+    if (isVisible() || isNativeMenuBar())
         d->updateGeometries();
+    if (isVisible())
         update();
-    }
 }
 
 /*!
@@ -1327,30 +1365,41 @@ void QMenuBarPrivate::handleReparent()
 {
     Q_Q(QMenuBar);
     QWidget *newParent = q->parentWidget();
-    //Note: if parent is reparented, then window may change even if parent doesn't
 
-    // we need to install an event filter on parent, and remove the old one
+    //Note: if parent is reparented, then window may change even if parent doesn't.
+    // We need to install an avent filter on each parent up to the parent that is
+    // also a window (for shortcuts)
+    QWidget *newWindow = newParent ? newParent->window() : nullptr;
 
-    if (oldParent != newParent) {
-        if (oldParent)
-            oldParent->removeEventFilter(q);
-        if (newParent)
-            newParent->installEventFilter(q);
+    QVector<QPointer<QWidget> > newParents;
+    // Remove event filters on ex-parents, keep them on still-parents
+    // The parents are always ordered in the vector
+    foreach (const QPointer<QWidget> &w, oldParents) {
+        if (w) {
+            if (newParent == w) {
+                newParents.append(w);
+                if (newParent != newWindow) //stop at the window
+                    newParent = newParent->parentWidget();
+            } else {
+                w->removeEventFilter(q);
+            }
+        }
     }
 
-    //we also need event filter on top-level (for shortcuts)
-    QWidget *newWindow = newParent ? newParent->window() : 0;
-
-    if (oldWindow != newWindow) {
-        if (oldParent && oldParent != oldWindow)
-            oldWindow->removeEventFilter(q);
-
-        if (newParent && newParent != newWindow)
-            newWindow->installEventFilter(q);
+    // At this point, newParent is the next one to be added to newParents
+    while (newParent && newParent != newWindow) {
+        //install event filters all the way up to (excluding) the window
+        newParents.append(newParent);
+        newParent->installEventFilter(q);
+        newParent = newParent->parentWidget();
     }
 
-    oldParent = newParent;
-    oldWindow = newWindow;
+    if (newParent && newWindow) {
+        // Install the event filter on the window
+        newParents.append(newParent);
+        newParent->installEventFilter(q);
+    }
+    oldParents = newParents;
 
     if (platformMenuBar) {
         if (newWindow) {
@@ -1363,11 +1412,6 @@ void QMenuBarPrivate::handleReparent()
             platformMenuBar->handleReparent(0);
         }
     }
-
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile() && wce_menubar)
-        wce_menubar->rebuild();
-#endif
 }
 
 /*!
@@ -1427,18 +1471,18 @@ bool QMenuBar::event(QEvent *e)
     case QEvent::Show:
         d->_q_updateLayout();
     break;
+#ifndef QT_NO_SHORTCUT
     case QEvent::ShortcutOverride: {
         QKeyEvent *kev = static_cast<QKeyEvent*>(e);
         //we only filter out escape if there is a current action
-        if (kev->key() == Qt::Key_Escape && d->currentAction) {
+        if (kev->matches(QKeySequence::Cancel) && d->currentAction) {
             e->accept();
             return true;
         }
     }
     break;
-
-
-#ifndef QT_NO_WHATSTHIS
+#endif
+#if QT_CONFIG(whatsthis)
     case QEvent::QueryWhatsThis:
         e->setAccepted(d->whatsThis.size());
         if (QAction *action = d->actionAt(static_cast<QHelpEvent*>(e)->pos())) {
@@ -1462,10 +1506,9 @@ bool QMenuBar::event(QEvent *e)
 bool QMenuBar::eventFilter(QObject *object, QEvent *event)
 {
     Q_D(QMenuBar);
-    if (object == parent() && object) {
-        if (event->type() == QEvent::ParentChange) //GrandparentChange
+    if (object && (event->type() == QEvent::ParentChange)) //GrandparentChange
             d->handleReparent();
-    }
+
     if (object == d->leftWidget || object == d->rightWidget) {
         switch (event->type()) {
         case QEvent::ShowToParent:
@@ -1475,6 +1518,17 @@ bool QMenuBar::eventFilter(QObject *object, QEvent *event)
         default:
             break;
         }
+    }
+
+    if (isNativeMenuBar() && event->type() == QEvent::ShowToParent) {
+        // On some desktops like Unity, the D-Bus menu bar is unregistered
+        // when the window is hidden. So when the window is shown, we need
+        // to forcefully re-register it. The only way to force re-registering
+        // with D-Bus menu is the handleReparent method.
+        QWidget *widget = qobject_cast<QWidget *>(object);
+        QWindow *handle = widget ? widget->windowHandle() : nullptr;
+        if (handle != nullptr)
+            d->platformMenuBar->handleReparent(handle);
     }
 
     if (style()->styleHint(QStyle::SH_MenuBar_AltKeyNavigation, 0, this)) {
@@ -1490,13 +1544,14 @@ bool QMenuBar::eventFilter(QObject *object, QEvent *event)
                     d->setKeyboardMode(!d->keyboardState);
                 }
             }
-            // fall through
+            Q_FALLTHROUGH();
             case QEvent::MouseButtonPress:
             case QEvent::MouseButtonRelease:
             case QEvent::MouseMove:
             case QEvent::FocusIn:
             case QEvent::FocusOut:
             case QEvent::ActivationChange:
+            case QEvent::Shortcut:
                 d->altPressed = false;
                 qApp->removeEventFilter(this);
                 break;
@@ -1547,11 +1602,7 @@ QRect QMenuBar::actionGeometry(QAction *act) const
 QSize QMenuBar::minimumSizeHint() const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
     const bool as_gui_menubar = !isNativeMenuBar();
-#else
-    const bool as_gui_menubar = true;
-#endif
 
     ensurePolished();
     QSize ret(0, 0);
@@ -1561,7 +1612,7 @@ QSize QMenuBar::minimumSizeHint() const
     int fw = style()->pixelMetric(QStyle::PM_MenuBarPanelWidth, 0, this);
     int spaceBelowMenuBar = style()->styleHint(QStyle::SH_MainWindow_SpaceBelowMenuBar, 0, this);
     if(as_gui_menubar) {
-        int w = parentWidget() ? parentWidget()->width() : QApplication::desktop()->width();
+        int w = parentWidget() ? parentWidget()->width() : QDesktopWidgetPrivate::width();
         d->calcActionRects(w - (2 * fw), 0);
         for (int i = 0; ret.isNull() && i < d->actions.count(); ++i)
             ret = d->actionRects.at(i).size();
@@ -1603,12 +1654,7 @@ QSize QMenuBar::minimumSizeHint() const
 QSize QMenuBar::sizeHint() const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
     const bool as_gui_menubar = !isNativeMenuBar();
-#else
-    const bool as_gui_menubar = true;
-#endif
-
 
     ensurePolished();
     QSize ret(0, 0);
@@ -1618,7 +1664,7 @@ QSize QMenuBar::sizeHint() const
     int fw = style()->pixelMetric(QStyle::PM_MenuBarPanelWidth, 0, this);
     int spaceBelowMenuBar = style()->styleHint(QStyle::SH_MainWindow_SpaceBelowMenuBar, 0, this);
     if(as_gui_menubar) {
-        const int w = parentWidget() ? parentWidget()->width() : QApplication::desktop()->width();
+        const int w = parentWidget() ? parentWidget()->width() : QDesktopWidgetPrivate::width();
         d->calcActionRects(w - (2 * fw), 0);
         for (int i = 0; i < d->actionRects.count(); ++i) {
             const QRect &actionRect = d->actionRects.at(i);
@@ -1661,11 +1707,7 @@ QSize QMenuBar::sizeHint() const
 int QMenuBar::heightForWidth(int) const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
     const bool as_gui_menubar = !isNativeMenuBar();
-#else
-    const bool as_gui_menubar = true;
-#endif
 
     const_cast<QMenuBarPrivate*>(d)->updateGeometries();
     int height = 0;
@@ -1704,6 +1746,14 @@ void QMenuBarPrivate::_q_internalShortcutActivated(int id)
 {
     Q_Q(QMenuBar);
     QAction *act = actions.at(id);
+    if (act && act->menu()) {
+        if (QPlatformMenu *platformMenu = act->menu()->platformMenu()) {
+            platformMenu->showPopup(q->windowHandle(), actionRects.at(id), nullptr);
+            return;
+        }
+    }
+
+    keyboardFocusWidget = QApplication::focusWidget();
     setCurrentAction(act, true, true);
     if (act && !act->menu()) {
         activateAction(act, QAction::Trigger);
@@ -1796,24 +1846,23 @@ QWidget *QMenuBar::cornerWidget(Qt::Corner corner) const
     \brief Whether or not a menubar will be used as a native menubar on platforms that support it
     \since 4.6
 
-    This property specifies whether or not the menubar should be used as a native menubar on platforms
-    that support it. The currently supported platforms are OS X and Windows CE. On these platforms
-    if this property is \c true, the menubar is used in the native menubar and is not in the window of
-    its parent, if false the menubar remains in the window. On other platforms the value of this
-    attribute has no effect.
+    This property specifies whether or not the menubar should be used as a native menubar on
+    platforms that support it. The currently supported platforms are \macos, and
+    Linux desktops which use the com.canonical.dbusmenu D-Bus interface (such as Ubuntu Unity).
+    If this property is \c true, the menubar is used in the native menubar and is not in the window of
+    its parent; if \c false the menubar remains in the window. On other platforms,
+    setting this attribute has no effect, and reading this attribute will always return \c false.
 
     The default is to follow whether the Qt::AA_DontUseNativeMenuBar attribute
-    is set for the application. Explicitly settings this property overrides
-    the presence (or abscence) of the attribute.
+    is set for the application. Explicitly setting this property overrides
+    the presence (or absence) of the attribute.
 */
 
 void QMenuBar::setNativeMenuBar(bool nativeMenuBar)
 {
     Q_D(QMenuBar);
-    if (d->nativeMenuBar == -1 || (nativeMenuBar != bool(d->nativeMenuBar))) {
-        d->nativeMenuBar = nativeMenuBar;
-
-        if (!d->nativeMenuBar) {
+    if (nativeMenuBar != bool(d->platformMenuBar)) {
+        if (!nativeMenuBar) {
             delete d->platformMenuBar;
             d->platformMenuBar = 0;
         } else {
@@ -1822,7 +1871,7 @@ void QMenuBar::setNativeMenuBar(bool nativeMenuBar)
         }
 
         updateGeometry();
-        if (!d->nativeMenuBar && parentWidget())
+        if (!nativeMenuBar && parentWidget())
             setVisible(true);
     }
 }
@@ -1830,10 +1879,7 @@ void QMenuBar::setNativeMenuBar(bool nativeMenuBar)
 bool QMenuBar::isNativeMenuBar() const
 {
     Q_D(const QMenuBar);
-    if (d->nativeMenuBar == -1) {
-        return !QApplication::instance()->testAttribute(Qt::AA_DontUseNativeMenuBar);
-    }
-    return d->nativeMenuBar;
+    return bool(d->platformMenuBar);
 }
 
 /*!
@@ -1844,55 +1890,6 @@ QPlatformMenuBar *QMenuBar::platformMenuBar()
     Q_D(const QMenuBar);
     return d->platformMenuBar;
 }
-
-/*!
-  \since 4.4
-
-  Sets the default action to \a act.
-
-  The default action is assigned to the left soft key. The menu is assigned
-  to the right soft key.
-
-  Currently there is only support for the default action on Windows
-  Mobile. On all other platforms this method is not available.
-
-  \sa defaultAction()
-*/
-
-#ifdef Q_OS_WINCE
-void QMenuBar::setDefaultAction(QAction *act)
-{
-    Q_D(QMenuBar);
-    if (d->defaultAction == act)
-        return;
-    if (qt_wince_is_mobile())
-        if (d->defaultAction) {
-            disconnect(d->defaultAction, SIGNAL(changed()), this, SLOT(_q_updateDefaultAction()));
-            disconnect(d->defaultAction, SIGNAL(destroyed()), this, SLOT(_q_updateDefaultAction()));
-        }
-    d->defaultAction = act;
-    if (qt_wince_is_mobile())
-        if (d->defaultAction) {
-            connect(d->defaultAction, SIGNAL(changed()), this, SLOT(_q_updateDefaultAction()));
-            connect(d->defaultAction, SIGNAL(destroyed()), this, SLOT(_q_updateDefaultAction()));
-        }
-    if (d->wce_menubar) {
-        d->wce_menubar->rebuild();
-    }
-}
-
-/*!
-  \since 4.4
-
-  Returns the current default action.
-
-  \sa setDefaultAction()
-*/
-QAction *QMenuBar::defaultAction() const
-{
-    return d_func()->defaultAction;
-}
-#endif
 
 /*!
     \fn void QMenuBar::triggered(QAction *action)
@@ -1924,9 +1921,6 @@ QAction *QMenuBar::defaultAction() const
 
 // for private slots
 
-
 QT_END_NAMESPACE
 
 #include <moc_qmenubar.cpp>
-
-#endif // QT_NO_MENUBAR

@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,11 +42,18 @@
 
 #include <qdir.h>
 #include <qfileinfo.h>
-#include <qhash.h>
 
 #ifndef QT_BOOTSTRAPPED
 #include <qobject.h>
 #include <qcoreapplication.h>
+#endif
+
+#if QT_HAS_INCLUDE(<paths.h>)
+#include <paths.h>
+#endif
+
+#ifdef Q_OS_UNIX
+#include <unistd.h>
 #endif
 
 #ifndef QT_NO_STANDARDPATHS
@@ -147,7 +161,7 @@ QT_BEGIN_NAMESPACE
     paths, if any, represent non-writable locations.
 
     \table
-    \header \li Path type \li OS X  \li Windows
+    \header \li Path type \li \macos  \li Windows
     \row \li DesktopLocation
          \li "~/Desktop"
          \li "C:/Users/<USER>/Desktop"
@@ -177,13 +191,13 @@ QT_BEGIN_NAMESPACE
          \li "C:/Users/<USER>"
     \row \li DataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li CacheLocation
          \li "~/Library/Caches/<APPNAME>", "/Library/Caches/<APPNAME>"
          \li "C:/Users/<USER>/AppData/Local/<APPNAME>/cache"
     \row \li GenericDataLocation
          \li "~/Library/Application Support", "/Library/Application Support"
-         \li "C:/Users/<USER>/AppData/Local", "C:/ProgramData"
+         \li "C:/Users/<USER>/AppData/Local", "C:/ProgramData", "<APPDIR>", "<APPDIR>/data"
     \row \li RuntimeLocation
          \li "~/Library/Application Support"
          \li "C:/Users/<USER>"
@@ -201,76 +215,56 @@ QT_BEGIN_NAMESPACE
          \li "C:/Users/<USER>/AppData/Local/cache"
     \row \li AppDataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Roaming/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Roaming/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li AppLocalDataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li AppConfigLocation
          \li "~/Library/Preferences/<APPNAME>"
          \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>"
     \endtable
 
     \table
-    \header \li Path type \li Blackberry \li Linux
+    \header \li Path type \li Linux
     \row \li DesktopLocation
-         \li "<APPROOT>/data"
          \li "~/Desktop"
     \row \li DocumentsLocation
-         \li "<APPROOT>/shared/documents"
          \li "~/Documents"
     \row \li FontsLocation
-         \li "/base/usr/fonts" (not writable)
          \li "~/.fonts"
     \row \li ApplicationsLocation
-         \li not supported (directory not readable)
          \li "~/.local/share/applications", "/usr/local/share/applications", "/usr/share/applications"
     \row \li MusicLocation
-         \li "<APPROOT>/shared/music"
          \li "~/Music"
     \row \li MoviesLocation
-         \li "<APPROOT>/shared/videos"
          \li "~/Videos"
     \row \li PicturesLocation
-         \li "<APPROOT>/shared/photos"
          \li "~/Pictures"
     \row \li TempLocation
-         \li "/var/tmp"
          \li "/tmp"
     \row \li HomeLocation
-         \li "<APPROOT>/data"
          \li "~"
     \row \li DataLocation
-         \li "<APPROOT>/data", "<APPROOT>/app/native/assets"
          \li "~/.local/share/<APPNAME>", "/usr/local/share/<APPNAME>", "/usr/share/<APPNAME>"
     \row \li CacheLocation
-         \li "<APPROOT>/data/Cache"
          \li "~/.cache/<APPNAME>"
     \row \li GenericDataLocation
-         \li "<APPROOT>/shared/misc"
          \li "~/.local/share", "/usr/local/share", "/usr/share"
     \row \li RuntimeLocation
-         \li "/var/tmp"
          \li "/run/user/<USER>"
     \row \li ConfigLocation
-         \li "<APPROOT>/data/Settings"
          \li "~/.config", "/etc/xdg"
     \row \li GenericConfigLocation
-         \li "<APPROOT>/data/Settings"
          \li "~/.config", "/etc/xdg"
     \row \li DownloadLocation
-         \li "<APPROOT>/shared/downloads"
          \li "~/Downloads"
     \row \li GenericCacheLocation
-         \li "<APPROOT>/data/Cache" (there is no shared cache)
          \li "~/.cache"
     \row \li AppDataLocation
-         \li "<APPROOT>/data", "<APPROOT>/app/native/assets"
          \li "~/.local/share/<APPNAME>", "/usr/local/share/<APPNAME>", "/usr/share/<APPNAME>"
     \row \li AppLocalDataLocation
-         \li "<APPROOT>/data", "<APPROOT>/app/native/assets"
          \li "~/.local/share/<APPNAME>", "/usr/local/share/<APPNAME>", "/usr/share/<APPNAME>"
     \row \li AppConfigLocation
-         \li "<APPROOT>/data/Settings"
          \li "~/.config/<APPNAME>", "/etc/xdg/<APPNAME>"
     \endtable
 
@@ -278,13 +272,13 @@ QT_BEGIN_NAMESPACE
     \header \li Path type \li Android \li iOS
     \row \li DesktopLocation
          \li "<APPROOT>/files"
-         \li "<APPROOT>/<APPDIR>" (not writable)
+         \li "<APPROOT>/Documents/Desktop"
     \row \li DocumentsLocation
          \li "<USER>/Documents", "<USER>/<APPNAME>/Documents"
          \li "<APPROOT>/Documents"
     \row \li FontsLocation
          \li "/system/fonts" (not writable)
-         \li "<APPROOT>/Documents/.fonts"
+         \li "<APPROOT>/Library/Fonts"
     \row \li ApplicationsLocation
          \li not supported (directory not readable)
          \li not supported
@@ -302,7 +296,7 @@ QT_BEGIN_NAMESPACE
          \li "<APPROOT>/tmp"
     \row \li HomeLocation
          \li "<APPROOT>/files"
-         \li "<APPROOT>/<APPDIR>" (not writable)
+         \li "<APPROOT>" (not writable)
     \row \li DataLocation
          \li "<APPROOT>/files", "<USER>/<APPNAME>/files"
          \li "<APPROOT>/Library/Application Support"
@@ -317,13 +311,13 @@ QT_BEGIN_NAMESPACE
          \li not supported
     \row \li ConfigLocation
          \li "<APPROOT>/files/settings"
-         \li "<APPROOT>/Documents"
+         \li "<APPROOT>/Library/Preferences"
     \row \li GenericConfigLocation
          \li "<APPROOT>/files/settings" (there is no shared settings)
-         \li "<APPROOT>/Documents"
+         \li "<APPROOT>/Library/Preferences"
     \row \li DownloadLocation
          \li "<USER>/Downloads", "<USER>/<APPNAME>/Downloads"
-         \li "<APPROOT>/Documents/Download"
+         \li "<APPROOT>/Documents/Downloads"
     \row \li GenericCacheLocation
          \li "<APPROOT>/cache" (there is no shared cache)
          \li "<APPROOT>/Library/Caches"
@@ -332,7 +326,7 @@ QT_BEGIN_NAMESPACE
          \li "<APPROOT>/Library/Application Support"
     \row \li AppConfigLocation
          \li "<APPROOT>/files/settings"
-         \li "<APPROOT>/Documents"
+         \li "<APPROOT>/Library/Preferences/<APPNAME>"
     \row \li AppLocalDataLocation
          \li "<APPROOT>/files", "<USER>/<APPNAME>/files"
          \li "<APPROOT>/Library/Application Support"
@@ -464,7 +458,7 @@ static inline QString searchExecutable(const QStringList &searchPaths,
                                        const QString &executableName)
 {
     const QDir currentDir = QDir::current();
-    foreach (const QString &searchPath, searchPaths) {
+    for (const QString &searchPath : searchPaths) {
         const QString candidate = currentDir.absoluteFilePath(searchPath + QLatin1Char('/') + executableName);
         const QString absPath = checkExecutable(candidate);
         if (!absPath.isEmpty())
@@ -483,9 +477,9 @@ static inline QString
                                  const QStringList &suffixes)
 {
     const QDir currentDir = QDir::current();
-    foreach (const QString &searchPath, searchPaths) {
+    for (const QString &searchPath : searchPaths) {
         const QString candidateRoot = currentDir.absoluteFilePath(searchPath + QLatin1Char('/') + executableName);
-        foreach (const QString &suffix, suffixes) {
+        for (const QString &suffix : suffixes) {
             const QString absPath = checkExecutable(candidateRoot + suffix);
             if (!absPath.isEmpty())
                 return absPath;
@@ -523,15 +517,31 @@ QString QStandardPaths::findExecutable(const QString &executableName, const QStr
     QStringList searchPaths = paths;
     if (paths.isEmpty()) {
         QByteArray pEnv = qgetenv("PATH");
-#if defined(Q_OS_WIN)
-        const QLatin1Char pathSep(';');
+        if (Q_UNLIKELY(pEnv.isNull())) {
+            // Get a default path. POSIX.1 does not actually require this, but
+            // most Unix libc fall back to confstr(_CS_PATH) if the PATH
+            // environment variable isn't set. Let's try to do the same.
+#if defined(_PATH_DEFPATH)
+            // BSD API.
+            pEnv = _PATH_DEFPATH;
+#elif defined(_CS_PATH)
+            // POSIX API.
+            size_t n = confstr(_CS_PATH, nullptr, 0);
+            if (n) {
+                pEnv.resize(n);
+                // size()+1 is ok because QByteArray always has an extra NUL-terminator
+                confstr(_CS_PATH, pEnv.data(), pEnv.size() + 1);
+            }
 #else
-        const QLatin1Char pathSep(':');
+            // Windows SDK's execvpe() does not have a fallback, so we won't
+            // apply one either.
 #endif
+        }
+
         // Remove trailing slashes, which occur on Windows.
-        const QStringList rawPaths = QString::fromLocal8Bit(pEnv.constData()).split(pathSep, QString::SkipEmptyParts);
+        const QStringList rawPaths = QString::fromLocal8Bit(pEnv.constData()).split(QDir::listSeparator(), QString::SkipEmptyParts);
         searchPaths.reserve(rawPaths.size());
-        foreach (const QString &rawPath, rawPaths) {
+        for (const QString &rawPath : rawPaths) {
             QString cleanPath = QDir::cleanPath(rawPath);
             if (cleanPath.size() > 1 && cleanPath.endsWith(QLatin1Char('/')))
                 cleanPath.truncate(cleanPath.size() - 1);
@@ -561,7 +571,7 @@ QString QStandardPaths::findExecutable(const QString &executableName, const QStr
     an empty QString if no relevant location can be found.
 */
 
-#if !defined(Q_OS_OSX) && !defined(QT_BOOTSTRAPPED)
+#if !defined(Q_OS_MAC) && !defined(QT_BOOTSTRAPPED)
 QString QStandardPaths::displayName(StandardLocation type)
 {
     switch (type) {
@@ -628,7 +638,7 @@ QString QStandardPaths::displayName(StandardLocation type)
   On Unix, \c XDG_DATA_HOME is set to \e ~/.qttest/share, \c XDG_CONFIG_HOME is
   set to \e ~/.qttest/config, and \c XDG_CACHE_HOME is set to \e ~/.qttest/cache.
 
-  On OS X, data goes to \e ~/.qttest/Application Support, cache goes to
+  On \macos, data goes to \e ~/.qttest/Application Support, cache goes to
   \e ~/.qttest/Cache, and config goes to \e ~/.qttest/Preferences.
 
   On Windows, everything goes to a "qttest" directory under Application Data.
@@ -663,5 +673,9 @@ bool QStandardPaths::isTestModeEnabled()
 
 
 QT_END_NAMESPACE
+
+#ifndef QT_NO_QOBJECT
+#include "moc_qstandardpaths.cpp"
+#endif
 
 #endif // QT_NO_STANDARDPATHS

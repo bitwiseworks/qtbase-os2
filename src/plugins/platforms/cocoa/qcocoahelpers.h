@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,9 +52,19 @@
 //
 #include "qt_mac_p.h"
 #include <private/qguiapplication_p.h>
+#include <QtGui/qpalette.h>
 #include <QtGui/qscreen.h>
 
+#include <objc/runtime.h>
+#include <objc/message.h>
+
+Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSView));
+
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(lcQpaCocoaWindow)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaCocoaDrawing)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaCocoaMouse)
 
 class QPixmap;
 class QString;
@@ -60,55 +76,21 @@ void *qt_mac_QStringListToNSMutableArrayVoid(const QStringList &list);
 inline NSMutableArray *qt_mac_QStringListToNSMutableArray(const QStringList &qstrlist)
 { return reinterpret_cast<NSMutableArray *>(qt_mac_QStringListToNSMutableArrayVoid(qstrlist)); }
 
-NSImage *qt_mac_cgimage_to_nsimage(CGImageRef iamge);
-NSImage *qt_mac_create_nsimage(const QPixmap &pm);
-NSImage *qt_mac_create_nsimage(const QIcon &icon);
-CGImageRef qt_mac_toCGImage(const QImage &qImage);
-CGImageRef qt_mac_toCGImageMask(const QImage &qImage);
-QImage qt_mac_toQImage(CGImageRef image);
-
-NSSize qt_mac_toNSSize(const QSize &qtSize);
-NSRect qt_mac_toNSRect(const QRect &rect);
-QRect qt_mac_toQRect(const NSRect &rect);
-
-QColor qt_mac_toQColor(const NSColor *color);
-QColor qt_mac_toQColor(CGColorRef color);
-
-
-// Creates a mutable shape, it's the caller's responsibility to release.
-HIMutableShapeRef qt_mac_QRegionToHIMutableShape(const QRegion &region);
-
-OSStatus qt_mac_drawCGImage(CGContextRef inContext, const CGRect *inBounds, CGImageRef inImage);
-
-QChar qt_mac_qtKey2CocoaKey(Qt::Key key);
-Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode);
-
 NSDragOperation qt_mac_mapDropAction(Qt::DropAction action);
 NSDragOperation qt_mac_mapDropActions(Qt::DropActions actions);
 Qt::DropAction qt_mac_mapNSDragOperation(NSDragOperation nsActions);
 Qt::DropActions qt_mac_mapNSDragOperations(NSDragOperation nsActions);
 
+QT_MANGLE_NAMESPACE(QNSView) *qnsview_cast(NSView *view);
+
 // Misc
 void qt_mac_transformProccessToForegroundApplication();
-QString qt_mac_removeMnemonics(const QString &original);
-CGColorSpaceRef qt_mac_genericColorSpace();
-CGColorSpaceRef qt_mac_displayColorSpace(const QWidget *widget);
-CGColorSpaceRef qt_mac_colorSpaceForDeviceType(const QPaintDevice *paintDevice);
 QString qt_mac_applicationName();
 
-int qt_mac_flipYCoordinate(int y);
-qreal qt_mac_flipYCoordinate(qreal y);
-QPointF qt_mac_flipPoint(const NSPoint &p);
-NSPoint qt_mac_flipPoint(const QPoint &p);
-NSPoint qt_mac_flipPoint(const QPointF &p);
-
-NSRect qt_mac_flipRect(const QRect &rect);
+QPointF qt_mac_flip(const QPointF &pos, const QRectF &reference);
+QRectF qt_mac_flip(const QRectF &rect, const QRectF &reference);
 
 Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum);
-
-bool qt_mac_execute_apple_script(const char *script, long script_len, AEDesc *ret);
-bool qt_mac_execute_apple_script(const char *script, AEDesc *ret);
-bool qt_mac_execute_apple_script(const QString &script, AEDesc *ret);
 
 // strip out '&' characters, and convert "&&" to a single '&', in menu
 // text - since menu text is sometimes decorated with these for Windows
@@ -143,8 +125,6 @@ public:
     }
 };
 
-CGContextRef qt_mac_cg_context(QPaintDevice *pdev);
-
 template<typename T>
 T qt_mac_resolveOption(const T &fallback, const QByteArray &environment)
 {
@@ -178,7 +158,177 @@ T qt_mac_resolveOption(const T &fallback, QWindow *window, const QByteArray &pro
     // return default value.
     return fallback;
 }
+
 QT_END_NAMESPACE
+
+// @compatibility_alias doesn't work with protocols
+#define QNSPanelDelegate QT_MANGLE_NAMESPACE(QNSPanelDelegate)
+
+@protocol QNSPanelDelegate
+@required
+- (void)onOkClicked;
+- (void)onCancelClicked;
+@end
+
+@interface QT_MANGLE_NAMESPACE(QNSPanelContentsWrapper) : NSView {
+    NSButton *_okButton;
+    NSButton *_cancelButton;
+    NSView *_panelContents;
+    NSEdgeInsets _panelContentsMargins;
+}
+
+@property (nonatomic, readonly) NSButton *okButton;
+@property (nonatomic, readonly) NSButton *cancelButton;
+@property (nonatomic, readonly) NSView *panelContents; // ARC: unretained, make it weak
+@property (nonatomic, assign) NSEdgeInsets panelContentsMargins;
+
+- (instancetype)initWithPanelDelegate:(id<QNSPanelDelegate>)panelDelegate;
+- (void)dealloc;
+
+- (NSButton *)createButtonWithTitle:(const char *)title;
+- (void)layout;
+@end
+
+QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSPanelContentsWrapper);
+
+// -------------------------------------------------------------------------
+
+// QAppleRefCounted expects the retain function to return the object
+io_object_t q_IOObjectRetain(io_object_t obj);
+// QAppleRefCounted expects the release function to return void
+void q_IOObjectRelease(io_object_t obj);
+
+template <typename T>
+class QIOType : public QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>
+{
+    using QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>::QAppleRefCounted;
+};
+
+// -------------------------------------------------------------------------
+
+// Depending on the ABI of the platform, we may need to use objc_msgSendSuper_stret:
+// - http://www.sealiesoftware.com/blog/archive/2008/10/30/objc_explain_objc_msgSend_stret.html
+// - https://lists.apple.com/archives/cocoa-dev/2008/Feb/msg02338.html
+template <typename T>
+struct objc_msgsend_requires_stret
+{ static const bool value =
+#if defined(Q_PROCESSOR_X86)
+    // Any return value larger than two registers on i386/x86_64
+    sizeof(T) > sizeof(void*) * 2;
+#elif defined(Q_PROCESSOR_ARM_32)
+    // Any return value larger than a single register on arm
+    sizeof(T) >  sizeof(void*);
+#elif defined(Q_PROCESSOR_ARM_64)
+    // Stret not used on arm64
+    false;
+#endif
+};
+
+template <>
+struct objc_msgsend_requires_stret<void>
+{ static const bool value = false; };
+
+template <typename ReturnType, typename... Args>
+ReturnType qt_msgSendSuper(id receiver, SEL selector, Args... args)
+{
+    static_assert(!objc_msgsend_requires_stret<ReturnType>::value,
+        "The given return type requires stret on this platform");
+
+    typedef ReturnType (*SuperFn)(objc_super *, SEL, Args...);
+    SuperFn superFn = reinterpret_cast<SuperFn>(objc_msgSendSuper);
+    objc_super sup = { receiver, [receiver superclass] };
+    return superFn(&sup, selector, args...);
+}
+
+template <typename ReturnType, typename... Args>
+ReturnType qt_msgSendSuper_stret(id receiver, SEL selector, Args... args)
+{
+    static_assert(objc_msgsend_requires_stret<ReturnType>::value,
+        "The given return type does not use stret on this platform");
+
+    typedef void (*SuperStretFn)(ReturnType *, objc_super *, SEL, Args...);
+    SuperStretFn superStretFn = reinterpret_cast<SuperStretFn>(objc_msgSendSuper_stret);
+
+    objc_super sup = { receiver, [receiver superclass] };
+    ReturnType ret;
+    superStretFn(&ret, &sup, selector, args...);
+    return ret;
+}
+
+template<typename... Args>
+class QSendSuperHelper {
+public:
+    QSendSuperHelper(id receiver, SEL sel, Args... args)
+        : m_receiver(receiver), m_selector(sel), m_args(std::make_tuple(args...)), m_sent(false)
+    {
+    }
+
+    ~QSendSuperHelper()
+    {
+        if (!m_sent)
+            msgSendSuper<void>(m_args);
+    }
+
+    template <typename ReturnType>
+    operator ReturnType()
+    {
+#if defined(QT_DEBUG)
+        Method method = class_getInstanceMethod(object_getClass(m_receiver), m_selector);
+        char returnTypeEncoding[256];
+        method_getReturnType(method, returnTypeEncoding, sizeof(returnTypeEncoding));
+        NSUInteger alignedReturnTypeSize = 0;
+        NSGetSizeAndAlignment(returnTypeEncoding, nullptr, &alignedReturnTypeSize);
+        Q_ASSERT(alignedReturnTypeSize == sizeof(ReturnType));
+#endif
+        m_sent = true;
+        return msgSendSuper<ReturnType>(m_args);
+    }
+
+private:
+    template <std::size_t... Ts>
+    struct index {};
+
+    template <std::size_t N, std::size_t... Ts>
+    struct gen_seq : gen_seq<N - 1, N - 1, Ts...> {};
+
+    template <std::size_t... Ts>
+    struct gen_seq<0, Ts...> : index<Ts...> {};
+
+    template <typename ReturnType, bool V>
+    using if_requires_stret = typename std::enable_if<objc_msgsend_requires_stret<ReturnType>::value == V, ReturnType>::type;
+
+    template <typename ReturnType, std::size_t... Is>
+    if_requires_stret<ReturnType, false> msgSendSuper(std::tuple<Args...>& args, index<Is...>)
+    {
+        return qt_msgSendSuper<ReturnType>(m_receiver, m_selector, std::get<Is>(args)...);
+    }
+
+    template <typename ReturnType, std::size_t... Is>
+    if_requires_stret<ReturnType, true> msgSendSuper(std::tuple<Args...>& args, index<Is...>)
+    {
+        return qt_msgSendSuper_stret<ReturnType>(m_receiver, m_selector, std::get<Is>(args)...);
+    }
+
+    template <typename ReturnType>
+    ReturnType msgSendSuper(std::tuple<Args...>& args)
+    {
+        return msgSendSuper<ReturnType>(args, gen_seq<sizeof...(Args)>{});
+    }
+
+    id m_receiver;
+    SEL m_selector;
+    std::tuple<Args...> m_args;
+    bool m_sent;
+};
+
+template<typename... Args>
+QSendSuperHelper<Args...> qt_objcDynamicSuperHelper(id receiver, SEL selector, Args... args)
+{
+    return QSendSuperHelper<Args...>(receiver, selector, args...);
+}
+
+// Same as calling super, but the super_class field resolved at runtime instead of compile time
+#define qt_objcDynamicSuper(...) qt_objcDynamicSuperHelper(self, _cmd, ##__VA_ARGS__)
 
 #endif //QCOCOAHELPERS_H
 

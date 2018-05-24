@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,17 +53,23 @@
 #include "qdatastream.h"
 #include "qmetatypeswitcher_p.h"
 
+#if QT_CONFIG(regularexpression)
+#  include "qregularexpression.h"
+#endif
+
 #ifndef QT_BOOTSTRAPPED
 #  include "qbitarray.h"
 #  include "qurl.h"
 #  include "qvariant.h"
-#  include "qabstractitemmodel.h"
-#  include "qregularexpression.h"
 #  include "qjsonvalue.h"
 #  include "qjsonobject.h"
 #  include "qjsonarray.h"
 #  include "qjsondocument.h"
 #  include "qbytearraylist.h"
+#endif
+
+#if QT_CONFIG(itemmodel)
+#  include "qabstractitemmodel.h"
 #endif
 
 #ifndef QT_NO_GEOM_VARIANT
@@ -201,8 +213,6 @@ struct DefinedTypesFilter {
     \enum QMetaType::Type
 
     These are the built-in types supported by QMetaType:
-    Read doc on QChar
-    Read doc on \l QChar
 
     \value Void \c void
     \value Bool \c bool
@@ -212,6 +222,7 @@ struct DefinedTypesFilter {
     \value QChar QChar
     \value QString QString
     \value QByteArray QByteArray
+    \value Nullptr \c{std::nullptr_t}
 
     \value VoidStar \c{void *}
     \value Long \c{long}
@@ -283,6 +294,8 @@ struct DefinedTypesFilter {
 
     \value User  Base value for user types
     \value UnknownType This is an invalid type id. It is returned from QMetaType for types that are not registered
+    \omitvalue LastCoreType
+    \omitvalue LastGuiType
 
     Additional types can be registered using Q_DECLARE_METATYPE().
 
@@ -304,6 +317,7 @@ struct DefinedTypesFilter {
     \omitvalue TrackingPointerToQObject
     \omitvalue WasDeclaredAsMetaType
     \omitvalue IsGadget This type is a Q_GADGET and it's corresponding QMetaObject can be accessed with QMetaType::metaObject Since 5.5.
+    \omitvalue PointerToGadget
 */
 
 /*!
@@ -581,7 +595,7 @@ Q_GLOBAL_STATIC(QMetaTypeDebugStreamRegistry, customTypesDebugStreamRegistry)
 */
 
 /*!
-    \fn bool QMetaType::registerConverter(MemberFunction function)
+    \fn  template<typename MemberFunction, int> bool QMetaType::registerConverter(MemberFunction function)
     \since 5.2
     \overload
     Registers a method \a function like To From::function() const as converter from type From
@@ -589,7 +603,7 @@ Q_GLOBAL_STATIC(QMetaTypeDebugStreamRegistry, customTypesDebugStreamRegistry)
 */
 
 /*!
-    \fn bool QMetaType::registerConverter(MemberFunctionOk function)
+    \fn template<typename MemberFunctionOk, char> bool QMetaType::registerConverter(MemberFunctionOk function)
     \since 5.2
     \overload
     Registers a method \a function like To From::function(bool *ok) const as converter from type From
@@ -597,7 +611,7 @@ Q_GLOBAL_STATIC(QMetaTypeDebugStreamRegistry, customTypesDebugStreamRegistry)
 */
 
 /*!
-    \fn bool QMetaType::registerConverter(UnaryFunction function)
+    \fn template<typename UnaryFunction> bool QMetaType::registerConverter(UnaryFunction function)
     \since 5.2
     \overload
     Registers a unary function object \a function as converter from type From
@@ -821,51 +835,125 @@ void QMetaType::registerStreamOperators(int idx, SaveOperator saveOp,
 }
 #endif // QT_NO_DATASTREAM
 
+#if defined(Q_COMPILER_CONSTEXPR) || (defined(Q_CC_MSVC) && Q_CC_MSVC >= 1900)
+// We don't officially support constexpr in MSVC 2015, but the limited support it
+// has is enough for the code below.
+
+#  define STRINGIFY_TYPE_NAME(MetaTypeName, TypeId, RealName) \
+    #RealName "\0"
+#  define CALCULATE_TYPE_LEN(MetaTypeName, TypeId, RealName) \
+    short(sizeof(#RealName)),
+#  define MAP_TYPE_ID_TO_IDX(MetaTypeName, TypeId, RealName) \
+    TypeId,
+
+namespace {
+// All type names in one long string.
+constexpr char metaTypeStrings[] = QT_FOR_EACH_STATIC_TYPE(STRINGIFY_TYPE_NAME);
+
+// The sizes of the strings in the metaTypeStrings string (including terminating null)
+constexpr short metaTypeNameSizes[] = {
+    QT_FOR_EACH_STATIC_TYPE(CALCULATE_TYPE_LEN)
+};
+
+// The type IDs, in the order of the metaTypeStrings data
+constexpr short metaTypeIds[] = {
+    QT_FOR_EACH_STATIC_TYPE(MAP_TYPE_ID_TO_IDX)
+};
+
+constexpr int MetaTypeNameCount = sizeof(metaTypeNameSizes) / sizeof(metaTypeNameSizes[0]);
+
+template <typename IntegerSequence> struct MetaTypeOffsets;
+template <int... TypeIds> struct MetaTypeOffsets<QtPrivate::IndexesList<TypeIds...>>
+{
+    // This would have been a lot easier if the meta types that the macro
+    // QT_FOR_EACH_STATIC_TYPE declared were in sorted, ascending order, but
+    // they're not (i.e., the first one declared is QMetaType::Void == 43,
+    // followed by QMetaType::Bool == 1)... As a consequence, we need to use
+    // the C++11 constexpr function calculateOffsetForTypeId below in order to
+    // create the offset array.
+
+    static constexpr int findTypeId(int typeId, int i = 0)
+    {
+        return i >= MetaTypeNameCount ? -1 :
+                metaTypeIds[i] == typeId ? i : findTypeId(typeId, i + 1);
+    }
+
+    static constexpr short calculateOffsetForIdx(int i)
+    {
+        return i < 0 ? -1 :
+               i == 0 ? 0 : metaTypeNameSizes[i - 1] + calculateOffsetForIdx(i - 1);
+    }
+
+    static constexpr short calculateOffsetForTypeId(int typeId)
+    {
+        return calculateOffsetForIdx(findTypeId(typeId));
+#if 0
+        // same as, but this is only valid in C++14:
+        short offset = 0;
+        for (int i = 0; i < MetaTypeNameCount; ++i) {
+            if (metaTypeIds[i] == typeId)
+                return offset;
+            offset += metaTypeNameSizes[i];
+        }
+        return -1;
+#endif
+    }
+
+    short offsets[sizeof...(TypeIds)];
+    constexpr MetaTypeOffsets() : offsets{calculateOffsetForTypeId(TypeIds)...} {}
+
+    const char *operator[](int typeId) const Q_DECL_NOTHROW
+    {
+        short o = offsets[typeId];
+        return o < 0 ? nullptr : metaTypeStrings + o;
+    }
+};
+} // anonymous namespace
+
+constexpr MetaTypeOffsets<QtPrivate::Indexes<QMetaType::HighestInternalId + 1>::Value> metaTypeNames {};
+#  undef STRINGIFY_TYPE_NAME
+#  undef CALCULATE_TYPE_LEN
+#  undef MAP_TYPE_ID_TO_IDX
+#endif
+
 /*!
-    Returns the type name associated with the given \a typeId, or 0 if no
-    matching type was found. The returned pointer must not be deleted.
+    Returns the type name associated with the given \a typeId, or a null
+    pointer if no matching type was found. The returned pointer must not be
+    deleted.
 
     \sa type(), isRegistered(), Type
 */
 const char *QMetaType::typeName(int typeId)
 {
     const uint type = typeId;
-    // In theory it can be filled during compilation time, but for some reason template code
-    // that is able to do it causes GCC 4.6 to generate additional 3K of executable code. Probably
-    // it is not worth of it.
-    static const char *namesCache[QMetaType::HighestInternalId + 1];
-
-    const char *result;
-    if (type <= QMetaType::HighestInternalId && ((result = namesCache[type])))
-        return result;
-
 #define QT_METATYPE_TYPEID_TYPENAME_CONVERTER(MetaTypeName, TypeId, RealName) \
-        case QMetaType::MetaTypeName: result = #RealName; break;
+        case QMetaType::MetaTypeName: return #RealName; break;
 
-    switch (QMetaType::Type(type)) {
-    QT_FOR_EACH_STATIC_TYPE(QT_METATYPE_TYPEID_TYPENAME_CONVERTER)
-
-    default: {
-        if (Q_UNLIKELY(type < QMetaType::User)) {
-            return 0; // It can happen when someone cast int to QVariant::Type, we should not crash...
-        } else {
-            const QVector<QCustomTypeInfo> * const ct = customTypes();
-            QReadLocker locker(customTypesLock());
-            return ct && uint(ct->count()) > type - QMetaType::User && !ct->at(type - QMetaType::User).typeName.isEmpty()
-                    ? ct->at(type - QMetaType::User).typeName.constData()
-                    : 0;
+    if (Q_LIKELY(type <= QMetaType::HighestInternalId)) {
+#if defined(Q_COMPILER_CONSTEXPR) || (defined(Q_CC_MSVC) && Q_CC_MSVC >= 1900)
+        return metaTypeNames[typeId];
+#else
+        switch (QMetaType::Type(type)) {
+        QT_FOR_EACH_STATIC_TYPE(QT_METATYPE_TYPEID_TYPENAME_CONVERTER)
+        case QMetaType::UnknownType:
+        case QMetaType::User:
+            break;
         }
+#endif
+    } else if (Q_UNLIKELY(type < QMetaType::User)) {
+        return nullptr; // It can happen when someone cast int to QVariant::Type, we should not crash...
     }
-    }
-#undef QT_METATYPE_TYPEID_TYPENAME_CONVERTER
 
-    Q_ASSERT(type <= QMetaType::HighestInternalId);
-    namesCache[type] = result;
-    return result;
+    const QVector<QCustomTypeInfo> * const ct = customTypes();
+    QReadLocker locker(customTypesLock());
+    return ct && uint(ct->count()) > type - QMetaType::User && !ct->at(type - QMetaType::User).typeName.isEmpty()
+            ? ct->at(type - QMetaType::User).typeName.constData()
+            : nullptr;
+
+#undef QT_METATYPE_TYPEID_TYPENAME_CONVERTER
 }
 
-/*!
-    \internal
+/*
     Similar to QMetaType::type(), but only looks in the static set of types.
 */
 static inline int qMetaTypeStaticType(const char *typeName, int length)
@@ -878,8 +966,7 @@ static inline int qMetaTypeStaticType(const char *typeName, int length)
     return types[i].type;
 }
 
-/*!
-    \internal
+/*
     Similar to QMetaType::type(), but only looks in the custom set of
     types, and doesn't lock the mutex.
     The extra \a firstInvalidIndex parameter is an easy way to avoid
@@ -1023,7 +1110,7 @@ int QMetaType::registerNormalizedType(const NS(QByteArray) &normalizedTypeName,
                                   normalizedTypeName.size());
 
     int previousSize = 0;
-    int previousFlags = 0;
+    QMetaType::TypeFlags::Int previousFlags = 0;
     if (idx == UnknownType) {
         QWriteLocker locker(customTypesLock());
         int posInVector = -1;
@@ -1074,32 +1161,23 @@ int QMetaType::registerNormalizedType(const NS(QByteArray) &normalizedTypeName,
         previousFlags = QMetaType::typeFlags(idx);
     }
 
-    if (previousSize != size) {
+    if (Q_UNLIKELY(previousSize != size)) {
         qFatal("QMetaType::registerType: Binary compatibility break "
             "-- Size mismatch for type '%s' [%i]. Previously registered "
             "size %i, now registering size %i.",
             normalizedTypeName.constData(), idx, previousSize, size);
     }
 
-    // Do not compare types higher than 0x100:
-    // Ignore WasDeclaredAsMetaType inconsitency, to many users were hitting the problem
-    // Ignore IsGadget as it was added in Qt 5.5
-    // Ignore all the future flags as well
-    if ((previousFlags ^ flags) & 0xff) {
-        const int maskForTypeInfo = NeedsConstruction | NeedsDestruction | MovableType;
+    // these flags cannot change in a binary compatible way:
+    const int binaryCompatibilityFlag = PointerToQObject | IsEnumeration | SharedPointerToQObject
+                                                | WeakPointerToQObject | TrackingPointerToQObject;
+    if (Q_UNLIKELY((previousFlags ^ flags) & binaryCompatibilityFlag)) {
+
         const char *msg = "QMetaType::registerType: Binary compatibility break. "
                 "\nType flags for type '%s' [%i] don't match. Previously "
-                "registered TypeFlags(0x%x), now registering TypeFlags(0x%x). "
-                "This is an ODR break, which means that your application depends on a C++ undefined behavior."
-                "\nHint: %s";
-        QT_PREPEND_NAMESPACE(QByteArray) hint;
-        if ((previousFlags & maskForTypeInfo) != (flags & maskForTypeInfo)) {
-            hint += "\nIt seems that the type was registered at least twice in a different translation units, "
-                    "but Q_DECLARE_TYPEINFO is not visible from all the translations unit or different flags were used."
-                    "Remember that Q_DECLARE_TYPEINFO should be declared before QMetaType registration, "
-                    "preferably it should be placed just after the type declaration and before Q_DECLARE_METATYPE";
-        }
-        qFatal(msg, normalizedTypeName.constData(), idx, previousFlags, int(flags), hint.constData());
+                "registered TypeFlags(0x%x), now registering TypeFlags(0x%x). ";
+
+        qFatal(msg, normalizedTypeName.constData(), idx, previousFlags, int(flags));
     }
 
     return idx;
@@ -1188,9 +1266,6 @@ bool QMetaType::isRegistered(int type)
     return ((type >= User) && (ct && ct->count() > type - User) && !ct->at(type - User).typeName.isEmpty());
 }
 
-/*!
-    \internal
-*/
 template <bool tryNormalizedType>
 static inline int qMetaTypeTypeImpl(const char *typeName, int length)
 {
@@ -1277,13 +1352,18 @@ bool QMetaType::save(QDataStream &stream, int type, const void *data)
     case QMetaType::Void:
     case QMetaType::VoidStar:
     case QMetaType::QObjectStar:
+#if QT_CONFIG(itemmodel)
     case QMetaType::QModelIndex:
     case QMetaType::QPersistentModelIndex:
+#endif
     case QMetaType::QJsonValue:
     case QMetaType::QJsonObject:
     case QMetaType::QJsonArray:
     case QMetaType::QJsonDocument:
         return false;
+    case QMetaType::Nullptr:
+        stream << *static_cast<const std::nullptr_t *>(data);
+        return true;
     case QMetaType::Long:
         stream << qlonglong(*static_cast<const long *>(data));
         break;
@@ -1409,12 +1489,12 @@ bool QMetaType::save(QDataStream &stream, int type, const void *data)
         stream << *static_cast<const NS(QRegExp)*>(data);
         break;
 #endif
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     case QMetaType::QRegularExpression:
         stream << *static_cast<const NS(QRegularExpression)*>(data);
         break;
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
+#ifndef QT_BOOTSTRAPPED
     case QMetaType::QEasingCurve:
         stream << *static_cast<const NS(QEasingCurve)*>(data);
         break;
@@ -1498,13 +1578,18 @@ bool QMetaType::load(QDataStream &stream, int type, void *data)
     case QMetaType::Void:
     case QMetaType::VoidStar:
     case QMetaType::QObjectStar:
+#if QT_CONFIG(itemmodel)
     case QMetaType::QModelIndex:
     case QMetaType::QPersistentModelIndex:
+#endif
     case QMetaType::QJsonValue:
     case QMetaType::QJsonObject:
     case QMetaType::QJsonArray:
     case QMetaType::QJsonDocument:
         return false;
+    case QMetaType::Nullptr:
+        stream >> *static_cast<std::nullptr_t *>(data);
+        return true;
     case QMetaType::Long: {
         qlonglong l;
         stream >> l;
@@ -1636,12 +1721,12 @@ bool QMetaType::load(QDataStream &stream, int type, void *data)
         stream >> *static_cast< NS(QRegExp)*>(data);
         break;
 #endif
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     case QMetaType::QRegularExpression:
         stream >> *static_cast< NS(QRegularExpression)*>(data);
         break;
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
+#ifndef QT_BOOTSTRAPPED
     case QMetaType::QEasingCurve:
         stream >> *static_cast< NS(QEasingCurve)*>(data);
         break;
@@ -1710,8 +1795,9 @@ bool QMetaType::load(QDataStream &stream, int type, void *data)
 void *QMetaType::create(int type, const void *copy)
 {
     QMetaType info(type);
-    int size = info.sizeOf();
-    return info.construct(operator new(size), copy);
+    if (int size = info.sizeOf())
+        return info.construct(operator new(size), copy);
+    return 0;
 }
 
 /*!
@@ -1845,6 +1931,8 @@ public:
 
     template<typename T>
     void delegate(const T *where) { DestructorImpl<T>::Destruct(m_type, const_cast<T*>(where)); }
+    // MSVC2013 and earlier can not const_cast a std::nullptr_t pointer.
+    void delegate(const std::nullptr_t *) {}
     void delegate(const void *) {}
     void delegate(const QMetaTypeSwitcher::UnknownType*) {}
     void delegate(const QMetaTypeSwitcher::NotBuiltinType *where)
@@ -2110,7 +2198,7 @@ const QMetaObject *QMetaType::metaObjectForType(int type)
     \warning This function is useful only for registering an alias (typedef)
     for every other use case Q_DECLARE_METATYPE and qMetaTypeId() should be used instead.
 
-    \sa qRegisterMetaTypeStreamOperators(), QMetaType::isRegistered(),
+    \sa {QMetaType::}{qRegisterMetaTypeStreamOperators()}, {QMetaType::}{isRegistered()},
         Q_DECLARE_METATYPE()
 */
 

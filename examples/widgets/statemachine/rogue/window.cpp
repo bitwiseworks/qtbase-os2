@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -88,7 +98,7 @@ void Window::paintEvent(QPaintEvent * /* event */)
     QFontMetrics metrics(font());
     QPainter painter(this);
     int fontHeight = metrics.height();
-    int fontWidth = metrics.width('X');
+    int fontWidth = metrics.horizontalAdvance('X');
     int yPos = fontHeight;
     int xPos;
 
@@ -167,7 +177,7 @@ QSize Window::sizeHint() const
 {
     QFontMetrics metrics(font());
 
-    return QSize(metrics.width('X') * WIDTH, metrics.height() * (HEIGHT + 1));
+    return QSize(metrics.horizontalAdvance('X') * WIDTH, metrics.height() * (HEIGHT + 1));
 }
 
 //![2]
@@ -238,11 +248,9 @@ void Window::movePlayer(Direction direction)
 
 void Window::setupMap()
 {
-    qsrand(QTime(0,0,0).secsTo(QTime::currentTime()));
-
     for (int x = 0; x < WIDTH; ++x)
         for (int y = 0; y < HEIGHT; ++y) {
-        if (x == 0 || x == WIDTH - 1 || y == 0 || y == HEIGHT - 1 || qrand() % 40 == 0)
+        if (x == 0 || x == WIDTH - 1 || y == 0 || y == HEIGHT - 1 || QRandomGenerator::global()->bounded(40) == 0)
             map[x][y] = '#';
         else
             map[x][y] = '.';

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,17 +52,19 @@
 // We mean it.
 //
 
-#include <QtCore/qlist.h>
+#include <QtGui/private/qtguiglobal_p.h>
+#include <QtCore/qvector.h>
 #include <QtCore/qpair.h>
 #include <QtDBus/QDBusArgument>
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusObjectPath>
 
-#ifndef QT_NO_ACCESSIBILITY
+QT_REQUIRE_CONFIG(accessibility);
+
 QT_BEGIN_NAMESPACE
 
-typedef QList <int> QSpiIntList;
-typedef QList <uint> QSpiUIntList;
+typedef QVector<int> QSpiIntList;
+typedef QVector<uint> QSpiUIntList;
 
 // FIXME: make this copy on write
 struct QSpiObjectReference
@@ -68,26 +76,29 @@ struct QSpiObjectReference
     QSpiObjectReference(const QDBusConnection& connection, const QDBusObjectPath& path)
         : service(connection.baseService()), path(path) {}
 };
+Q_DECLARE_TYPEINFO(QSpiObjectReference, Q_MOVABLE_TYPE); // QDBusObjectPath is movable, even though it
+                                                         // cannot be marked that way until Qt 6
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiObjectReference &address);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiObjectReference &address);
 
-typedef QList <QSpiObjectReference> QSpiObjectReferenceArray;
+typedef QVector<QSpiObjectReference> QSpiObjectReferenceArray;
 
 struct QSpiAccessibleCacheItem
 {
     QSpiObjectReference         path;
     QSpiObjectReference         application;
     QSpiObjectReference         parent;
-    QList <QSpiObjectReference> children;
+    QSpiObjectReferenceArray children;
     QStringList                 supportedInterfaces;
     QString                     name;
     uint                        role;
     QString                     description;
     QSpiUIntList                state;
 };
+Q_DECLARE_TYPEINFO(QSpiAccessibleCacheItem, Q_MOVABLE_TYPE);
 
-typedef QList <QSpiAccessibleCacheItem> QSpiAccessibleCacheArray;
+typedef QVector<QSpiAccessibleCacheItem> QSpiAccessibleCacheArray;
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiAccessibleCacheItem &item);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiAccessibleCacheItem &item);
@@ -98,8 +109,9 @@ struct QSpiAction
     QString description;
     QString keyBinding;
 };
+Q_DECLARE_TYPEINFO(QSpiAction, Q_MOVABLE_TYPE);
 
-typedef QList <QSpiAction> QSpiActionArray;
+typedef QVector<QSpiAction> QSpiActionArray;
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiAction &action);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiAction &action);
@@ -109,14 +121,15 @@ struct QSpiEventListener
     QString listenerAddress;
     QString eventName;
 };
+Q_DECLARE_TYPEINFO(QSpiEventListener, Q_MOVABLE_TYPE);
 
-typedef QList <QSpiEventListener> QSpiEventListenerArray;
+typedef QVector<QSpiEventListener> QSpiEventListenerArray;
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiEventListener &action);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiEventListener &action);
 
-typedef QPair < unsigned int, QList < QSpiObjectReference > > QSpiRelationArrayEntry;
-typedef QList< QSpiRelationArrayEntry > QSpiRelationArray;
+typedef QPair<unsigned int, QSpiObjectReferenceArray> QSpiRelationArrayEntry;
+typedef QVector<QSpiRelationArrayEntry> QSpiRelationArray;
 
 //a(iisv)
 struct QSpiTextRange {
@@ -125,18 +138,22 @@ struct QSpiTextRange {
     QString contents;
     QVariant v;
 };
-typedef QList <QSpiTextRange> QSpiTextRangeList;
+Q_DECLARE_TYPEINFO(QSpiTextRange, Q_MOVABLE_TYPE);
+
+typedef QVector<QSpiTextRange> QSpiTextRangeList;
 typedef QMap <QString, QString> QSpiAttributeSet;
 
 enum QSpiAppUpdateType {
     QSPI_APP_UPDATE_ADDED = 0,
     QSPI_APP_UPDATE_REMOVED = 1
 };
+Q_DECLARE_TYPEINFO(QSpiAppUpdateType, Q_PRIMITIVE_TYPE);
 
 struct QSpiAppUpdate {
     int type; /* Is an application added or removed */
     QString address; /* D-Bus address of application added or removed */
 };
+Q_DECLARE_TYPEINFO(QSpiAppUpdate, Q_MOVABLE_TYPE);
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiAppUpdate &update);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiAppUpdate &update);
@@ -150,6 +167,7 @@ struct QSpiDeviceEvent {
     QString text;
     bool isText;
 };
+Q_DECLARE_TYPEINFO(QSpiDeviceEvent, Q_MOVABLE_TYPE);
 
 QDBusArgument &operator<<(QDBusArgument &argument, const QSpiDeviceEvent &event);
 const QDBusArgument &operator>>(const QDBusArgument &argument, QSpiDeviceEvent &event);
@@ -176,5 +194,4 @@ Q_DECLARE_METATYPE(QSpiAttributeSet)
 Q_DECLARE_METATYPE(QSpiAppUpdate)
 Q_DECLARE_METATYPE(QSpiDeviceEvent)
 
-#endif //QT_NO_ACCESSIBILITY
 #endif /* Q_SPI_STRUCT_MARSHALLERS_H */

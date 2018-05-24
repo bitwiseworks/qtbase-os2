@@ -1,35 +1,44 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 BogDan Vatra <bogdan@kde.org>
+** Copyright (C) 2016 Olivier Goffart <ogoffart@woboq.com>
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <QtGui/qtguiglobal.h>
 
 #include "androidjniinput.h"
 #include "androidjnimain.h"
@@ -41,6 +50,7 @@
 
 #include <QGuiApplication>
 #include <QDebug>
+#include <QtMath>
 
 QT_BEGIN_NAMESPACE
 
@@ -51,6 +61,7 @@ namespace QtAndroidInput
 
     static bool m_ignoreMouseEvents = false;
     static bool m_softwareKeyboardVisible = false;
+    static QRect m_softwareKeyboardRect;
 
     static QList<QWindowSystemInterface::TouchPoint> m_touchPoints;
 
@@ -70,18 +81,20 @@ namespace QtAndroidInput
                                                   candidatesEnd);
     }
 
-    void showSoftwareKeyboard(int left, int top, int width, int height, int inputHints)
+    void showSoftwareKeyboard(int left, int top, int width, int height, int inputHints, int enterKeyType)
     {
         QJNIObjectPrivate::callStaticMethod<void>(applicationClass(),
                                                   "showSoftwareKeyboard",
-                                                  "(IIIII)V",
+                                                  "(IIIIII)V",
                                                   left,
                                                   top,
                                                   width,
                                                   height,
-                                                  inputHints);
+                                                  inputHints,
+                                                  enterKeyType
+                                                 );
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-        qDebug() << "@@@ SHOWSOFTWAREKEYBOARD" << left << top << width << height << inputHints;
+        qDebug() << "@@@ SHOWSOFTWAREKEYBOARD" << left << top << width << height << inputHints << enterKeyType;
 #endif
     }
 
@@ -89,7 +102,7 @@ namespace QtAndroidInput
     {
         QJNIObjectPrivate::callStaticMethod<void>(applicationClass(), "resetSoftwareKeyboard");
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-        qDebug() << "@@@ RESETSOFTWAREKEYBOARD";
+        qDebug("@@@ RESETSOFTWAREKEYBOARD");
 #endif
     }
 
@@ -97,7 +110,7 @@ namespace QtAndroidInput
     {
         QJNIObjectPrivate::callStaticMethod<void>(applicationClass(), "hideSoftwareKeyboard");
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-        qDebug() << "@@@ HIDESOFTWAREKEYBOARD";
+        qDebug("@@@ HIDESOFTWAREKEYBOARD");
 #endif
     }
 
@@ -106,6 +119,17 @@ namespace QtAndroidInput
         return m_softwareKeyboardVisible;
     }
 
+    QRect softwareKeyboardRect()
+    {
+        return m_softwareKeyboardRect;
+    }
+
+    void updateHandles(int mode, QPoint cursor, QPoint anchor, bool rtl)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(applicationClass(), "updateHandles", "(IIIIIZ)V",
+                                                  mode, cursor.x(), cursor.y(), anchor.x(),
+                                                  anchor.y(), rtl);
+    }
 
     static void mouseDown(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint x, jint y)
     {
@@ -152,8 +176,31 @@ namespace QtAndroidInput
                                                  Qt::MouseButtons(Qt::LeftButton));
     }
 
+    static void mouseWheel(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint x, jint y, jfloat hdelta, jfloat vdelta)
+    {
+        if (m_ignoreMouseEvents)
+            return;
+
+        QPoint globalPos(x,y);
+        QWindow *tlw = m_mouseGrabber.data();
+        if (!tlw)
+            tlw = topLevelWindowAt(globalPos);
+        QPoint localPos = tlw ? (globalPos-tlw->position()) : globalPos;
+        QPoint angleDelta(hdelta * 120, vdelta * 120);
+
+        QWindowSystemInterface::handleWheelEvent(tlw,
+                                                 localPos,
+                                                 globalPos,
+                                                 QPoint(),
+                                                 angleDelta);
+    }
+
     static void longPress(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint x, jint y)
     {
+        QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
+        if (inputContext && qGuiApp)
+            QMetaObject::invokeMethod(inputContext, "longPress", Q_ARG(int, x), Q_ARG(int, y));
+
         //### TODO: add proper API for Qt 5.2
         static bool rightMouseFromLongPress = qEnvironmentVariableIntValue("QT_NECESSITAS_COMPATIBILITY_LONG_PRESS");
         if (!rightMouseFromLongPress)
@@ -181,7 +228,8 @@ namespace QtAndroidInput
         m_touchPoints.clear();
     }
 
-    static void touchAdd(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint id, jint action, jboolean /*primary*/, jint x, jint y, jfloat size, jfloat pressure)
+    static void touchAdd(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint id, jint action, jboolean /*primary*/, jint x, jint y,
+        jfloat major, jfloat minor, jfloat rotation, jfloat pressure)
     {
         Qt::TouchPointState state = Qt::TouchPointStationary;
         switch (action) {
@@ -204,13 +252,20 @@ namespace QtAndroidInput
         QWindowSystemInterface::TouchPoint touchPoint;
         touchPoint.id = id;
         touchPoint.pressure = pressure;
+        touchPoint.rotation = qRadiansToDegrees(rotation);
         touchPoint.normalPosition = QPointF(double(x / dw), double(y / dh));
         touchPoint.state = state;
-        touchPoint.area = QRectF(x - double(dw*size) / 2.0,
-                                 y - double(dh*size) / 2.0,
-                                 double(dw*size),
-                                 double(dh*size));
+        touchPoint.area = QRectF(x - double(minor),
+                                 y - double(major),
+                                 double(minor * 2),
+                                 double(major * 2));
         m_touchPoints.push_back(touchPoint);
+
+        if (state == Qt::TouchPointPressed) {
+            QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
+            if (inputContext && qGuiApp)
+                QMetaObject::invokeMethod(inputContext, "touchDown", Q_ARG(int, x), Q_ARG(int, y));
+        }
     }
 
     static void touchEnd(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint /*action*/)
@@ -218,6 +273,7 @@ namespace QtAndroidInput
         if (m_touchPoints.isEmpty())
             return;
 
+        QMutexLocker lock(QtAndroid::platformInterfaceMutex());
         QAndroidPlatformIntegration *platformIntegration = QtAndroid::androidPlatformIntegration();
         if (!platformIntegration)
             return;
@@ -236,6 +292,63 @@ namespace QtAndroidInput
 
         QWindow *window = QtAndroid::topLevelWindowAt(m_touchPoints.at(0).area.center().toPoint());
         QWindowSystemInterface::handleTouchEvent(window, touchDevice, m_touchPoints);
+    }
+
+    static bool isTabletEventSupported(JNIEnv */*env*/, jobject /*thiz*/)
+    {
+#if QT_CONFIG(tabletevent)
+        return true;
+#else
+        return false;
+#endif // QT_CONFIG(tabletevent)
+    }
+
+    static void tabletEvent(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint deviceId, jlong time, jint action,
+        jint pointerType, jint buttonState, jfloat x, jfloat y, jfloat pressure)
+    {
+#if QT_CONFIG(tabletevent)
+        QPointF globalPosF(x, y);
+        QPoint globalPos((int)x, (int)y);
+        QWindow *tlw = topLevelWindowAt(globalPos);
+        QPointF localPos = tlw ? (globalPosF - tlw->position()) : globalPosF;
+
+        // Galaxy Note with plain Android:
+        // 0 1 0    stylus press
+        // 2 1 0    stylus drag
+        // 1 1 0    stylus release
+        // 0 1 2    stylus press with side-button held
+        // 2 1 2    stylus drag with side-button held
+        // 1 1 2    stylus release with side-button held
+        // Galaxy Note 4 with Samsung firmware:
+        // 0 1 0    stylus press
+        // 2 1 0    stylus drag
+        // 1 1 0    stylus release
+        // 211 1 2  stylus press with side-button held
+        // 213 1 2  stylus drag with side-button held
+        // 212 1 2  stylus release with side-button held
+        // when action == ACTION_UP (1) it's a release; otherwise we say which button is pressed
+        Qt::MouseButtons buttons = Qt::NoButton;
+        switch (action) {
+        case 1:     // ACTION_UP
+        case 212:   // stylus release while side-button held on Galaxy Note 4
+            buttons = Qt::NoButton;
+            break;
+        default:    // action is press or drag
+            if (buttonState == 0)
+                buttons = Qt::LeftButton;
+            else // 2 means RightButton
+                buttons = Qt::MouseButtons(buttonState);
+            break;
+        }
+
+#ifdef QT_DEBUG_ANDROID_STYLUS
+        qDebug() << action << pointerType << buttonState << '@' << x << y << "pressure" << pressure << ": buttons" << buttons;
+#endif
+
+        QWindowSystemInterface::handleTabletEvent(tlw, ulong(time),
+            localPos, globalPosF, QTabletEvent::Stylus, pointerType,
+            buttons, pressure, 0, 0, 0., 0., 0, deviceId, Qt::NoModifier);
+#endif // QT_CONFIG(tabletevent)
     }
 
     static int mapAndroidKey(int key)
@@ -633,7 +746,7 @@ namespace QtAndroidInput
             return Qt::Key_AudioCycleTrack;
 
         default:
-            qWarning() << "Unhandled key code " << key << "!";
+            qWarning() << "Unhandled key code " << key << '!';
             return 0;
         }
     }
@@ -686,25 +799,63 @@ namespace QtAndroidInput
     static void keyboardVisibilityChanged(JNIEnv */*env*/, jobject /*thiz*/, jboolean visibility)
     {
         m_softwareKeyboardVisible = visibility;
+        if (!visibility)
+            m_softwareKeyboardRect = QRect();
+
         QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
-        if (inputContext && qGuiApp)
+        if (inputContext && qGuiApp) {
             inputContext->emitInputPanelVisibleChanged();
+            if (!visibility)
+                inputContext->emitKeyboardRectChanged();
+        }
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
         qDebug() << "@@@ KEYBOARDVISIBILITYCHANGED" << inputContext;
 #endif
     }
 
+    static void keyboardGeometryChanged(JNIEnv */*env*/, jobject /*thiz*/, jint x, jint y, jint w, jint h)
+    {
+        QRect r = QRect(x, y, w, h);
+        if (r == m_softwareKeyboardRect)
+            return;
+        m_softwareKeyboardRect = r;
+        QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
+        if (inputContext && qGuiApp)
+            inputContext->emitKeyboardRectChanged();
+
+#ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
+        qDebug() << "@@@ KEYBOARDRECTCHANGED" << m_softwareKeyboardRect;
+#endif
+    }
+
+    static void handleLocationChanged(JNIEnv */*env*/, jobject /*thiz*/, int id, int x, int y)
+    {
+#ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
+        qDebug() << "@@@ handleLocationChanged" << id << x << y;
+#endif
+        QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
+        if (inputContext && qGuiApp)
+            QMetaObject::invokeMethod(inputContext, "handleLocationChanged", Qt::BlockingQueuedConnection,
+                                      Q_ARG(int, id), Q_ARG(int, x), Q_ARG(int, y));
+
+    }
+
     static JNINativeMethod methods[] = {
         {"touchBegin","(I)V",(void*)touchBegin},
-        {"touchAdd","(IIIZIIFF)V",(void*)touchAdd},
+        {"touchAdd","(IIIZIIFFFF)V",(void*)touchAdd},
         {"touchEnd","(II)V",(void*)touchEnd},
         {"mouseDown", "(III)V", (void *)mouseDown},
         {"mouseUp", "(III)V", (void *)mouseUp},
         {"mouseMove", "(III)V", (void *)mouseMove},
+        {"mouseWheel", "(IIIFF)V", (void *)mouseWheel},
         {"longPress", "(III)V", (void *)longPress},
+        {"isTabletEventSupported", "()Z", (void *)isTabletEventSupported},
+        {"tabletEvent", "(IIJIIIFFF)V", (void *)tabletEvent},
         {"keyDown", "(IIIZ)V", (void *)keyDown},
         {"keyUp", "(IIIZ)V", (void *)keyUp},
-        {"keyboardVisibilityChanged", "(Z)V", (void *)keyboardVisibilityChanged}
+        {"keyboardVisibilityChanged", "(Z)V", (void *)keyboardVisibilityChanged},
+        {"keyboardGeometryChanged", "(IIII)V", (void *)keyboardGeometryChanged},
+        {"handleLocationChanged", "(III)V", (void *)handleLocationChanged}
     };
 
     bool registerNatives(JNIEnv *env)

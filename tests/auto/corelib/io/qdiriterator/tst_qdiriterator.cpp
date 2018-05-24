@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,11 +37,11 @@
 
 #include <QtCore/private/qfsfileengine_p.h>
 
-#if defined(Q_OS_VXWORKS)
+#if defined(Q_OS_VXWORKS) || defined(Q_OS_WINRT)
 #define Q_NO_SYMLINKS
 #endif
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
 #  include "../../../network-settings.h"
 #endif
 
@@ -108,18 +103,22 @@ private slots:
     void longPath();
     void dirorder();
     void relativePaths();
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
     void uncPaths_data();
     void uncPaths();
 #endif
 #ifndef Q_OS_WIN
     void hiddenDirs_hiddenFiles();
 #endif
+#ifdef BUILTIN_TESTDATA
+private:
+    QSharedPointer<QTemporaryDir> m_dataDir;
+#endif
 };
 
 void tst_QDirIterator::initTestCase()
 {
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     QString testdata_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     QString resourceSourcePath = QStringLiteral(":/");
     QDirIterator it(resourceSourcePath, QDirIterator::Subdirectories);
@@ -141,6 +140,10 @@ void tst_QDirIterator::initTestCase()
     }
 
     testdata_dir += QStringLiteral("/entrylist");
+#elif defined(BUILTIN_TESTDATA)
+    m_dataDir = QEXTRACTTESTDATA("/");
+    QVERIFY2(!m_dataDir.isNull(), qPrintable("Could not extract test data"));
+    QString testdata_dir = m_dataDir->path();
 #else
 
     // chdir into testdata directory, then find testdata by relative paths.
@@ -193,7 +196,7 @@ void tst_QDirIterator::initTestCase()
 #  endif
 #endif
 
-#if !defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_WIN)
     createDirectory("hiddenDirs_hiddenFiles");
     createFile("hiddenDirs_hiddenFiles/normalFile");
     createFile("hiddenDirs_hiddenFiles/.hiddenFile");
@@ -217,6 +220,11 @@ void tst_QDirIterator::cleanupTestCase()
 
     Q_FOREACH(QString dirName, createdDirectories)
         currentDir.rmdir(dirName);
+
+#ifdef Q_OS_WINRT
+    QDir::setCurrent(QCoreApplication::applicationDirPath());
+#endif // Q_OS_WINRT
+
 }
 
 void tst_QDirIterator::iterateRelativeDirectory_data()
@@ -231,10 +239,8 @@ void tst_QDirIterator::iterateRelativeDirectory_data()
         << QString("entrylist") << QDirIterator::IteratorFlags(0)
         << QDir::Filters(QDir::NoFilter) << QStringList("*")
         << QString(
-#if !defined(Q_OS_WINCE)
                   "entrylist/.,"
                    "entrylist/..,"
-#endif
                    "entrylist/file,"
 #ifndef Q_NO_SYMLINKS
                    "entrylist/linktofile.lnk,"
@@ -249,9 +255,7 @@ void tst_QDirIterator::iterateRelativeDirectory_data()
         << QString("entrylist") << QDirIterator::IteratorFlags(0)
         << QDir::Filters(QDir::AllEntries | QDir::NoDot) << QStringList("*")
         << QString(
-#if !defined(Q_OS_WINCE)
                    "entrylist/..,"
-#endif
                    "entrylist/file,"
 #ifndef Q_NO_SYMLINKS
                    "entrylist/linktofile.lnk,"
@@ -266,9 +270,7 @@ void tst_QDirIterator::iterateRelativeDirectory_data()
         << QString("entrylist") << QDirIterator::IteratorFlags(0)
         << QDir::Filters(QDir::AllEntries | QDir::NoDotDot) << QStringList("*")
         << QString(
-#if !defined(Q_OS_WINCE)
                   "entrylist/.,"
-#endif
                    "entrylist/file,"
 #ifndef Q_NO_SYMLINKS
                    "entrylist/linktofile.lnk,"
@@ -297,12 +299,10 @@ void tst_QDirIterator::iterateRelativeDirectory_data()
         << QString("entrylist") << QDirIterator::IteratorFlags(QDirIterator::Subdirectories | QDirIterator::FollowSymlinks)
         << QDir::Filters(QDir::NoFilter) << QStringList("*")
         << QString(
-#if !defined(Q_OS_WINCE)
                    "entrylist/.,"
                    "entrylist/..,"
                    "entrylist/directory/.,"
                    "entrylist/directory/..,"
-#endif
                    "entrylist/file,"
 #ifndef Q_NO_SYMLINKS
                    "entrylist/linktofile.lnk,"
@@ -337,11 +337,7 @@ void tst_QDirIterator::iterateRelativeDirectory_data()
     QTest::newRow("empty, default")
         << QString("empty") << QDirIterator::IteratorFlags(0)
         << QDir::Filters(QDir::NoFilter) << QStringList("*")
-#if defined(Q_OS_WINCE)
-        << QStringList();
-#else
         << QString("empty/.,empty/..").split(',');
-#endif
 
         QTest::newRow("empty, QDir::NoDotAndDotDot")
             << QString("empty") << QDirIterator::IteratorFlags(0)
@@ -538,7 +534,7 @@ void tst_QDirIterator::recurseWithFilters() const
     QVERIFY(it.hasNext());
     it.next();
     actualEntries.insert(it.fileInfo().filePath());
-    QVERIFY(actualEntries == expectedEntries);
+    QCOMPARE(actualEntries, expectedEntries);
 
     QVERIFY(!it.hasNext());
 }
@@ -554,13 +550,6 @@ void tst_QDirIterator::longPath()
     while (dir.exists(dirName) || dir.mkdir(dirName)) {
         ++n;
         dirName.append('x');
-#if defined(Q_OS_WINCE) && defined(WINCE_BROKEN_ITERATE)
-        // Some Windows CE devices/emulators are broken.
-        // though one can create directories of length <= 217,
-        // FindNextFile only reports entries until ~ 214.
-        if (n >= 210)
-            break;
-#endif
     }
 
     QDirIterator it(dir.absolutePath(), QDir::NoDotAndDotDot|QDir::Dirs, QDirIterator::Subdirectories);
@@ -598,7 +587,7 @@ void tst_QDirIterator::relativePaths()
     }
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
 void tst_QDirIterator::uncPaths_data()
 {
     QTest::addColumn<QString>("dirName");

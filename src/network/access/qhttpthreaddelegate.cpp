@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,12 +44,11 @@
 #include <QTimer>
 #include <QAuthenticator>
 #include <QEventLoop>
+#include <QCryptographicHash>
 
 #include "private/qhttpnetworkreply_p.h"
 #include "private/qnetworkaccesscache_p.h"
 #include "private/qnoncontiguousbytedevice_p.h"
-
-#ifndef QT_NO_HTTP
 
 QT_BEGIN_NAMESPACE
 
@@ -61,7 +66,7 @@ static QNetworkReply::NetworkError statusCodeFromHttp(int httpStatusCode, const 
         break;
 
     case 403:               // Access denied
-        code = QNetworkReply::ContentOperationNotPermittedError;
+        code = QNetworkReply::ContentAccessDenied;
         break;
 
     case 404:               // Not Found
@@ -122,7 +127,7 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
 {
     QString result;
     QUrl copy = url;
-    QString scheme = copy.scheme().toLower();
+    QString scheme = copy.scheme();
     bool isEncrypted = scheme == QLatin1String("https");
     copy.setPort(copy.port(isEncrypted ? 443 : 80));
     if (scheme == QLatin1String("preconnect-http")) {
@@ -152,7 +157,10 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
         }
 
         if (!key.scheme().isEmpty()) {
+            const QByteArray obfuscatedPassword = QCryptographicHash::hash(proxy->password().toUtf8(),
+                                                                           QCryptographicHash::Sha1).toHex();
             key.setUserName(proxy->user());
+            key.setPassword(QString::fromUtf8(obfuscatedPassword));
             key.setHost(proxy->hostName());
             key.setPort(proxy->port());
             key.setQuery(result);
@@ -163,7 +171,7 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
     Q_UNUSED(proxy)
 #endif
 
-    return "http-connection:" + result.toLatin1();
+    return "http-connection:" + std::move(result).toLatin1();
 }
 
 class QNetworkAccessCachedHttpConnection: public QHttpNetworkConnection,
@@ -187,7 +195,7 @@ public:
         setShareable(true);
     }
 
-    virtual void dispose() Q_DECL_OVERRIDE
+    virtual void dispose() override
     {
 #if 0  // sample code; do this right with the API
         Q_ASSERT(!isWorking());
@@ -221,15 +229,16 @@ QHttpThreadDelegate::QHttpThreadDelegate(QObject *parent) :
     , downloadBufferMaximumSize(0)
     , readBufferMaxSize(0)
     , bytesEmitted(0)
-    , pendingDownloadData(0)
-    , pendingDownloadProgress(0)
+    , pendingDownloadData()
+    , pendingDownloadProgress()
     , synchronous(false)
     , incomingStatusCode(0)
     , isPipeliningUsed(false)
     , isSpdyUsed(false)
     , incomingContentLength(-1)
+    , removedContentLength(-1)
     , incomingErrorCode(QNetworkReply::NoError)
-    , downloadBuffer(0)
+    , downloadBuffer()
     , httpConnection(0)
     , httpReply(0)
     , synchronousRequestLoop(0)
@@ -279,15 +288,30 @@ void QHttpThreadDelegate::startRequest()
     urlCopy.setPort(urlCopy.port(ssl ? 443 : 80));
 
     QHttpNetworkConnection::ConnectionType connectionType
-            = QHttpNetworkConnection::ConnectionTypeHTTP;
+        = httpRequest.isHTTP2Allowed() ? QHttpNetworkConnection::ConnectionTypeHTTP2
+                                       : QHttpNetworkConnection::ConnectionTypeHTTP;
+    if (httpRequest.isHTTP2Direct()) {
+        Q_ASSERT(!httpRequest.isHTTP2Allowed());
+        connectionType = QHttpNetworkConnection::ConnectionTypeHTTP2Direct;
+    }
+
 #ifndef QT_NO_SSL
-    if (httpRequest.isSPDYAllowed() && ssl) {
+    if (ssl && !incomingSslConfiguration.data())
+        incomingSslConfiguration.reset(new QSslConfiguration);
+
+    if (httpRequest.isHTTP2Allowed() && ssl) {
+        // With HTTP2Direct we do not try any protocol negotiation.
+        QList<QByteArray> protocols;
+        protocols << QSslConfiguration::ALPNProtocolHTTP2
+                  << QSslConfiguration::NextProtocolHttp1_1;
+        incomingSslConfiguration->setAllowedNextProtocols(protocols);
+    } else if (httpRequest.isSPDYAllowed() && ssl) {
         connectionType = QHttpNetworkConnection::ConnectionTypeSPDY;
         urlCopy.setScheme(QStringLiteral("spdy")); // to differentiate SPDY requests from HTTPS requests
         QList<QByteArray> nextProtocols;
         nextProtocols << QSslConfiguration::NextProtocolSpdy3_0
                       << QSslConfiguration::NextProtocolHttp1_1;
-        incomingSslConfiguration.setAllowedNextProtocols(nextProtocols);
+        incomingSslConfiguration->setAllowedNextProtocols(nextProtocols);
     }
 #endif // QT_NO_SSL
 
@@ -313,12 +337,15 @@ void QHttpThreadDelegate::startRequest()
         httpConnection = new QNetworkAccessCachedHttpConnection(urlCopy.host(), urlCopy.port(), ssl,
                                                                 connectionType,
                                                                 networkSession);
-#endif
+#endif // QT_NO_BEARERMANAGEMENT
+        if (connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
+            && http2Parameters.validate()) {
+            httpConnection->setHttp2Parameters(http2Parameters);
+        } // else we ignore invalid parameters and use our own defaults.
 #ifndef QT_NO_SSL
         // Set the QSslConfiguration from this QNetworkRequest.
-        if (ssl && incomingSslConfiguration != QSslConfiguration::defaultConfiguration()) {
-            httpConnection->setSslConfiguration(incomingSslConfiguration);
-        }
+        if (ssl)
+            httpConnection->setSslConfiguration(*incomingSslConfiguration);
 #endif
 
 #ifndef QT_NO_NETWORKPROXY
@@ -339,7 +366,6 @@ void QHttpThreadDelegate::startRequest()
             }
         }
     }
-
 
     // Send the request to the connection
     httpReply = httpConnection->sendRequest(httpRequest);
@@ -396,6 +422,7 @@ void QHttpThreadDelegate::abortRequest()
     qDebug() << "QHttpThreadDelegate::abortRequest() thread=" << QThread::currentThreadId() << "sync=" << synchronous;
 #endif
     if (httpReply) {
+        httpReply->abort();
         delete httpReply;
         httpReply = 0;
     }
@@ -491,10 +518,13 @@ void QHttpThreadDelegate::finishedSlot()
     if (httpReply->statusCode() >= 400) {
             // it's an error reply
             QString msg = QLatin1String(QT_TRANSLATE_NOOP("QNetworkReply",
-                                                          "Error downloading %1 - server replied: %2"));
+                                                          "Error transferring %1 - server replied: %2"));
             msg = msg.arg(httpRequest.url().toString(), httpReply->reasonPhrase());
             emit error(statusCodeFromHttp(httpReply->statusCode(), httpRequest.url()), msg);
         }
+
+    if (httpRequest.isFollowRedirects() && httpReply->isRedirecting())
+        emit redirected(httpReply->redirectUrl(), httpReply->statusCode(), httpReply->request().redirectCount() - 1);
 
     emit downloadFinished();
 
@@ -514,7 +544,7 @@ void QHttpThreadDelegate::synchronousFinishedSlot()
     if (httpReply->statusCode() >= 400) {
             // it's an error reply
             QString msg = QLatin1String(QT_TRANSLATE_NOOP("QNetworkReply",
-                                                          "Error downloading %1 - server replied: %2"));
+                                                          "Error transferring %1 - server replied: %2"));
             incomingErrorDetail = msg.arg(httpRequest.url().toString(), httpReply->reasonPhrase());
             incomingErrorCode = statusCodeFromHttp(httpReply->statusCode(), httpRequest.url());
     }
@@ -606,6 +636,7 @@ void QHttpThreadDelegate::headerChangedSlot()
     incomingReasonPhrase = httpReply->reasonPhrase();
     isPipeliningUsed = httpReply->isPipeliningUsed();
     incomingContentLength = httpReply->contentLength();
+    removedContentLength = httpReply->removedContentLength();
     isSpdyUsed = httpReply->isSpdyUsed();
 
     emit downloadMetaData(incomingHeaders,
@@ -614,6 +645,7 @@ void QHttpThreadDelegate::headerChangedSlot()
                           isPipeliningUsed,
                           downloadBuffer,
                           incomingContentLength,
+                          removedContentLength,
                           isSpdyUsed);
 }
 
@@ -733,7 +765,5 @@ void  QHttpThreadDelegate::synchronousProxyAuthenticationRequiredSlot(const QNet
 }
 
 #endif
-
-#endif // QT_NO_HTTP
 
 QT_END_NAMESPACE

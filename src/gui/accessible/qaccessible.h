@@ -1,37 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-#include <QtCore/qglobal.h>
+#include <QtGui/qtguiglobal.h>
 
 #ifndef QT_NO_ACCESSIBILITY
 #ifndef QACCESSIBLE_H
@@ -396,10 +402,10 @@ public:
     static UpdateHandler installUpdateHandler(UpdateHandler);
     static RootObjectHandler installRootObjectHandler(RootObjectHandler);
 
-    class ActivationObserver
+    class Q_GUI_EXPORT ActivationObserver
     {
     public:
-        virtual ~ActivationObserver() {}
+        virtual ~ActivationObserver();
         virtual void accessibilityActiveChanged(bool active) = 0;
     };
     static void installActivationObserver(ActivationObserver *);
@@ -505,7 +511,7 @@ public:
     virtual void virtual_hook(int id, void *data);
 
     virtual void *interface_cast(QAccessible::InterfaceType)
-    { return 0; }
+    { return nullptr; }
 
 protected:
     friend class QAccessibleCache;
@@ -514,7 +520,7 @@ protected:
 class Q_GUI_EXPORT QAccessibleTextInterface
 {
 public:
-    virtual ~QAccessibleTextInterface() {}
+    virtual ~QAccessibleTextInterface();
     // selection
     virtual void selection(int selectionIndex, int *startOffset, int *endOffset) const = 0;
     virtual int selectionCount() const = 0;
@@ -547,7 +553,7 @@ public:
 class Q_GUI_EXPORT QAccessibleEditableTextInterface
 {
 public:
-    virtual ~QAccessibleEditableTextInterface() {}
+    virtual ~QAccessibleEditableTextInterface();
 
     virtual void deleteText(int startOffset, int endOffset) = 0;
     virtual void insertText(int offset, const QString &text) = 0;
@@ -557,8 +563,7 @@ public:
 class Q_GUI_EXPORT QAccessibleValueInterface
 {
 public:
-
-    virtual ~QAccessibleValueInterface() {}
+    virtual ~QAccessibleValueInterface();
 
     virtual QVariant currentValue() const = 0;
     virtual void setCurrentValue(const QVariant &value) = 0;
@@ -570,7 +575,7 @@ public:
 class Q_GUI_EXPORT QAccessibleTableCellInterface
 {
 public:
-    virtual ~QAccessibleTableCellInterface() {}
+    virtual ~QAccessibleTableCellInterface();
 
     virtual bool isSelected() const = 0;
 
@@ -587,7 +592,7 @@ public:
 class Q_GUI_EXPORT QAccessibleTableInterface
 {
 public:
-    virtual ~QAccessibleTableInterface() {}
+    virtual ~QAccessibleTableInterface();
 
     virtual QAccessibleInterface *caption() const = 0;
     virtual QAccessibleInterface *summary() const = 0;
@@ -622,7 +627,7 @@ class Q_GUI_EXPORT QAccessibleActionInterface
 {
     Q_DECLARE_TR_FUNCTIONS(QAccessibleActionInterface)
 public:
-    virtual ~QAccessibleActionInterface() {}
+    virtual ~QAccessibleActionInterface();
 
     virtual QStringList actionNames() const = 0;
     virtual QString localizedActionName(const QString &name) const;
@@ -647,7 +652,7 @@ public:
 class Q_GUI_EXPORT QAccessibleImageInterface
 {
 public:
-    virtual ~QAccessibleImageInterface() {}
+    virtual ~QAccessibleImageInterface();
 
     virtual QString imageDescription() const = 0;
     virtual QSize imageSize() const = 0;
@@ -677,7 +682,7 @@ public:
     }
 
     inline QAccessibleEvent(QAccessibleInterface *iface, QAccessible::Event typ)
-        : m_type(typ), m_object(0)
+        : m_type(typ), m_object(nullptr)
     {
         Q_ASSERT(iface);
         Q_ASSERT(m_type != QAccessible::ValueChanged);
@@ -691,8 +696,7 @@ public:
         m_uniqueId = QAccessible::uniqueId(iface);
     }
 
-    virtual ~QAccessibleEvent()
-    {}
+    virtual ~QAccessibleEvent();
 
     QAccessible::Event type() const { return m_type; }
     QObject *object() const { return m_object; }
@@ -726,6 +730,7 @@ public:
     {
         m_type = QAccessible::StateChanged;
     }
+    ~QAccessibleStateChangeEvent();
 
     QAccessible::State changedStates() const {
         return m_changedStates;
@@ -752,6 +757,8 @@ public:
         m_type = QAccessible::TextCaretMoved;
     }
 
+    ~QAccessibleTextCursorEvent();
+
     void setCursorPosition(int position) { m_cursorPosition = position; }
     int cursorPosition() const { return m_cursorPosition; }
 
@@ -775,6 +782,8 @@ public:
     {
         m_type = QAccessible::TextSelectionChanged;
     }
+
+    ~QAccessibleTextSelectionEvent();
 
     void setSelection(int start, int end) {
         m_selectionStart = start;
@@ -805,6 +814,8 @@ public:
         m_type = QAccessible::TextInserted;
     }
 
+    ~QAccessibleTextInsertEvent();
+
     QString textInserted() const {
         return m_text;
     }
@@ -833,6 +844,8 @@ public:
         m_type = QAccessible::TextRemoved;
     }
 
+    ~QAccessibleTextRemoveEvent();
+
     QString textRemoved() const {
         return m_text;
     }
@@ -860,6 +873,9 @@ public:
     {
         m_type = QAccessible::TextUpdated;
     }
+
+    ~QAccessibleTextUpdateEvent();
+
     QString textRemoved() const {
         return m_oldText;
     }
@@ -891,6 +907,8 @@ public:
     {
         m_type = QAccessible::ValueChanged;
     }
+
+    ~QAccessibleValueChangeEvent();
 
     void setValue(const QVariant & val) { m_value= val; }
     QVariant value() const { return m_value; }
@@ -925,6 +943,8 @@ public:
     {
         m_type = QAccessible::TableModelChanged;
     }
+
+    ~QAccessibleTableModelChangeEvent();
 
     void setModelChangeType(ModelChangeType changeType) { m_modelChangeType = changeType; }
     ModelChangeType modelChangeType() const { return m_modelChangeType; }

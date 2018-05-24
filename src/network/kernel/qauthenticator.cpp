@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,6 +48,7 @@
 #include <qendian.h>
 #include <qstring.h>
 #include <qdatetime.h>
+#include <qrandom.h>
 
 #ifdef Q_OS_WIN
 #include <qmutex.h>
@@ -193,6 +200,8 @@ bool QAuthenticator::operator==(const QAuthenticator &other) const
 {
     if (d == other.d)
         return true;
+    if (!d || !other.d)
+        return false;
     return d->user == other.d->user
         && d->password == other.d->password
         && d->realm == other.d->realm
@@ -349,7 +358,7 @@ QAuthenticatorPrivate::QAuthenticatorPrivate()
     , phase(Start)
     , nonceCount(0)
 {
-    cnonce = QCryptographicHash::hash(QByteArray::number(qrand(), 16) + QByteArray::number(qrand(), 16),
+    cnonce = QCryptographicHash::hash(QByteArray::number(QRandomGenerator::system()->generate64(), 16),
                                       QCryptographicHash::Md5).toHex();
     nonceCount = 0;
 }
@@ -693,13 +702,13 @@ QByteArray QAuthenticatorPrivate::digestMd5Response(const QByteArray &challenge,
     credentials += "uri=\"" + path + "\", ";
     if (!opaque.isEmpty())
         credentials += "opaque=\"" + opaque + "\", ";
-    credentials += "response=\"" + response + '\"';
+    credentials += "response=\"" + response + '"';
     if (!options.value("algorithm").isEmpty())
         credentials += ", algorithm=" + options.value("algorithm");
     if (!options.value("qop").isEmpty()) {
         credentials += ", qop=" + qop + ", ";
         credentials += "nc=" + nonceCountString + ", ";
-        credentials += "cnonce=\"" + cnonce + '\"';
+        credentials += "cnonce=\"" + cnonce + '"';
     }
 
     return credentials;
@@ -1263,17 +1272,13 @@ static QByteArray qEncodeNtlmv2Response(const QAuthenticatorPrivate *ctx,
     if(timeArray.size()) {
         ds.writeRawData(timeArray.constData(), timeArray.size());
     } else {
-        QDateTime currentTime(QDate::currentDate(),
-                              QTime::currentTime(), Qt::UTC);
-
-        // number of seconds between 1601 and epoc(1970)
+        // number of seconds between 1601 and the epoch (1970)
         // 369 years, 89 leap years
         // ((369 * 365) + 89) * 24 * 3600 = 11644473600
-
-        time = Q_UINT64_C(currentTime.toTime_t() + 11644473600);
+        time = QDateTime::currentSecsSinceEpoch() + 11644473600;
 
         // represented as 100 nano seconds
-        time = Q_UINT64_C(time * 10000000);
+        time = time * Q_UINT64_C(10000000);
         ds << time;
     }
 
@@ -1441,21 +1446,16 @@ static PSecurityFunctionTable pSecurityFunctionTable = NULL;
 
 static bool q_NTLM_SSPI_library_load()
 {
-    QMutexLocker locker(QMutexPool::globalInstanceGet((void *)&pSecurityFunctionTable));
+    static QBasicMutex mutex;
+    QMutexLocker l(&mutex);
 
     // Initialize security interface
     if (pSecurityFunctionTable == NULL) {
         securityDLLHandle = LoadLibrary(L"secur32.dll");
         if (securityDLLHandle != NULL) {
-#if defined(Q_OS_WINCE)
-            INIT_SECURITY_INTERFACE pInitSecurityInterface =
-            (INIT_SECURITY_INTERFACE)GetProcAddress(securityDLLHandle,
-                                                    L"InitSecurityInterfaceW");
-#else
             INIT_SECURITY_INTERFACE pInitSecurityInterface =
             (INIT_SECURITY_INTERFACE)GetProcAddress(securityDLLHandle,
                                                     "InitSecurityInterfaceW");
-#endif
             if (pInitSecurityInterface != NULL)
                 pSecurityFunctionTable = pInitSecurityInterface();
         }

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -50,6 +45,7 @@ private slots:
     void destroyIndeterminate();
     void text();
     void format();
+    void setValueRepaint_data();
     void setValueRepaint();
 #ifndef Q_OS_MAC
     void setMinMaxRepaint();
@@ -196,21 +192,49 @@ void tst_QProgressBar::format()
     QCOMPARE(bar.text(), QString());
 }
 
+void tst_QProgressBar::setValueRepaint_data()
+{
+    QTest::addColumn<int>("min");
+    QTest::addColumn<int>("max");
+    QTest::addColumn<int>("increment");
+
+    auto add = [](int min, int max, int increment) {
+        QTest::addRow("%d-%d@%d", min, max, increment) << min << max << increment;
+    };
+
+    add(0, 10, 1);
+
+    auto add_set = [=](int min, int max, int increment) {
+        // check corner cases, and adjacent values (to circumvent explicit checks for corner cases)
+        add(min,     max,     increment);
+        add(min + 1, max,     increment);
+        add(min,     max - 1, increment);
+        add(min + 1, max - 1, increment);
+    };
+
+    add_set(INT_MIN, INT_MAX, INT_MAX / 50 + 1);
+    add_set(0, INT_MAX, INT_MAX / 100 + 1);
+    add_set(INT_MIN, 0, INT_MAX / 100 + 1);
+}
+
 void tst_QProgressBar::setValueRepaint()
 {
+    QFETCH(int, min);
+    QFETCH(int, max);
+    QFETCH(int, increment);
+
     ProgressBar pbar;
-    pbar.setMinimum(0);
-    pbar.setMaximum(10);
+    pbar.setMinimum(min);
+    pbar.setMaximum(max);
     pbar.setFormat("%v");
     pbar.move(300, 300);
     pbar.show();
     QVERIFY(QTest::qWaitForWindowExposed(&pbar));
 
     QApplication::processEvents();
-    for (int i = pbar.minimum(); i < pbar.maximum(); ++i) {
+    for (qint64 i = min; i < max; i += increment) {
         pbar.repainted = false;
-        pbar.setValue(i);
-        QTest::qWait(50);
+        pbar.setValue(int(i));
         QTRY_VERIFY(pbar.repainted);
     }
 }
@@ -267,9 +291,9 @@ void tst_QProgressBar::sizeHint()
 
     //test if the sizeHint is big enough
     QFontMetrics fm = bar.fontMetrics();
-    QStyleOptionProgressBarV2 opt;
+    QStyleOptionProgressBar opt;
     bar.initStyleOption(&opt);
-    QSize size = QSize(9 * 7 + fm.width(QLatin1Char('0')) * 4, fm.height() + 8);
+    QSize size = QSize(9 * 7 + fm.horizontalAdvance(QLatin1Char('0')) * 4, fm.height() + 8);
     size= bar.style()->sizeFromContents(QStyle::CT_ProgressBar, &opt, size, &bar);
     QSize barSize = bar.sizeHint();
     QVERIFY(barSize.width() >= size.width());

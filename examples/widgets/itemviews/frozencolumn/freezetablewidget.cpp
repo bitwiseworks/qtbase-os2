@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -52,15 +62,15 @@ FreezeTableWidget::FreezeTableWidget(QAbstractItemModel * model)
       init();
 
       //connect the headers and scrollbars of both tableviews together
-      connect(horizontalHeader(),SIGNAL(sectionResized(int,int,int)), this,
-              SLOT(updateSectionWidth(int,int,int)));
-      connect(verticalHeader(),SIGNAL(sectionResized(int,int,int)), this,
-              SLOT(updateSectionHeight(int,int,int)));
+      connect(horizontalHeader(),&QHeaderView::sectionResized, this,
+              &FreezeTableWidget::updateSectionWidth);
+      connect(verticalHeader(),&QHeaderView::sectionResized, this,
+              &FreezeTableWidget::updateSectionHeight);
 
-      connect(frozenTableView->verticalScrollBar(), SIGNAL(valueChanged(int)),
-              verticalScrollBar(), SLOT(setValue(int)));
-      connect(verticalScrollBar(), SIGNAL(valueChanged(int)),
-              frozenTableView->verticalScrollBar(), SLOT(setValue(int)));
+      connect(frozenTableView->verticalScrollBar(), &QAbstractSlider::valueChanged,
+              verticalScrollBar(), &QAbstractSlider::setValue);
+      connect(verticalScrollBar(), &QAbstractSlider::valueChanged,
+              frozenTableView->verticalScrollBar(), &QAbstractSlider::setValue);
 
 
 }

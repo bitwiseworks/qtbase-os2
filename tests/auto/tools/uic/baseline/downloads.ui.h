@@ -10,9 +10,7 @@
 #define DOWNLOADS_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
@@ -81,9 +79,9 @@ public:
 
     void retranslateUi(QDialog *DownloadDialog)
     {
-        DownloadDialog->setWindowTitle(QApplication::translate("DownloadDialog", "Downloads", 0));
-        cleanupButton->setText(QApplication::translate("DownloadDialog", "Clean up", 0));
-        itemCount->setText(QApplication::translate("DownloadDialog", "0 Items", 0));
+        DownloadDialog->setWindowTitle(QApplication::translate("DownloadDialog", "Downloads", nullptr));
+        cleanupButton->setText(QApplication::translate("DownloadDialog", "Clean up", nullptr));
+        itemCount->setText(QApplication::translate("DownloadDialog", "0 Items", nullptr));
     } // retranslateUi
 
 };

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2014 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -48,7 +58,7 @@ int main()
 {
 //! [0]
 QString string(QStringLiteral("a string"));
-QStringIterator i(string);
+QStringIterator i(string); // implicitly converted to QStringView
 //! [0]
 
 //! [1]
@@ -61,8 +71,7 @@ while (i.hasNext())
 
 {
 //! [2]
-QString string(QStringLiteral("𝄞 is the G clef"));
-QStringIterator i(string);
+QStringIterator i(u"𝄞 is the G clef");
 qDebug() << hex << i.next(); // will print 1d11e (U+1D11E, MUSICAL SYMBOL G CLEF)
 qDebug() << hex << i.next(); // will print 20 (U+0020, SPACE)
 qDebug() << hex << i.next(); // will print 69 (U+0069, LATIN SMALL LETTER I)

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -109,7 +115,7 @@ QT_BEGIN_NAMESPACE
 
     \snippet code/src_corelib_tools_qscopedpointer.cpp 4
 
-    Otherwise, the compiler output a warning about not being able to destruct
+    Otherwise, the compiler outputs a warning about not being able to destruct
     \c MyPrivateClass.
 
     \sa QSharedPointer
@@ -120,27 +126,34 @@ QT_BEGIN_NAMESPACE
  */
 
 /*!
-    \fn QScopedPointer::QScopedPointer(T *p = 0)
+    \fn template <typename T, typename Cleanup> QScopedPointer<T, Cleanup>::QScopedPointer(T *p = 0)
 
     Constructs this QScopedPointer instance and sets its pointer to \a p.
 */
 
 /*!
-    \fn QScopedPointer::~QScopedPointer()
+    \fn template <typename T, typename Cleanup> QScopedPointer<T, Cleanup>::~QScopedPointer()
 
     Destroys this QScopedPointer object. Delete the object its pointer points
     to.
 */
 
 /*!
-    \fn T *QScopedPointer::data() const
+    \fn template <typename T, typename Cleanup> T *QScopedPointer<T, Cleanup>::data() const
 
     Returns the value of the pointer referenced by this object. QScopedPointer
     still owns the object pointed to.
 */
 
 /*!
-    \fn T &QScopedPointer::operator*() const
+    \fn template <typename T, typename Cleanup> T *QScopedPointer<T, Cleanup>::get() const
+    \since 5.11
+
+    Same as data().
+*/
+
+/*!
+    \fn template <typename T, typename Cleanup> T &QScopedPointer<T, Cleanup>::operator*() const
 
     Provides access to the scoped pointer's object.
 
@@ -149,7 +162,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn T *QScopedPointer::operator->() const
+    \fn template <typename T, typename Cleanup> T *QScopedPointer<T, Cleanup>::operator->() const
 
     Provides access to the scoped pointer's object.
 
@@ -159,7 +172,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QScopedPointer::operator bool() const
+    \fn template <typename T, typename Cleanup> QScopedPointer<T, Cleanup>::operator bool() const
 
     Returns \c true if this object is not \c null. This function is suitable
     for use in \tt if-constructs, like:
@@ -170,7 +183,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn bool operator==(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
+    \fn template <typename T, typename Cleanup> bool operator==(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
 
     Equality operator. Returns \c true if the scoped pointers
     \a lhs and \a rhs are pointing to the same object.
@@ -179,7 +192,7 @@ QT_BEGIN_NAMESPACE
 
 
 /*!
-    \fn bool operator!=(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
+    \fn template <typename T, typename Cleanup> bool operator!=(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
 
     Inequality operator. Returns \c true if the scoped pointers
     \a lhs and \a rhs are \e not pointing to the same object.
@@ -187,21 +200,66 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn bool QScopedPointer::isNull() const
+    \fn template <typename T, typename Cleanup> bool operator==(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t)
+    \relates QScopedPointer
+    \since 5.8
+
+    Returns \c true if the scoped pointer \a lhs is a null pointer.
+
+    \sa QScopedPointer::isNull()
+*/
+
+/*!
+    \fn template <typename T, typename Cleanup> bool operator==(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs)
+    \relates QScopedPointer
+    \since 5.8
+
+    Returns \c true if the scoped pointer \a rhs is a null pointer.
+
+    \sa QScopedPointer::isNull()
+*/
+
+/*!
+    \fn template <typename T, typename Cleanup> bool operator!=(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t)
+    \relates QScopedPointer
+    \since 5.8
+
+    Returns \c true if the scoped pointer \a lhs is a valid (i.e. a non-null)
+    pointer.
+
+    \sa QScopedPointer::isNull()
+*/
+
+/*!
+    \fn template <typename T, typename Cleanup> bool operator!=(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs)
+    \relates QScopedPointer
+    \since 5.8
+
+    Returns \c true if the scoped pointer \a rhs is a valid (i.e. a non-null)
+    pointer.
+
+    \sa QScopedPointer::isNull()
+*/
+
+/*!
+    \fn template <typename T, typename Cleanup> bool QScopedPointer<T, Cleanup>::isNull() const
 
     Returns \c true if this object is holding a pointer that is \c null.
 */
 
 /*!
-    \fn void QScopedPointer::reset(T *other = 0)
+    \fn template <typename T, typename Cleanup> void QScopedPointer<T, Cleanup>::reset(T *other = 0)
 
-    Deletes the existing object it is pointing to if any, and sets its pointer to
+    Deletes the existing object it is pointing to (if any), and sets its pointer to
     \a other. QScopedPointer now owns \a other and will delete it in its
     destructor.
+
+    To clear the pointer held without deleting the object it points to (and hence take ownership
+    of the object), use \l take() instead.
 */
 
 /*!
-    \fn T *QScopedPointer::take()
+    \fn template <typename T, typename Cleanup> T *QScopedPointer<T, Cleanup>::take()
 
     Returns the value of the pointer referenced by this object. The pointer of this
     QScopedPointer object will be reset to \c null.
@@ -209,7 +267,7 @@ QT_BEGIN_NAMESPACE
     Callers of this function take ownership of the pointer.
 */
 
-/*! \fn bool QScopedPointer::operator!() const
+/*! \fn template <typename T, typename Cleanup> bool QScopedPointer<T, Cleanup>::operator!() const
 
     Returns \c true if the pointer referenced by this object is \c null, otherwise
     returns \c false.
@@ -217,7 +275,7 @@ QT_BEGIN_NAMESPACE
     \sa isNull()
 */
 
-/*! \fn void QScopedPointer::swap(QScopedPointer<T, Cleanup> &other)
+/*! \fn template <typename T, typename Cleanup> void QScopedPointer<T, Cleanup>::swap(QScopedPointer<T, Cleanup> &other)
   Swap this pointer with \a other.
  */
 
@@ -249,20 +307,20 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QScopedArrayPointer::QScopedArrayPointer()
+    \fn template <typename T, typename Cleanup> QScopedArrayPointer<T, Cleanup>::QScopedArrayPointer()
 
     Constructs a QScopedArrayPointer instance.
 */
 
 /*!
-    \fn QScopedArrayPointer::QScopedArrayPointer(D * p, QtPrivate::QScopedArrayEnsureSameType<T, D>::Type = 0)
-    \internal
+    \fn template <typename T, typename Cleanup> template <typename D> QScopedArrayPointer<T, Cleanup>::QScopedArrayPointer(D * p)
 
-    Constructs a QScopedArrayPointer and stores the array of objects.
+    Constructs a QScopedArrayPointer and stores the array of objects
+    pointed to by \a p.
 */
 
 /*!
-    \fn T *QScopedArrayPointer::operator[](int i)
+    \fn template <typename T, typename Cleanup> T *QScopedArrayPointer<T, Cleanup>::operator[](int i)
 
     Provides access to entry \a i of the scoped pointer's array of
     objects.
@@ -273,7 +331,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn T *QScopedArrayPointer::operator[](int i) const
+    \fn template <typename T, typename Cleanup> T *QScopedArrayPointer<T, Cleanup>::operator[](int i) const
 
     Provides access to entry \a i of the scoped pointer's array of
     objects.
@@ -282,5 +340,9 @@ QT_BEGIN_NAMESPACE
 
     \sa isNull()
 */
+
+/*! \fn template <typename T, typename Cleanup> void QScopedArrayPointer<T, Cleanup>::swap(QScopedArrayPointer<T, Cleanup> &other)
+  Swap this pointer with \a other.
+ */
 
 QT_END_NAMESPACE

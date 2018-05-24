@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,10 @@
 #include <QtCore/qobject.h>
 #ifndef QT_BOOTSTRAPPED
 #include <QtCore/qbytearraylist.h>
+#endif
+
+#if QT_HAS_INCLUDE(<variant>) && __cplusplus >= 201703L
+#include <variant>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -71,9 +81,9 @@ class QRectF;
 #ifndef QT_NO_REGEXP
 class QRegExp;
 #endif // QT_NO_REGEXP
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 class QRegularExpression;
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
 class QTextFormat;
 class QTextLength;
 class QUrl;
@@ -155,8 +165,10 @@ class Q_CORE_EXPORT QVariant
         Hash = QMetaType::QVariantHash,
         EasingCurve = QMetaType::QEasingCurve,
         Uuid = QMetaType::QUuid,
+#if QT_CONFIG(itemmodel)
         ModelIndex = QMetaType::QModelIndex,
         PersistentModelIndex = QMetaType::QPersistentModelIndex,
+#endif
         LastCoreType = QMetaType::LastCoreType,
 
         Font = QMetaType::QFont,
@@ -238,20 +250,22 @@ class Q_CORE_EXPORT QVariant
 #ifndef QT_NO_REGEXP
     QVariant(const QRegExp &regExp);
 #endif // QT_NO_REGEXP
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     QVariant(const QRegularExpression &re);
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
+#ifndef QT_BOOTSTRAPPED
     QVariant(const QUrl &url);
     QVariant(const QEasingCurve &easing);
     QVariant(const QUuid &uuid);
-    QVariant(const QModelIndex &modelIndex);
-    QVariant(const QPersistentModelIndex &modelIndex);
     QVariant(const QJsonValue &jsonValue);
     QVariant(const QJsonObject &jsonObject);
     QVariant(const QJsonArray &jsonArray);
     QVariant(const QJsonDocument &jsonDocument);
 #endif // QT_BOOTSTRAPPED
+#if QT_CONFIG(itemmodel)
+    QVariant(const QModelIndex &modelIndex);
+    QVariant(const QPersistentModelIndex &modelIndex);
+#endif
 
     QVariant& operator=(const QVariant &other);
 #ifdef Q_COMPILER_RVALUE_REFS
@@ -278,14 +292,14 @@ class Q_CORE_EXPORT QVariant
     void detach();
     inline bool isDetached() const;
 
-    int toInt(bool *ok = 0) const;
-    uint toUInt(bool *ok = 0) const;
-    qlonglong toLongLong(bool *ok = 0) const;
-    qulonglong toULongLong(bool *ok = 0) const;
+    int toInt(bool *ok = nullptr) const;
+    uint toUInt(bool *ok = nullptr) const;
+    qlonglong toLongLong(bool *ok = nullptr) const;
+    qulonglong toULongLong(bool *ok = nullptr) const;
     bool toBool() const;
-    double toDouble(bool *ok = 0) const;
-    float toFloat(bool *ok = 0) const;
-    qreal toReal(bool *ok = 0) const;
+    double toDouble(bool *ok = nullptr) const;
+    float toFloat(bool *ok = nullptr) const;
+    qreal toReal(bool *ok = nullptr) const;
     QByteArray toByteArray() const;
     QBitArray toBitArray() const;
     QString toString() const;
@@ -312,20 +326,22 @@ class Q_CORE_EXPORT QVariant
 #ifndef QT_NO_REGEXP
     QRegExp toRegExp() const;
 #endif // QT_NO_REGEXP
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
     QRegularExpression toRegularExpression() const;
-#endif // QT_NO_REGULAREXPRESSION
+#endif // QT_CONFIG(regularexpression)
+#ifndef QT_BOOTSTRAPPED
     QUrl toUrl() const;
     QEasingCurve toEasingCurve() const;
     QUuid toUuid() const;
-    QModelIndex toModelIndex() const;
-    QPersistentModelIndex toPersistentModelIndex() const;
     QJsonValue toJsonValue() const;
     QJsonObject toJsonObject() const;
     QJsonArray toJsonArray() const;
     QJsonDocument toJsonDocument() const;
 #endif // QT_BOOTSTRAPPED
+#if QT_CONFIG(itemmodel)
+    QModelIndex toModelIndex() const;
+    QPersistentModelIndex toPersistentModelIndex() const;
+#endif
 
 #ifndef QT_NO_DATASTREAM
     void load(QDataStream &ds);
@@ -349,12 +365,21 @@ class Q_CORE_EXPORT QVariant
     static inline QVariant fromValue(const T &value)
     { return qVariantFromValue(value); }
 
+#if defined(Q_CLANG_QDOC) || (QT_HAS_INCLUDE(<variant>) && __cplusplus >= 201703L)
+    template<typename... Types>
+    static inline QVariant fromStdVariant(const std::variant<Types...> &value)
+    {
+        if (value.valueless_by_exception())
+            return QVariant();
+        return std::visit([](const auto &arg) { return fromValue(arg); }, value);
+    }
+#endif
+
     template<typename T>
     bool canConvert() const
     { return canConvert(qMetaTypeId<T>()); }
 
  public:
-#ifndef Q_QDOC
     struct PrivateShared
     {
         inline PrivateShared(void *v) : ptr(v), ref(1) { }
@@ -364,7 +389,7 @@ class Q_CORE_EXPORT QVariant
     struct Private
     {
         inline Private() Q_DECL_NOTHROW : type(Invalid), is_shared(false), is_null(true)
-        { data.ptr = 0; }
+        { data.ptr = nullptr; }
 
         // Internal constructor for initialized variants.
         explicit inline Private(uint variantType) Q_DECL_NOTHROW
@@ -425,7 +450,6 @@ class Q_CORE_EXPORT QVariant
         f_canConvert canConvert;
         f_debugStream debugStream;
     };
-#endif
 
     inline bool operator==(const QVariant &v) const
     { return cmp(v); }
@@ -458,7 +482,7 @@ public:
     void create(int type, const void *copy);
     bool cmp(const QVariant &other) const;
     int compare(const QVariant &other) const;
-    bool convert(const int t, void *ptr) const;
+    bool convert(const int t, void *ptr) const; // ### Qt6: drop const
 
 private:
     // force compile error, prevent QVariant(bool) to be called
@@ -498,6 +522,11 @@ inline QVariant qVariantFromValue(const T &t)
 
 template <>
 inline QVariant qVariantFromValue(const QVariant &t) { return t; }
+
+#if QT_HAS_INCLUDE(<variant>) && __cplusplus >= 201703L
+template <>
+inline QVariant qVariantFromValue(const std::monostate &) { return QVariant(); }
+#endif
 
 template <typename T>
 inline void qVariantSetValue(QVariant &v, const T &t)
@@ -568,6 +597,7 @@ inline bool operator!=(const QVariant &v1, const QVariantComparisonHelper &v2)
     return !operator==(v1, v2);
 }
 #endif
+Q_DECLARE_SHARED(QVariant)
 
 class Q_CORE_EXPORT QSequentialIterable
 {
@@ -607,7 +637,11 @@ public:
 
     friend struct const_iterator;
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     explicit QSequentialIterable(QtMetaTypePrivate::QSequentialIterableImpl impl);
+#else
+    explicit QSequentialIterable(const QtMetaTypePrivate::QSequentialIterableImpl &impl);
+#endif
 
     const_iterator begin() const;
     const_iterator end() const;
@@ -660,7 +694,11 @@ public:
 
     friend struct const_iterator;
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     explicit QAssociativeIterable(QtMetaTypePrivate::QAssociativeIterableImpl impl);
+#else
+    explicit QAssociativeIterable(const QtMetaTypePrivate::QAssociativeIterableImpl &impl);
+#endif
 
     const_iterator begin() const;
     const_iterator end() const;
@@ -742,7 +780,7 @@ namespace QtPrivate {
         static QVariantList invoke(const QVariant &v)
         {
             const int typeId = v.userType();
-            if (QtMetaTypePrivate::isBuiltinSequentialType(typeId) || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QSequentialIterableImpl>())) {
+            if (typeId == qMetaTypeId<QStringList>() || typeId == qMetaTypeId<QByteArrayList>() || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QSequentialIterableImpl>())) {
                 QSequentialIterable iter = QVariantValueHelperInterface<QSequentialIterable>::invoke(v);
                 QVariantList l;
                 l.reserve(iter.size());
@@ -759,12 +797,12 @@ namespace QtPrivate {
         static QVariantHash invoke(const QVariant &v)
         {
             const int typeId = v.userType();
-            if (QtMetaTypePrivate::isBuiltinAssociativeType(typeId) || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
+            if (typeId == qMetaTypeId<QVariantMap>() || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
                 QAssociativeIterable iter = QVariantValueHelperInterface<QAssociativeIterable>::invoke(v);
                 QVariantHash l;
                 l.reserve(iter.size());
                 for (QAssociativeIterable::const_iterator it = iter.begin(), end = iter.end(); it != end; ++it)
-                    l.insert(it.key().toString(), it.value());
+                    l.insertMulti(it.key().toString(), it.value());
                 return l;
             }
             return QVariantValueHelper<QVariantHash>::invoke(v);
@@ -776,11 +814,11 @@ namespace QtPrivate {
         static QVariantMap invoke(const QVariant &v)
         {
             const int typeId = v.userType();
-            if (QtMetaTypePrivate::isBuiltinAssociativeType(typeId) || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
+            if (typeId == qMetaTypeId<QVariantHash>() || QMetaType::hasRegisteredConverterFunction(typeId, qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
                 QAssociativeIterable iter = QVariantValueHelperInterface<QAssociativeIterable>::invoke(v);
                 QVariantMap l;
                 for (QAssociativeIterable::const_iterator it = iter.begin(), end = iter.end(); it != end; ++it)
-                    l.insert(it.key().toString(), it.value());
+                    l.insertMulti(it.key().toString(), it.value());
                 return l;
             }
             return QVariantValueHelper<QVariantMap>::invoke(v);
@@ -838,7 +876,6 @@ inline QT_DEPRECATED bool qVariantCanConvert(const QVariant &variant)
 #endif
 
 #endif
-Q_DECLARE_SHARED(QVariant)
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_CORE_EXPORT QDebug operator<<(QDebug, const QVariant &);

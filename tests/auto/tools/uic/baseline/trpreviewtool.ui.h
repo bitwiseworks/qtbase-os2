@@ -1,32 +1,27 @@
 /*
 *********************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the autotests of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +31,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'trpreviewtool.ui'
 **
-** Created by: Qt User Interface Compiler version 5.0.0
+** Created by: Qt User Interface Compiler version 5.9.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -47,9 +42,7 @@
 #include <QtCore/QVariant>
 #include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDockWidget>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QListView>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QMenu>
@@ -169,19 +162,21 @@ public:
 
     void retranslateUi(QMainWindow *TrPreviewToolClass)
     {
-        TrPreviewToolClass->setWindowTitle(QApplication::translate("TrPreviewToolClass", "Qt Translation Preview Tool", 0));
-        actionOpenForm->setText(QApplication::translate("TrPreviewToolClass", "&Open Form...", 0));
-        actionLoadTranslation->setText(QApplication::translate("TrPreviewToolClass", "&Load Translation...", 0));
-        actionReloadTranslations->setText(QApplication::translate("TrPreviewToolClass", "&Reload Translations", 0));
-        actionReloadTranslations->setShortcut(QApplication::translate("TrPreviewToolClass", "F5", 0));
-        actionClose->setText(QApplication::translate("TrPreviewToolClass", "&Close", 0));
-        actionAbout->setText(QApplication::translate("TrPreviewToolClass", "About", 0));
-        actionAbout_Qt->setText(QApplication::translate("TrPreviewToolClass", "About Qt", 0));
-        menuView->setTitle(QApplication::translate("TrPreviewToolClass", "&View", 0));
-        menuViewViews->setTitle(QApplication::translate("TrPreviewToolClass", "&Views", 0));
-        menuHelp->setTitle(QApplication::translate("TrPreviewToolClass", "&Help", 0));
-        menuFile->setTitle(QApplication::translate("TrPreviewToolClass", "&File", 0));
-        dwForms->setWindowTitle(QApplication::translate("TrPreviewToolClass", "Forms", 0));
+        TrPreviewToolClass->setWindowTitle(QApplication::translate("TrPreviewToolClass", "Qt Translation Preview Tool", nullptr));
+        actionOpenForm->setText(QApplication::translate("TrPreviewToolClass", "&Open Form...", nullptr));
+        actionLoadTranslation->setText(QApplication::translate("TrPreviewToolClass", "&Load Translation...", nullptr));
+        actionReloadTranslations->setText(QApplication::translate("TrPreviewToolClass", "&Reload Translations", nullptr));
+#ifndef QT_NO_SHORTCUT
+        actionReloadTranslations->setShortcut(QApplication::translate("TrPreviewToolClass", "F5", nullptr));
+#endif // QT_NO_SHORTCUT
+        actionClose->setText(QApplication::translate("TrPreviewToolClass", "&Close", nullptr));
+        actionAbout->setText(QApplication::translate("TrPreviewToolClass", "About", nullptr));
+        actionAbout_Qt->setText(QApplication::translate("TrPreviewToolClass", "About Qt", nullptr));
+        menuView->setTitle(QApplication::translate("TrPreviewToolClass", "&View", nullptr));
+        menuViewViews->setTitle(QApplication::translate("TrPreviewToolClass", "&Views", nullptr));
+        menuHelp->setTitle(QApplication::translate("TrPreviewToolClass", "&Help", nullptr));
+        menuFile->setTitle(QApplication::translate("TrPreviewToolClass", "&File", nullptr));
+        dwForms->setWindowTitle(QApplication::translate("TrPreviewToolClass", "Forms", nullptr));
     } // retranslateUi
 
 };

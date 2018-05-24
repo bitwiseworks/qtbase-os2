@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -150,21 +145,21 @@ void tst_QTextPieceTable::insertion3()
 {
     QString compare;
     for (int i = 0; i < 20000; ++i) {
-        int pos = rand() % (i+1);
+        int pos = QRandomGenerator::global()->bounded(i+1);
         QChar c((unsigned short)(i & 0xff) + 1);
         QString str;
         str += c;
         table->insert(pos, str, charFormatIndex);
         compare.insert(pos, str);
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
 }
 
 void tst_QTextPieceTable::insertion4()
 {
     QString compare;
     for (int i = 0; i < 20000; ++i) {
-        int pos = rand() % (i+1);
+        int pos = QRandomGenerator::global()->generate() % (i+1);
         QChar c((unsigned short)((i % 26) + (i>25?'A':'a')));
         QString str;
         str += c;
@@ -176,14 +171,14 @@ void tst_QTextPieceTable::insertion4()
 //            exit(12);
 //        }
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
 }
 
 void tst_QTextPieceTable::insertion5()
 {
     QString compare;
     for (int i = 0; i < 20000; ++i) {
-        int pos = rand() % (i+1);
+        int pos = QRandomGenerator::global()->generate() % (i+1);
         QChar c((unsigned short)((i % 26) + (i>25?'A':'a')));
         QString str;
         str += c;
@@ -196,10 +191,10 @@ void tst_QTextPieceTable::insertion5()
         }
         compare.insert(pos, str);
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
     for (QTextBlock it = table->blocksBegin(); it != table->blocksEnd(); it = it.next()) {
         QTextDocumentPrivate::FragmentIterator fit = table->find(it.position());
-        QVERIFY(fit.position() == it.position());
+        QCOMPARE(fit.position(), it.position());
     }
 }
 
@@ -241,8 +236,8 @@ void tst_QTextPieceTable::removal3()
     QString compare;
     int l = 0;
     for (int i = 0; i < 20000; ++i) {
-        bool remove = l && (rand() % 2);
-        int pos = rand() % (remove ? l : (l+1));
+        bool remove = l && (QRandomGenerator::global()->bounded(2));
+        int pos = QRandomGenerator::global()->bounded(remove ? l : (l+1));
         QChar c((unsigned short)((i % 26) + (i>25?'A':'a')));
         QString str;
         str += c;
@@ -260,7 +255,7 @@ void tst_QTextPieceTable::removal3()
 //            exit(12);
 //        }
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
 }
 
 void tst_QTextPieceTable::removal4()
@@ -268,8 +263,8 @@ void tst_QTextPieceTable::removal4()
     QString compare;
     int l = 0;
     for (int i = 0; i < 20000; ++i) {
-        bool remove = l && (rand() % 2);
-        int pos = (l > 1) ? rand() % (remove ? l-1 : l) : 0;
+        bool remove = l && (QRandomGenerator::global()->bounded(2));
+        int pos = (l > 1) ? QRandomGenerator::global()->bounded(remove ? l-1 : l) : 0;
         QChar c((unsigned short)((i % 26) + (i>25?'A':'a')));
         QString str;
         if (c != 'a') {
@@ -294,7 +289,7 @@ void tst_QTextPieceTable::removal4()
 //            exit(12);
 //        }
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
 }
 
 void tst_QTextPieceTable::undoRedo1()
@@ -392,7 +387,7 @@ void tst_QTextPieceTable::undoRedo6()
     QTextBlockFormat bfmt;
     bfmt.setAlignment(Qt::AlignHCenter);
     cursor.setBlockFormat(bfmt);
-    QVERIFY(cursor.blockFormat().alignment() == Qt::AlignHCenter);
+    QCOMPARE(cursor.blockFormat().alignment(), Qt::AlignHCenter);
 
     QTextCursor range = cursor;
     range.clearSelection();
@@ -404,11 +399,11 @@ void tst_QTextPieceTable::undoRedo6()
     range.mergeCharFormat(modifier);
 
     cursor.movePosition(QTextCursor::Start);
-    QVERIFY(cursor.blockFormat().alignment() == Qt::AlignHCenter);
+    QCOMPARE(cursor.blockFormat().alignment(), Qt::AlignHCenter);
 
     doc.undo();
 
-    QVERIFY(cursor.blockFormat().alignment() == Qt::AlignHCenter);
+    QCOMPARE(cursor.blockFormat().alignment(), Qt::AlignHCenter);
 }
 
 void tst_QTextPieceTable::undoRedo7()
@@ -477,13 +472,12 @@ void tst_QTextPieceTable::undoRedo10()
 
 void tst_QTextPieceTable::undoRedo11()
 {
-    srand(3);
     const int loops = 20;
     QString compare;
     int l = 0;
     for (int i = 0; i < loops; ++i) {
-        bool remove = l && (rand() % 2);
-        int pos = (l > 1) ? rand() % (remove ? l-1 : l) : 0;
+        bool remove = l && (QRandomGenerator::global()->bounded(2));
+        int pos = (l > 1) ? QRandomGenerator::global()->bounded(remove ? l-1 : l) : 0;
         QChar c((unsigned short)((i % 26) + (i>25?'A':'a')));
         QString str;
         str += c;
@@ -497,13 +491,13 @@ void tst_QTextPieceTable::undoRedo11()
         }
         l += remove ? -1 : 2;
     }
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
     for (int i = 0; i < loops; ++i)
         table->undo();
-    QVERIFY(table->plainText() == QString(""));
+    QCOMPARE(table->plainText(), QString(""));
     for (int i = 0; i < loops; ++i)
         table->redo();
-    QVERIFY(table->plainText() == compare);
+    QCOMPARE(table->plainText(), compare);
 }
 
 
@@ -693,9 +687,9 @@ void tst_QTextPieceTable::setBlockFormat()
     QTextBlock b = table->blocksFind(1);
     table->setBlockFormat(b, b, newbfmt);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == bfmt);
-    QVERIFY(table->blocksFind(1).blockFormat() == newbfmt);
-    QVERIFY(table->blocksFind(2).blockFormat() == bfmt);
+    QCOMPARE(table->blocksFind(0).blockFormat(), bfmt);
+    QCOMPARE(table->blocksFind(1).blockFormat(), newbfmt);
+    QCOMPARE(table->blocksFind(2).blockFormat(), bfmt);
 }
 
 
@@ -705,19 +699,19 @@ void tst_QTextPieceTable::blockInsertion()
     fmt.setTopMargin(100);
     int idx = table->formatCollection()->indexForFormat(fmt);
     int charFormat = table->formatCollection()->indexForFormat(QTextCharFormat());
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
 
     table->insertBlock(0, idx, charFormat);
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).blockFormat() == fmt);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).blockFormat(), fmt);
 
     table->undo();
-    QVERIFY(table->blockMap().length() == 1);
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
+    QCOMPARE(table->blockMap().length(), 1);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
 
     table->redo();
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).blockFormat() == fmt);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).blockFormat(), fmt);
 }
 
 void tst_QTextPieceTable::blockInsertion2()
@@ -755,37 +749,37 @@ void tst_QTextPieceTable::blockRemoval1()
     table->insertBlock(9, idx2, charFormatIndex);
     table->insert(10, "0123", charFormatIndex);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->beginEditBlock();
     table->remove(5, 5);
     table->endEditBlock();
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(4).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 5);
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(4).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 5);
 
     table->undo();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->redo();
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(4).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 5);
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(4).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 5);
 }
 
 void tst_QTextPieceTable::blockRemoval2()
@@ -803,35 +797,35 @@ void tst_QTextPieceTable::blockRemoval2()
     table->insertBlock(9, idx2, charFormatIndex);
     table->insert(10, "0123", charFormatIndex);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->remove(4, 1);
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(6).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 0);
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(6).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 0);
 
     table->undo();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->redo();
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(6).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 0);
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(6).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 0);
 }
 
 void tst_QTextPieceTable::blockRemoval3()
@@ -849,38 +843,38 @@ void tst_QTextPieceTable::blockRemoval3()
     table->insertBlock(9, idx2, charFormatIndex);
     table->insert(10, "0123", charFormatIndex);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->beginEditBlock();
     table->remove(3, 4);
     table->endEditBlock();
 
-    QVERIFY(table->blocksFind(1).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
+    QCOMPARE(table->blocksFind(1).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
 
     table->undo();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->redo();
-    QVERIFY(table->blocksFind(1).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
+    QCOMPARE(table->blocksFind(1).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
 }
 
 void tst_QTextPieceTable::blockRemoval4()
@@ -899,35 +893,35 @@ void tst_QTextPieceTable::blockRemoval4()
     table->insertBlock(9, idx2, charFormatIndex);
     table->insert(10, "0123", charFormatIndex);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->remove(3, 7);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
-    QVERIFY(table->blocksFind(1).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
+    QCOMPARE(table->blocksFind(1).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
 
     table->undo();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->redo();
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
-    QVERIFY(table->blocksFind(1).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
+    QCOMPARE(table->blocksFind(1).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
 #endif
 }
 
@@ -946,38 +940,38 @@ void tst_QTextPieceTable::blockRemoval5()
     table->insertBlock(9, idx2, charFormatIndex);
     table->insert(10, "0123", charFormatIndex);
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->beginEditBlock();
     table->remove(3, 8);
     table->endEditBlock();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
 
     table->undo();
 
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(4).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == fmt1);
-    QVERIFY(table->blocksFind(10).blockFormat() == fmt2);
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(6).position() == 5);
-    QVERIFY(table->blocksFind(11).position() == 10);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(4).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), fmt1);
+    QCOMPARE(table->blocksFind(10).blockFormat(), fmt2);
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(6).position(), 5);
+    QCOMPARE(table->blocksFind(11).position(), 10);
 
     table->redo();
-    QVERIFY(table->blocksFind(0).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(5).blockFormat() == QTextBlockFormat());
-    QVERIFY(table->blocksFind(1).position() == 0);
-    QVERIFY(table->blocksFind(5).position() == 0);
+    QCOMPARE(table->blocksFind(0).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(5).blockFormat(), QTextBlockFormat());
+    QCOMPARE(table->blocksFind(1).position(), 0);
+    QCOMPARE(table->blocksFind(5).position(), 0);
 }
 
 
@@ -996,66 +990,66 @@ void tst_QTextPieceTable::checkFrames1()
     QPointer<QTextFrame> frame = table->insertFrame(1, 3, ffmt);
     QTextFrame *root = table->rootFrame();
 
-    QVERIFY(root == frame->parentFrame());
+    QCOMPARE(root, frame->parentFrame());
 
     QVERIFY(root);
-    QVERIFY(root->parentFrame() == 0);
+    QVERIFY(!root->parentFrame());
 
-    QVERIFY(root->childFrames().count() == 1);
+    QCOMPARE(root->childFrames().count(), 1);
     QVERIFY(frame->format() == ffmt);
-    QVERIFY(frame->firstPosition() == 2);
-    QVERIFY(frame->lastPosition() == 4);
+    QCOMPARE(frame->firstPosition(), 2);
+    QCOMPARE(frame->lastPosition(), 4);
 
 
     QPointer<QTextFrame> frame2 = table->insertFrame(2, 3, ffmt);
 
-    QVERIFY(root->childFrames().count() == 1);
-    QVERIFY(root->childFrames().at(0) == frame);
-    QVERIFY(frame->childFrames().count() == 1);
-    QVERIFY(frame2->childFrames().count() == 0);
-    QVERIFY(frame2->parentFrame() == frame);
-    QVERIFY(frame2->firstPosition() == 3);
-    QVERIFY(frame2->lastPosition() == 4);
+    QCOMPARE(root->childFrames().count(), 1);
+    QCOMPARE(root->childFrames().at(0), frame.data());
+    QCOMPARE(frame->childFrames().count(), 1);
+    QCOMPARE(frame2->childFrames().count(), 0);
+    QCOMPARE(frame2->parentFrame(), frame.data());
+    QCOMPARE(frame2->firstPosition(), 3);
+    QCOMPARE(frame2->lastPosition(), 4);
 
     QVERIFY(frame->format() == ffmt);
-    QVERIFY(frame->firstPosition() == 2);
-    QVERIFY(frame->lastPosition() == 6);
+    QCOMPARE(frame->firstPosition(), 2);
+    QCOMPARE(frame->lastPosition(), 6);
 
     table->removeFrame(frame);
 
-    QVERIFY(root->childFrames().count() == 1);
-    QVERIFY(root->childFrames().at(0) == frame2);
+    QCOMPARE(root->childFrames().count(), 1);
+    QCOMPARE(root->childFrames().at(0), frame2.data());
     QVERIFY(!frame);
-    QVERIFY(frame2->childFrames().count() == 0);
-    QVERIFY(frame2->parentFrame() == root);
-    QVERIFY(frame2->firstPosition() == 2);
-    QVERIFY(frame2->lastPosition() == 3);
+    QCOMPARE(frame2->childFrames().count(), 0);
+    QCOMPARE(frame2->parentFrame(), root);
+    QCOMPARE(frame2->firstPosition(), 2);
+    QCOMPARE(frame2->lastPosition(), 3);
 
     table->undo();
 
     frame = table->frameAt(2);
 
-    QVERIFY(root->childFrames().count() == 1);
-    QVERIFY(root->childFrames().at(0) == frame);
-    QVERIFY(frame->childFrames().count() == 1);
-    QVERIFY(frame->childFrames().at(0) == frame2);
-    QVERIFY(frame2->childFrames().count() == 0);
-    QVERIFY(frame2->parentFrame() == frame);
-    QVERIFY(frame2->firstPosition() == 3);
-    QVERIFY(frame2->lastPosition() == 4);
+    QCOMPARE(root->childFrames().count(), 1);
+    QCOMPARE(root->childFrames().at(0), frame.data());
+    QCOMPARE(frame->childFrames().count(), 1);
+    QCOMPARE(frame->childFrames().at(0), frame2.data());
+    QCOMPARE(frame2->childFrames().count(), 0);
+    QCOMPARE(frame2->parentFrame(), frame.data());
+    QCOMPARE(frame2->firstPosition(), 3);
+    QCOMPARE(frame2->lastPosition(), 4);
 
-    QVERIFY(frame->firstPosition() == 2);
-    QVERIFY(frame->lastPosition() == 6);
+    QCOMPARE(frame->firstPosition(), 2);
+    QCOMPARE(frame->lastPosition(), 6);
 
     table->undo();
 
-    QVERIFY(root->childFrames().count() == 1);
-    QVERIFY(root->childFrames().at(0) == frame);
-    QVERIFY(frame->childFrames().count() == 0);
+    QCOMPARE(root->childFrames().count(), 1);
+    QCOMPARE(root->childFrames().at(0), frame.data());
+    QCOMPARE(frame->childFrames().count(), 0);
     QVERIFY(!frame2);
 
-    QVERIFY(frame->firstPosition() == 2);
-    QVERIFY(frame->lastPosition() == 4);
+    QCOMPARE(frame->firstPosition(), 2);
+    QCOMPARE(frame->lastPosition(), 4);
 }
 
 void tst_QTextPieceTable::removeFrameDirect()
@@ -1065,7 +1059,7 @@ void tst_QTextPieceTable::removeFrameDirect()
 
     QTextFrame *frame = table->insertFrame(1, 5, ffmt);
 
-    QVERIFY(frame->parentFrame() == table->rootFrame());
+    QCOMPARE(frame->parentFrame(), table->rootFrame());
 
     const int start = frame->firstPosition() - 1;
     const int end = frame->lastPosition();

@@ -10,11 +10,8 @@
 #define OUTPUTPAGE_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QSpacerItem>
@@ -90,9 +87,9 @@ public:
 
     void retranslateUi(QWidget *OutputPage)
     {
-        OutputPage->setWindowTitle(QApplication::translate("OutputPage", "Form", 0));
-        label->setText(QApplication::translate("OutputPage", "Project file name:", 0));
-        label_2->setText(QApplication::translate("OutputPage", "Collection file name:", 0));
+        OutputPage->setWindowTitle(QApplication::translate("OutputPage", "Form", nullptr));
+        label->setText(QApplication::translate("OutputPage", "Project file name:", nullptr));
+        label_2->setText(QApplication::translate("OutputPage", "Collection file name:", nullptr));
     } // retranslateUi
 
 };

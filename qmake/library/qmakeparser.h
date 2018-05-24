@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,6 +30,7 @@
 #define QMAKEPARSER_H
 
 #include "qmake_global.h"
+#include "qmakevfs.h"
 #include "proitems.h"
 
 #include <qhash.h>
@@ -50,8 +46,9 @@ class QMAKE_EXPORT QMakeParserHandler
 public:
     enum {
         CategoryMask = 0xf00,
-        WarningMessage = 0x000,
-        ErrorMessage = 0x100,
+        InfoMessage = 0x100,
+        WarningMessage = 0x200,
+        ErrorMessage = 0x300,
 
         SourceMask = 0xf0,
         SourceParser = 0,
@@ -82,7 +79,12 @@ public:
     enum ParseFlag {
         ParseDefault = 0,
         ParseUseCache = 1,
-        ParseReportMissing = 2
+        ParseReportMissing = 4,
+#ifdef PROEVALUATOR_DUAL_VFS
+        ParseCumulative = 8
+#else
+        ParseCumulative = 0
+#endif
     };
     Q_DECLARE_FLAGS(ParseFlags, ParseFlag)
 
@@ -91,10 +93,10 @@ public:
     enum SubGrammar { FullGrammar, TestGrammar, ValueGrammar };
     // fileName is expected to be absolute and cleanPath()ed.
     ProFile *parsedProFile(const QString &fileName, ParseFlags flags = ParseDefault);
-    ProFile *parsedProBlock(const QString &contents, const QString &name, int line = 0,
+    ProFile *parsedProBlock(const QStringRef &contents, int id, const QString &name, int line = 0,
                             SubGrammar grammar = FullGrammar);
 
-    void discardFileFromCache(const QString &fileName);
+    void discardFileFromCache(int id);
 
 #ifdef PROPARSER_DEBUG
     static QString formatProBlock(const QString &block);
@@ -133,8 +135,8 @@ private:
         ushort terminator; // '}' if replace function call is braced, ':' if test function
     };
 
-    bool read(ProFile *pro, ParseFlags flags);
-    void read(ProFile *pro, const QString &content, int line, SubGrammar grammar);
+    bool readFile(int id, QMakeParser::ParseFlags flags, QString *contents);
+    void read(ProFile *pro, const QStringRef &content, int line, SubGrammar grammar);
 
     ALWAYS_INLINE void putTok(ushort *&tokPtr, ushort tok);
     ALWAYS_INLINE void putBlockLen(ushort *&tokPtr, uint len);
@@ -145,7 +147,7 @@ private:
     ALWAYS_INLINE bool resolveVariable(ushort *xprPtr, int tlen, int needSep, ushort **ptr,
                                        ushort **buf, QString *xprBuff,
                                        ushort **tokPtr, QString *tokBuff,
-                                       const ushort *cur, const QString &in);
+                                       const ushort *cur, const QStringRef &in);
     void finalizeCond(ushort *&tokPtr, ushort *uc, ushort *ptr, int wordCount);
     void finalizeCall(ushort *&tokPtr, ushort *uc, ushort *ptr, int argc);
     void warnOperator(const char *msg);
@@ -202,8 +204,9 @@ public:
     ProFileCache() {}
     ~ProFileCache();
 
-    void discardFile(const QString &fileName);
-    void discardFiles(const QString &prefix);
+    void discardFile(int id);
+    void discardFile(const QString &fileName, QMakeVfs *vfs);
+    void discardFiles(const QString &prefix, QMakeVfs *vfs);
 
 private:
     struct Entry {
@@ -219,7 +222,7 @@ private:
 #endif
     };
 
-    QHash<QString, Entry> parsed_files;
+    QHash<int, Entry> parsed_files;
 #ifdef PROPARSER_THREAD_SAFE
     QMutex mutex;
 #endif

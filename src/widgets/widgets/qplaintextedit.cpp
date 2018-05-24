@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,7 +46,9 @@
 #include <qdebug.h>
 #include <qdrag.h>
 #include <qclipboard.h>
+#if QT_CONFIG(menu)
 #include <qmenu.h>
+#endif
 #include <qstyle.h>
 #include <qtimer.h>
 #include "private/qtextdocumentlayout_p.h"
@@ -56,8 +64,6 @@
 #include <limits.h>
 #include <qtexttable.h>
 #include <qvariant.h>
-
-#ifndef QT_NO_TEXTEDIT
 
 QT_BEGIN_NAMESPACE
 
@@ -358,7 +364,7 @@ void QPlainTextDocumentLayout::layoutBlock(const QTextBlock &block)
     int extraMargin = 0;
     if (option.flags() & QTextOption::AddSpaceForLineAndParagraphSeparators) {
         QFontMetrics fm(block.charFormat().font());
-        extraMargin += fm.width(QChar(0x21B5));
+        extraMargin += fm.horizontalAdvance(QChar(0x21B5));
     }
     tl->beginLayout();
     qreal availableWidth = d->width;
@@ -661,6 +667,7 @@ void QPlainTextEditPrivate::setTopBlock(int blockNumber, int lineNumber, int dx)
 
         if (dx || dy) {
             viewport->scroll(q->isRightToLeft() ? -dx : dx, dy);
+            QGuiApplication::inputMethod()->update(Qt::ImCursorRectangle | Qt::ImAnchorRectangle);
         } else {
             viewport->update();
             topLineFracture = 0;
@@ -740,7 +747,8 @@ QPlainTextEditPrivate::QPlainTextEditPrivate()
       tabChangesFocus(false),
       lineWrap(QPlainTextEdit::WidgetWidth),
       wordWrap(QTextOption::WrapAtWordBoundaryOrAnywhere),
-      clickCausedFocus(0),topLine(0),topLineFracture(0),
+      clickCausedFocus(0), placeholderVisible(1),
+      topLine(0), topLineFracture(0),
       pageUpDownLastCursorYIsValid(false)
 {
     showCursorOnInitialShow = true;
@@ -777,6 +785,7 @@ void QPlainTextEditPrivate::init(const QString &txt)
     QObject::connect(control, SIGNAL(selectionChanged()), q, SIGNAL(selectionChanged()));
     QObject::connect(control, SIGNAL(cursorPositionChanged()), q, SLOT(_q_cursorPositionChanged()));
 
+    QObject::connect(control, SIGNAL(textChanged()), q, SLOT(_q_textChanged()));
     QObject::connect(control, SIGNAL(textChanged()), q, SLOT(updateMicroFocus()));
 
     // set a null page size initially to avoid any relayouting until the textedit
@@ -795,7 +804,7 @@ void QPlainTextEditPrivate::init(const QString &txt)
 
     viewport->setBackgroundRole(QPalette::Base);
     q->setAcceptDrops(true);
-    q->setFocusPolicy(Qt::WheelFocus);
+    q->setFocusPolicy(Qt::StrongFocus);
     q->setAttribute(Qt::WA_KeyCompression);
     q->setAttribute(Qt::WA_InputMethodEnabled);
     q->setInputMethodHints(Qt::ImhMultiLine);
@@ -804,9 +813,27 @@ void QPlainTextEditPrivate::init(const QString &txt)
     viewport->setCursor(Qt::IBeamCursor);
 #endif
     originalOffsetY = 0;
-#ifdef Q_DEAD_CODE_FROM_QT4_WIN
+#if 0 // Used to be included in Qt4 for Q_WS_WIN
     setSingleFingerPanEnabled(true);
 #endif
+}
+
+void QPlainTextEditPrivate::_q_textChanged()
+{
+    Q_Q(QPlainTextEdit);
+
+    // We normally only repaint the part of view that contains text in the
+    // document that has changed (in _q_repaintContents). But the placeholder
+    // text is not a part of the document, but is drawn on separately. So whenever
+    // we either show or hide the placeholder text, we issue a full update.
+    bool placeholderCurrentyVisible = placeholderVisible;
+
+    placeholderVisible = !placeholderText.isEmpty()
+            && q->document()->isEmpty()
+            && q->firstVisibleBlock().layout()->preeditAreaText().isEmpty();
+
+    if (placeholderCurrentyVisible != placeholderVisible)
+        viewport->update();
 }
 
 void QPlainTextEditPrivate::_q_repaintContents(const QRectF &contentsRect)
@@ -940,7 +967,7 @@ void QPlainTextEditPrivate::pageUpDown(QTextCursor::MoveOperation op, QTextCurso
     }
 }
 
-#ifndef QT_NO_SCROLLBAR
+#if QT_CONFIG(scrollbar)
 
 void QPlainTextEditPrivate::_q_adjustScrollbars()
 {
@@ -1291,7 +1318,7 @@ void QPlainTextEdit::setDocument(QTextDocument *document)
         document->setDocumentLayout(documentLayout);
     } else {
         documentLayout = qobject_cast<QPlainTextDocumentLayout*>(document->documentLayout());
-        if (!documentLayout) {
+        if (Q_UNLIKELY(!documentLayout)) {
             qWarning("QPlainTextEdit::setDocument: Document set does not support QPlainTextDocumentLayout");
             return;
         }
@@ -1615,7 +1642,7 @@ void QPlainTextEdit::timerEvent(QTimerEvent *e)
 
     Note that the undo/redo history is cleared by this function.
 
-    \sa toText()
+    \sa toPlainText()
 */
 
 void QPlainTextEdit::setPlainText(const QString &text)
@@ -1851,7 +1878,7 @@ void QPlainTextEditPrivate::relayoutDocument()
     }
 }
 
-static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, QRectF gradientRect = QRectF())
+static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, const QRectF &gradientRect = QRectF())
 {
     p->save();
     if (brush.style() >= Qt::LinearGradientPattern && brush.style() <= Qt::ConicalGradientPattern) {
@@ -1874,6 +1901,7 @@ static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, QRectF
 */
 void QPlainTextEdit::paintEvent(QPaintEvent *e)
 {
+    Q_D(QPlainTextEdit);
     QPainter painter(viewport());
     Q_ASSERT(qobject_cast<QPlainTextDocumentLayout*>(document()->documentLayout()));
 
@@ -1896,6 +1924,15 @@ void QPlainTextEdit::paintEvent(QPaintEvent *e)
     er.setRight(qMin(er.right(), maxX));
     painter.setClipRect(er);
 
+    if (d->placeholderVisible) {
+        QColor col = d->control->palette().text().color();
+        col.setAlpha(128);
+        painter.setPen(col);
+        painter.setClipRect(e->rect());
+        const int margin = int(document()->documentMargin());
+        QRectF textRect = viewportRect.adjusted(margin, margin, 0, 0);
+        painter.drawText(textRect, Qt::AlignTop | Qt::TextWordWrap, placeholderText());
+    }
 
     QAbstractTextDocumentLayout::PaintContext context = getPaintContext();
 
@@ -1970,17 +2007,8 @@ void QPlainTextEdit::paintEvent(QPaintEvent *e)
                 }
             }
 
+            layout->draw(&painter, offset, selections, er);
 
-            if (!placeholderText().isEmpty() && document()->isEmpty()) {
-              Q_D(QPlainTextEdit);
-              QColor col = d->control->palette().text().color();
-              col.setAlpha(128);
-              painter.setPen(col);
-              const int margin = int(document()->documentMargin());
-              painter.drawText(r.adjusted(margin, 0, 0, 0), Qt::AlignTop | Qt::TextWordWrap, placeholderText());
-            } else {
-              layout->draw(&painter, offset, selections, er);
-            }
             if ((drawCursor && !drawCursorAsBlock)
                 || (editable && context.cursorPosition < -1
                     && !layout->preeditAreaText().isEmpty())) {
@@ -2188,27 +2216,48 @@ QVariant QPlainTextEdit::inputMethodQuery(Qt::InputMethodQuery property) const
 
 /*!\internal
  */
-QVariant QPlainTextEdit::inputMethodQuery(Qt::InputMethodQuery property, QVariant argument) const
+QVariant QPlainTextEdit::inputMethodQuery(Qt::InputMethodQuery query, QVariant argument) const
 {
     Q_D(const QPlainTextEdit);
-    QVariant v;
-    switch (property) {
-    case Qt::ImHints:
-        v = QWidget::inputMethodQuery(property);
-        break;
+    switch (query) {
+        case Qt::ImHints:
+        case Qt::ImInputItemClipRectangle:
+        return QWidget::inputMethodQuery(query);
     default:
-        v = d->control->inputMethodQuery(property, argument);
-        const QPoint offset(-d->horizontalOffset(), -0);
-        if (v.type() == QVariant::RectF)
-            v = v.toRectF().toRect().translated(offset);
-        else if (v.type() == QVariant::PointF)
-            v = v.toPointF().toPoint() + offset;
-        else if (v.type() == QVariant::Rect)
-            v = v.toRect().translated(offset);
-        else if (v.type() == QVariant::Point)
-            v = v.toPoint() + offset;
+        break;
     }
 
+    const QPointF offset = contentOffset();
+    switch (argument.type()) {
+    case QVariant::RectF:
+        argument = argument.toRectF().translated(-offset);
+        break;
+    case QVariant::PointF:
+        argument = argument.toPointF() - offset;
+        break;
+    case QVariant::Rect:
+        argument = argument.toRect().translated(-offset.toPoint());
+        break;
+    case QVariant::Point:
+        argument = argument.toPoint() - offset;
+        break;
+    default:
+        break;
+    }
+
+    const QVariant v = d->control->inputMethodQuery(query, argument);
+    switch (v.type()) {
+    case QVariant::RectF:
+        return v.toRectF().translated(offset);
+    case QVariant::PointF:
+        return v.toPointF() + offset;
+    case QVariant::Rect:
+        return v.toRect().translated(offset.toPoint());
+    case QVariant::Point:
+        return v.toPoint() + offset.toPoint();
+    default:
+        break;
+    }
     return v;
 }
 
@@ -2268,7 +2317,7 @@ void QPlainTextEdit::changeEvent(QEvent *e)
 
 /*! \reimp
 */
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 void QPlainTextEdit::wheelEvent(QWheelEvent *e)
 {
     Q_D(QPlainTextEdit);
@@ -2425,28 +2474,50 @@ void QPlainTextEdit::setOverwriteMode(bool overwrite)
     d->control->setOverwriteMode(overwrite);
 }
 
+#if QT_DEPRECATED_SINCE(5, 10)
 /*!
     \property QPlainTextEdit::tabStopWidth
     \brief the tab stop width in pixels
+    \deprecated in Qt 5.10. Use tabStopDistance instead.
 
     By default, this property contains a value of 80.
 */
 
 int QPlainTextEdit::tabStopWidth() const
 {
-    Q_D(const QPlainTextEdit);
-    return qRound(d->control->document()->defaultTextOption().tabStop());
+    return qRound(tabStopDistance());
 }
 
 void QPlainTextEdit::setTabStopWidth(int width)
 {
+    setTabStopDistance(width);
+}
+#endif
+
+/*!
+    \property QPlainTextEdit::tabStopDistance
+    \brief the tab stop distance in pixels
+    \since 5.10
+
+    By default, this property contains a value of 80.
+*/
+
+qreal QPlainTextEdit::tabStopDistance() const
+{
+    Q_D(const QPlainTextEdit);
+    return d->control->document()->defaultTextOption().tabStopDistance();
+}
+
+void QPlainTextEdit::setTabStopDistance(qreal distance)
+{
     Q_D(QPlainTextEdit);
     QTextOption opt = d->control->document()->defaultTextOption();
-    if (opt.tabStop() == width || width < 0)
+    if (opt.tabStopDistance() == distance || distance < 0)
         return;
-    opt.setTabStop(width);
+    opt.setTabStopDistance(distance);
     d->control->document()->setDefaultTextOption(opt);
 }
+
 
 /*!
     \property QPlainTextEdit::cursorWidth
@@ -3166,5 +3237,3 @@ QT_END_NAMESPACE
 
 #include "moc_qplaintextedit.cpp"
 #include "moc_qplaintextedit_p.cpp"
-
-#endif // QT_NO_TEXTEDIT

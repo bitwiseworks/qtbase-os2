@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,19 +39,20 @@
 
 #include <qplatformdefs.h>
 #include <private/qabstractspinbox_p.h>
+#if QT_CONFIG(datetimeparser)
 #include <private/qdatetimeparser_p.h>
+#endif
 #include <private/qlineedit_p.h>
 #include <qabstractspinbox.h>
-
-#ifndef QT_NO_SPINBOX
 
 #include <qapplication.h>
 #include <qstylehints.h>
 #include <qclipboard.h>
 #include <qdatetime.h>
-#include <qdatetimeedit.h>
 #include <qevent.h>
+#if QT_CONFIG(menu)
 #include <qmenu.h>
+#endif
 #include <qpainter.h>
 #include <qpalette.h>
 #include <qstylepainter.h>
@@ -604,12 +611,11 @@ void QAbstractSpinBox::stepDown()
 }
 /*!
     Virtual function that is called whenever the user triggers a step.
-    The \a steps parameter indicates how many steps were taken, e.g.
-    Pressing Qt::Key_Down will trigger a call to stepBy(-1),
-    whereas pressing Qt::Key_Prior will trigger a call to
-    stepBy(10).
+    The \a steps parameter indicates how many steps were taken.
+    For example, pressing \c Qt::Key_Down will trigger a call to \c stepBy(-1),
+    whereas pressing \c Qt::Key_PageUp will trigger a call to \c stepBy(10).
 
-    If you subclass QAbstractSpinBox you must reimplement this
+    If you subclass \c QAbstractSpinBox you must reimplement this
     function. Note that this function is called even if the resulting
     value will be outside the bounds of minimum and maximum. It's this
     function's job to handle these situations.
@@ -671,15 +677,20 @@ void QAbstractSpinBox::setLineEdit(QLineEdit *lineEdit)
         Q_ASSERT(lineEdit);
         return;
     }
+
+    if (lineEdit == d->edit)
+        return;
+
     delete d->edit;
     d->edit = lineEdit;
+    setProperty("_q_spinbox_lineedit", QVariant::fromValue<QWidget *>(d->edit));
     if (!d->edit->validator())
         d->edit->setValidator(d->validator);
 
     if (d->edit->parent() != this)
         d->edit->setParent(this);
 
-    d->edit->setFrame(false);
+    d->edit->setFrame(!style()->styleHint(QStyle::SH_SpinBox_ButtonsInsideFrame, nullptr, this));
     d->edit->setFocusProxy(this);
     d->edit->setAcceptDrops(false);
 
@@ -688,6 +699,10 @@ void QAbstractSpinBox::setLineEdit(QLineEdit *lineEdit)
                 this, SLOT(_q_editorTextChanged(QString)));
         connect(d->edit, SIGNAL(cursorPositionChanged(int,int)),
                 this, SLOT(_q_editorCursorPositionChanged(int,int)));
+        connect(d->edit, SIGNAL(cursorPositionChanged(int,int)),
+                this, SLOT(updateMicroFocus()));
+        connect(d->edit->d_func()->control, SIGNAL(updateMicroFocus()),
+                this, SLOT(updateMicroFocus()));
     }
     d->updateEditFieldGeometry();
     d->edit->setContextMenuPolicy(Qt::NoContextMenu);
@@ -720,7 +735,16 @@ void QAbstractSpinBox::interpretText()
 QVariant QAbstractSpinBox::inputMethodQuery(Qt::InputMethodQuery query) const
 {
     Q_D(const QAbstractSpinBox);
-    return d->edit->inputMethodQuery(query);
+    const QVariant lineEditValue = d->edit->inputMethodQuery(query);
+    switch (query) {
+    case Qt::ImHints:
+        if (const int hints = inputMethodHints())
+            return QVariant(hints | lineEditValue.toInt());
+        break;
+    default:
+        break;
+    }
+    return lineEditValue;
 }
 
 /*!
@@ -742,8 +766,7 @@ bool QAbstractSpinBox::event(QEvent *event)
     case QEvent::HoverEnter:
     case QEvent::HoverLeave:
     case QEvent::HoverMove:
-        if (const QHoverEvent *he = static_cast<const QHoverEvent *>(event))
-            d->updateHoverControl(he->pos());
+        d->updateHoverControl(static_cast<const QHoverEvent *>(event)->pos());
         break;
     case QEvent::ShortcutOverride:
         if (d->edit->event(event))
@@ -799,6 +822,8 @@ void QAbstractSpinBox::changeEvent(QEvent *event)
             d->spinClickTimerInterval = style()->styleHint(QStyle::SH_SpinBox_ClickAutoRepeatRate, 0, this);
             d->spinClickThresholdTimerInterval =
                 style()->styleHint(QStyle::SH_SpinBox_ClickAutoRepeatThreshold, 0, this);
+            if (d->edit)
+                d->edit->setFrame(!style()->styleHint(QStyle::SH_SpinBox_ButtonsInsideFrame, nullptr, this));
             d->reset();
             d->updateEditFieldGeometry();
             break;
@@ -851,15 +876,15 @@ QSize QAbstractSpinBox::sizeHint() const
         s = d->textFromValue(d->minimum);
         s.truncate(18);
         s += fixedContent;
-        w = qMax(w, fm.width(s));
+        w = qMax(w, fm.horizontalAdvance(s));
         s = d->textFromValue(d->maximum);
         s.truncate(18);
         s += fixedContent;
-        w = qMax(w, fm.width(s));
+        w = qMax(w, fm.horizontalAdvance(s));
 
         if (d->specialValueText.size()) {
             s = d->specialValueText;
-            w = qMax(w, fm.width(s));
+            w = qMax(w, fm.horizontalAdvance(s));
         }
         w += 2; // cursor blinking space
 
@@ -892,15 +917,15 @@ QSize QAbstractSpinBox::minimumSizeHint() const
         s = d->textFromValue(d->minimum);
         s.truncate(18);
         s += fixedContent;
-        w = qMax(w, fm.width(s));
+        w = qMax(w, fm.horizontalAdvance(s));
         s = d->textFromValue(d->maximum);
         s.truncate(18);
         s += fixedContent;
-        w = qMax(w, fm.width(s));
+        w = qMax(w, fm.horizontalAdvance(s));
 
         if (d->specialValueText.size()) {
             s = d->specialValueText;
-            w = qMax(w, fm.width(s));
+            w = qMax(w, fm.horizontalAdvance(s));
         }
         w += 2; // cursor blinking space
 
@@ -962,6 +987,7 @@ void QAbstractSpinBox::keyPressEvent(QKeyEvent *event)
     case Qt::Key_PageDown:
         steps *= 10;
         isPgUpOrDown = true;
+        Q_FALLTHROUGH();
     case Qt::Key_Up:
     case Qt::Key_Down: {
 #ifdef QT_KEYPAD_NAVIGATION
@@ -1075,6 +1101,8 @@ void QAbstractSpinBox::keyPressEvent(QKeyEvent *event)
     }
 
     d->edit->event(event);
+    if (!d->edit->text().isEmpty())
+        d->cleared = false;
     if (!isVisible())
         d->ignoreUpdateEdit = true;
 }
@@ -1098,7 +1126,7 @@ void QAbstractSpinBox::keyReleaseEvent(QKeyEvent *event)
     \reimp
 */
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 void QAbstractSpinBox::wheelEvent(QWheelEvent *event)
 {
     Q_D(QAbstractSpinBox);
@@ -1230,11 +1258,9 @@ void QAbstractSpinBox::timerEvent(QTimerEvent *event)
     \reimp
 */
 
+#if QT_CONFIG(contextmenu)
 void QAbstractSpinBox::contextMenuEvent(QContextMenuEvent *event)
 {
-#ifdef QT_NO_CONTEXTMENU
-    Q_UNUSED(event);
-#else
     Q_D(QAbstractSpinBox);
 
     QPointer<QMenu> menu = d->edit->createStandardContextMenu();
@@ -1270,8 +1296,8 @@ void QAbstractSpinBox::contextMenuEvent(QContextMenuEvent *event)
         }
     }
     event->accept();
-#endif // QT_NO_CONTEXTMENU
 }
+#endif // QT_CONFIG(contextmenu)
 
 /*!
     \reimp
@@ -1403,7 +1429,7 @@ QStyle::SubControl QAbstractSpinBoxPrivate::newHoverControl(const QPoint &pos)
 
 QString QAbstractSpinBoxPrivate::stripped(const QString &t, int *pos) const
 {
-    QString text = t;
+    QStringRef text(&t);
     if (specialValueText.size() == 0 || text != specialValueText) {
         int from = 0;
         int size = text.size();
@@ -1425,7 +1451,7 @@ QString QAbstractSpinBoxPrivate::stripped(const QString &t, int *pos) const
     text = text.trimmed();
     if (pos)
         (*pos) -= (s - text.size());
-    return text;
+    return text.toString();
 
 }
 
@@ -1624,7 +1650,9 @@ void QAbstractSpinBox::initStyleOption(QStyleOptionSpinBox *option) const
     option->initFrom(this);
     option->activeSubControls = QStyle::SC_None;
     option->buttonSymbols = d->buttonSymbols;
-    option->subControls = QStyle::SC_SpinBoxFrame | QStyle::SC_SpinBoxEditField;
+    option->subControls = QStyle::SC_SpinBoxEditField;
+    if (!style()->styleHint(QStyle::SH_SpinBox_ButtonsInsideFrame, nullptr, this))
+        option->subControls |= QStyle::SC_SpinBoxFrame;
     if (d->buttonSymbols != QAbstractSpinBox::NoButtons) {
         option->subControls |= QStyle::SC_SpinBoxUp | QStyle::SC_SpinBoxDown;
         if (d->buttonState & Up) {
@@ -1922,7 +1950,7 @@ void QSpinBoxValidator::fixup(QString &input) const
 QVariant operator+(const QVariant &arg1, const QVariant &arg2)
 {
     QVariant ret;
-    if (arg1.type() != arg2.type())
+    if (Q_UNLIKELY(arg1.type() != arg2.type()))
         qWarning("QAbstractSpinBox: Internal error: Different types (%s vs %s) (%s:%d)",
                  arg1.typeName(), arg2.typeName(), __FILE__, __LINE__);
     switch (arg1.type()) {
@@ -1941,12 +1969,15 @@ QVariant operator+(const QVariant &arg1, const QVariant &arg2)
         break;
     }
     case QVariant::Double: ret = QVariant(arg1.toDouble() + arg2.toDouble()); break;
+#if QT_CONFIG(datetimeparser)
     case QVariant::DateTime: {
         QDateTime a2 = arg2.toDateTime();
         QDateTime a1 = arg1.toDateTime().addDays(QDATETIMEEDIT_DATETIME_MIN.daysTo(a2));
         a1.setTime(a1.time().addMSecs(QTime().msecsTo(a2.time())));
         ret = QVariant(a1);
+        break;
     }
+#endif // datetimeparser
     default: break;
     }
     return ret;
@@ -1961,7 +1992,7 @@ QVariant operator+(const QVariant &arg1, const QVariant &arg2)
 QVariant operator-(const QVariant &arg1, const QVariant &arg2)
 {
     QVariant ret;
-    if (arg1.type() != arg2.type())
+    if (Q_UNLIKELY(arg1.type() != arg2.type()))
         qWarning("QAbstractSpinBox: Internal error: Different types (%s vs %s) (%s:%d)",
                  arg1.typeName(), arg2.typeName(), __FILE__, __LINE__);
     switch (arg1.type()) {
@@ -2001,6 +2032,7 @@ QVariant operator*(const QVariant &arg1, double multiplier)
         ret = static_cast<int>(qBound<double>(INT_MIN, arg1.toInt() * multiplier, INT_MAX));
         break;
     case QVariant::Double: ret = QVariant(arg1.toDouble() * multiplier); break;
+#if QT_CONFIG(datetimeparser)
     case QVariant::DateTime: {
         double days = QDATETIMEEDIT_DATE_MIN.daysTo(arg1.toDateTime().date()) * multiplier;
         int daysInt = (int)days;
@@ -2010,6 +2042,7 @@ QVariant operator*(const QVariant &arg1, double multiplier)
         ret = QDateTime(QDate().addDays(int(days)), QTime().addMSecs(msecs));
         break;
     }
+#endif // datetimeparser
     default: ret = arg1; break;
     }
 
@@ -2032,11 +2065,14 @@ double operator/(const QVariant &arg1, const QVariant &arg2)
         a1 = arg1.toDouble();
         a2 = arg2.toDouble();
         break;
+#if QT_CONFIG(datetimeparser)
     case QVariant::DateTime:
         a1 = QDATETIMEEDIT_DATE_MIN.daysTo(arg1.toDate());
         a2 = QDATETIMEEDIT_DATE_MIN.daysTo(arg2.toDate());
         a1 += (double)QDATETIMEEDIT_TIME_MIN.msecsTo(arg1.toDateTime().time()) / (long)(3600 * 24 * 1000);
         a2 += (double)QDATETIMEEDIT_TIME_MIN.msecsTo(arg2.toDateTime().time()) / (long)(3600 * 24 * 1000);
+        break;
+#endif // datetimeparser
     default: break;
     }
 
@@ -2097,11 +2133,12 @@ int QAbstractSpinBoxPrivate::variantCompare(const QVariant &arg1, const QVariant
     case QVariant::Invalid:
         if (arg2.type() == QVariant::Invalid)
             return 0;
+        Q_FALLTHROUGH();
     default:
         Q_ASSERT_X(0, "QAbstractSpinBoxPrivate::variantCompare",
                    qPrintable(QString::fromLatin1("Internal error 3 (%1 %2)").
-                              arg(QString::fromLatin1(arg1.typeName())).
-                              arg(QString::fromLatin1(arg2.typeName()))));
+                              arg(QString::fromLatin1(arg1.typeName()),
+                                  QString::fromLatin1(arg2.typeName()))));
     }
     return -2;
 }
@@ -2123,5 +2160,3 @@ QVariant QAbstractSpinBoxPrivate::variantBound(const QVariant &min,
 QT_END_NAMESPACE
 
 #include "moc_qabstractspinbox.cpp"
-
-#endif // QT_NO_SPINBOX

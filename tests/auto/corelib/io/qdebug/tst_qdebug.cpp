@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,11 +45,13 @@ private slots:
     void debugWithBool() const;
     void debugSpaceHandling() const;
     void debugNoQuotes() const;
+    void verbosity() const;
     void stateSaver() const;
     void veryLongWarningMessage() const;
     void qDebugQChar() const;
     void qDebugQString() const;
     void qDebugQStringRef() const;
+    void qDebugQStringView() const;
     void qDebugQLatin1String() const;
     void qDebugQByteArray() const;
     void qDebugQFlags() const;
@@ -192,7 +190,11 @@ public:
 QDebug operator<< (QDebug s, const MyLine& line)
 {
     const QDebugStateSaver saver(s);
-    s.nospace() << "MyLine(" << line.p1 << ", " << line.p2 << ")";
+    s.nospace();
+    s << "MyLine(" << line.p1 << ", "<< line.p2;
+    if (s.verbosity() > 2)
+        s << ", Manhattan length=" << (qAbs(line.p2.v1 - line.p1.v1) + qAbs(line.p2.v2 - line.p1.v2));
+    s << ')';
     return s;
 }
 
@@ -253,6 +255,33 @@ void tst_QDebug::debugNoQuotes() const
         d << QByteArray("Hello");
     }
     QCOMPARE(s_msg, QString::fromLatin1("'H' \"Hello\" \"Hello\" H Hello Hello"));
+}
+
+void tst_QDebug::verbosity() const
+{
+    MyLine line(MyPoint(10, 11), MyPoint (12, 13));
+    QString output;
+    QDebug d(&output);
+    d.nospace();
+    d << line << '\n';
+    const int oldVerbosity = d.verbosity();
+    d.setVerbosity(0);
+    QCOMPARE(d.verbosity(), 0);
+    d.setVerbosity(7);
+    QCOMPARE(d.verbosity(), 7);
+    const int newVerbosity = oldVerbosity  + 2;
+    d.setVerbosity(newVerbosity);
+    QCOMPARE(d.verbosity(), newVerbosity);
+    d << line << '\n';
+    d.setVerbosity(oldVerbosity );
+    QCOMPARE(d.verbosity(), oldVerbosity );
+    d << line;
+    const QStringList lines = output.split(QLatin1Char('\n'));
+    QCOMPARE(lines.size(), 3);
+    // Verbose should be longer
+    QVERIFY2(lines.at(1).size() > lines.at(0).size(), qPrintable(lines.join(QLatin1Char(','))));
+    // Switching back to brief produces same output
+    QCOMPARE(lines.at(0).size(), lines.at(2).size());
 }
 
 void tst_QDebug::stateSaver() const
@@ -331,14 +360,14 @@ void tst_QDebug::qDebugQChar() const
     MessageHandlerSetter mhs(myMessageHandler);
     {
         QDebug d = qDebug();
-        d << QChar('f');
-        d.nospace().noquote() << QChar('o') << QChar('o');
+        d << QChar('f') << QChar(QLatin1Char('\xE4')); // f, ä
+        d.nospace().noquote() << QChar('o') << QChar('o')  << QChar(QLatin1Char('\xC4')); // o, o, Ä
     }
 #ifndef QT_NO_MESSAGELOGCONTEXT
     file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
 #endif
     QCOMPARE(s_msgType, QtDebugMsg);
-    QCOMPARE(s_msg, QString::fromLatin1("'f' oo"));
+    QCOMPARE(s_msg, QString::fromLatin1("'f' '\\u00e4' oo\\u00c4"));
     QCOMPARE(QString::fromLatin1(s_file), file);
     QCOMPARE(s_line, line);
     QCOMPARE(QString::fromLatin1(s_function), function);
@@ -461,6 +490,46 @@ void tst_QDebug::qDebugQStringRef() const
         QCOMPARE(QString::fromLatin1(s_file), file);
         QCOMPARE(s_line, line);
         QCOMPARE(QString::fromLatin1(s_function), function);
+    }
+}
+
+void tst_QDebug::qDebugQStringView() const
+{
+    /* Use a basic string. */
+    {
+        QLatin1String file, function;
+        int line = 0;
+        const QStringView inView = QStringViewLiteral("input");
+
+        MessageHandlerSetter mhs(myMessageHandler);
+        { qDebug() << inView; }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+        file = QLatin1String(__FILE__); line = __LINE__ - 2; function = QLatin1String(Q_FUNC_INFO);
+#endif
+        QCOMPARE(s_msgType, QtDebugMsg);
+        QCOMPARE(s_msg, QLatin1String("\"input\""));
+        QCOMPARE(QLatin1String(s_file), file);
+        QCOMPARE(s_line, line);
+        QCOMPARE(QLatin1String(s_function), function);
+    }
+
+    /* Use a null QStringView. */
+    {
+        QString file, function;
+        int line = 0;
+
+        const QStringView inView;
+
+        MessageHandlerSetter mhs(myMessageHandler);
+        { qDebug() << inView; }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+        file = __FILE__; line = __LINE__ - 2; function = Q_FUNC_INFO;
+#endif
+        QCOMPARE(s_msgType, QtDebugMsg);
+        QCOMPARE(s_msg, QLatin1String("\"\""));
+        QCOMPARE(QLatin1String(s_file), file);
+        QCOMPARE(s_line, line);
+        QCOMPARE(QLatin1String(s_function), function);
     }
 }
 

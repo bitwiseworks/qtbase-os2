@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,6 +42,7 @@
 #include <QtCore/QVariant>
 #include <QtCore/QDebug>
 #include <QtCore/QTextStream>
+#include <QtCore/QJsonDocument>
 
 #include <algorithm>
 
@@ -104,9 +100,11 @@ class tst_QOpenGlConfig : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void testConfiguration();
     void testGlConfiguration();
     void testBugList();
+    void testDefaultWindowsBlacklist();
 };
 
 static void dumpConfiguration(QTextStream &str)
@@ -155,12 +153,20 @@ static void dumpConfiguration(QTextStream &str)
     }
 
     // On Windows, this will provide addition GPU info similar to the output of dxdiag.
-    const QVariant gpuInfoV = QGuiApplication::platformNativeInterface()->property("gpu");
-    if (gpuInfoV.type() == QVariant::Map) {
-        const QString description = gpuInfoV.toMap().value(QStringLiteral("printable")).toString();
-        if (!description.isEmpty())
-            str << "\nGPU:\n" << description << "\n\n";
+    if (QGuiApplication::platformNativeInterface()) {
+        const QVariant gpuInfoV = QGuiApplication::platformNativeInterface()->property("gpu");
+        if (gpuInfoV.type() == QVariant::Map) {
+            const QString description = gpuInfoV.toMap().value(QStringLiteral("printable")).toString();
+            if (!description.isEmpty())
+                str << "\nGPU:\n" << description << "\n\n";
+        }
     }
+}
+
+void tst_QOpenGlConfig::initTestCase()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL))
+        QSKIP("OpenGL is not supported on this platform.");
 }
 
 void tst_QOpenGlConfig::testConfiguration()
@@ -243,27 +249,59 @@ void tst_QOpenGlConfig::testBugList()
     QSet<QString> expectedFeatures;
     expectedFeatures << "feature1";
 
+    // adapter info
     QVersionNumber driverVersion(QVector<int>() << 9 << 18 << 13 << 4460);
-    QOpenGLConfig::Gpu gpu = QOpenGLConfig::Gpu::fromDevice(0x10DE, 0x0DE9, driverVersion);
+    QOpenGLConfig::Gpu gpu = QOpenGLConfig::Gpu::fromDevice(0x10DE, 0x0DE9, driverVersion, QByteArrayLiteral("Unknown"));
 
     QSet<QString> actualFeatures = QOpenGLConfig::gpuFeatures(gpu, QStringLiteral("win"),
-                                                              QVersionNumber(6, 3), fileName);
+                                                              QVersionNumber(6, 3), QStringLiteral("7"), fileName);
     QVERIFY2(expectedFeatures == actualFeatures,
              msgSetMismatch(expectedFeatures, actualFeatures));
 
+    // driver_description
+    gpu = QOpenGLConfig::Gpu::fromDevice(0xDEAD, 0xBEEF, driverVersion, QByteArrayLiteral("Very Long And Special Driver Description"));
+    actualFeatures = QOpenGLConfig::gpuFeatures(gpu, QStringLiteral("win"),
+                                                QVersionNumber(6, 3), QStringLiteral("8"), fileName);
+    expectedFeatures = QSet<QString>() << "feature2";
+    QVERIFY2(expectedFeatures == actualFeatures,
+             msgSetMismatch(expectedFeatures, actualFeatures));
+
+    // os.release
+    gpu = QOpenGLConfig::Gpu::fromDevice(0xDEAD, 0xBEEF, driverVersion, QByteArrayLiteral("WinVerTest"));
+    actualFeatures = QOpenGLConfig::gpuFeatures(gpu, QStringLiteral("win"),
+                                                QVersionNumber(12, 34), QStringLiteral("10"), fileName);
+    expectedFeatures = QSet<QString>() << "win10_feature";
+    QVERIFY2(expectedFeatures == actualFeatures,
+             msgSetMismatch(expectedFeatures, actualFeatures));
+
+    // gl_vendor
     gpu = QOpenGLConfig::Gpu::fromGLVendor(QByteArrayLiteral("Somebody Else"));
     expectedFeatures.clear();
     actualFeatures = QOpenGLConfig::gpuFeatures(gpu, QStringLiteral("linux"),
-                                                QVersionNumber(1, 0), fileName);
+                                                QVersionNumber(1, 0), QString(), fileName);
     QVERIFY2(expectedFeatures == actualFeatures,
              msgSetMismatch(expectedFeatures, actualFeatures));
 
     gpu = QOpenGLConfig::Gpu::fromGLVendor(QByteArrayLiteral("The Qt Company"));
     expectedFeatures = QSet<QString>() << "cool_feature";
     actualFeatures = QOpenGLConfig::gpuFeatures(gpu, QStringLiteral("linux"),
-                                                QVersionNumber(1, 0), fileName);
+                                                QVersionNumber(1, 0), QString(), fileName);
     QVERIFY2(expectedFeatures == actualFeatures,
              msgSetMismatch(expectedFeatures, actualFeatures));
+}
+
+void tst_QOpenGlConfig::testDefaultWindowsBlacklist()
+{
+    if (QGuiApplication::platformName().compare(QLatin1String("windows"), Qt::CaseInsensitive))
+        QSKIP("Only applicable to Windows");
+
+    QFile f(QStringLiteral(":/qt-project.org/windows/openglblacklists/default.json"));
+    QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+    QVERIFY2(err.error == 0,
+             QStringLiteral("Failed to parse built-in Windows GPU blacklist. %1 : %2")
+             .arg(err.offset).arg(err.errorString()).toLatin1());
 }
 
 QTEST_MAIN(tst_QOpenGlConfig)

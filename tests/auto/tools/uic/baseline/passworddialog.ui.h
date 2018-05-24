@@ -10,14 +10,11 @@
 #define PASSWORDDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 
@@ -101,11 +98,11 @@ public:
 
     void retranslateUi(QDialog *PasswordDialog)
     {
-        PasswordDialog->setWindowTitle(QApplication::translate("PasswordDialog", "Authentication Required", 0));
-        iconLabel->setText(QApplication::translate("PasswordDialog", "DUMMY ICON", 0));
-        introLabel->setText(QApplication::translate("PasswordDialog", "INTRO TEXT DUMMY", 0));
-        label->setText(QApplication::translate("PasswordDialog", "Username:", 0));
-        lblPassword->setText(QApplication::translate("PasswordDialog", "Password:", 0));
+        PasswordDialog->setWindowTitle(QApplication::translate("PasswordDialog", "Authentication Required", nullptr));
+        iconLabel->setText(QApplication::translate("PasswordDialog", "DUMMY ICON", nullptr));
+        introLabel->setText(QApplication::translate("PasswordDialog", "INTRO TEXT DUMMY", nullptr));
+        label->setText(QApplication::translate("PasswordDialog", "Username:", nullptr));
+        lblPassword->setText(QApplication::translate("PasswordDialog", "Password:", nullptr));
     } // retranslateUi
 
 };

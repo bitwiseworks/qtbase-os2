@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtPrintSupport module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -204,9 +210,9 @@ QPrint::InputSlot QPrintDevice::defaultInputSlot() const
     return isValid() ? d->defaultInputSlot() : QPrint::InputSlot();
 }
 
-QList<QPrint::InputSlot> QPrintDevice::supportedInputSlots() const
+QVector<QPrint::InputSlot> QPrintDevice::supportedInputSlots() const
 {
-    return isValid() ? d->supportedInputSlots() : QList<QPrint::InputSlot>();
+    return isValid() ? d->supportedInputSlots() : QVector<QPrint::InputSlot>{};
 }
 
 QPrint::OutputBin QPrintDevice::defaultOutputBin() const
@@ -214,9 +220,9 @@ QPrint::OutputBin QPrintDevice::defaultOutputBin() const
     return isValid() ? d->defaultOutputBin() : QPrint::OutputBin();
 }
 
-QList<QPrint::OutputBin> QPrintDevice::supportedOutputBins() const
+QVector<QPrint::OutputBin> QPrintDevice::supportedOutputBins() const
 {
-    return isValid() ? d->supportedOutputBins() : QList<QPrint::OutputBin>();
+    return isValid() ? d->supportedOutputBins() : QVector<QPrint::OutputBin>{};
 }
 
 QPrint::DuplexMode QPrintDevice::defaultDuplexMode() const
@@ -224,9 +230,9 @@ QPrint::DuplexMode QPrintDevice::defaultDuplexMode() const
     return isValid() ? d->defaultDuplexMode() : QPrint::DuplexNone;
 }
 
-QList<QPrint::DuplexMode> QPrintDevice::supportedDuplexModes() const
+QVector<QPrint::DuplexMode> QPrintDevice::supportedDuplexModes() const
 {
-    return isValid() ? d->supportedDuplexModes() : QList<QPrint::DuplexMode>();
+    return isValid() ? d->supportedDuplexModes() : QVector<QPrint::DuplexMode>{};
 }
 
 QPrint::ColorMode QPrintDevice::defaultColorMode() const
@@ -234,9 +240,24 @@ QPrint::ColorMode QPrintDevice::defaultColorMode() const
     return isValid() ? d->defaultColorMode() : QPrint::GrayScale;
 }
 
-QList<QPrint::ColorMode> QPrintDevice::supportedColorModes() const
+QVector<QPrint::ColorMode> QPrintDevice::supportedColorModes() const
 {
-    return isValid() ? d->supportedColorModes() : QList<QPrint::ColorMode>();
+    return isValid() ? d->supportedColorModes() : QVector<QPrint::ColorMode>{};
+}
+
+QVariant QPrintDevice::property(PrintDevicePropertyKey key) const
+{
+    return isValid() ? d->property(key) : QVariant();
+}
+
+bool QPrintDevice::setProperty(PrintDevicePropertyKey key, const QVariant &value)
+{
+    return isValid() ? d->setProperty(key, value) : false;
+}
+
+bool QPrintDevice::isFeatureAvailable(PrintDevicePropertyKey key, const QVariant &params) const
+{
+    return isValid() ? d->isFeatureAvailable(key, params) : false;
 }
 
 #ifndef QT_NO_MIMETYPE
@@ -277,10 +298,10 @@ void QPrintDevice::format(QDebug debug) const
               << ", defaultColorMode="<< defaultColorMode();
 #    ifndef QT_NO_MIMETYPE
         const QList<QMimeType> mimeTypes = supportedMimeTypes();
-        if (const int mimeTypeCount = mimeTypes.size()) {
+        if (!mimeTypes.isEmpty()) {
             debug << ", supportedMimeTypes=(";
-            for (int i = 0; i < mimeTypeCount; ++i)
-                debug << " \"" << mimeTypes.at(i).name() << '"';
+            for (const auto &mimeType : mimeTypes)
+                debug << " \"" << mimeType.name() << '"';
             debug << ')';
         }
 #    endif // !QT_NO_MIMETYPE

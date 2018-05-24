@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,12 +28,17 @@
 
 
 #include <QtTest/QtTest>
+#include <QtTest/private/qtesthelpers_p.h>
 
 #include <qcoreapplication.h>
 #include <qdebug.h>
 #include <qabstractspinbox.h>
 #include <qlineedit.h>
 #include <qspinbox.h>
+
+#include "../../../shared/platforminputcontext.h"
+#include <private/qinputmethod_p.h>
+
 
 class tst_QAbstractSpinBox : public QObject
 {
@@ -49,11 +49,19 @@ public:
     virtual ~tst_QAbstractSpinBox();
 
 private slots:
+    void initTestCase();
+    void cleanupTestCase();
+
     void getSetCheck();
 
     // task-specific tests below me:
     void task183108_clear();
     void task228728_cssselector();
+
+    void inputMethodUpdate();
+
+private:
+    PlatformInputContext m_platformInputContext;
 };
 
 tst_QAbstractSpinBox::tst_QAbstractSpinBox()
@@ -71,6 +79,18 @@ public:
     QLineEdit *lineEdit() { return QAbstractSpinBox::lineEdit(); }
     void setLineEdit(QLineEdit *le) { QAbstractSpinBox::setLineEdit(le); }
 };
+
+void tst_QAbstractSpinBox::initTestCase()
+{
+    QInputMethodPrivate *inputMethodPrivate = QInputMethodPrivate::get(qApp->inputMethod());
+    inputMethodPrivate->testContext = &m_platformInputContext;
+}
+
+void tst_QAbstractSpinBox::cleanupTestCase()
+{
+    QInputMethodPrivate *inputMethodPrivate = QInputMethodPrivate::get(qApp->inputMethod());
+    inputMethodPrivate->testContext = 0;
+}
 
 // Testing get/set functions
 void tst_QAbstractSpinBox::getSetCheck()
@@ -144,6 +164,60 @@ void tst_QAbstractSpinBox::task228728_cssselector()
     //so while the stylesheet want to access property, it should not crash
     qApp->setStyleSheet("[alignment=\"1\"], [text=\"foo\"] { color:black; }" );
     QSpinBox box;
+}
+
+void tst_QAbstractSpinBox::inputMethodUpdate()
+{
+    QSpinBox box;
+
+    QSpinBox *testWidget = &box;
+    testWidget->setRange(0, 1);
+
+    QTestPrivate::centerOnScreen(testWidget);
+    testWidget->clear();
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget));
+
+    testWidget->activateWindow();
+    testWidget->setFocus();
+    QTRY_VERIFY(testWidget->hasFocus());
+    QTRY_COMPARE(qApp->focusObject(), testWidget);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        QInputMethodEvent event("1", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        attributes << QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, 0, 1, QVariant());
+        QInputMethodEvent event("1", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        QInputMethodEvent event("", attributes);
+        event.setCommitString("1");
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
+    QCOMPARE(testWidget->value(), 1);
+
+    m_platformInputContext.m_updateCallCount = 0;
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        attributes << QInputMethodEvent::Attribute(QInputMethodEvent::Selection, 0, 0, QVariant());
+        QInputMethodEvent event("", attributes);
+        QApplication::sendEvent(testWidget, &event);
+    }
+    QVERIFY(m_platformInputContext.m_updateCallCount >= 1);
 }
 
 

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,9 +43,10 @@
 namespace QtDiag {
 
 struct DumpContext {
-    DumpContext() : indentation(0) {}
+    DumpContext() : indentation(0), parent(0) {}
 
     int indentation;
+    HWND parent;
     QSharedPointer<QTextStream> stream;
 };
 
@@ -64,10 +60,18 @@ static void formatNativeWindow(HWND hwnd, QTextStream &str)
     RECT rect;
     if (GetWindowRect(hwnd, &rect)) {
         str << ' ' << (rect.right - rect.left) << 'x' << (rect.bottom - rect.top)
-            << '+' << rect.left << '+' << rect.top;
+            << forcesign << rect.left << rect.top << noforcesign;
     }
     if (IsWindowVisible(hwnd))
         str << " [visible]";
+
+    wchar_t buf[512];
+    if (GetWindowText(hwnd, buf, sizeof(buf)/sizeof(buf[0])) && buf[0])
+        str << " title=\"" << QString::fromWCharArray(buf) << "\"/";
+    else
+        str << ' ';
+    if (GetClassName(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
+        str << '"' << QString::fromWCharArray(buf) << '"';
 
     str << hex << showbase;
     if (const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE)) {
@@ -121,13 +125,31 @@ static void formatNativeWindow(HWND hwnd, QTextStream &str)
         debugWinStyle(str, exStyle, WS_EX_COMPOSITED)
         debugWinStyle(str, exStyle, WS_EX_NOACTIVATE)
     }
+
+    if (const ULONG_PTR classStyle = GetClassLongPtr(hwnd, GCL_STYLE)) {
+        str << " classStyle=" << classStyle;
+        debugWinStyle(str, classStyle, CS_BYTEALIGNCLIENT)
+        debugWinStyle(str, classStyle, CS_BYTEALIGNWINDOW)
+        debugWinStyle(str, classStyle, CS_CLASSDC)
+        debugWinStyle(str, classStyle, CS_DBLCLKS)
+        debugWinStyle(str, classStyle, CS_DROPSHADOW)
+        debugWinStyle(str, classStyle, CS_GLOBALCLASS)
+        debugWinStyle(str, classStyle, CS_HREDRAW)
+        debugWinStyle(str, classStyle, CS_NOCLOSE)
+        debugWinStyle(str, classStyle, CS_OWNDC)
+        debugWinStyle(str, classStyle, CS_PARENTDC)
+        debugWinStyle(str, classStyle, CS_SAVEBITS)
+        debugWinStyle(str, classStyle, CS_VREDRAW)
+    }
+
+    if (const ULONG_PTR wndProc = GetClassLongPtr(hwnd, GCLP_WNDPROC))
+        str << " wndProc=" << wndProc;
+
     str << noshowbase << dec;
 
-    wchar_t buf[512];
-    if (GetWindowText(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
-        str << " title=\"" << QString::fromWCharArray(buf) << '"';
-    if (GetClassName(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
-        str << " class=\"" << QString::fromWCharArray(buf) << '"';
+    if (GetWindowModuleFileName(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
+        str << " module=\"" << QString::fromWCharArray(buf) << '"';
+
     str << '\n';
 }
 
@@ -135,7 +157,11 @@ static void dumpNativeWindowRecursion(HWND hwnd, DumpContext *dc);
 
 BOOL CALLBACK dumpWindowEnumChildProc(HWND hwnd, LPARAM lParam)
 {
-    dumpNativeWindowRecursion(hwnd, reinterpret_cast<DumpContext *>(lParam));
+    DumpContext *dumpContext = reinterpret_cast<DumpContext *>(lParam);
+    // EnumChildWindows enumerates grand children as well, skip these to
+    // get the hierarchical formatting right.
+    if (GetAncestor(hwnd, GA_PARENT) == dumpContext->parent)
+        dumpNativeWindowRecursion(hwnd, dumpContext);
     return TRUE;
 }
 
@@ -145,6 +171,7 @@ static void dumpNativeWindowRecursion(HWND hwnd, DumpContext *dc)
     formatNativeWindow(hwnd, *dc->stream);
     DumpContext nextLevel = *dc;
     nextLevel.indentation += 2;
+    nextLevel.parent = hwnd;
     EnumChildWindows(hwnd, dumpWindowEnumChildProc, reinterpret_cast<LPARAM>(&nextLevel));
 }
 

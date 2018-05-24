@@ -1,37 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-#include <qglobal.h>
+#include <qtprintsupportglobal.h>
 
 #ifndef QT_NO_PRINTER
 #include <qdebug.h>
@@ -186,7 +192,8 @@ void QAlphaPaintEngine::drawPolygon(const QPointF *points, int pointCount, Polyg
     Q_D(QAlphaPaintEngine);
 
     QPolygonF poly;
-    for (int i=0; i<pointCount; ++i)
+    poly.reserve(pointCount);
+    for (int i = 0; i < pointCount; ++i)
         poly.append(points[i]);
 
     QPainterPath path;
@@ -299,15 +306,12 @@ void QAlphaPaintEngine::flushAndInit(bool init)
         d->m_alphargn = d->m_alphargn.intersected(QRect(0, 0, d->m_pdev->width(), d->m_pdev->height()));
 
         // just use the bounding rect if it's a complex region..
-        QVector<QRect> rects = d->m_alphargn.rects();
-        if (rects.size() > 10) {
+        if (d->m_alphargn.rectCount() > 10) {
             QRect br = d->m_alphargn.boundingRect();
             d->m_alphargn = QRegion(br);
-            rects.clear();
-            rects.append(br);
         }
 
-        d->m_cliprgn = d->m_alphargn;
+        const auto oldAlphaRegion = d->m_cliprgn = d->m_alphargn;
 
         // now replay the QPicture
         ++d->m_pass; // we are now doing pass #2
@@ -329,8 +333,8 @@ void QAlphaPaintEngine::flushAndInit(bool init)
         d->resetState(painter());
 
         // fill in the alpha images
-        for (int i=0; i<rects.size(); ++i)
-            d->drawAlphaImage(rects.at(i));
+        for (const auto &rect : oldAlphaRegion)
+            d->drawAlphaImage(rect);
 
         d->m_alphargn = QRegion();
 
@@ -383,6 +387,7 @@ QAlphaPaintEnginePrivate::QAlphaPaintEnginePrivate()
         m_pic(0),
         m_picengine(0),
         m_picpainter(0),
+        m_numberOfCachedRects(0),
         m_hasalpha(false),
         m_alphaPen(false),
         m_alphaBrush(false),
@@ -433,7 +438,14 @@ void QAlphaPaintEnginePrivate::addAlphaRect(const QRectF &rect)
 
 bool QAlphaPaintEnginePrivate::canSeeTroughBackground(bool somethingInRectHasAlpha, const QRectF &rect) const
 {
-    return somethingInRectHasAlpha && m_dirtyrgn.intersects(rect.toAlignedRect());
+    if (somethingInRectHasAlpha) {
+        if (m_dirtyRects.count() != m_numberOfCachedRects) {
+            m_cachedDirtyRgn.setRects(m_dirtyRects.constData(), m_dirtyRects.count());
+            m_numberOfCachedRects = m_dirtyRects.count();
+        }
+        return m_cachedDirtyRgn.intersects(rect.toAlignedRect());
+    }
+    return false;
 }
 
 void QAlphaPaintEnginePrivate::drawAlphaImage(const QRectF &rect)

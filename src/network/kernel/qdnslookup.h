@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Jeremy Lainé <jeremy.laine@m4x.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,11 +40,14 @@
 #ifndef QDNSLOOKUP_H
 #define QDNSLOOKUP_H
 
+#include <QtNetwork/qtnetworkglobal.h>
 #include <QtCore/qlist.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qshareddata.h>
 #include <QtCore/qsharedpointer.h>
 #include <QtCore/qstring.h>
+
+QT_REQUIRE_CONFIG(dnslookup);
 
 QT_BEGIN_NAMESPACE
 
@@ -55,15 +64,17 @@ class Q_NETWORK_EXPORT QDnsDomainNameRecord
 public:
     QDnsDomainNameRecord();
     QDnsDomainNameRecord(const QDnsDomainNameRecord &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    QDnsDomainNameRecord &operator=(QDnsDomainNameRecord &&other) Q_DECL_NOTHROW { swap(other); return *this; }
+#endif
+    QDnsDomainNameRecord &operator=(const QDnsDomainNameRecord &other);
     ~QDnsDomainNameRecord();
 
-    void swap(QDnsDomainNameRecord &other) { qSwap(d, other.d); }
+    void swap(QDnsDomainNameRecord &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
 
     QString name() const;
     quint32 timeToLive() const;
     QString value() const;
-
-    QDnsDomainNameRecord &operator=(const QDnsDomainNameRecord &other);
 
 private:
     QSharedDataPointer<QDnsDomainNameRecordPrivate> d;
@@ -77,15 +88,17 @@ class Q_NETWORK_EXPORT QDnsHostAddressRecord
 public:
     QDnsHostAddressRecord();
     QDnsHostAddressRecord(const QDnsHostAddressRecord &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    QDnsHostAddressRecord &operator=(QDnsHostAddressRecord &&other) Q_DECL_NOTHROW { swap(other); return *this; }
+#endif
+    QDnsHostAddressRecord &operator=(const QDnsHostAddressRecord &other);
     ~QDnsHostAddressRecord();
 
-    void swap(QDnsHostAddressRecord &other) { qSwap(d, other.d); }
+    void swap(QDnsHostAddressRecord &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
 
     QString name() const;
     quint32 timeToLive() const;
     QHostAddress value() const;
-
-    QDnsHostAddressRecord &operator=(const QDnsHostAddressRecord &other);
 
 private:
     QSharedDataPointer<QDnsHostAddressRecordPrivate> d;
@@ -99,16 +112,18 @@ class Q_NETWORK_EXPORT QDnsMailExchangeRecord
 public:
     QDnsMailExchangeRecord();
     QDnsMailExchangeRecord(const QDnsMailExchangeRecord &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    QDnsMailExchangeRecord &operator=(QDnsMailExchangeRecord &&other) Q_DECL_NOTHROW { swap(other); return *this; }
+#endif
+    QDnsMailExchangeRecord &operator=(const QDnsMailExchangeRecord &other);
     ~QDnsMailExchangeRecord();
 
-    void swap(QDnsMailExchangeRecord &other) { qSwap(d, other.d); }
+    void swap(QDnsMailExchangeRecord &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
 
     QString exchange() const;
     QString name() const;
     quint16 preference() const;
     quint32 timeToLive() const;
-
-    QDnsMailExchangeRecord &operator=(const QDnsMailExchangeRecord &other);
 
 private:
     QSharedDataPointer<QDnsMailExchangeRecordPrivate> d;
@@ -122,9 +137,13 @@ class Q_NETWORK_EXPORT QDnsServiceRecord
 public:
     QDnsServiceRecord();
     QDnsServiceRecord(const QDnsServiceRecord &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    QDnsServiceRecord &operator=(QDnsServiceRecord &&other) Q_DECL_NOTHROW { swap(other); return *this; }
+#endif
+    QDnsServiceRecord &operator=(const QDnsServiceRecord &other);
     ~QDnsServiceRecord();
 
-    void swap(QDnsServiceRecord &other) { qSwap(d, other.d); }
+    void swap(QDnsServiceRecord &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
 
     QString name() const;
     quint16 port() const;
@@ -132,8 +151,6 @@ public:
     QString target() const;
     quint32 timeToLive() const;
     quint16 weight() const;
-
-    QDnsServiceRecord &operator=(const QDnsServiceRecord &other);
 
 private:
     QSharedDataPointer<QDnsServiceRecordPrivate> d;
@@ -147,15 +164,17 @@ class Q_NETWORK_EXPORT QDnsTextRecord
 public:
     QDnsTextRecord();
     QDnsTextRecord(const QDnsTextRecord &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    QDnsTextRecord &operator=(QDnsTextRecord &&other) Q_DECL_NOTHROW { swap(other); return *this; }
+#endif
+    QDnsTextRecord &operator=(const QDnsTextRecord &other);
     ~QDnsTextRecord();
 
-    void swap(QDnsTextRecord &other) { qSwap(d, other.d); }
+    void swap(QDnsTextRecord &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
 
     QString name() const;
     quint32 timeToLive() const;
     QList<QByteArray> values() const;
-
-    QDnsTextRecord &operator=(const QDnsTextRecord &other);
 
 private:
     QSharedDataPointer<QDnsTextRecordPrivate> d;
@@ -201,9 +220,9 @@ public:
     };
     Q_ENUM(Type)
 
-    explicit QDnsLookup(QObject *parent = 0);
-    QDnsLookup(Type type, const QString &name, QObject *parent = 0);
-    QDnsLookup(Type type, const QString &name, const QHostAddress &nameserver, QObject *parent = 0);
+    explicit QDnsLookup(QObject *parent = nullptr);
+    QDnsLookup(Type type, const QString &name, QObject *parent = nullptr);
+    QDnsLookup(Type type, const QString &name, const QHostAddress &nameserver, QObject *parent = nullptr);
     ~QDnsLookup();
 
     Error error() const;

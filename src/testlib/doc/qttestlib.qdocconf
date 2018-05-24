@@ -1,10 +1,11 @@
 include($QT_INSTALL_DOCS/global/qt-module-defaults.qdocconf)
 
 project                 = QtTestLib
+moduleheader            = QtTest
 description             = Qt Test Reference Documentation
 version                 = $QT_VERSION
 
-examplesinstallpath     = testlib
+examplesinstallpath     = qtestlib
 
 qhp.projects            = QtTestLib
 

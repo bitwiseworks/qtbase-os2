@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,9 +34,6 @@
 class tst_QZip : public QObject
 {
     Q_OBJECT
-public slots:
-    void init();
-    void cleanup();
 
 private slots:
     void basicUnpack();
@@ -50,23 +42,15 @@ private slots:
     void createArchive();
 };
 
-void tst_QZip::init()
-{
-}
-
-void tst_QZip::cleanup()
-{
-}
-
 void tst_QZip::basicUnpack()
 {
     QZipReader zip(QFINDTESTDATA("/testdata/test.zip"), QIODevice::ReadOnly);
-    QList<QZipReader::FileInfo> files = zip.fileInfoList();
+    QVector<QZipReader::FileInfo> files = zip.fileInfoList();
     QCOMPARE(files.count(), 2);
 
     QZipReader::FileInfo fi = files.at(0);
     QVERIFY(fi.isValid());
-    QCOMPARE(fi.filePath, QString("test/"));
+    QCOMPARE(fi.filePath, QString("test"));
     QCOMPARE(uint(fi.isDir), (uint) 1);
     QCOMPARE(uint(fi.isFile), (uint) 0);
     QCOMPARE(uint(fi.isSymLink), (uint) 0);
@@ -97,7 +81,7 @@ void tst_QZip::basicUnpack()
 void tst_QZip::symlinks()
 {
     QZipReader zip(QFINDTESTDATA("/testdata/symlink.zip"), QIODevice::ReadOnly);
-    QList<QZipReader::FileInfo> files = zip.fileInfoList();
+    QVector<QZipReader::FileInfo> files = zip.fileInfoList();
     QCOMPARE(files.count(), 2);
 
     QZipReader::FileInfo fi = files.at(0);
@@ -120,7 +104,7 @@ void tst_QZip::symlinks()
 void tst_QZip::readTest()
 {
     QZipReader zip("foobar.zip", QIODevice::ReadOnly); // non existing file.
-    QList<QZipReader::FileInfo> files = zip.fileInfoList();
+    QVector<QZipReader::FileInfo> files = zip.fileInfoList();
     QCOMPARE(files.count(), 0);
     QByteArray b = zip.fileData("foobar");
     QCOMPARE(b.size(), 0);
@@ -139,7 +123,7 @@ void tst_QZip::createArchive()
 
     QBuffer buffer2(&zipFile);
     QZipReader zip2(&buffer2);
-    QList<QZipReader::FileInfo> files = zip2.fileInfoList();
+    QVector<QZipReader::FileInfo> files = zip2.fileInfoList();
     QCOMPARE(files.count(), 1);
     QZipReader::FileInfo file = files.at(0);
     QCOMPARE(file.filePath, QString("My Filename"));

@@ -22,14 +22,20 @@ SUBDIRS=\
    qtextpiecetable \
    qtextscriptengine \
    qtexttable \
-
-contains(QT_CONFIG, OdfWriter):SUBDIRS += qzip qtextodfwriter
+   qzip \
+   qtextodfwriter \
+   qinputcontrol
 
 win32:SUBDIRS -= qtextpiecetable
 
-!contains(QT_CONFIG, private_tests): SUBDIRS -= \
+!qtConfig(private_tests): SUBDIRS -= \
            qfontcache \
            qcssparser \
-           qstatictext \
            qtextlayout \
            qtextpiecetable \
+           qzip \
+           qtextodfwriter
+
+!qtHaveModule(xml): SUBDIRS -= \
+           qcssparser \
+           qtextdocument

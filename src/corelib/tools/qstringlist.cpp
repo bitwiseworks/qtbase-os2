@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,9 @@
 
 #include <qstringlist.h>
 #include <qset.h>
-#include <qregularexpression.h>
+#if QT_CONFIG(regularexpression)
+#  include <qregularexpression.h>
+#endif
 
 #include <algorithm>
 
@@ -137,8 +145,8 @@ QT_BEGIN_NAMESPACE
 
     \snippet qstringlist/main.cpp 6
 
-    The argument to split can be a single character, a string, or a
-    QRegExp.
+    The argument to split can be a single character, a string, a
+    QRegularExpression or a (deprecated) QRegExp.
 
     In addition, the \l {QStringList::operator+()}{operator+()}
     function allows you to concatenate two string lists into one. To
@@ -293,6 +301,16 @@ QStringList QtPrivate::QStringList_filter(const QStringList *that, const QString
     return res;
 }
 
+template<typename T>
+static bool stringList_contains(const QStringList &stringList, const T &str, Qt::CaseSensitivity cs)
+{
+    for (const auto &string : stringList) {
+        if (string.size() == str.size() && string.compare(str, cs) == 0)
+            return true;
+    }
+    return false;
+}
+
 
 /*!
     \fn bool QStringList::contains(const QString &str, Qt::CaseSensitivity cs) const
@@ -306,12 +324,24 @@ QStringList QtPrivate::QStringList_filter(const QStringList *that, const QString
 bool QtPrivate::QStringList_contains(const QStringList *that, const QString &str,
                                      Qt::CaseSensitivity cs)
 {
-    for (int i = 0; i < that->size(); ++i) {
-        const QString & string = that->at(i);
-        if (string.length() == str.length() && str.compare(string, cs) == 0)
-            return true;
-    }
-    return false;
+    return stringList_contains(*that, str, cs);
+}
+
+/*!
+    \fn bool QStringList::contains(QLatin1String str, Qt::CaseSensitivity cs) const
+    \overload
+    \since 5.10
+
+    Returns \c true if the list contains the string \a str; otherwise
+    returns \c false. The search is case insensitive if \a cs is
+    Qt::CaseInsensitive; the search is case sensitive by default.
+
+    \sa indexOf(), lastIndexOf(), QString::contains()
+ */
+bool QtPrivate::QStringList_contains(const QStringList *that, QLatin1String str,
+                                     Qt::CaseSensitivity cs)
+{
+    return stringList_contains(*that, str, cs);
 }
 
 #ifndef QT_NO_REGEXP
@@ -333,8 +363,7 @@ QStringList QtPrivate::QStringList_filter(const QStringList *that, const QRegExp
 }
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 /*!
     \fn QStringList QStringList::filter(const QRegularExpression &re) const
     \overload
@@ -352,8 +381,7 @@ QStringList QtPrivate::QStringList_filter(const QStringList *that, const QRegula
     }
     return res;
 }
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
 
 /*!
     \fn QStringList &QStringList::replaceInStrings(const QString &before, const QString &after, Qt::CaseSensitivity cs)
@@ -408,8 +436,7 @@ void QtPrivate::QStringList_replaceInStrings(QStringList *that, const QRegExp &r
 }
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 /*!
     \fn QStringList &QStringList::replaceInStrings(const QRegularExpression &re, const QString &after)
     \overload
@@ -438,8 +465,18 @@ void QtPrivate::QStringList_replaceInStrings(QStringList *that, const QRegularEx
     for (int i = 0; i < that->size(); ++i)
         (*that)[i].replace(re, after);
 }
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
+
+static int accumulatedSize(const QStringList &list, int seplen)
+{
+    int result = 0;
+    if (!list.isEmpty()) {
+        for (const auto &e : list)
+            result += e.size() + seplen;
+        result -= seplen;
+    }
+    return result;
+}
 
 /*!
     \fn QString QStringList::join(const QString &separator) const
@@ -458,14 +495,8 @@ void QtPrivate::QStringList_replaceInStrings(QStringList *that, const QRegularEx
 */
 QString QtPrivate::QStringList_join(const QStringList *that, const QChar *sep, int seplen)
 {
-    int totalLength = 0;
+    const int totalLength = accumulatedSize(*that, seplen);
     const int size = that->size();
-
-    for (int i = 0; i < size; ++i)
-        totalLength += that->at(i).size();
-
-    if(size > 0)
-        totalLength += seplen * (size - 1);
 
     QString res;
     if (totalLength == 0)
@@ -477,6 +508,27 @@ QString QtPrivate::QStringList_join(const QStringList *that, const QChar *sep, i
         res += that->at(i);
     }
     return res;
+}
+
+/*!
+    \fn QString QStringList::join(QLatin1String separator) const
+    \since 5.8
+    \overload join()
+*/
+QString QtPrivate::QStringList_join(const QStringList &list, QLatin1String sep)
+{
+    QString result;
+    if (!list.isEmpty()) {
+        result.reserve(accumulatedSize(list, sep.size()));
+        const auto end = list.end();
+        auto it = list.begin();
+        result += *it;
+        while (++it != end) {
+            result += sep;
+            result += *it;
+        }
+    }
+    return result;
 }
 
 /*!
@@ -620,14 +672,13 @@ int QtPrivate::QStringList_lastIndexOf(const QStringList *that, QRegExp &rx, int
 }
 #endif
 
-#ifndef QT_BOOTSTRAPPED
-#ifndef QT_NO_REGULAREXPRESSION
+#if QT_CONFIG(regularexpression)
 /*!
     \fn int QStringList::indexOf(const QRegularExpression &re, int from) const
     \overload
     \since 5.0
 
-    Returns the index position of the first match of \a re in
+    Returns the index position of the first exact match of \a re in
     the list, searching forward from index position \a from. Returns
     -1 if no item matched.
 
@@ -678,13 +729,12 @@ int QtPrivate::QStringList_lastIndexOf(const QStringList *that, const QRegularEx
     }
     return -1;
 }
-#endif // QT_NO_REGULAREXPRESSION
-#endif // QT_BOOTSTRAPPED
+#endif // QT_CONFIG(regularexpression)
 
 /*!
     \fn int QStringList::removeDuplicates()
 
-    \since  4.5
+    \since 4.5
 
     This function removes duplicate entries from a list.
     The entries do not have to be sorted. They will retain their

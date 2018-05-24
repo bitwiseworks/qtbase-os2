@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -139,21 +145,17 @@
 #define RESET_NOTIFICATION_STRATEGY_ARB 0x8256
 #define LOSE_CONTEXT_ON_RESET_ARB 0x8252
 
+#ifndef WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT
+#define WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT 0x20A9
+#endif
+
 QT_BEGIN_NAMESPACE
 
 QWindowsOpengl32DLL QOpenGLStaticContext::opengl32;
 
-void *QWindowsOpengl32DLL::resolve(const char *name)
+FARPROC QWindowsOpengl32DLL::resolve(const char *name)
 {
-#ifndef Q_OS_WINCE
-    void *proc = m_lib ? (void *) ::GetProcAddress(m_lib, name) : 0;
-#else
-    void *proc = m_lib ? (void *) ::GetProcAddress(m_lib, (const wchar_t *) QString::fromLatin1(name).utf16()) : 0;
-#endif
-    if (!proc)
-        qErrnoWarning(::GetLastError(), "Failed to resolve OpenGL function %s", name);
-
-    return proc;
+    return m_lib ? ::GetProcAddress(m_lib, name) : nullptr;
 }
 
 bool QWindowsOpengl32DLL::init(bool softwareRendering)
@@ -193,56 +195,11 @@ bool QWindowsOpengl32DLL::init(bool softwareRendering)
     wglSwapBuffers = reinterpret_cast<BOOL (WINAPI *)(HDC)>(resolve("wglSwapBuffers"));
     wglSetPixelFormat = reinterpret_cast<BOOL (WINAPI *)(HDC, int, const PIXELFORMATDESCRIPTOR *)>(resolve("wglSetPixelFormat"));
 
-    glBindTexture = reinterpret_cast<void (APIENTRY *)(GLenum , GLuint )>(resolve("glBindTexture"));
-    glBlendFunc = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum )>(resolve("glBlendFunc"));
-    glClear = reinterpret_cast<void (APIENTRY *)(GLbitfield )>(resolve("glClear"));
-    glClearColor = reinterpret_cast<void (APIENTRY *)(GLfloat , GLfloat , GLfloat , GLfloat )>(resolve("glClearColor"));
-    glClearStencil = reinterpret_cast<void (APIENTRY *)(GLint )>(resolve("glClearStencil"));
-    glColorMask = reinterpret_cast<void (APIENTRY *)(GLboolean , GLboolean , GLboolean , GLboolean )>(resolve("glColorMask"));
-    glCopyTexImage2D = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLenum , GLint , GLint , GLsizei , GLsizei , GLint )>(resolve("glCopyTexImage2D"));
-    glCopyTexSubImage2D = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLint , GLint , GLint , GLint , GLsizei , GLsizei )>(resolve("glCopyTexSubImage2D"));
-    glCullFace = reinterpret_cast<void (APIENTRY *)(GLenum )>(resolve("glCullFace"));
-    glDeleteTextures = reinterpret_cast<void (APIENTRY *)(GLsizei , const GLuint *)>(resolve("glDeleteTextures"));
-    glDepthFunc = reinterpret_cast<void (APIENTRY *)(GLenum )>(resolve("glDepthFunc"));
-    glDepthMask = reinterpret_cast<void (APIENTRY *)(GLboolean )>(resolve("glDepthMask"));
-    glDisable = reinterpret_cast<void (APIENTRY *)(GLenum )>(resolve("glDisable"));
-    glDrawArrays = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLsizei )>(resolve("glDrawArrays"));
-    glDrawElements = reinterpret_cast<void (APIENTRY *)(GLenum , GLsizei , GLenum , const GLvoid *)>(resolve("glDrawElements"));
-    glEnable = reinterpret_cast<void (APIENTRY *)(GLenum )>(resolve("glEnable"));
-    glFinish = reinterpret_cast<void (APIENTRY *)()>(resolve("glFinish"));
-    glFlush = reinterpret_cast<void (APIENTRY *)()>(resolve("glFlush"));
-    glFrontFace = reinterpret_cast<void (APIENTRY *)(GLenum )>(resolve("glFrontFace"));
-    glGenTextures = reinterpret_cast<void (APIENTRY *)(GLsizei , GLuint *)>(resolve("glGenTextures"));
-    glGetBooleanv = reinterpret_cast<void (APIENTRY *)(GLenum , GLboolean *)>(resolve("glGetBooleanv"));
     glGetError = reinterpret_cast<GLenum (APIENTRY *)()>(resolve("glGetError"));
-    glGetFloatv = reinterpret_cast<void (APIENTRY *)(GLenum , GLfloat *)>(resolve("glGetFloatv"));
     glGetIntegerv = reinterpret_cast<void (APIENTRY *)(GLenum , GLint *)>(resolve("glGetIntegerv"));
     glGetString = reinterpret_cast<const GLubyte * (APIENTRY *)(GLenum )>(resolve("glGetString"));
-    glGetTexParameterfv = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , GLfloat *)>(resolve("glGetTexParameterfv"));
-    glGetTexParameteriv = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , GLint *)>(resolve("glGetTexParameteriv"));
-    glHint = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum )>(resolve("glHint"));
-    glIsEnabled = reinterpret_cast<GLboolean (APIENTRY *)(GLenum )>(resolve("glIsEnabled"));
-    glIsTexture = reinterpret_cast<GLboolean (APIENTRY *)(GLuint )>(resolve("glIsTexture"));
-    glLineWidth = reinterpret_cast<void (APIENTRY *)(GLfloat )>(resolve("glLineWidth"));
-    glPixelStorei = reinterpret_cast<void (APIENTRY *)(GLenum , GLint )>(resolve("glPixelStorei"));
-    glPolygonOffset = reinterpret_cast<void (APIENTRY *)(GLfloat , GLfloat )>(resolve("glPolygonOffset"));
-    glReadPixels = reinterpret_cast<void (APIENTRY *)(GLint , GLint , GLsizei , GLsizei , GLenum , GLenum , GLvoid *)>(resolve("glReadPixels"));
-    glScissor = reinterpret_cast<void (APIENTRY *)(GLint , GLint , GLsizei , GLsizei )>(resolve("glScissor"));
-    glStencilFunc = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLuint )>(resolve("glStencilFunc"));
-    glStencilMask = reinterpret_cast<void (APIENTRY *)(GLuint )>(resolve("glStencilMask"));
-    glStencilOp = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , GLenum )>(resolve("glStencilOp"));
-    glTexImage2D = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLint , GLsizei , GLsizei , GLint , GLenum , GLenum , const GLvoid *)>(resolve("glTexImage2D"));
-    glTexParameterf = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , GLfloat )>(resolve("glTexParameterf"));
-    glTexParameterfv = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , const GLfloat *)>(resolve("glTexParameterfv"));
-    glTexParameteri = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , GLint )>(resolve("glTexParameteri"));
-    glTexParameteriv = reinterpret_cast<void (APIENTRY *)(GLenum , GLenum , const GLint *)>(resolve("glTexParameteriv"));
-    glTexSubImage2D = reinterpret_cast<void (APIENTRY *)(GLenum , GLint , GLint , GLint , GLsizei , GLsizei , GLenum , GLenum , const GLvoid *)>(resolve("glTexSubImage2D"));
-    glViewport = reinterpret_cast<void (APIENTRY *)(GLint , GLint , GLsizei , GLsizei )>(resolve("glViewport"));
 
-    glClearDepth = reinterpret_cast<void (APIENTRY *)(GLdouble )>(resolve("glClearDepth"));
-    glDepthRange = reinterpret_cast<void (APIENTRY *)(GLdouble , GLdouble )>(resolve("glDepthRange"));
-
-    return wglCreateContext && glBindTexture && glClearDepth;
+    return wglCreateContext && glGetError && glGetString;
 }
 
 BOOL QWindowsOpengl32DLL::swapBuffers(HDC dc)
@@ -284,6 +241,7 @@ static inline void initPixelFormatDescriptor(PIXELFORMATDESCRIPTOR *d)
     d->nVersion = 1;
 }
 
+#ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug d, const PIXELFORMATDESCRIPTOR &pd)
 {
     QDebugStateSaver saver(d);
@@ -325,6 +283,32 @@ QDebug operator<<(QDebug d, const PIXELFORMATDESCRIPTOR &pd)
         << " cAccumAlphaBits=" << pd.cAccumAlphaBits;
     return d;
 }
+
+QDebug operator<<(QDebug d, const QOpenGLStaticContext &s)
+{
+    QDebugStateSaver saver(d);
+    d.nospace();
+    d << "OpenGL: " << s.vendor << ',' << s.renderer << " default "
+        <<  s.defaultFormat;
+    if (s.extensions &  QOpenGLStaticContext::SampleBuffers)
+        d << ",SampleBuffers";
+    if (s.hasExtensions())
+        d << ", Extension-API present";
+    d << "\nExtensions: " << (s.extensionNames.count(' ') + 1);
+    if (QWindowsContext::verbose > 1)
+        d << s.extensionNames;
+    return d;
+}
+
+QDebug operator<<(QDebug d, const QWindowsOpenGLContextFormat &f)
+{
+    QDebugStateSaver saver(d);
+    d.nospace();
+    d << "ContextFormat: v" << (f.version >> 8) << '.' << (f.version & 0xFF)
+        << " profile: " << f.profile << " options: " << f.options;
+    return d;
+}
+#endif // !QT_NO_DEBUG_STREAM
 
 // Check whether an obtained PIXELFORMATDESCRIPTOR matches the request.
 static inline bool
@@ -395,9 +379,7 @@ static PIXELFORMATDESCRIPTOR
     initPixelFormatDescriptor(&pfd);
     pfd.iPixelType = PFD_TYPE_RGBA;
     pfd.iLayerType  = PFD_MAIN_PLANE;
-    pfd.dwFlags = PFD_SUPPORT_OPENGL;
-    if (QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
-        pfd.dwFlags = PFD_SUPPORT_COMPOSITION;
+    pfd.dwFlags = PFD_SUPPORT_OPENGL | PFD_SUPPORT_COMPOSITION;
     const bool isPixmap = (additional.formatFlags & QWindowsGLRenderToPixmap) != 0;
     pfd.dwFlags |= isPixmap ? PFD_DRAW_TO_BITMAP : PFD_DRAW_TO_WINDOW;
     if (!(additional.formatFlags & QWindowsGLDirectRendering))
@@ -409,6 +391,15 @@ static PIXELFORMATDESCRIPTOR
         pfd.dwFlags |= PFD_DOUBLEBUFFER;
     pfd.cDepthBits =
         format.depthBufferSize() >= 0 ? format.depthBufferSize() : 32;
+    const int redBufferSize = format.redBufferSize();
+    if (redBufferSize != -1)
+        pfd.cRedBits = BYTE(redBufferSize);
+    const int greenBufferSize = format.greenBufferSize();
+    if (greenBufferSize != -1)
+        pfd.cGreenBits = BYTE(greenBufferSize);
+    const int blueBufferSize = format.blueBufferSize();
+    if (blueBufferSize != -1)
+        pfd.cBlueBits = BYTE(blueBufferSize);
     pfd.cAlphaBits = format.alphaBufferSize() > 0 ? format.alphaBufferSize() : 8;
     pfd.cStencilBits = format.stencilBufferSize() > 0 ? format.stencilBufferSize() : 8;
     if (additional.formatFlags & QWindowsGLAccumBuffer)
@@ -436,7 +427,7 @@ static int choosePixelFormat(HDC hdc, const QSurfaceFormat &format,
                             PIXELFORMATDESCRIPTOR *obtainedPfd)
 {
     if (QOpenGLStaticContext::opengl32.moduleIsNotOpengl32()) {
-        qWarning("%s: Attempted to use GDI functions with a non-opengl32.dll library", Q_FUNC_INFO);
+        qWarning("Attempted to use GDI functions with a non-opengl32.dll library");
         return 0;
     }
 
@@ -509,7 +500,7 @@ static int choosePixelFormat(HDC hdc,
                              const QWindowsOpenGLAdditionalFormat &additional,
                              PIXELFORMATDESCRIPTOR *obtainedPfd)
 {
-    enum { attribSize =40 };
+    enum { attribSize = 42 };
     if ((additional.formatFlags & QWindowsGLRenderToPixmap) || !staticContext.hasExtensions())
         return 0;
 
@@ -590,7 +581,15 @@ static int choosePixelFormat(HDC hdc,
         iAttributes[i++] = WGL_SAMPLE_BUFFERS_ARB;
         iAttributes[i++] = FALSE;
     }
-    // If sample buffer request cannot be satisfied, reduce request.
+    // must be the last
+    bool srgbRequested = format.colorSpace() == QSurfaceFormat::sRGBColorSpace;
+    int srgbValuePosition = 0;
+    if (srgbRequested) {
+        srgbValuePosition = i;
+        iAttributes[i++] = WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT;
+        iAttributes[i++] = TRUE;
+    }
+    // If sample or sRGB request cannot be satisfied, reduce request.
     int pixelFormat = 0;
     uint numFormats = 0;
     while (true) {
@@ -598,20 +597,25 @@ static int choosePixelFormat(HDC hdc,
             staticContext.wglChoosePixelFormatARB(hdc, iAttributes, 0, 1,
                                                &pixelFormat, &numFormats)
                 && numFormats >= 1;
-        if (valid || !sampleBuffersRequested)
+        if (valid || (!sampleBuffersRequested && !srgbRequested))
             break;
-        if (iAttributes[samplesValuePosition] > 1) {
-            iAttributes[samplesValuePosition] /= 2;
-        } else if (iAttributes[samplesValuePosition] == 1) {
-            // Fallback in case it is unable to initialize with any
-            // samples to avoid falling back to the GDI path
-            // NB: The sample attributes needs to be at the end for this
-            // to work correctly
-            iAttributes[samplesValuePosition - 1] = FALSE;
-            iAttributes[samplesValuePosition] = 0;
-            iAttributes[samplesValuePosition + 1] = 0;
-        } else {
-            break;
+        if (srgbRequested) {
+            iAttributes[srgbValuePosition] = 0;
+            srgbRequested = false;
+        } else if (sampleBuffersRequested) {
+            if (iAttributes[samplesValuePosition] > 1) {
+                iAttributes[samplesValuePosition] /= 2;
+            } else if (iAttributes[samplesValuePosition] == 1) {
+                // Fallback in case it is unable to initialize with any
+                // samples to avoid falling back to the GDI path
+                // NB: The sample attributes needs to be at the end for this
+                // to work correctly
+                iAttributes[samplesValuePosition - 1] = FALSE;
+                iAttributes[samplesValuePosition] = 0;
+                iAttributes[samplesValuePosition + 1] = 0;
+            } else {
+                break;
+            }
         }
     }
     // Verify if format is acceptable. Note that the returned
@@ -648,7 +652,7 @@ static QSurfaceFormat
                           HDC hdc, int pixelFormat,
                           QWindowsOpenGLAdditionalFormat *additionalIn = 0)
 {
-    enum { attribSize =40 };
+    enum { attribSize = 42 };
 
     QSurfaceFormat result;
     result.setRenderableType(QSurfaceFormat::OpenGL);
@@ -661,6 +665,7 @@ static QSurfaceFormat
 
     int i = 0;
     const bool hasSampleBuffers = testFlag(staticContext.extensions, QOpenGLStaticContext::SampleBuffers);
+    const bool hasSrgbSupport = testFlag(staticContext.extensions, QOpenGLStaticContext::sRGBCapableFramebuffer);
 
     iAttributes[i++] = WGL_DOUBLE_BUFFER_ARB; // 0
     iAttributes[i++] = WGL_DEPTH_BITS_ARB; // 1
@@ -678,6 +683,9 @@ static QSurfaceFormat
         iAttributes[i++] = WGL_SAMPLE_BUFFERS_ARB; // 12
         iAttributes[i++] = WGL_SAMPLES_ARB; // 13
     }
+    if (hasSrgbSupport)
+        iAttributes[i++] = WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT; // 12 or 14
+
     if (!staticContext.wglGetPixelFormatAttribIVARB(hdc, pixelFormat, 0, i,
                                         iAttributes, iValues)) {
         qErrnoWarning("%s: wglGetPixelFormatAttribIVARB() failed for basic parameters.", __FUNCTION__);
@@ -693,8 +701,14 @@ static QSurfaceFormat
     if (iValues[9])
         result.setOption(QSurfaceFormat::StereoBuffers);
 
-    if (hasSampleBuffers)
+    if (hasSampleBuffers) {
         result.setSamples(iValues[13]);
+        if (hasSrgbSupport && iValues[14])
+            result.setColorSpace(QSurfaceFormat::sRGBColorSpace);
+    } else {
+        if (hasSrgbSupport && iValues[12])
+            result.setColorSpace(QSurfaceFormat::sRGBColorSpace);
+    }
     if (additionalIn) {
         if (iValues[7])
             additionalIn->formatFlags |= QWindowsGLAccumBuffer;
@@ -845,27 +859,15 @@ static inline QOpenGLContextData createDummyWindowOpenGLContextData()
     \ingroup qt-lighthouse-win
 */
 
-QWindowsOpenGLContextFormat::QWindowsOpenGLContextFormat() :
-    profile(QSurfaceFormat::NoProfile),
-    version(0),
-    options(0)
-{
-}
-
 QWindowsOpenGLContextFormat QWindowsOpenGLContextFormat::current()
 {
     QWindowsOpenGLContextFormat result;
     const QByteArray version = QOpenGLStaticContext::getGlString(GL_VERSION);
-    const int majorDot = version.indexOf('.');
-    if (majorDot != -1) {
-        int minorDot = version.indexOf('.', majorDot + 1);
-        if (minorDot == -1)
-            minorDot = version.size();
-        result.version = (version.mid(0, majorDot).toInt() << 8)
-            + version.mid(majorDot + 1, minorDot - majorDot - 1).toInt();
-    } else {
+    int major, minor;
+    if (QPlatformOpenGLContext::parseOpenGLVersion(version, major, minor))
+        result.version = (major << 8) + minor;
+    else
         result.version = 0x0200;
-    }
     result.profile = QSurfaceFormat::NoProfile;
     if (result.version < 0x0300) {
         result.options |= QSurfaceFormat::DeprecatedFunctions;
@@ -903,15 +905,6 @@ void QWindowsOpenGLContextFormat::apply(QSurfaceFormat *format) const
         format->setOption(QSurfaceFormat::DebugContext);
     if (options & QSurfaceFormat::DeprecatedFunctions)
         format->setOption(QSurfaceFormat::DeprecatedFunctions);
-}
-
-QDebug operator<<(QDebug d, const QWindowsOpenGLContextFormat &f)
-{
-    QDebugStateSaver saver(d);
-    d.nospace();
-    d << "ContextFormat: v" << (f.version >> 8) << '.' << (f.version & 0xFF)
-        << " profile: " << f.profile << " options: " << f.options;
-    return d;
 }
 
 /*!
@@ -988,7 +981,8 @@ QOpenGLStaticContext::QOpenGLStaticContext() :
     wglChoosePixelFormatARB((WglChoosePixelFormatARB)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglChoosePixelFormatARB")),
     wglCreateContextAttribsARB((WglCreateContextAttribsARB)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglCreateContextAttribsARB")),
     wglSwapInternalExt((WglSwapInternalExt)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglSwapIntervalEXT")),
-    wglGetSwapInternalExt((WglGetSwapInternalExt)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglGetSwapIntervalEXT"))
+    wglGetSwapInternalExt((WglGetSwapInternalExt)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglGetSwapIntervalEXT")),
+    wglGetExtensionsStringARB((WglGetExtensionsStringARB)QOpenGLStaticContext::opengl32.wglGetProcAddress("wglGetExtensionsStringARB"))
 {
     if (extensionNames.startsWith(SAMPLE_BUFFER_EXTENSION " ")
             || extensionNames.indexOf(" " SAMPLE_BUFFER_EXTENSION " ") != -1)
@@ -998,14 +992,14 @@ QOpenGLStaticContext::QOpenGLStaticContext() :
 QByteArray QOpenGLStaticContext::getGlString(unsigned int which)
 {
     if (const GLubyte *s = opengl32.glGetString(which))
-        return QByteArray((const char*)s);
+        return QByteArray(reinterpret_cast<const char*>(s));
     return QByteArray();
 }
 
 QOpenGLStaticContext *QOpenGLStaticContext::create(bool softwareRendering)
 {
     if (!opengl32.init(softwareRendering)) {
-        qWarning("%s: Failed to load and resolve WGL/OpenGL functions", Q_FUNC_INFO);
+        qWarning("Failed to load and resolve WGL/OpenGL functions");
         return 0;
     }
 
@@ -1016,22 +1010,6 @@ QOpenGLStaticContext *QOpenGLStaticContext::create(bool softwareRendering)
     QOpenGLStaticContext *result = new QOpenGLStaticContext;
     qCDebug(lcQpaGl) << __FUNCTION__ << *result;
     return result;
-}
-
-QDebug operator<<(QDebug d, const QOpenGLStaticContext &s)
-{
-    QDebugStateSaver saver(d);
-    d.nospace();
-    d << "OpenGL: " << s.vendor << ',' << s.renderer << " default "
-        <<  s.defaultFormat;
-    if (s.extensions &  QOpenGLStaticContext::SampleBuffers)
-        d << ",SampleBuffers";
-    if (s.hasExtensions())
-        d << ", Extension-API present";
-    d << "\nExtensions: " << (s.extensionNames.count(' ') + 1);
-    if (QWindowsContext::verbose > 1)
-        d <<  s.extensionNames;
-    return d;
 }
 
 /*!
@@ -1148,6 +1126,14 @@ QWindowsGLContext::QWindowsGLContext(QOpenGLStaticContext *staticContext,
                 && !(QWindowsIntegration::instance()->options() & QWindowsIntegration::DisableArb);
         QWindowsOpenGLAdditionalFormat obtainedAdditional;
         if (tryExtensions) {
+            if (m_staticContext->wglGetExtensionsStringARB) {
+                const char *exts = m_staticContext->wglGetExtensionsStringARB(hdc);
+                if (exts) {
+                    qCDebug(lcQpaGl) << __FUNCTION__ << "WGL extensions:" << exts;
+                    if (strstr(exts, "WGL_EXT_framebuffer_sRGB"))
+                        m_staticContext->extensions |= QOpenGLStaticContext::sRGBCapableFramebuffer;
+                }
+            }
             m_pixelFormat =
                 ARB::choosePixelFormat(hdc, *m_staticContext, format,
                                        requestedAdditional, &m_obtainedPixelFormatDescriptor);
@@ -1241,7 +1227,7 @@ bool QWindowsGLContext::updateObtainedParams(HDC hdc, int *obtainedSwapInterval)
 
     bool hasRobustness = false;
     if (m_obtainedFormat.majorVersion() < 3) {
-        const char *exts = (const char *) QOpenGLStaticContext::opengl32.glGetString(GL_EXTENSIONS);
+        const char *exts = reinterpret_cast<const char *>(QOpenGLStaticContext::opengl32.glGetString(GL_EXTENSIONS));
         hasRobustness = exts && strstr(exts, "GL_ARB_robustness");
     } else {
         typedef const GLubyte * (APIENTRY *glGetStringi_t)(GLenum, GLuint);
@@ -1250,7 +1236,7 @@ bool QWindowsGLContext::updateObtainedParams(HDC hdc, int *obtainedSwapInterval)
             GLint n = 0;
             QOpenGLStaticContext::opengl32.glGetIntegerv(GL_NUM_EXTENSIONS, &n);
             for (GLint i = 0; i < n; ++i) {
-                const char *p = (const char *) glGetStringi(GL_EXTENSIONS, i);
+                const char *p = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
                 if (p && !strcmp(p, "GL_ARB_robustness")) {
                     hasRobustness = true;
                     break;
@@ -1267,10 +1253,9 @@ bool QWindowsGLContext::updateObtainedParams(HDC hdc, int *obtainedSwapInterval)
 
 void QWindowsGLContext::releaseDCs()
 {
-    const QOpenGLContextData *end = m_windowContexts.end();
-    for (const QOpenGLContextData *p = m_windowContexts.begin(); p < end; ++p)
-        ReleaseDC(p->hwnd, p->hdc);
-    m_windowContexts.resize(0);
+    for (const auto &e : m_windowContexts)
+        ReleaseDC(e.hwnd, e.hdc);
+    m_windowContexts.clear();
 }
 
 static inline QWindowsWindow *glWindowOf(QPlatformSurface *s)
@@ -1285,12 +1270,12 @@ static inline HWND handleOf(QPlatformSurface *s)
 
 // Find a window in a context list.
 static inline const QOpenGLContextData *
-    findByHWND(const Array<QOpenGLContextData> &data, HWND hwnd)
+    findByHWND(const std::vector<QOpenGLContextData> &data, HWND hwnd)
 {
-    const QOpenGLContextData *end = data.end();
-    for (const QOpenGLContextData *p = data.begin(); p < end; ++p)
-        if (p->hwnd == hwnd)
-            return p;
+    for (const auto &e : data) {
+        if (e.hwnd == hwnd)
+            return &e;
+    }
     return 0;
 }
 
@@ -1344,7 +1329,7 @@ bool QWindowsGLContext::makeCurrent(QPlatformSurface *surface)
         if (m_obtainedFormat.swapBehavior() == QSurfaceFormat::DoubleBuffer)
             window->setFlag(QWindowsWindow::OpenGLDoubleBuffered);
     }
-    m_windowContexts.append(newContext);
+    m_windowContexts.push_back(newContext);
 
     m_lost = false;
     bool success = QOpenGLStaticContext::opengl32.wglMakeCurrent(newContext.hdc, newContext.renderingContext);
@@ -1379,81 +1364,26 @@ void QWindowsGLContext::doneCurrent()
     releaseDCs();
 }
 
-QFunctionPointer QWindowsGLContext::getProcAddress(const QByteArray &procName)
+QFunctionPointer QWindowsGLContext::getProcAddress(const char *procName)
 {
+    // Even though we use QFunctionPointer, it does not mean the function can be called.
+    // It will need to be cast to the proper function type with the correct calling
+    // convention. QFunctionPointer is nothing more than a glorified void* here.
+    PROC procAddress = QOpenGLStaticContext::opengl32.wglGetProcAddress(procName);
+
     // We support AllGLFunctionsQueryable, which means this function must be able to
     // return a function pointer even for functions that are in GL.h and exported
     // normally from opengl32.dll. wglGetProcAddress() is not guaranteed to work for such
     // functions, however in QT_OPENGL_DYNAMIC builds QOpenGLFunctions will just blindly
-    // call into here for _any_ OpenGL function. Hence the need to handle these specially
-    // here. The list has to match QOpenGLFunctions. See
-    // QOpenGLFunctionsPrivate::QOpenGLFunctionsPrivate(QOpenGLContext *).
-    static struct StdFunc {
-        const char *name;
-        void *func;
-    } standardFuncs[] = {
-        { "glBindTexture", (void *) QOpenGLStaticContext::opengl32.glBindTexture },
-        { "glBlendFunc", (void *) QOpenGLStaticContext::opengl32.glBlendFunc },
-        { "glClear", (void *) QOpenGLStaticContext::opengl32.glClear },
-        { "glClearColor", (void *) QOpenGLStaticContext::opengl32.glClearColor },
-        { "glClearStencil", (void *) QOpenGLStaticContext::opengl32.glClearStencil },
-        { "glColorMask", (void *) QOpenGLStaticContext::opengl32.glColorMask },
-        { "glCopyTexImage2D", (void *) QOpenGLStaticContext::opengl32.glCopyTexImage2D },
-        { "glCopyTexSubImage2D", (void *) QOpenGLStaticContext::opengl32.glCopyTexSubImage2D },
-        { "glCullFace", (void *) QOpenGLStaticContext::opengl32.glCullFace },
-        { "glDeleteTextures", (void *) QOpenGLStaticContext::opengl32.glDeleteTextures },
-        { "glDepthFunc", (void *) QOpenGLStaticContext::opengl32.glDepthFunc },
-        { "glDepthMask", (void *) QOpenGLStaticContext::opengl32.glDepthMask },
-        { "glDisable", (void *) QOpenGLStaticContext::opengl32.glDisable },
-        { "glDrawArrays", (void *) QOpenGLStaticContext::opengl32.glDrawArrays },
-        { "glDrawElements", (void *) QOpenGLStaticContext::opengl32.glDrawElements },
-        { "glEnable", (void *) QOpenGLStaticContext::opengl32.glEnable },
-        { "glFinish", (void *) QOpenGLStaticContext::opengl32.glFinish },
-        { "glFlush", (void *) QOpenGLStaticContext::opengl32.glFlush },
-        { "glFrontFace", (void *) QOpenGLStaticContext::opengl32.glFrontFace },
-        { "glGenTextures", (void *) QOpenGLStaticContext::opengl32.glGenTextures },
-        { "glGetBooleanv", (void *) QOpenGLStaticContext::opengl32.glGetBooleanv },
-        { "glGetError", (void *) QOpenGLStaticContext::opengl32.glGetError },
-        { "glGetFloatv", (void *) QOpenGLStaticContext::opengl32.glGetFloatv },
-        { "glGetIntegerv", (void *) QOpenGLStaticContext::opengl32.glGetIntegerv },
-        { "glGetString", (void *) QOpenGLStaticContext::opengl32.glGetString },
-        { "glGetTexParameterfv", (void *) QOpenGLStaticContext::opengl32.glGetTexParameterfv },
-        { "glGetTexParameteriv", (void *) QOpenGLStaticContext::opengl32.glGetTexParameteriv },
-        { "glHint", (void *) QOpenGLStaticContext::opengl32.glHint },
-        { "glIsEnabled", (void *) QOpenGLStaticContext::opengl32.glIsEnabled },
-        { "glIsTexture", (void *) QOpenGLStaticContext::opengl32.glIsTexture },
-        { "glLineWidth", (void *) QOpenGLStaticContext::opengl32.glLineWidth },
-        { "glPixelStorei", (void *) QOpenGLStaticContext::opengl32.glPixelStorei },
-        { "glPolygonOffset", (void *) QOpenGLStaticContext::opengl32.glPolygonOffset },
-        { "glReadPixels", (void *) QOpenGLStaticContext::opengl32.glReadPixels },
-        { "glScissor", (void *) QOpenGLStaticContext::opengl32.glScissor },
-        { "glStencilFunc", (void *) QOpenGLStaticContext::opengl32.glStencilFunc },
-        { "glStencilMask", (void *) QOpenGLStaticContext::opengl32.glStencilMask },
-        { "glStencilOp", (void *) QOpenGLStaticContext::opengl32.glStencilOp },
-        { "glTexImage2D", (void *) QOpenGLStaticContext::opengl32.glTexImage2D },
-        { "glTexParameterf", (void *) QOpenGLStaticContext::opengl32.glTexParameterf },
-        { "glTexParameterfv", (void *) QOpenGLStaticContext::opengl32.glTexParameterfv },
-        { "glTexParameteri", (void *) QOpenGLStaticContext::opengl32.glTexParameteri },
-        { "glTexParameteriv", (void *) QOpenGLStaticContext::opengl32.glTexParameteriv },
-        { "glTexSubImage2D", (void *) QOpenGLStaticContext::opengl32.glTexSubImage2D },
-        { "glViewport", (void *) QOpenGLStaticContext::opengl32.glViewport },
+    // call into here for _any_ OpenGL function.
+    if (!procAddress || procAddress == reinterpret_cast<PROC>(0x1) || procAddress == reinterpret_cast<PROC>(0x2)
+        || procAddress == reinterpret_cast<PROC>(0x3) || procAddress == reinterpret_cast<PROC>(-1))
+        procAddress = QOpenGLStaticContext::opengl32.resolve(procName);
 
-        { "glClearDepth", (void *) QOpenGLStaticContext::opengl32.glClearDepth },
-        { "glDepthRange", (void *) QOpenGLStaticContext::opengl32.glDepthRange },
-    };
-    for (size_t i = 0; i < sizeof(standardFuncs) / sizeof(StdFunc); ++i)
-        if (procName == standardFuncs[i].name)
-            return reinterpret_cast<QFunctionPointer>(standardFuncs[i].func);
-
-    // Even though we use QFunctionPointer, it does not mean the function can be called.
-    // It will need to be cast to the proper function type with the correct calling
-    // convention. QFunctionPointer is nothing more than a glorified void* here.
-    QFunctionPointer procAddress = reinterpret_cast<QFunctionPointer>(QOpenGLStaticContext::opengl32.wglGetProcAddress(procName.constData()));
     if (QWindowsContext::verbose > 1)
         qCDebug(lcQpaGl) << __FUNCTION__ <<  procName << QOpenGLStaticContext::opengl32.wglGetCurrentContext() << "returns" << procAddress;
-    if (!procAddress && QWindowsContext::verbose)
-        qWarning("%s: Unable to resolve '%s'", __FUNCTION__, procName.constData());
-    return procAddress;
+
+    return reinterpret_cast<QFunctionPointer>(procAddress);
 }
 
 QT_END_NAMESPACE

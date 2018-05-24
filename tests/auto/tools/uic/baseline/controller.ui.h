@@ -10,11 +10,8 @@
 #define CONTROLLER_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QGridLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QWidget>
@@ -78,12 +75,12 @@ public:
 
     void retranslateUi(QWidget *Controller)
     {
-        Controller->setWindowTitle(QApplication::translate("Controller", "Controller", 0));
-        label->setText(QApplication::translate("Controller", "Controller", 0));
-        decelerate->setText(QApplication::translate("Controller", "Decelerate", 0));
-        accelerate->setText(QApplication::translate("Controller", "Accelerate", 0));
-        right->setText(QApplication::translate("Controller", "Right", 0));
-        left->setText(QApplication::translate("Controller", "Left", 0));
+        Controller->setWindowTitle(QApplication::translate("Controller", "Controller", nullptr));
+        label->setText(QApplication::translate("Controller", "Controller", nullptr));
+        decelerate->setText(QApplication::translate("Controller", "Decelerate", nullptr));
+        accelerate->setText(QApplication::translate("Controller", "Accelerate", nullptr));
+        right->setText(QApplication::translate("Controller", "Right", nullptr));
+        left->setText(QApplication::translate("Controller", "Left", nullptr));
     } // retranslateUi
 
 };

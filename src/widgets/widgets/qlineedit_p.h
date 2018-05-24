@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,17 +51,20 @@
 // We mean it.
 //
 
-#include "QtCore/qglobal.h"
+#include <QtWidgets/private/qtwidgetsglobal_p.h>
 
-#ifndef QT_NO_LINEEDIT
 #include "private/qwidget_p.h"
 #include "QtWidgets/qlineedit.h"
+#if QT_CONFIG(toolbutton)
 #include "QtWidgets/qtoolbutton.h"
+#endif
 #include "QtGui/qtextlayout.h"
 #include "QtGui/qicon.h"
 #include "QtWidgets/qstyleoption.h"
 #include "QtCore/qbasictimer.h"
+#if QT_CONFIG(completer)
 #include "QtWidgets/qcompleter.h"
+#endif
 #include "QtCore/qpointer.h"
 #include "QtCore/qmimedata.h"
 
@@ -63,17 +72,19 @@
 
 #include <algorithm>
 
+QT_REQUIRE_CONFIG(lineedit);
+
 QT_BEGIN_NAMESPACE
 
-// QLineEditIconButton: This is a simple helper class that represents clickable icons that fade in with text
+class QLineEditPrivate;
 
+// QLineEditIconButton: This is a simple helper class that represents clickable icons that fade in with text
+#if QT_CONFIG(toolbutton)
 class Q_AUTOTEST_EXPORT QLineEditIconButton : public QToolButton
 {
     Q_OBJECT
     Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity)
 public:
-    enum { IconMargin = 4, IconButtonSize = 16 };
-
     explicit QLineEditIconButton(QWidget *parent =  0);
 
     qreal opacity() const { return m_opacity; }
@@ -83,8 +94,8 @@ public:
 #endif
 
 protected:
-    void actionEvent(QActionEvent *e) Q_DECL_OVERRIDE;
-    void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE;
+    void actionEvent(QActionEvent *e) override;
+    void paintEvent(QPaintEvent *event) override;
 
 private slots:
     void updateCursor();
@@ -93,9 +104,11 @@ private:
 #ifndef QT_NO_ANIMATION
     void startOpacityAnimation(qreal endValue);
 #endif
+    QLineEditPrivate *lineEditPrivate() const;
 
     qreal m_opacity;
 };
+#endif // QT_CONFIG(toolbutton)
 
 class Q_AUTOTEST_EXPORT QLineEditPrivate : public QWidgetPrivate
 {
@@ -108,20 +121,27 @@ public:
     };
 
     struct SideWidgetEntry {
-        SideWidgetEntry(QWidget *w = 0, QAction *a = 0, int _flags = 0) : widget(w), action(a), flags(_flags) {}
+        explicit SideWidgetEntry(QWidget *w = 0, QAction *a = 0, int _flags = 0) : widget(w), action(a), flags(_flags) {}
 
         QWidget *widget;
         QAction *action;
         int flags;
     };
-    typedef QList<SideWidgetEntry> SideWidgetEntryList;
+    typedef std::vector<SideWidgetEntry> SideWidgetEntryList;
+
+    struct SideWidgetParameters {
+        int iconSize;
+        int widgetWidth;
+        int widgetHeight;
+        int margin;
+    };
 
     QLineEditPrivate()
         : control(0), frame(1), contextMenuEnabled(1), cursorVisible(0),
         dragEnabled(0), clickCausedFocus(0), hscroll(0), vscroll(0),
         alignment(Qt::AlignLeading | Qt::AlignVCenter),
         leftTextMargin(0), topTextMargin(0), rightTextMargin(0), bottomTextMargin(0),
-        lastTextSize(0)
+        lastTextSize(0), mouseYThreshold(0)
     {
     }
 
@@ -135,10 +155,12 @@ public:
     QPointer<QAction> selectAllAction;
 #endif
     void init(const QString&);
+    void initMouseYThreshold();
 
     QRect adjustedControlRect(const QRect &) const;
 
     int xToPos(int x, QTextLine::CursorPosition = QTextLine::CursorBetweenCharacters) const;
+    bool inSelection(int x) const;
     QRect cursorRect() const;
     void setCursorVisible(bool visible);
 
@@ -185,7 +207,7 @@ public:
 #endif
     void _q_selectionChanged();
     void _q_updateNeeded(const QRect &);
-#ifndef QT_NO_COMPLETER
+#if QT_CONFIG(completer)
     void _q_completionHighlighted(const QString &);
 #endif
     QPoint mousePressPos;
@@ -205,11 +227,11 @@ public:
 
     QWidget *addAction(QAction *newAction, QAction *before, QLineEdit::ActionPosition, int flags = 0);
     void removeAction(QAction *action);
-    QSize iconSize() const;
+    SideWidgetParameters sideWidgetParameters() const;
     QIcon clearButtonIcon() const;
     void setClearButtonEnabled(bool enabled);
     void positionSideWidgets();
-    inline bool hasSideWidgets() const { return !leadingSideWidgets.isEmpty() || !trailingSideWidgets.isEmpty(); }
+    inline bool hasSideWidgets() const { return !leadingSideWidgets.empty() || !trailingSideWidgets.empty(); }
     inline const SideWidgetEntryList &leftSideWidgetList() const
         { return q_func()->layoutDirection() == Qt::LeftToRight ? leadingSideWidgets : trailingSideWidgets; }
     inline const SideWidgetEntryList &rightSideWidgetList() const
@@ -219,36 +241,23 @@ public:
     int effectiveRightTextMargin() const;
 
 private:
-    typedef QPair<QLineEdit::ActionPosition, int> PositionIndexPair;
+    struct SideWidgetLocation {
+        QLineEdit::ActionPosition position;
+        int index;
 
-    PositionIndexPair findSideWidget(const QAction *a) const;
+        bool isValid() const { return index >= 0; }
+    };
+    friend class QTypeInfo<SideWidgetLocation>;
+
+    SideWidgetLocation findSideWidget(const QAction *a) const;
 
     SideWidgetEntryList leadingSideWidgets;
     SideWidgetEntryList trailingSideWidgets;
     int lastTextSize;
-    mutable QSize m_iconSize;
+    int mouseYThreshold;
 };
-
-static bool isSideWidgetVisible(const QLineEditPrivate::SideWidgetEntry &e)
-{
-   return e.widget->isVisible();
-}
-
-inline int QLineEditPrivate::effectiveLeftTextMargin() const
-{
-    return leftTextMargin + (QLineEditIconButton::IconMargin + iconSize().width())
-        * int(std::count_if(leftSideWidgetList().constBegin(), leftSideWidgetList().constEnd(),
-                            isSideWidgetVisible));
-}
-
-inline int QLineEditPrivate::effectiveRightTextMargin() const
-{
-    return rightTextMargin + (QLineEditIconButton::IconMargin + iconSize().width())
-        * int(std::count_if(rightSideWidgetList().constBegin(), rightSideWidgetList().constEnd(),
-                            isSideWidgetVisible));
-}
-
-#endif // QT_NO_LINEEDIT
+Q_DECLARE_TYPEINFO(QLineEditPrivate::SideWidgetEntry, Q_PRIMITIVE_TYPE);
+Q_DECLARE_TYPEINFO(QLineEditPrivate::SideWidgetLocation, Q_PRIMITIVE_TYPE);
 
 QT_END_NAMESPACE
 

@@ -1,55 +1,57 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #############################################################################
 ##
-## Copyright (C) 2015 The Qt Company Ltd.
-## Contact: http://www.qt.io/licensing/
+## Copyright (C) 2016 The Qt Company Ltd.
+## Contact: https://www.qt.io/licensing/
 ##
 ## This file is part of the test suite of the Qt Toolkit.
 ##
-## $QT_BEGIN_LICENSE:LGPL21$
+## $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ## Commercial License Usage
 ## Licensees holding valid commercial Qt licenses may use this file in
 ## accordance with the commercial license agreement provided with the
 ## Software or, alternatively, in accordance with the terms contained in
 ## a written agreement between you and The Qt Company. For licensing terms
-## and conditions see http://www.qt.io/terms-conditions. For further
-## information use the contact form at http://www.qt.io/contact-us.
+## and conditions see https://www.qt.io/terms-conditions. For further
+## information use the contact form at https://www.qt.io/contact-us.
 ##
-## GNU Lesser General Public License Usage
-## Alternatively, this file may be used under the terms of the GNU Lesser
-## General Public License version 2.1 or version 3 as published by the Free
-## Software Foundation and appearing in the file LICENSE.LGPLv21 and
-## LICENSE.LGPLv3 included in the packaging of this file. Please review the
-## following information to ensure the GNU Lesser General Public License
-## requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-## http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-##
-## As a special exception, The Qt Company gives you certain additional
-## rights. These rights are described in The Qt Company LGPL Exception
-## version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+## GNU General Public License Usage
+## Alternatively, this file may be used under the terms of the GNU
+## General Public License version 3 as published by the Free Software
+## Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+## included in the packaging of this file. Please review the following
+## information to ensure the GNU General Public License requirements will
+## be met: https://www.gnu.org/licenses/gpl-3.0.html.
 ##
 ## $QT_END_LICENSE$
 ##
 #############################################################################
+"""Parse CLDR data for QTimeZone use with MS-Windows
 
+Script to parse the CLDR supplemental/windowsZones.xml file and encode
+for use in QTimeZone.  See ``./cldr2qlocalexml.py`` for where to get
+the CLDR data.  Pass its common/ directory as first parameter to this
+script and the qtbase root directory as second parameter.  It shall
+update qtbase's src/corelib/tools/qtimezoneprivate_data_p.h ready for
+use.
 
-# Script to parse the CLDR supplemental/windowsZones.xml file and encode for use in QTimeZone
-# XML structure is as follows:
-#
-# <supplementalData>
-#     <version number="$Revision: 7825 $"/>
-#     <generation date="$Date: 2012-10-10 14:45:31 -0700 (Wed, 10 Oct 2012) $"/>
-#     <windowsZones>
-#         <mapTimezones otherVersion="7dc0101" typeVersion="2012f">
-#             <!-- (UTC-08:00) Pacific Time (US & Canada) -->
-#             <mapZone other="Pacific Standard Time" territory="001" type="America/Los_Angeles"/>
-#             <mapZone other="Pacific Standard Time" territory="CA"  type="America/Vancouver America/Dawson America/Whitehorse"/>
-#             <mapZone other="Pacific Standard Time" territory="MX"  type="America/Tijuana"/>
-#             <mapZone other="Pacific Standard Time" territory="US"  type="America/Los_Angeles"/>
-#             <mapZone other="Pacific Standard Time" territory="ZZ"  type="PST8PDT"/>
-#       </mapTimezones>
-#     </windowsZones>
-# </supplementalData>
+The XML structure is as follows:
+
+ <supplementalData>
+     <version number="$Revision: 7825 $"/>
+     <generation date="$Date: 2012-10-10 14:45:31 -0700 (Wed, 10 Oct 2012) $"/>
+     <windowsZones>
+         <mapTimezones otherVersion="7dc0101" typeVersion="2012f">
+             <!-- (UTC-08:00) Pacific Time (US & Canada) -->
+             <mapZone other="Pacific Standard Time" territory="001" type="America/Los_Angeles"/>
+             <mapZone other="Pacific Standard Time" territory="CA"  type="America/Vancouver America/Dawson America/Whitehorse"/>
+             <mapZone other="Pacific Standard Time" territory="MX"  type="America/Tijuana"/>
+             <mapZone other="Pacific Standard Time" territory="US"  type="America/Los_Angeles"/>
+             <mapZone other="Pacific Standard Time" territory="ZZ"  type="PST8PDT"/>
+       </mapTimezones>
+     </windowsZones>
+ </supplementalData>
+"""
 
 import os
 import sys
@@ -158,7 +160,7 @@ windowsIdList = {
    65 : [ u'North Asia East Standard Time',    28800  ],
    66 : [ u'North Asia Standard Time',         25200  ],
    67 : [ u'Pacific SA Standard Time',        -10800  ],
-   68 : [ u'Pacific Standard Time (Mexico)',  -28800  ],
+   68 : [ u'E. Europe Standard Time',           7200  ],
    69 : [ u'Pacific Standard Time',           -28800  ],
    70 : [ u'Pakistan Standard Time',           18000  ],
    71 : [ u'Paraguay Standard Time',          -14400  ],
@@ -195,7 +197,8 @@ windowsIdList = {
    102: [ u'W. Europe Standard Time',           3600  ],
    103: [ u'West Asia Standard Time',          18000  ],
    104: [ u'West Pacific Standard Time',       36000  ],
-   105: [ u'Yakutsk Standard Time',            32400  ]
+   105: [ u'Yakutsk Standard Time',            32400  ],
+   106: [ u'North Korea Standard Time',        30600  ]
 }
 
 def windowsIdToKey(windowsId):
@@ -246,7 +249,8 @@ utcIdList = {
    35 : [ u'UTC+11:00',  39600  ],
    36 : [ u'UTC+12:00',  43200  ],
    37 : [ u'UTC+13:00',  46800  ],
-   38 : [ u'UTC+14:00',  50400  ]
+   38 : [ u'UTC+14:00',  50400  ],
+   39 : [ u'UTC+08:30',  30600  ]
 }
 
 def usage():
@@ -280,9 +284,6 @@ for line in ldml:
 
 # [[u'version', [(u'number', u'$Revision: 7825 $')]]]
 versionNumber = findTagsInFile(windowsZonesPath, "version")[0][1][0][1]
-
-# [[u'generation', [(u'date', u'$Date: 2012-10-10 14:45:31 -0700 (Wed, 10 Oct 2012) $')]]]
-generationDate = findTagsInFile(windowsZonesPath, "generation")[0][1][0][1]
 
 mapTimezones = findTagsInFile(windowsZonesPath, "windowsZones/mapTimezones")
 
@@ -334,16 +335,18 @@ while s and s != GENERATED_BLOCK_START:
 
 # Write out generated block start tag and warning
 newTempFile.write(GENERATED_BLOCK_START)
-newTempFile.write("\n\
-/*\n\
-    This part of the file was generated on %s from the\n\
-    Common Locale Data Repository v%s supplemental/windowsZones.xml file\n\
-    %s %s\n\
-\n\
-    http://www.unicode.org/cldr/\n\
-\n\
-    Do not change this data, only generate it using cldr2qtimezone.py.\n\
-*/\n\n" % (str(datetime.date.today()), cldr_version, versionNumber, generationDate) )
+newTempFile.write("""
+/*
+    This part of the file was generated on %s from the
+    Common Locale Data Repository v%s supplemental/windowsZones.xml file %s
+
+    http://www.unicode.org/cldr/
+
+    Do not edit this code: run cldr2qtimezone.py on updated (or
+    edited) CLDR data; see qtbase/util/local_database/.
+*/
+
+""" % (str(datetime.date.today()), cldr_version, versionNumber) )
 
 windowsIdData = ByteArrayData()
 ianaIdData = ByteArrayData()
@@ -353,7 +356,7 @@ newTempFile.write("// Windows ID Key, Country Enum, IANA ID Index\n")
 newTempFile.write("static const QZoneData zoneDataTable[] = {\n")
 for index in windowsIdDict:
     data = windowsIdDict[index]
-    newTempFile.write("    { %6d,%6d,%6d }, // %s / %s\n" \
+    newTempFile.write("    { %6d,%6d,%6d }, // %s / %s\n"
                          % (data['windowsKey'],
                             data['countryId'],
                             ianaIdData.append(data['ianaList']),
@@ -368,7 +371,7 @@ print "Done Zone Data"
 newTempFile.write("// Windows ID Key, Windows ID Index, IANA ID Index, UTC Offset\n")
 newTempFile.write("static const QWindowsData windowsDataTable[] = {\n")
 for windowsKey in windowsIdList:
-    newTempFile.write("    { %6d,%6d,%6d,%6d }, // %s\n" \
+    newTempFile.write("    { %6d,%6d,%6d,%6d }, // %s\n"
                          % (windowsKey,
                             windowsIdData.append(windowsIdList[windowsKey][0]),
                             ianaIdData.append(defaultDict[windowsKey]),
@@ -384,7 +387,7 @@ newTempFile.write("// IANA ID Index, UTC Offset\n")
 newTempFile.write("static const QUtcData utcDataTable[] = {\n")
 for index in utcIdList:
     data = utcIdList[index]
-    newTempFile.write("    { %6d,%6d }, // %s\n" \
+    newTempFile.write("    { %6d,%6d }, // %s\n"
                          % (ianaIdData.append(data[0]),
                             data[1],
                             data[0]))

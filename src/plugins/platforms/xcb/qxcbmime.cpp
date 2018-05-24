@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -37,12 +43,6 @@
 #include <QtGui/QImageWriter>
 #include <QtCore/QBuffer>
 #include <qdebug.h>
-
-#include <X11/Xutil.h>
-
-#undef XCB_ATOM_STRING
-#undef XCB_ATOM_PIXMAP
-#undef XCB_ATOM_BITMAP
 
 QT_BEGIN_NAMESPACE
 
@@ -111,18 +111,22 @@ bool QXcbMime::mimeDataForAtom(QXcbConnection *connection, xcb_atom_t a, QMimeDa
     QString atomName = mimeAtomToString(connection, a);
     if (QInternalMimeData::hasFormatHelper(atomName, mimeData)) {
         *data = QInternalMimeData::renderDataHelper(atomName, mimeData);
-        if (atomName == QLatin1String("application/x-color"))
+        // mimeAtomToString() converts "text/x-moz-url" to "text/uri-list",
+        // so QXcbConnection::atomName() has to be used.
+        if (atomName == QLatin1String("text/uri-list")
+            && connection->atomName(a) == "text/x-moz-url") {
+            const QString mozUri = QLatin1String(data->split('\n').constFirst()) + QLatin1Char('\n');
+            *data = QByteArray(reinterpret_cast<const char *>(mozUri.utf16()),
+                               mozUri.length() * 2);
+        } else if (atomName == QLatin1String("application/x-color"))
             *dataFormat = 16;
         ret = true;
-    } else if (atomName == QLatin1String("text/x-moz-url") &&
-               QInternalMimeData::hasFormatHelper(QLatin1String("text/uri-list"), mimeData)) {
-        QByteArray uri = QInternalMimeData::renderDataHelper(
-                         QLatin1String("text/uri-list"), mimeData).split('\n').first();
-        QString mozUri = QString::fromLatin1(uri, uri.size());
-        mozUri += QLatin1Char('\n');
-        *data = QByteArray(reinterpret_cast<const char *>(mozUri.utf16()), mozUri.length() * 2);
-        ret = true;
     } else if ((a == XCB_ATOM_PIXMAP || a == XCB_ATOM_BITMAP) && mimeData->hasImage()) {
+        ret = true;
+    } else if (atomName == QLatin1String("text/plain")
+               && mimeData->hasFormat(QLatin1String("text/uri-list"))) {
+        // Return URLs also as plain text.
+        *data = QInternalMimeData::renderDataHelper(atomName, mimeData);
         ret = true;
     }
     return ret;
@@ -142,8 +146,10 @@ QVector<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, con
     }
 
     // special cases for uris
-    if (format == QLatin1String("text/uri-list"))
+    if (format == QLatin1String("text/uri-list")) {
         atoms.append(connection->internAtom("text/x-moz-url"));
+        atoms.append(connection->internAtom("text/plain"));
+    }
 
     //special cases for images
     if (format == QLatin1String("image/ppm"))
@@ -154,14 +160,15 @@ QVector<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, con
     return atoms;
 }
 
-QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a, const QByteArray &data, const QString &format,
+QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a, const QByteArray &d, const QString &format,
                                        QVariant::Type requestedType, const QByteArray &encoding)
 {
+    QByteArray data = d;
     QString atomName = mimeAtomToString(connection, a);
 //    qDebug() << "mimeConvertDataToFormat" << format << atomName << data;
 
     if (!encoding.isEmpty()
-        && atomName == format + QLatin1String(";charset=") + QString::fromLatin1(encoding)) {
+        && atomName == format + QLatin1String(";charset=") + QLatin1String(encoding)) {
 
 #ifndef QT_NO_TEXTCODEC
         if (requestedType == QVariant::String) {
@@ -176,24 +183,51 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
 
     // special cases for string types
     if (format == QLatin1String("text/plain")) {
-        if (a == connection->atom(QXcbAtom::UTF8_STRING))
+        if (data.endsWith('\0'))
+            data.chop(1);
+        if (a == connection->atom(QXcbAtom::UTF8_STRING)) {
             return QString::fromUtf8(data);
+        }
         if (a == XCB_ATOM_STRING ||
             a == connection->atom(QXcbAtom::TEXT))
             return QString::fromLatin1(data);
     }
-
-    // special case for uri types
-    if (format == QLatin1String("text/uri-list")) {
-        if (atomName == QLatin1String("text/x-moz-url")) {
-            // we expect this as utf16 <url><space><title>
-            // the first part is a url that should only contain ascci char
-            // so it should be safe to check that the second char is 0
-            // to verify that it is utf16
-            if (data.size() > 1 && data.at(1) == 0)
-                return QString::fromRawData((const QChar *)data.constData(),
-                                data.size() / 2).split(QLatin1Char('\n')).first().toLatin1();
+    // If data contains UTF16 text, convert it to a string.
+    // Firefox uses UTF16 without BOM for text/x-moz-url, "text/html",
+    // Google Chrome uses UTF16 without BOM for "text/x-moz-url",
+    // UTF16 with BOM for "text/html".
+    if ((format == QLatin1String("text/html") || format == QLatin1String("text/uri-list"))
+        && data.size() > 1) {
+        const quint8 byte0 = data.at(0);
+        const quint8 byte1 = data.at(1);
+        if ((byte0 == 0xff && byte1 == 0xfe) || (byte0 == 0xfe && byte1 == 0xff)
+            || (byte0 != 0 && byte1 == 0) || (byte0 == 0 && byte1 != 0)) {
+            const QString str = QString::fromUtf16(
+                  reinterpret_cast<const ushort *>(data.constData()), data.size() / 2);
+            if (!str.isNull()) {
+                if (format == QLatin1String("text/uri-list")) {
+                    const auto urls = str.splitRef(QLatin1Char('\n'));
+                    QList<QVariant> list;
+                    list.reserve(urls.size());
+                    for (const QStringRef &s : urls) {
+                        const QUrl url(s.trimmed().toString());
+                        if (url.isValid())
+                            list.append(url);
+                    }
+                    // We expect "text/x-moz-url" as <url><space><title>.
+                    // The atomName variable is not used because mimeAtomToString()
+                    // converts "text/x-moz-url" to "text/uri-list".
+                    if (!list.isEmpty() && connection->atomName(a) == "text/x-moz-url")
+                        return list.constFirst();
+                    return list;
+                } else {
+                    return str;
+                }
+            }
         }
+        // 8 byte encoding, remove a possible 0 at the end
+        if (data.endsWith('\0'))
+            data.chop(1);
     }
 
     if (atomName == format)
@@ -272,7 +306,7 @@ xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString
         QString formatWithCharset = format;
         formatWithCharset.append(QLatin1String(";charset=utf-8"));
 
-        xcb_atom_t a = connection->internAtom(formatWithCharset.toLatin1());
+        xcb_atom_t a = connection->internAtom(std::move(formatWithCharset).toLatin1());
         if (a && atoms.contains(a)) {
             *requestedEncoding = "utf-8";
             return a;

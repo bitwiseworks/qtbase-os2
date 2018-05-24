@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -279,36 +274,30 @@ void tst_QTabBar::sizeHints()
 {
     QTabBar tabBar;
     tabBar.setFont(QFont("Arial", 10));
-    tabBar.addTab("tab 01");
-    tabBar.addTab("tab 02");
-    tabBar.addTab("tab 03");
-    tabBar.addTab("tab 04");
-    tabBar.addTab("tab 05");
-    tabBar.addTab("tab 06");
-    tabBar.addTab("This is tab7");
-    tabBar.addTab("This is tab8");
-    tabBar.addTab("This is tab9 with a very long title");
 
     // No eliding and no scrolling -> tabbar becomes very wide
     tabBar.setUsesScrollButtons(false);
     tabBar.setElideMode(Qt::ElideNone);
-//    qDebug() << tabBar.minimumSizeHint() << tabBar.sizeHint();
-#ifdef Q_OS_MAC
-    QEXPECT_FAIL("", "QTBUG-27230", Abort);
-#endif
+    tabBar.addTab("tab 01");
+
+    // Fetch the minimum size hint width and make sure that we create enough
+    // tabs.
+    int minimumSizeHintWidth = tabBar.minimumSizeHint().width();
+    for (int i = 0; i <= 700 / minimumSizeHintWidth; ++i)
+        tabBar.addTab(QString("tab 0%1").arg(i+2));
+
+    //qDebug() << tabBar.minimumSizeHint() << tabBar.sizeHint();
     QVERIFY(tabBar.minimumSizeHint().width() > 700);
     QVERIFY(tabBar.sizeHint().width() > 700);
 
     // Scrolling enabled -> no reason to become very wide
     tabBar.setUsesScrollButtons(true);
- //   qDebug() << tabBar.minimumSizeHint() << tabBar.sizeHint();
     QVERIFY(tabBar.minimumSizeHint().width() < 200);
     QVERIFY(tabBar.sizeHint().width() > 700); // unchanged
 
     // Eliding enabled -> no reason to become very wide
     tabBar.setUsesScrollButtons(false);
     tabBar.setElideMode(Qt::ElideRight);
-//    qDebug() << tabBar.minimumSizeHint() << tabBar.sizeHint();
 
     // The sizeHint is very much dependent on the screen DPI value
     // so we can not really predict it.
@@ -317,7 +306,7 @@ void tst_QTabBar::sizeHints()
     QVERIFY(tabBarMinSizeHintWidth < tabBarSizeHintWidth);
     QVERIFY(tabBarSizeHintWidth > 700); // unchanged
 
-    tabBar.addTab("This is tab10 with a very long title");
+    tabBar.addTab("This is tab with a very long title");
     QVERIFY(tabBar.minimumSizeHint().width() > tabBarMinSizeHintWidth);
     QVERIFY(tabBar.sizeHint().width() > tabBarSizeHintWidth);
 }
@@ -606,7 +595,7 @@ public slots:
     void updateTabText()
     {
         count++;
-        setTabText(0, QString("%1").arg(count));
+        setTabText(0, QString::number(count));
     }
 };
 

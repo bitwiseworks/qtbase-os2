@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -316,7 +316,9 @@ QList<QPrinter::PaperSize> QPrinterInfo::supportedPaperSizes() const
 {
     Q_D(const QPrinterInfo);
     QList<QPrinter::PaperSize> list;
-    foreach (const QPageSize &pageSize, d->m_printDevice.supportedPageSizes())
+    const QList<QPageSize> supportedPageSizes = d->m_printDevice.supportedPageSizes();
+    list.reserve(supportedPageSizes.size());
+    for (const QPageSize &pageSize : supportedPageSizes)
         list.append(QPrinter::PaperSize(pageSize.id()));
     return list;
 }
@@ -336,7 +338,9 @@ QList<QPair<QString, QSizeF> > QPrinterInfo::supportedSizesWithNames() const
 {
     Q_D(const QPrinterInfo);
     QList<QPair<QString, QSizeF> > list;
-    foreach (const QPageSize &pageSize, d->m_printDevice.supportedPageSizes())
+    const QList<QPageSize> supportedPageSizes = d->m_printDevice.supportedPageSizes();
+    list.reserve(supportedPageSizes.size());
+    for (const QPageSize &pageSize : supportedPageSizes)
         list.append(qMakePair(pageSize.name(), pageSize.size(QPageSize::Millimeter)));
     return list;
 }
@@ -376,7 +380,9 @@ QList<QPrinter::DuplexMode> QPrinterInfo::supportedDuplexModes() const
 {
     Q_D(const QPrinterInfo);
     QList<QPrinter::DuplexMode> list;
-    foreach (QPrint::DuplexMode mode, d->m_printDevice.supportedDuplexModes())
+    const auto supportedDuplexModes = d->m_printDevice.supportedDuplexModes();
+    list.reserve(supportedDuplexModes.size());
+    for (QPrint::DuplexMode mode : supportedDuplexModes)
         list << QPrinter::DuplexMode(mode);
     return list;
 }
@@ -416,7 +422,9 @@ QList<QPrinterInfo> QPrinterInfo::availablePrinters()
     QList<QPrinterInfo> list;
     QPlatformPrinterSupport *ps = QPlatformPrinterSupportPlugin::get();
     if (ps) {
-        foreach (const QString &id, ps->availablePrintDeviceIds())
+        const QStringList availablePrintDeviceIds = ps->availablePrintDeviceIds();
+        list.reserve(availablePrintDeviceIds.size());
+        for (const QString &id : availablePrintDeviceIds)
             list.append(QPrinterInfo(id));
     }
     return list;

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,6 @@
 
 #include "qitemdelegate.h"
 
-#ifndef QT_NO_ITEMVIEWS
 #include <qabstractitemmodel.h>
 #include <qapplication.h>
 #include <qbrush.h>
@@ -56,11 +61,11 @@
 #include <private/qtextengine_p.h>
 #include <qdebug.h>
 #include <qlocale.h>
-#include <qdialog.h>
 #include <qmath.h>
 
 #include <limits.h>
 
+// keep in sync with QAbstractItemDelegate::helpEvent()
 #ifndef DBL_DIG
 #  define DBL_DIG 10
 #endif
@@ -89,14 +94,11 @@ public:
 
     inline static QString replaceNewLine(QString text)
         {
-            const QChar nl = QLatin1Char('\n');
-            for (int i = 0; i < text.count(); ++i)
-                if (text.at(i) == nl)
-                    text[i] = QChar::LineSeparator;
+            text.replace(QLatin1Char('\n'), QChar::LineSeparator);
             return text;
         }
 
-    static QString valueToText(const QVariant &value, const QStyleOptionViewItem &option);
+    QString valueToText(const QVariant &value, const QStyleOptionViewItem &option) const;
 
     QItemEditorFactory *f;
     bool clipPainting;
@@ -326,40 +328,9 @@ void QItemDelegate::setClipping(bool clip)
     d->clipPainting = clip;
 }
 
-QString QItemDelegatePrivate::valueToText(const QVariant &value, const QStyleOptionViewItem &option)
+QString QItemDelegatePrivate::valueToText(const QVariant &value, const QStyleOptionViewItem &option) const
 {
-    QString text;
-    switch (value.userType()) {
-        case QMetaType::Float:
-            text = option.locale.toString(value.toFloat(), 'g');
-            break;
-        case QVariant::Double:
-            text = option.locale.toString(value.toDouble(), 'g', DBL_DIG);
-            break;
-        case QVariant::Int:
-        case QVariant::LongLong:
-            text = option.locale.toString(value.toLongLong());
-            break;
-        case QVariant::UInt:
-        case QVariant::ULongLong:
-            text = option.locale.toString(value.toULongLong());
-            break;
-        case QVariant::Date:
-            text = option.locale.toString(value.toDate(), QLocale::ShortFormat);
-            break;
-        case QVariant::Time:
-            text = option.locale.toString(value.toTime(), QLocale::ShortFormat);
-            break;
-        case QVariant::DateTime:
-            text = option.locale.toString(value.toDateTime().date(), QLocale::ShortFormat);
-            text += QLatin1Char(' ');
-            text += option.locale.toString(value.toDateTime().time(), QLocale::ShortFormat);
-            break;
-        default:
-            text = replaceNewLine(value.toString());
-            break;
-    }
-    return text;
+    return textForRole(Qt::DisplayRole, value, option.locale, DBL_DIG);
 }
 
 /*!
@@ -428,7 +399,7 @@ void QItemDelegate::paint(QPainter *painter,
     QRect displayRect;
     value = index.data(Qt::DisplayRole);
     if (value.isValid() && !value.isNull()) {
-        text = QItemDelegatePrivate::valueToText(value, opt);
+        text = d->valueToText(value, opt);
         displayRect = textRectangle(painter, d->textLayoutBounds(opt), opt.font, text);
     }
 
@@ -832,11 +803,14 @@ void QItemDelegate::doLayout(const QStyleOptionViewItem &option,
     const bool hasCheck = checkRect->isValid();
     const bool hasPixmap = pixmapRect->isValid();
     const bool hasText = textRect->isValid();
-    const int textMargin = hasText ? style->pixelMetric(QStyle::PM_FocusFrameHMargin, 0, widget) + 1 : 0;
-    const int pixmapMargin = hasPixmap ? style->pixelMetric(QStyle::PM_FocusFrameHMargin, 0, widget) + 1 : 0;
-    const int checkMargin = hasCheck ? style->pixelMetric(QStyle::PM_FocusFrameHMargin, 0, widget) + 1 : 0;
-    int x = option.rect.left();
-    int y = option.rect.top();
+    const bool hasMargin = (hasText | hasPixmap | hasCheck);
+    const int frameHMargin = hasMargin ?
+                style->pixelMetric(QStyle::PM_FocusFrameHMargin, 0, widget) + 1 : 0;
+    const int textMargin = hasText ? frameHMargin : 0;
+    const int pixmapMargin = hasPixmap ? frameHMargin : 0;
+    const int checkMargin = hasCheck ? frameHMargin : 0;
+    const int x = option.rect.left();
+    const int y = option.rect.top();
     int w, h;
 
     textRect->adjust(-textMargin, 0, textMargin, 0); // add width padding
@@ -871,7 +845,7 @@ void QItemDelegate::doLayout(const QStyleOptionViewItem &option,
         if (option.direction == Qt::RightToLeft) {
             check.setRect(x + w - cw, y, cw, h);
         } else {
-            check.setRect(x + checkMargin, y, cw, h);
+            check.setRect(x, y, cw, h);
         }
     }
 
@@ -1014,7 +988,7 @@ QPixmap *QItemDelegate::selected(const QPixmap &pixmap, const QPalette &palette,
         painter.end();
 
         QPixmap selected = QPixmap(QPixmap::fromImage(img));
-        int n = (img.byteCount() >> 10) + 1;
+        int n = (img.sizeInBytes() >> 10) + 1;
         if (QPixmapCache::cacheLimit() < n)
             QPixmapCache::setCacheLimit(n);
 
@@ -1055,7 +1029,7 @@ QRect QItemDelegate::rect(const QStyleOptionViewItem &option,
             return QRect(QPoint(0, 0), option.decorationSize);
         case QVariant::String:
         default: {
-            QString text = QItemDelegatePrivate::valueToText(value, option);
+            const QString text = d->valueToText(value, option);
             value = index.data(Qt::FontRole);
             QFont fnt = qvariant_cast<QFont>(value).resolve(option.font);
             return textRectangle(0, d->textLayoutBounds(option), fnt, text); }
@@ -1116,7 +1090,7 @@ QRect QItemDelegate::textRectangle(QPainter * /*painter*/, const QRect &rect,
     \endlist
 
     In the case of \uicontrol Tab, \uicontrol Backtab, \uicontrol Enter and \uicontrol Return
-    key press events, the \a editor's data is comitted to the model
+    key press events, the \a editor's data is committed to the model
     and the editor is closed. If the \a event is a \uicontrol Tab key press
     the view will open an editor on the next item in the
     view. Likewise, if the \a event is a \uicontrol Backtab key press the
@@ -1224,5 +1198,3 @@ QStyleOptionViewItem QItemDelegate::setOptions(const QModelIndex &index,
 QT_END_NAMESPACE
 
 #include "moc_qitemdelegate.cpp"
-
-#endif // QT_NO_ITEMVIEWS

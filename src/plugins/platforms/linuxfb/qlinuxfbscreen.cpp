@@ -1,39 +1,46 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qlinuxfbscreen.h"
-#include <QtPlatformSupport/private/qfbcursor_p.h>
-#include <QtPlatformSupport/private/qfbwindow_p.h>
+#include <QtFbSupport/private/qfbcursor_p.h>
+#include <QtFbSupport/private/qfbwindow_p.h>
+#include <QtCore/QFile>
 #include <QtCore/QRegularExpression>
 #include <QtGui/QPainter>
 
@@ -256,15 +263,15 @@ static int openTtyDevice(const QString &device)
     return fd;
 }
 
-static bool switchToGraphicsMode(int ttyfd, int *oldMode)
+static void switchToGraphicsMode(int ttyfd, bool doSwitch, int *oldMode)
 {
-    ioctl(ttyfd, KDGETMODE, oldMode);
-    if (*oldMode != KD_GRAPHICS) {
-       if (ioctl(ttyfd, KDSETMODE, KD_GRAPHICS) != 0)
-            return false;
+    // Do not warn if the switch fails: the ioctl fails when launching from a
+    // remote console and there is nothing we can do about it.  The matching
+    // call in resetTty should at least fail then, too, so we do no harm.
+    if (ioctl(ttyfd, KDGETMODE, oldMode) == 0) {
+        if (doSwitch && *oldMode != KD_GRAPHICS)
+            ioctl(ttyfd, KDSETMODE, KD_GRAPHICS);
     }
-
-    return true;
 }
 
 static void resetTty(int ttyfd, int oldMode)
@@ -280,21 +287,21 @@ static void blankScreen(int fd, bool on)
 }
 
 QLinuxFbScreen::QLinuxFbScreen(const QStringList &args)
-    : mArgs(args), mFbFd(-1), mBlitter(0)
+    : mArgs(args), mFbFd(-1), mTtyFd(-1), mBlitter(0)
 {
+    mMmap.data = 0;
 }
 
 QLinuxFbScreen::~QLinuxFbScreen()
 {
     if (mFbFd != -1) {
-        munmap(mMmap.data - mMmap.offset, mMmap.size);
+        if (mMmap.data)
+            munmap(mMmap.data - mMmap.offset, mMmap.size);
         close(mFbFd);
     }
 
-    if (mTtyFd != -1) {
+    if (mTtyFd != -1)
         resetTty(mTtyFd, mOldTtyMode);
-        close(mTtyFd);
-    }
 
     delete mBlitter;
 }
@@ -313,7 +320,7 @@ bool QLinuxFbScreen::initialize()
     bool doSwitchToGraphicsMode = true;
 
     // Parse arguments
-    foreach (const QString &arg, mArgs) {
+    for (const QString &arg : qAsConst(mArgs)) {
         QRegularExpressionMatch match;
         if (arg == QLatin1String("nographicsmodeswitch"))
             doSwitchToGraphicsMode = false;
@@ -389,11 +396,7 @@ bool QLinuxFbScreen::initialize()
     if (mTtyFd == -1)
         qErrnoWarning(errno, "Failed to open tty");
 
-    if (doSwitchToGraphicsMode)
-        switchToGraphicsMode(mTtyFd, &mOldTtyMode);
-        // Do not warn if the switch fails: the ioctl fails when launching from
-        // a remote console and there is nothing we can do about it.
-
+    switchToGraphicsMode(mTtyFd, doSwitchToGraphicsMode, &mOldTtyMode);
     blankScreen(mFbFd, false);
 
     return true;
@@ -409,9 +412,10 @@ QRegion QLinuxFbScreen::doRedraw()
     if (!mBlitter)
         mBlitter = new QPainter(&mFbScreenImage);
 
-    QVector<QRect> rects = touched.rects();
-    for (int i = 0; i < rects.size(); i++)
-        mBlitter->drawImage(rects[i], *mScreenImage, rects[i]);
+    mBlitter->setCompositionMode(QPainter::CompositionMode_Source);
+    for (const QRect &rect : touched)
+        mBlitter->drawImage(rect, mScreenImage, rect);
+
     return touched;
 }
 

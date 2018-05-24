@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,7 +49,6 @@
 #include <qstringlist.h>
 #include <qthread.h>
 #include <qvariant.h>
-#include <qhash.h>
 #include <qdebug.h>
 #include <qsemaphore.h>
 
@@ -321,6 +326,24 @@ const char *QMetaObject::className() const
 */
 
 /*!
+    Returns \c true if the class described by this QMetaObject inherits
+    the type described by \a metaObject; otherwise returns false.
+
+    A type is considered to inherit itself.
+
+    \since 5.7
+*/
+bool QMetaObject::inherits(const QMetaObject *metaObject) const Q_DECL_NOEXCEPT
+{
+    const QMetaObject *m = this;
+    do {
+        if (metaObject == m)
+            return true;
+    } while ((m = m->d.superdata));
+    return false;
+}
+
+/*!
     \internal
 
     Returns \a obj if object \a obj inherits from this
@@ -328,14 +351,8 @@ const char *QMetaObject::className() const
 */
 QObject *QMetaObject::cast(QObject *obj) const
 {
-    if (obj) {
-        const QMetaObject *m = obj->metaObject();
-        do {
-            if (m == this)
-                return obj;
-        } while ((m = m->d.superdata));
-    }
-    return 0;
+    // ### Qt 6: inline
+    return const_cast<QObject*>(cast(const_cast<const QObject*>(obj)));
 }
 
 /*!
@@ -346,14 +363,7 @@ QObject *QMetaObject::cast(QObject *obj) const
 */
 const QObject *QMetaObject::cast(const QObject *obj) const
 {
-    if (obj) {
-        const QMetaObject *m = obj->metaObject();
-        do {
-            if (m == this)
-                return obj;
-        } while ((m = m->d.superdata));
-    }
-    return 0;
+    return (obj && obj->metaObject()->inherits(this)) ? obj : nullptr;
 }
 
 #ifndef QT_NO_TRANSLATION
@@ -1331,7 +1341,7 @@ QByteArray QMetaObject::normalizedSignature(const char *method)
 
 enum { MaximumParamCount = 11 }; // up to 10 arguments + 1 return value
 
-/*!
+/*
     Returns the signatures of all methods whose name matches \a nonExistentMember,
     or an empty QByteArray if there are no matches.
 */
@@ -1343,7 +1353,7 @@ static inline QByteArray findMethodCandidates(const QMetaObject *metaObject, con
     for (int i = 0; i < metaObject->methodCount(); ++i) {
         const QMetaMethod method = metaObject->method(i);
         if (method.name() == memberByteArray)
-            candidateMessage.append("    " + method.methodSignature() + '\n');
+            candidateMessage += "    " + method.methodSignature() + '\n';
     }
     if (!candidateMessage.isEmpty()) {
         candidateMessage.prepend("\nCandidates are:\n");
@@ -1479,6 +1489,57 @@ bool QMetaObject::invokeMethod(QObject *obj,
                          val0, val1, val2, val3, val4, val5, val6, val7, val8, val9);
 }
 
+bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *slot, Qt::ConnectionType type, void *ret)
+{
+    struct Holder {
+        QtPrivate::QSlotObjectBase *obj;
+        ~Holder() { obj->destroyIfLastRef(); }
+    } holder = { slot };
+    Q_UNUSED(holder);
+
+    if (! object)
+        return false;
+
+    QThread *currentThread = QThread::currentThread();
+    QThread *objectThread = object->thread();
+    if (type == Qt::AutoConnection)
+        type = (currentThread == objectThread) ? Qt::DirectConnection : Qt::QueuedConnection;
+
+    void *argv[] = { ret };
+
+    if (type == Qt::DirectConnection) {
+        slot->call(object, argv);
+    } else if (type == Qt::QueuedConnection) {
+        if (argv[0]) {
+            qWarning("QMetaObject::invokeMethod: Unable to invoke methods with return values in "
+                     "queued connections");
+            return false;
+        }
+
+        // args and typesCopy will be deallocated by ~QMetaCallEvent() using free()
+        void **args = static_cast<void **>(calloc(1, sizeof(void *)));
+        Q_CHECK_PTR(args);
+
+        int *types = static_cast<int *>(calloc(1, sizeof(int)));
+        Q_CHECK_PTR(types);
+
+        QCoreApplication::postEvent(object, new QMetaCallEvent(slot, 0, -1, 1, types, args));
+    } else if (type == Qt::BlockingQueuedConnection) {
+#ifndef QT_NO_THREAD
+        if (currentThread == objectThread)
+            qWarning("QMetaObject::invokeMethod: Dead lock detected");
+
+        QSemaphore semaphore;
+        QCoreApplication::postEvent(object, new QMetaCallEvent(slot, 0, -1, 0, 0, argv, &semaphore));
+        semaphore.acquire();
+#endif // QT_NO_THREAD
+    } else {
+        qWarning("QMetaObject::invokeMethod: Unknown connection type");
+        return false;
+    }
+    return true;
+}
+
 /*! \fn bool QMetaObject::invokeMethod(QObject *obj, const char *member,
                                        QGenericReturnArgument ret,
                                        QGenericArgument val0 = QGenericArgument(0),
@@ -1534,15 +1595,29 @@ bool QMetaObject::invokeMethod(QObject *obj,
 */
 
 /*!
-    \fn QMetaObject::Connection::Connection(const Connection &other)
+    \fn  template<typename Functor, typename FunctorReturnType> bool QMetaObject::invokeMethod(QObject *context, Functor function, Qt::ConnectionType type, FunctorReturnType *ret)
 
-    Constructs a copy of \a other.
+    \since 5.10
+
+    \overload
+
+    Invokes the \a function in the event loop of \a context. \a function can be a functor
+    or a pointer to a member function. Returns \c true if the function could be invoked.
+    Returns \c false if there is no such function or the parameters did not match.
+    The return value of the function call is placed in \a ret.
 */
 
 /*!
-    \fn QMetaObject::Connection::Connection &operator=(const Connection &other)
+    \fn  template<typename Functor, typename FunctorReturnType> bool QMetaObject::invokeMethod(QObject *context, Functor function, FunctorReturnType *ret)
 
-    Assigns \a other to this connection and returns a reference to this connection.
+    \since 5.10
+
+    \overload
+
+    Invokes the \a function in the event loop of \a context using the connection type Qt::AutoConnection.
+    \a function can be a functor or a pointer to a member function. Returns \c true if the function could
+    be invoked. Returns \c false if there is no such member or the parameters did not match.
+    The return value of the function call is placed in \a ret.
 */
 
 /*!
@@ -2014,7 +2089,7 @@ QMetaMethod::MethodType QMetaMethod::methodType() const
 }
 
 /*!
-    \fn QMetaMethod QMetaMethod::fromSignal(PointerToMemberFunction signal)
+    \fn  template <typename PointerToMemberFunction> QMetaMethod QMetaMethod::fromSignal(PointerToMemberFunction signal)
     \since 5.0
 
     Returns the meta-method that corresponds to the given \a signal, or an
@@ -2231,12 +2306,10 @@ bool QMetaMethod::invoke(QObject *object,
 
         for (int i = 1; i < paramCount; ++i) {
             types[i] = QMetaType::type(typeNames[i]);
-            if (types[i] != QMetaType::UnknownType) {
-                args[i] = QMetaType::create(types[i], param[i]);
-                ++nargs;
-            } else if (param[i]) {
+            if (types[i] == QMetaType::UnknownType && param[i]) {
                 // Try to register the type and try again before reporting an error.
-                void *argv[] = { &types[i], &i };
+                int index = nargs - 1;
+                void *argv[] = { &types[i], &index };
                 QMetaObject::metacall(object, QMetaObject::RegisterMethodArgumentMetaType,
                                       idx_relative + idx_offset, argv);
                 if (types[i] == -1) {
@@ -2250,6 +2323,10 @@ bool QMetaMethod::invoke(QObject *object,
                     free(args);
                     return false;
                 }
+            }
+            if (types[i] != QMetaType::UnknownType) {
+                args[i] = QMetaType::create(types[i], param[i]);
+                ++nargs;
             }
         }
 
@@ -2547,9 +2624,19 @@ int QMetaEnum::value(int index) const
 */
 bool QMetaEnum::isFlag() const
 {
-    return mobj && mobj->d.data[handle + 1];
+    return mobj && mobj->d.data[handle + 1] & EnumIsFlag;
 }
 
+/*!
+    \since 5.8
+
+    Returns \c true if this enumerator is declared as a C++11 enum class;
+    otherwise returns false.
+*/
+bool QMetaEnum::isScoped() const
+{
+    return mobj && mobj->d.data[handle + 1] & EnumIsScoped;
+}
 
 /*!
     Returns the scope this enumerator was declared in.
@@ -2642,15 +2729,16 @@ int QMetaEnum::keysToValue(const char *keys, bool *ok) const
         return -1;
     if (ok != 0)
         *ok = true;
-    QStringList l = QString::fromLatin1(keys).split(QLatin1Char('|'));
-    if (l.isEmpty())
+    const QString keysString = QString::fromLatin1(keys);
+    const QVector<QStringRef> splitKeys = keysString.splitRef(QLatin1Char('|'));
+    if (splitKeys.isEmpty())
         return 0;
-    //#### TODO write proper code, do not use QStringList
+    // ### TODO write proper code: do not allocate memory, so we can go nothrow
     int value = 0;
     int count = mobj->d.data[handle + 2];
     int data = mobj->d.data[handle + 3];
-    for (int li = 0; li < l.size(); ++li) {
-        QString trimmed = l.at(li).trimmed();
+    for (const QStringRef &untrimmed : splitKeys) {
+        const QStringRef trimmed = untrimmed.trimmed();
         QByteArray qualified_key = trimmed.toLatin1();
         const char *key = qualified_key.constData();
         uint scope = 0;
@@ -3029,6 +3117,11 @@ QVariant QMetaProperty::read(const QObject *object) const
     Writes \a value as the property's value to the given \a object. Returns
     true if the write succeeded; otherwise returns \c false.
 
+    If \a value is not of the same type type as the property, a conversion
+    is attempted. An empty QVariant() is equivalent to a call to reset()
+    if this property is resetable, or setting a default-constructed object
+    otherwise.
+
     \sa read(), reset(), isWritable()
 */
 bool QMetaProperty::write(QObject *object, const QVariant &value) const
@@ -3069,8 +3162,15 @@ bool QMetaProperty::write(QObject *object, const QVariant &value) const
             if (t == QMetaType::UnknownType)
                 return false;
         }
-        if (t != QMetaType::QVariant && t != (uint)value.userType() && (t < QMetaType::User && !v.convert((QVariant::Type)t)))
-            return false;
+        if (t != QMetaType::QVariant && int(t) != value.userType()) {
+            if (!value.isValid()) {
+                if (isResettable())
+                    return reset(object);
+                v = QVariant(t, 0);
+            } else if (!v.convert(t)) {
+                return false;
+            }
+        }
     }
 
     // the status variable is changed by qt_metacall to indicate what it did
@@ -3229,7 +3329,21 @@ int QMetaProperty::notifySignalIndex() const
     if (hasNotifySignal()) {
         int offset = priv(mobj->d.data)->propertyData +
                      priv(mobj->d.data)->propertyCount * 3 + idx;
-        return mobj->d.data[offset] + mobj->methodOffset();
+        int methodIndex = mobj->d.data[offset];
+        if (methodIndex & IsUnresolvedSignal) {
+            methodIndex &= ~IsUnresolvedSignal;
+            const QByteArray signalName = stringData(mobj, methodIndex);
+            const QMetaObject *m = mobj;
+            const int idx = indexOfMethodRelative<MethodSignal>(&m, signalName, 0, nullptr);
+            if (idx >= 0) {
+                return idx + m->methodOffset();
+            } else {
+                qWarning("QMetaProperty::notifySignal: cannot find the NOTIFY signal %s in class %s for property '%s'",
+                         signalName.constData(), objectClassName(mobj), name());
+                return -1;
+            }
+        }
+        return methodIndex + mobj->methodOffset();
     } else {
         return -1;
     }

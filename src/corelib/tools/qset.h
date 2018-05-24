@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,8 @@
 #include <initializer_list>
 #endif
 
+#include <iterator>
+
 QT_BEGIN_NAMESPACE
 
 
@@ -48,7 +56,7 @@ class QSet
     typedef QHash<T, QHashDummyValue> Hash;
 
 public:
-    inline QSet() {}
+    inline QSet() Q_DECL_NOTHROW {}
 #ifdef Q_COMPILER_INITIALIZER_LISTS
     inline QSet(std::initializer_list<T> list)
     {
@@ -57,16 +65,10 @@ public:
             insert(*it);
     }
 #endif
-    inline QSet(const QSet<T> &other) : q_hash(other.q_hash) {}
+    // compiler-generated copy/move ctor/assignment operators are fine!
+    // compiler-generated destructor is fine!
 
-    inline QSet<T> &operator=(const QSet<T> &other)
-        { q_hash = other.q_hash; return *this; }
-#ifdef Q_COMPILER_RVALUE_REFS
-    inline QSet(QSet &&other) : q_hash(qMove(other.q_hash)) {}
-    inline QSet<T> &operator=(QSet<T> &&other)
-        { qSwap(q_hash, other.q_hash); return *this; }
-#endif
-    inline void swap(QSet<T> &other) { q_hash.swap(other.q_hash); }
+    inline void swap(QSet<T> &other) Q_DECL_NOTHROW { q_hash.swap(other.q_hash); }
 
     inline bool operator==(const QSet<T> &other) const
         { return q_hash == other.q_hash; }
@@ -83,7 +85,7 @@ public:
 
     inline void detach() { q_hash.detach(); }
     inline bool isDetached() const { return q_hash.isDetached(); }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     inline void setSharable(bool sharable) { q_hash.setSharable(sharable); }
 #endif
 
@@ -102,6 +104,7 @@ public:
         typedef QHash<T, QHashDummyValue> Hash;
         typename Hash::iterator i;
         friend class const_iterator;
+        friend class QSet<T>;
 
     public:
         typedef std::bidirectional_iterator_tag iterator_category;
@@ -137,6 +140,7 @@ public:
         typedef QHash<T, QHashDummyValue> Hash;
         typename Hash::const_iterator i;
         friend class iterator;
+        friend class QSet<T>;
 
     public:
         typedef std::bidirectional_iterator_tag iterator_category;
@@ -166,18 +170,31 @@ public:
     };
 
     // STL style
+    typedef std::reverse_iterator<iterator> reverse_iterator;
+    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
+
     inline iterator begin() { return q_hash.begin(); }
-    inline const_iterator begin() const { return q_hash.begin(); }
-    inline const_iterator cbegin() const { return q_hash.begin(); }
-    inline const_iterator constBegin() const { return q_hash.constBegin(); }
+    inline const_iterator begin() const Q_DECL_NOTHROW { return q_hash.begin(); }
+    inline const_iterator cbegin() const Q_DECL_NOTHROW { return q_hash.begin(); }
+    inline const_iterator constBegin() const Q_DECL_NOTHROW { return q_hash.constBegin(); }
     inline iterator end() { return q_hash.end(); }
-    inline const_iterator end() const { return q_hash.end(); }
-    inline const_iterator cend() const { return q_hash.end(); }
-    inline const_iterator constEnd() const { return q_hash.constEnd(); }
+    inline const_iterator end() const Q_DECL_NOTHROW { return q_hash.end(); }
+    inline const_iterator cend() const Q_DECL_NOTHROW { return q_hash.end(); }
+    inline const_iterator constEnd() const Q_DECL_NOTHROW { return q_hash.constEnd(); }
+
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const Q_DECL_NOTHROW { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const Q_DECL_NOTHROW { return const_reverse_iterator(begin()); }
+    const_reverse_iterator crbegin() const Q_DECL_NOTHROW { return const_reverse_iterator(end()); }
+    const_reverse_iterator crend() const Q_DECL_NOTHROW { return const_reverse_iterator(begin()); }
+
     iterator erase(iterator i)
+    { return erase(m2c(i)); }
+    iterator erase(const_iterator i)
     {
         Q_ASSERT_X(isValidIterator(i), "QSet::erase", "The specified const_iterator argument 'i' is invalid");
-        return q_hash.erase(reinterpret_cast<typename Hash::iterator &>(i));
+        return q_hash.erase(reinterpret_cast<typename Hash::const_iterator &>(i));
     }
 
     // more Qt
@@ -191,6 +208,7 @@ public:
     inline const_iterator constFind(const T &value) const { return find(value); }
     QSet<T> &unite(const QSet<T> &other);
     QSet<T> &intersect(const QSet<T> &other);
+    bool intersects(const QSet<T> &other) const;
     QSet<T> &subtract(const QSet<T> &other);
 
     // STL compatibility
@@ -231,9 +249,17 @@ public:
 
 private:
     Hash q_hash;
+
+    static const_iterator m2c(iterator it) Q_DECL_NOTHROW
+    { return const_iterator(typename Hash::const_iterator(it.i.i)); }
+
     bool isValidIterator(const iterator &i) const
     {
         return q_hash.isValidIterator(reinterpret_cast<const typename Hash::iterator&>(i));
+    }
+    bool isValidIterator(const const_iterator &i) const Q_DECL_NOTHROW
+    {
+        return q_hash.isValidIterator(reinterpret_cast<const typename Hash::const_iterator&>(i));
     }
 };
 
@@ -284,15 +310,44 @@ Q_INLINE_TEMPLATE QSet<T> &QSet<T>::intersect(const QSet<T> &other)
 }
 
 template <class T>
+Q_INLINE_TEMPLATE bool QSet<T>::intersects(const QSet<T> &other) const
+{
+    const bool otherIsBigger = other.size() > size();
+    const QSet &smallestSet = otherIsBigger ? *this : other;
+    const QSet &biggestSet = otherIsBigger ? other : *this;
+    const bool equalSeeds = q_hash.d->seed == other.q_hash.d->seed;
+    typename QSet::const_iterator i = smallestSet.cbegin();
+    typename QSet::const_iterator e = smallestSet.cend();
+
+    if (Q_LIKELY(equalSeeds)) {
+        // If seeds are equal we take the fast path so no hash is recalculated.
+        while (i != e) {
+            if (*biggestSet.q_hash.findNode(*i, i.i.i->h) != biggestSet.q_hash.e)
+                return true;
+            ++i;
+        }
+    } else {
+        while (i != e) {
+            if (biggestSet.contains(*i))
+                return true;
+            ++i;
+        }
+     }
+
+    return false;
+}
+
+template <class T>
 Q_INLINE_TEMPLATE QSet<T> &QSet<T>::subtract(const QSet<T> &other)
 {
-    QSet<T> copy1(*this);
-    QSet<T> copy2(other);
-    typename QSet<T>::const_iterator i = copy1.constEnd();
-    while (i != copy1.constBegin()) {
-        --i;
-        if (copy2.contains(*i))
+    if (&other == this) {
+        clear();
+    } else {
+        auto i = other.constEnd();
+        while (i != other.constBegin()) {
+            --i;
             remove(*i);
+        }
     }
     return *this;
 }

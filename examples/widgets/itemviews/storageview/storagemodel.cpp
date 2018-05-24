@@ -1,13 +1,23 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2014 Ivan Komissarov
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Ivan Komissarov
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -42,29 +52,27 @@
 #include "storagemodel.h"
 
 #include <QDir>
+#include <QLocale>
 #include <qmath.h>
+#include <algorithm>
 #include <cmath>
 
-static QString sizeToString(qint64 size)
+StorageModel::StorageModel(QObject *parent) :
+    QAbstractTableModel(parent)
 {
-    static const char *const strings[] = { "b", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-
-    if (size <= 0)
-        return StorageModel::tr("0 b");
-
-    double power = std::log((double)size)/std::log(1024.0);
-    int intPower = (int)power;
-    intPower = intPower >= 8 ? 8 - 1 : intPower;
-
-    double normSize = size / std::pow(1024.0, intPower);
-    //: this should expand to "1.23 GB"
-    return StorageModel::tr("%1 %2").arg(normSize, 0, 'f', intPower > 0 ? 2 : 0).arg(strings[intPower]);
 }
 
-StorageModel::StorageModel(QObject *parent) :
-    QAbstractTableModel(parent),
-    m_volumes(QStorageInfo::mountedVolumes())
+void StorageModel::refresh()
 {
+    beginResetModel();
+    m_volumes = QStorageInfo::mountedVolumes();
+    std::sort(m_volumes.begin(), m_volumes.end(),
+              [](const QStorageInfo &st1, const QStorageInfo &st2) {
+                  static const QString rootSortString = QStringLiteral(" ");
+                  return (st1.isRoot() ? rootSortString : st1.rootPath())
+                       < (st2.isRoot() ? rootSortString : st2.rootPath());
+              });
+    endResetModel();
 }
 
 int StorageModel::columnCount(const QModelIndex &/*parent*/) const
@@ -77,6 +85,22 @@ int StorageModel::rowCount(const QModelIndex &parent) const
     if (parent.isValid())
         return 0;
     return m_volumes.count();
+}
+
+Qt::ItemFlags StorageModel::flags(const QModelIndex &index) const
+{
+    Qt::ItemFlags result = QAbstractTableModel::flags(index);
+    switch (index.column()) {
+    case ColumnAvailable:
+    case ColumnIsReady:
+    case ColumnIsReadOnly:
+    case ColumnIsValid:
+        result |= Qt::ItemIsUserCheckable;
+        break;
+    default:
+        break;
+    }
+    return result;
 }
 
 QVariant StorageModel::data(const QModelIndex &index, int role) const
@@ -96,11 +120,17 @@ QVariant StorageModel::data(const QModelIndex &index, int role) const
         case ColumnFileSystemName:
             return volume.fileSystemType();
         case ColumnTotal:
-            return sizeToString(volume.bytesTotal());
+            return QLocale().formattedDataSize(volume.bytesTotal());
         case ColumnFree:
-            return sizeToString(volume.bytesFree());
+            return QLocale().formattedDataSize(volume.bytesFree());
         case ColumnAvailable:
-            return sizeToString(volume.bytesAvailable());
+            return QLocale().formattedDataSize(volume.bytesAvailable());
+        default:
+            break;
+        }
+    } else if (role == Qt::CheckStateRole) {
+        const QStorageInfo &volume = m_volumes.at(index.row());
+        switch (index.column()) {
         case ColumnIsReady:
             return volume.isReady();
         case ColumnIsReadOnly:
@@ -110,7 +140,18 @@ QVariant StorageModel::data(const QModelIndex &index, int role) const
         default:
             break;
         }
+    } else if (role == Qt::TextAlignmentRole) {
+        switch (index.column()) {
+        case ColumnTotal:
+        case ColumnFree:
+        case ColumnAvailable:
+            return Qt::AlignTrailing;
+        default:
+            break;
+        }
+        return Qt::AlignLeading;
     } else if (role == Qt::ToolTipRole) {
+        QLocale locale;
         const QStorageInfo &volume = m_volumes.at(index.row());
         return tr("Root path : %1\n"
                   "Name: %2\n"
@@ -130,9 +171,9 @@ QVariant StorageModel::data(const QModelIndex &index, int role) const
                 arg(volume.displayName()).
                 arg(QString::fromUtf8(volume.device())).
                 arg(QString::fromUtf8(volume.fileSystemType())).
-                arg(sizeToString(volume.bytesTotal())).
-                arg(sizeToString(volume.bytesFree())).
-                arg(sizeToString(volume.bytesAvailable())).
+                arg(locale.formattedDataSize(volume.bytesTotal())).
+                arg(locale.formattedDataSize(volume.bytesFree())).
+                arg(locale.formattedDataSize(volume.bytesAvailable())).
                 arg(volume.isReady() ? tr("true") : tr("false")).
                 arg(volume.isReadOnly() ? tr("true") : tr("false")).
                 arg(volume.isValid() ? tr("true") : tr("false")).
@@ -151,13 +192,13 @@ QVariant StorageModel::headerData(int section, Qt::Orientation orientation, int 
 
     switch (section) {
     case ColumnRootPath:
-        return tr("Root path");
+        return tr("Root Path");
     case ColumnName:
         return tr("Volume Name");
     case ColumnDevice:
         return tr("Device");
     case ColumnFileSystemName:
-        return tr("File system");
+        return tr("File System");
     case ColumnTotal:
         return tr("Total");
     case ColumnFree:

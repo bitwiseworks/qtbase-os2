@@ -1,40 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qfuturewatcher.h"
-
-#ifndef QT_NO_QFUTURE
-
 #include "qfuturewatcher_p.h"
 
 #include <QtCore/qcoreevent.h>
@@ -93,7 +96,7 @@ QT_BEGIN_NAMESPACE
     \sa QFuture, {Qt Concurrent}
 */
 
-/*! \fn QFutureWatcher::QFutureWatcher(QObject *parent)
+/*! \fn template <typename T> QFutureWatcher<T>::QFutureWatcher(QObject *parent)
 
     Constructs a new QFutureWatcher with the given \a parent.
 */
@@ -101,12 +104,12 @@ QFutureWatcherBase::QFutureWatcherBase(QObject *parent)
     :QObject(*new QFutureWatcherBasePrivate, parent)
 { }
 
-/*! \fn QFutureWatcher::~QFutureWatcher()
+/*! \fn template <typename T> QFutureWatcher<T>::~QFutureWatcher()
 
     Destroys the QFutureWatcher.
 */
 
-/*! \fn void QFutureWatcher::cancel()
+/*! \fn template <typename T> void QFutureWatcher<T>::cancel()
 
     Cancels the asynchronous computation represented by the future(). Note that
     the cancelation is asynchronous. Use waitForFinished() after calling
@@ -128,7 +131,7 @@ void QFutureWatcherBase::cancel()
     futureInterface().cancel();
 }
 
-/*! \fn void QFutureWatcher::setPaused(bool paused)
+/*! \fn template <typename T> void QFutureWatcher<T>::setPaused(bool paused)
 
     If \a paused is true, this function pauses the asynchronous computation
     represented by the future(). If the computation is already paused, this
@@ -150,7 +153,7 @@ void QFutureWatcherBase::setPaused(bool paused)
     futureInterface().setPaused(paused);
 }
 
-/*! \fn void QFutureWatcher::pause()
+/*! \fn template <typename T> void QFutureWatcher<T>::pause()
 
     Pauses the asynchronous computation represented by the future(). This is a
     convenience method that simply calls setPaused(true).
@@ -162,7 +165,7 @@ void QFutureWatcherBase::pause()
     futureInterface().setPaused(true);
 }
 
-/*! \fn void QFutureWatcher::resume()
+/*! \fn template <typename T> void QFutureWatcher<T>::resume()
 
     Resumes the asynchronous computation represented by the future(). This is
     a convenience method that simply calls setPaused(false).
@@ -174,7 +177,7 @@ void QFutureWatcherBase::resume()
     futureInterface().setPaused(false);
 }
 
-/*! \fn void QFutureWatcher::togglePaused()
+/*! \fn template <typename T> void QFutureWatcher<T>::togglePaused()
 
     Toggles the paused state of the asynchronous computation. In other words,
     if the computation is currently paused, calling this function resumes it;
@@ -188,7 +191,7 @@ void QFutureWatcherBase::togglePaused()
     futureInterface().togglePaused();
 }
 
-/*! \fn int QFutureWatcher::progressValue() const
+/*! \fn template <typename T> int QFutureWatcher<T>::progressValue() const
 
     Returns the current progress value, which is between the progressMinimum()
     and progressMaximum().
@@ -200,7 +203,7 @@ int QFutureWatcherBase::progressValue() const
     return futureInterface().progressValue();
 }
 
-/*! \fn int QFutureWatcher::progressMinimum() const
+/*! \fn template <typename T> int QFutureWatcher<T>::progressMinimum() const
 
     Returns the minimum progressValue().
 
@@ -211,7 +214,7 @@ int QFutureWatcherBase::progressMinimum() const
     return futureInterface().progressMinimum();
 }
 
-/*! \fn int QFutureWatcher::progressMaximum() const
+/*! \fn template <typename T> int QFutureWatcher<T>::progressMaximum() const
 
     Returns the maximum progressValue().
 
@@ -222,7 +225,7 @@ int QFutureWatcherBase::progressMaximum() const
     return futureInterface().progressMaximum();
 }
 
-/*! \fn QString QFutureWatcher::progressText() const
+/*! \fn template <typename T> QString QFutureWatcher<T>::progressText() const
 
     Returns the (optional) textual representation of the progress as reported
     by the asynchronous computation.
@@ -235,7 +238,7 @@ QString QFutureWatcherBase::progressText() const
     return futureInterface().progressText();
 }
 
-/*! \fn bool QFutureWatcher::isStarted() const
+/*! \fn template <typename T> bool QFutureWatcher<T>::isStarted() const
 
     Returns \c true if the asynchronous computation represented by the future()
     has been started; otherwise returns \c false.
@@ -245,10 +248,10 @@ bool QFutureWatcherBase::isStarted() const
     return futureInterface().queryState(QFutureInterfaceBase::Started);
 }
 
-/*! \fn bool QFutureWatcher::isFinished() const
+/*! \fn template <typename T> bool QFutureWatcher<T>::isFinished() const
 
     Returns \c true if the asynchronous computation represented by the future()
-    has finished; otherwise returns \c false.
+    has finished, or if no future has been set; otherwise returns \c false.
 */
 bool QFutureWatcherBase::isFinished() const
 {
@@ -256,7 +259,7 @@ bool QFutureWatcherBase::isFinished() const
     return d->finished;
 }
 
-/*! \fn bool QFutureWatcher::isRunning() const
+/*! \fn template <typename T> bool QFutureWatcher<T>::isRunning() const
 
     Returns \c true if the asynchronous computation represented by the future()
     is currently running; otherwise returns \c false.
@@ -266,7 +269,7 @@ bool QFutureWatcherBase::isRunning() const
     return futureInterface().queryState(QFutureInterfaceBase::Running);
 }
 
-/*! \fn bool QFutureWatcher::isCanceled() const
+/*! \fn template <typename T> bool QFutureWatcher<T>::isCanceled() const
 
     Returns \c true if the asynchronous computation has been canceled with the
     cancel() function; otherwise returns \c false.
@@ -279,7 +282,7 @@ bool QFutureWatcherBase::isCanceled() const
     return futureInterface().queryState(QFutureInterfaceBase::Canceled);
 }
 
-/*! \fn bool QFutureWatcher::isPaused() const
+/*! \fn template <typename T> bool QFutureWatcher<T>::isPaused() const
 
     Returns \c true if the asynchronous computation has been paused with the
     pause() function; otherwise returns \c false.
@@ -294,7 +297,7 @@ bool QFutureWatcherBase::isPaused() const
     return futureInterface().queryState(QFutureInterfaceBase::Paused);
 }
 
-/*! \fn void QFutureWatcher::waitForFinished()
+/*! \fn template <typename T> void QFutureWatcher<T>::waitForFinished()
 
     Waits for the asynchronous computation to finish (including cancel()ed
     computations).
@@ -303,15 +306,6 @@ void QFutureWatcherBase::waitForFinished()
 {
     futureInterface().waitForFinished();
 }
-
-/*! \fn void QFutureWatcher::setPendingResultsLimit(int limit)
-
-    The setPendingResultsLimit() provides throttling control. When the number
-    of pending resultReadyAt() or resultsReadyAt() signals exceeds the
-    \a limit, the computation represented by the future will be throttled
-    automatically. The computation will resume once the number of pending
-    signals drops below the \a limit.
-*/
 
 bool QFutureWatcherBase::event(QEvent *event)
 {
@@ -342,6 +336,14 @@ bool QFutureWatcherBase::event(QEvent *event)
     return QObject::event(event);
 }
 
+/*! \fn template <typename T> void QFutureWatcher<T>::setPendingResultsLimit(int limit)
+
+    The setPendingResultsLimit() provides throttling control. When the number
+    of pending resultReadyAt() or resultsReadyAt() signals exceeds the
+    \a limit, the computation represented by the future will be throttled
+    automatically. The computation will resume once the number of pending
+    signals drops below the \a limit.
+*/
 void QFutureWatcherBase::setPendingResultsLimit(int limit)
 {
     Q_D(QFutureWatcherBase);
@@ -379,7 +381,8 @@ void QFutureWatcherBase::disconnectNotify(const QMetaMethod &signal)
 */
 QFutureWatcherBasePrivate::QFutureWatcherBasePrivate()
     : maximumPendingResultsReady(QThread::idealThreadCount() * 2),
-      resultAtConnected(0)
+      resultAtConnected(0),
+      finished(true) /* the initial m_future is a canceledResult(), with Finished set */
 { }
 
 /*!
@@ -400,7 +403,7 @@ void QFutureWatcherBase::disconnectOutputInterface(bool pendingAssignment)
         d->pendingResultsReady.store(0);
         qDeleteAll(d->pendingCallOutEvents);
         d->pendingCallOutEvents.clear();
-        d->finished = false;
+        d->finished = false; /* May soon be amended, during connectOutputInterface() */
     }
 
     futureInterface().d->disconnectOutputInterface(d_func());
@@ -484,7 +487,7 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
 }
 
 
-/*! \fn const T &QFutureWatcher::result() const
+/*! \fn template <typename T> const T &QFutureWatcher<T>::result() const
 
     Returns the first result in the future(). If the result is not immediately
     available, this function will block and wait for the result to become
@@ -493,7 +496,7 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
     \sa resultAt()
 */
 
-/*! \fn const T &QFutureWatcher::resultAt(int index) const
+/*! \fn template <typename T> const T &QFutureWatcher<T>::resultAt(int index) const
 
     Returns the result at \a index in the future(). If the result is not
     immediately available, this function will block and wait for the result to
@@ -502,7 +505,7 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
     \sa result()
 */
 
-/*! \fn void QFutureWatcher::setFuture(const QFuture<T> &future)
+/*! \fn template <typename T> void QFutureWatcher<T>::setFuture(const QFuture<T> &future)
 
     Starts watching the given \a future.
 
@@ -514,44 +517,44 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
     \e after doing the connections.
 */
 
-/*! \fn QFuture<T> QFutureWatcher::future() const
+/*! \fn template <typename T> QFuture<T> QFutureWatcher<T>::future() const
 
     Returns the watched future.
 */
 
-/*! \fn void QFutureWatcher::started()
+/*! \fn template <typename T> void QFutureWatcher<T>::started()
 
     This signal is emitted when this QFutureWatcher starts watching the future
     set with setFuture().
 */
 
 /*!
-    \fn void QFutureWatcher::finished()
+    \fn template <typename T> void QFutureWatcher<T>::finished()
     This signal is emitted when the watched future finishes.
 */
 
 /*!
-    \fn void QFutureWatcher::canceled()
+    \fn template <typename T> void QFutureWatcher<T>::canceled()
     This signal is emitted if the watched future is canceled.
 */
 
-/*! \fn void QFutureWatcher::paused()
+/*! \fn template <typename T> void QFutureWatcher<T>::paused()
     This signal is emitted when the watched future is paused.
 */
 
-/*! \fn void QFutureWatcher::resumed()
+/*! \fn template <typename T> void QFutureWatcher<T>::resumed()
     This signal is emitted when the watched future is resumed.
 */
 
 /*!
-    \fn void QFutureWatcher::progressRangeChanged(int minimum, int maximum)
+    \fn template <typename T> void QFutureWatcher<T>::progressRangeChanged(int minimum, int maximum)
 
     The progress range for the watched future has changed to \a minimum and
     \a maximum
 */
 
 /*!
-    \fn void QFutureWatcher::progressValueChanged(int progressValue)
+    \fn template <typename T> void QFutureWatcher<T>::progressValueChanged(int progressValue)
 
     This signal is emitted when the watched future reports progress,
     \a progressValue gives the current progress. In order to avoid overloading
@@ -561,23 +564,23 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
     \a progressValue equals the maximum value) will always be delivered.
 */
 
-/*! \fn void QFutureWatcher::progressTextChanged(const QString &progressText)
+/*! \fn template <typename T> void QFutureWatcher<T>::progressTextChanged(const QString &progressText)
 
     This signal is emitted when the watched future reports textual progress
     information, \a progressText.
 */
 
 /*!
-    \fn void QFutureWatcher::resultReadyAt(int index)
+    \fn template <typename T> void QFutureWatcher<T>::resultReadyAt(int index)
 
     This signal is emitted when the watched future reports a ready result at
     \a index. If the future reports multiple results, the index will indicate
     which one it is. Results can be reported out-of-order. To get the result,
-    call future().result(index);
+    call resultAt(index);
 */
 
 /*!
-    \fn void QFutureWatcher::resultsReadyAt(int beginIndex, int endIndex);
+    \fn template <typename T> void QFutureWatcher<T>::resultsReadyAt(int beginIndex, int endIndex);
 
     This signal is emitted when the watched future reports ready results.
     The results are indexed from \a beginIndex to \a endIndex.
@@ -586,4 +589,4 @@ void QFutureWatcherBasePrivate::sendCallOutEvent(QFutureCallOutEvent *event)
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_QFUTURE
+#include "moc_qfuturewatcher.cpp"

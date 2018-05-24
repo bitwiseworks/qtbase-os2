@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,6 +46,7 @@
 #include <qcommonstyle.h>
 #include <qlayout.h>
 #include <qdir.h>
+#include <qpaintengine.h>
 
 #include <qabstracttextdocumentlayout.h>
 #include <qtextdocumentfragment.h>
@@ -60,12 +56,12 @@
 #include "../../../shared/platforminputcontext.h"
 #include <private/qinputmethod_p.h>
 
-#include "../../../qtest-config.h"
-
 //Used in copyAvailable
 typedef QPair<Qt::Key, Qt::KeyboardModifier> keyPairType;
 typedef QList<keyPairType> pairListType;
 Q_DECLARE_METATYPE(keyPairType);
+
+Q_DECLARE_METATYPE(QList<QInputMethodEvent::Attribute>);
 
 QT_FORWARD_DECLARE_CLASS(QTextEdit)
 
@@ -130,7 +126,7 @@ private slots:
     void shiftDownInLineLastShouldSelectToEnd();
     void undoRedoShouldRepositionTextEditCursor();
     void lineWrapModes();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void mouseCursorShape();
 #endif
     void implicitClear();
@@ -191,6 +187,7 @@ private slots:
     void inputMethodQuery();
     void inputMethodQueryImHints_data();
     void inputMethodQueryImHints();
+    void inputMethodCursorRect();
 
     void highlightLongLine();
 
@@ -202,9 +199,12 @@ private slots:
     void findWithRegExpReturnsFalseIfNoMoreResults();
 #endif
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
     void wheelEvent();
 #endif
+
+    void preeditCharFormat_data();
+    void preeditCharFormat();
 
 private:
     void createSelection();
@@ -280,15 +280,8 @@ void tst_QTextEdit::getSetCheck()
     QCOMPARE(0, obj1.tabStopWidth());
     obj1.setTabStopWidth(INT_MIN);
     QCOMPARE(0, obj1.tabStopWidth()); // Makes no sense to set a negative tabstop value
-#if defined(Q_OS_WINCE)
-    // due to rounding error in qRound when qreal==float
-    // we cannot use INT_MAX for this check
-    obj1.setTabStopWidth(SHRT_MAX*2);
-    QCOMPARE(SHRT_MAX*2, obj1.tabStopWidth());
-#else
     obj1.setTabStopWidth(INT_MAX);
     QCOMPARE(INT_MAX, obj1.tabStopWidth());
-#endif
 
     // bool QTextEdit::acceptRichText()
     // void QTextEdit::setAcceptRichText(bool)
@@ -382,10 +375,6 @@ void tst_QTextEdit::cleanupTestCase()
 
 void tst_QTextEdit::init()
 {
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
-
     ed = new QTextEdit(0);
     rootFrameMargin = ed->document()->documentMargin();
 }
@@ -398,12 +387,13 @@ void tst_QTextEdit::cleanup()
 
 void tst_QTextEdit::inlineAttributesOnInsert()
 {
-    QVERIFY(ed->textCursor().charFormat().foreground().color() != Qt::blue);
+    const QColor blue(Qt::blue);
+    QVERIFY(ed->textCursor().charFormat().foreground().color() != blue);
 
-    ed->setTextColor(Qt::blue);
+    ed->setTextColor(blue);
     QTest::keyClick(ed, Qt::Key_A);
 
-    QVERIFY(ed->textCursor().charFormat().foreground().color() == Qt::blue);
+    QCOMPARE(ed->textCursor().charFormat().foreground().color(), blue);
 }
 
 void tst_QTextEdit::inlineAttributesOnSelection()
@@ -457,7 +447,7 @@ void tst_QTextEdit::autoBulletList1()
     QTest::keyClicks(ed, "*This should become a list");
 
     QVERIFY(ed->textCursor().currentList());
-    QVERIFY(ed->textCursor().currentList()->format().style() == QTextListFormat::ListDisc);
+    QCOMPARE(ed->textCursor().currentList()->format().style(), QTextListFormat::ListDisc);
 }
 
 void tst_QTextEdit::autoBulletList2()
@@ -582,7 +572,7 @@ void tst_QTextEdit::selectAllSetsNotSelection()
     }
 
     QApplication::clipboard()->setText(QString("foobar"), QClipboard::Selection);
-    QVERIFY(QApplication::clipboard()->text(QClipboard::Selection) == QString("foobar"));
+    QCOMPARE(QApplication::clipboard()->text(QClipboard::Selection), QString("foobar"));
 
     ed->insertPlainText("Hello World");
     ed->selectAll();
@@ -692,7 +682,7 @@ void tst_QTextEdit::emptyAppend()
 {
     ed->append("Blah");
     QCOMPARE(blockCount(), 1);
-    ed->append(QString::null);
+    ed->append(QString());
     QCOMPARE(blockCount(), 2);
     ed->append(QString("   "));
     QCOMPARE(blockCount(), 3);
@@ -867,11 +857,12 @@ void tst_QTextEdit::appendShouldUseCurrentFormat()
     fmt.setFontItalic(true);
     ed->setCurrentCharFormat(fmt);
     ed->append("Hello");
+    const QColor blue(Qt::blue);
 
     QTextCursor cursor(ed->document());
 
     QVERIFY(cursor.movePosition(QTextCursor::NextCharacter));
-    QVERIFY(cursor.charFormat().foreground().color() != Qt::blue);
+    QVERIFY(cursor.charFormat().foreground().color() != blue);
     QVERIFY(!cursor.charFormat().fontItalic());
 
     QVERIFY(cursor.movePosition(QTextCursor::NextBlock));
@@ -883,7 +874,7 @@ void tst_QTextEdit::appendShouldUseCurrentFormat()
     }
 
     QVERIFY(cursor.movePosition(QTextCursor::NextCharacter));
-    QVERIFY(cursor.charFormat().foreground().color() == Qt::blue);
+    QCOMPARE(cursor.charFormat().foreground().color(), blue);
     QVERIFY(cursor.charFormat().fontItalic());
 }
 
@@ -1211,7 +1202,7 @@ void tst_QTextEdit::lineWrapModes()
 {
     ed->setLineWrapMode(QTextEdit::NoWrap);
     // NoWrap at the same time as having all lines that are all left aligned means we optimize to only layout once. The effect is that the width is always 0
-    QVERIFY(ed->document()->pageSize().width() == qreal(0));
+    QCOMPARE(ed->document()->pageSize().width(), qreal(0));
 
     QTextCursor cursor = QTextCursor(ed->document());
     cursor.insertText(QString("A simple line"));
@@ -1232,18 +1223,18 @@ void tst_QTextEdit::lineWrapModes()
     QCOMPARE(ed->document()->pageSize().width(), qreal(1000));
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QTextEdit::mouseCursorShape()
 {
     // always show an IBeamCursor, see change 170146
     QVERIFY(!ed->isReadOnly());
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 
     ed->setReadOnly(true);
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 
     ed->setPlainText("Foo");
-    QVERIFY(ed->viewport()->cursor().shape() == Qt::IBeamCursor);
+    QCOMPARE(ed->viewport()->cursor().shape(), Qt::IBeamCursor);
 }
 #endif
 
@@ -1527,12 +1518,19 @@ void tst_QTextEdit::selectWordsFromStringsContainingSeparators_data()
     QTest::addColumn<QString>("testString");
     QTest::addColumn<QString>("selectedWord");
 
-    QStringList wordSeparators;
-    wordSeparators << "." << "," << "?" << "!" << ":" << ";" << "-" << "<" << ">" << "["
-                   << "]" << "(" << ")" << "{" << "}" << "=" << "\t"<< QString(QChar::Nbsp);
+    const ushort wordSeparators[] =
+        {'.', ',', '?', '!', ':', ';', '-', '<', '>', '[', ']', '(', ')', '{', '}',
+         '=', '\t', ushort(QChar::Nbsp)};
 
-    foreach (QString s, wordSeparators)
-        QTest::newRow(QString("separator: " + s).toLocal8Bit()) << QString("foo") + s + QString("bar") << QString("foo");
+    for (size_t i = 0, count = sizeof(wordSeparators) / sizeof(wordSeparators[0]); i < count; ++i) {
+        const ushort u = wordSeparators[i];
+        QByteArray rowName = QByteArrayLiteral("separator: ");
+        if (u >= 32 && u < 128)
+            rowName += char(u);
+        else
+            rowName += QByteArrayLiteral("0x") + QByteArray::number(u, 16);
+        QTest::newRow(rowName.constData()) << QString("foo") + QChar(u) + QString("bar") << QString("foo");
+    }
 }
 
 void tst_QTextEdit::selectWordsFromStringsContainingSeparators()
@@ -1661,7 +1659,7 @@ void tst_QTextEdit::preserveCharFormatAfterSetPlainText()
     QTextBlock block = ed->document()->begin();
     block = block.next();
     QCOMPARE(block.text(), QString("This should still be blue"));
-    QVERIFY(block.begin().fragment().charFormat().foreground().color() == QColor(Qt::blue));
+    QCOMPARE(block.begin().fragment().charFormat().foreground().color(), QColor(Qt::blue));
 }
 
 void tst_QTextEdit::extraSelections()
@@ -1796,25 +1794,25 @@ void tst_QTextEdit::wordWrapProperty()
         QTextDocument *doc = new QTextDocument(&edit);
         edit.setDocument(doc);
         edit.setWordWrapMode(QTextOption::NoWrap);
-        QVERIFY(doc->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+        QCOMPARE(doc->defaultTextOption().wrapMode(), QTextOption::NoWrap);
     }
     {
         QTextEdit edit;
         QTextDocument *doc = new QTextDocument(&edit);
         edit.setWordWrapMode(QTextOption::NoWrap);
         edit.setDocument(doc);
-        QVERIFY(doc->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+        QCOMPARE(doc->defaultTextOption().wrapMode(), QTextOption::NoWrap);
     }
 }
 
 void tst_QTextEdit::lineWrapProperty()
 {
-    QVERIFY(ed->wordWrapMode() == QTextOption::WrapAtWordBoundaryOrAnywhere);
-    QVERIFY(ed->lineWrapMode() == QTextEdit::WidgetWidth);
+    QCOMPARE(ed->wordWrapMode(), QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QCOMPARE(ed->lineWrapMode(), QTextEdit::WidgetWidth);
     ed->setLineWrapMode(QTextEdit::NoWrap);
-    QVERIFY(ed->lineWrapMode() == QTextEdit::NoWrap);
-    QVERIFY(ed->wordWrapMode() == QTextOption::WrapAtWordBoundaryOrAnywhere);
-    QVERIFY(ed->document()->defaultTextOption().wrapMode() == QTextOption::NoWrap);
+    QCOMPARE(ed->lineWrapMode(), QTextEdit::NoWrap);
+    QCOMPARE(ed->wordWrapMode(), QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QCOMPARE(ed->document()->defaultTextOption().wrapMode(), QTextOption::NoWrap);
 }
 
 void tst_QTextEdit::selectionChanged()
@@ -2122,7 +2120,7 @@ void tst_QTextEdit::setDocumentPreservesPalette()
 
     QTextDocument *newDoc = new QTextDocument(ed);
     ed->setDocument(newDoc);
-    QVERIFY(control->document() == newDoc);
+    QCOMPARE(control->document(), newDoc);
     QVERIFY(whitePal.color(QPalette::Active, QPalette::Text)
             == control->palette().color(QPalette::Active, QPalette::Text));
 }
@@ -2471,6 +2469,18 @@ void tst_QTextEdit::inputMethodQueryImHints()
     QCOMPARE(static_cast<Qt::InputMethodHints>(value.toInt()), hints);
 }
 
+// QTBUG-51923: Verify that the cursor rectangle returned by the input
+// method query correctly reflects the viewport offset.
+void tst_QTextEdit::inputMethodCursorRect()
+{
+    ed->setPlainText("Line1\nLine2Line3\nLine3");
+    ed->moveCursor(QTextCursor::End);
+    const QRectF cursorRect = ed->cursorRect();
+    const QVariant cursorRectV = ed->inputMethodQuery(Qt::ImCursorRectangle);
+    QCOMPARE(cursorRectV.type(), QVariant::RectF);
+    QCOMPARE(cursorRectV.toRect(), cursorRect.toRect());
+}
+
 void tst_QTextEdit::highlightLongLine()
 {
     QTextEdit edit;
@@ -2497,7 +2507,7 @@ void tst_QTextEdit::highlightLongLine()
     };
     NumHighlighter nh(edit.document());
     edit.show();
-    QTest::qWaitForWindowActive(edit.windowHandle());
+    QVERIFY(QTest::qWaitForWindowActive(edit.windowHandle()));
     QCoreApplication::processEvents();
     //If there is a quadratic behaviour, this would take forever.
     QVERIFY(true);
@@ -2525,7 +2535,7 @@ void tst_QTextEdit::findWithRegExp()
 
     bool found = ed->find(rx);
 
-    QVERIFY(found == true);
+    QVERIFY(found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("text"));
 }
 
@@ -2539,7 +2549,7 @@ void tst_QTextEdit::findBackwardWithRegExp()
 
     bool found = ed->find(rx, QTextDocument::FindBackward);
 
-    QVERIFY(found == true);
+    QVERIFY(found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("arbit"));
 }
 
@@ -2551,12 +2561,12 @@ void tst_QTextEdit::findWithRegExpReturnsFalseIfNoMoreResults()
 
     bool found = ed->find(rx);
 
-    QVERIFY(found == false);
+    QVERIFY(!found);
     QCOMPARE(ed->textCursor().selectedText(), QStringLiteral("text"));
 }
 #endif
 
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 
 class TextEdit : public QTextEdit
 {
@@ -2589,6 +2599,226 @@ void tst_QTextEdit::wheelEvent()
 }
 
 #endif
+
+namespace {
+    class MyPaintEngine : public QPaintEngine
+    {
+    public:
+        bool begin(QPaintDevice *) override { return true; }
+
+        bool end() override { return true; }
+
+        void updateState(const QPaintEngineState &) override  { }
+
+        void drawPixmap(const QRectF &, const QPixmap &, const QRectF &) override { }
+
+        void drawTextItem(const QPointF &, const QTextItem &textItem) override
+        {
+            itemFonts.append(qMakePair(textItem.text(), textItem.font()));
+        }
+
+        Type type() const override { return User; }
+
+
+        QList<QPair<QString, QFont> > itemFonts;
+    };
+
+    class MyPaintDevice : public QPaintDevice
+    {
+    public:
+        MyPaintDevice() : m_paintEngine(new MyPaintEngine)
+        {
+        }
+
+
+        QPaintEngine *paintEngine () const
+        {
+            return m_paintEngine;
+        }
+
+        int metric (QPaintDevice::PaintDeviceMetric metric) const {
+            switch (metric) {
+            case QPaintDevice::PdmWidth:
+            case QPaintDevice::PdmHeight:
+            case QPaintDevice::PdmWidthMM:
+            case QPaintDevice::PdmHeightMM:
+            case QPaintDevice::PdmNumColors:
+                return INT_MAX;
+            case QPaintDevice::PdmDepth:
+                return 32;
+            case QPaintDevice::PdmDpiX:
+            case QPaintDevice::PdmDpiY:
+            case QPaintDevice::PdmPhysicalDpiX:
+            case QPaintDevice::PdmPhysicalDpiY:
+                return 72;
+            case QPaintDevice::PdmDevicePixelRatio:
+            case QPaintDevice::PdmDevicePixelRatioScaled:
+                ; // fall through
+            }
+            return 0;
+        }
+
+        MyPaintEngine *m_paintEngine;
+    };
+}
+
+void tst_QTextEdit::preeditCharFormat_data()
+{
+    QTest::addColumn<QList<QInputMethodEvent::Attribute> >("imeAttributes");
+    QTest::addColumn<QStringList>("substrings");
+    QTest::addColumn<QList<bool> >("boldnessList");
+    QTest::addColumn<QList<bool> >("italicnessList");
+    QTest::addColumn<QList<int> >("pointSizeList");
+
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(13);
+            tcf.setFontItalic(true);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 1, 1, tcf));
+        }
+
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(8);
+            tcf.setFontWeight(QFont::Normal);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 4, 2, tcf));
+        }
+
+        QTest::newRow("Two formats, middle, in order")
+            << attributes
+            << (QStringList() << "P" << "r" << "eE" << "di" << "tText")
+            << (QList<bool>() << true << true << true << false << true)
+            << (QList<bool>() << false << true << false << false << false)
+            << (QList<int>() << 20 << 13 << 20 << 8 << 20);
+    }
+
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(8);
+            tcf.setFontWeight(QFont::Normal);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 4, 2, tcf));
+        }
+
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(13);
+            tcf.setFontItalic(true);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 1, 1, tcf));
+        }
+
+        QTest::newRow("Two formats, middle, out of order")
+            << attributes
+            << (QStringList() << "P" << "r" << "eE" << "di" << "tText")
+            << (QList<bool>() << true << true << true << false << true)
+            << (QList<bool>() << false << true << false << false << false)
+            << (QList<int>() << 20 << 13 << 20 << 8 << 20);
+    }
+
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(13);
+            tcf.setFontItalic(true);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 0, 1, tcf));
+        }
+
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(8);
+            tcf.setFontWeight(QFont::Normal);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 4, 2, tcf));
+        }
+
+        QTest::newRow("Two formats, front, in order")
+            << attributes
+            << (QStringList() << "P" << "reE" << "di" << "tText")
+            << (QList<bool>() << true << true << false << true)
+            << (QList<bool>() << true << false << false << false)
+            << (QList<int>() << 13 << 20 << 8 << 20);
+    }
+
+    {
+        QList<QInputMethodEvent::Attribute> attributes;
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(8);
+            tcf.setFontWeight(QFont::Normal);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 4, 2, tcf));
+        }
+
+        {
+            QTextCharFormat tcf;
+            tcf.setFontPointSize(13);
+            tcf.setFontItalic(true);
+            attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 0, 1, tcf));
+        }
+
+        QTest::newRow("Two formats, front, out of order")
+            << attributes
+            << (QStringList() << "P" << "reE" << "di" << "tText")
+            << (QList<bool>() << true << true << false << true)
+            << (QList<bool>() << true << false << false << false)
+            << (QList<int>() << 13 << 20 << 8 << 20);
+    }
+}
+
+void tst_QTextEdit::preeditCharFormat()
+{
+    QFETCH(QList<QInputMethodEvent::Attribute>, imeAttributes);
+    QFETCH(QStringList, substrings);
+    QFETCH(QList<bool>, boldnessList);
+    QFETCH(QList<bool>, italicnessList);
+    QFETCH(QList<int>, pointSizeList);
+
+    QTextEdit *w = new QTextEdit;
+    w->show();
+    QVERIFY(QTest::qWaitForWindowExposed(w));
+
+    // Set main char format
+    {
+        QTextCharFormat tcf;
+        tcf.setFontPointSize(20);
+        tcf.setFontWeight(QFont::Bold);
+        w->mergeCurrentCharFormat(tcf);
+    }
+
+    QList<QInputMethodEvent::Attribute> attributes;
+    attributes.prepend(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor,
+                                                   w->textCursor().position(),
+                                                   0,
+                                                   QVariant()));
+
+    attributes += imeAttributes;
+
+    QInputMethodEvent event("PreEditText", attributes);
+    QApplication::sendEvent(w, &event);
+
+    MyPaintDevice device;
+    {
+        QPainter p(&device);
+        w->document()->drawContents(&p);
+    }
+
+    QCOMPARE(device.m_paintEngine->itemFonts.size(), substrings.size());
+    for (int i = 0; i < substrings.size(); ++i)
+        QCOMPARE(device.m_paintEngine->itemFonts.at(i).first, substrings.at(i));
+
+    for (int i = 0; i < substrings.size(); ++i)
+        QCOMPARE(device.m_paintEngine->itemFonts.at(i).second.bold(), boldnessList.at(i));
+
+    for (int i = 0; i < substrings.size(); ++i)
+        QCOMPARE(device.m_paintEngine->itemFonts.at(i).second.italic(), italicnessList.at(i));
+
+    for (int i = 0; i < substrings.size(); ++i)
+        QCOMPARE(device.m_paintEngine->itemFonts.at(i).second.pointSize(), pointSizeList.at(i));
+
+    delete w;
+}
 
 QTEST_MAIN(tst_QTextEdit)
 #include "tst_qtextedit.moc"

@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -88,13 +94,13 @@ bool QQnxInputContext::filterEvent( const QEvent *event )
 
     if (event->type() == QEvent::CloseSoftwareInputPanel) {
         m_virtualKeyboard.hideKeyboard();
-        qInputContextDebug() << Q_FUNC_INFO << "hiding virtual keyboard";
+        qInputContextDebug("hiding virtual keyboard");
         return false;
     }
 
     if (event->type() == QEvent::RequestSoftwareInputPanel) {
         m_virtualKeyboard.showKeyboard();
-        qInputContextDebug() << Q_FUNC_INFO << "requesting virtual keyboard";
+        qInputContextDebug("requesting virtual keyboard");
         return false;
     }
 
@@ -121,13 +127,13 @@ bool QQnxInputContext::handleKeyboardEvent(int flags, int sym, int mod, int scan
 
 void QQnxInputContext::showInputPanel()
 {
-    qInputContextDebug() << Q_FUNC_INFO;
+    qInputContextDebug();
     m_virtualKeyboard.showKeyboard();
 }
 
 void QQnxInputContext::hideInputPanel()
 {
-    qInputContextDebug() << Q_FUNC_INFO;
+    qInputContextDebug();
     m_virtualKeyboard.hideKeyboard();
 }
 
@@ -148,7 +154,7 @@ void QQnxInputContext::keyboardHeightChanged()
 
 void QQnxInputContext::keyboardVisibilityChanged(bool visible)
 {
-    qInputContextDebug() << Q_FUNC_INFO << "visible=" << visible;
+    qInputContextDebug() << "visible=" << visible;
     if (m_inputPanelVisible != visible) {
         m_inputPanelVisible = visible;
         emitInputPanelVisibleChanged();
@@ -157,7 +163,7 @@ void QQnxInputContext::keyboardVisibilityChanged(bool visible)
 
 void QQnxInputContext::keyboardLocaleChanged(const QLocale &locale)
 {
-    qInputContextDebug() << Q_FUNC_INFO << "locale=" << locale;
+    qInputContextDebug() << "locale=" << locale;
     if (m_inputPanelLocale != locale) {
         m_inputPanelLocale = locale;
         emitLocaleChanged();
@@ -166,17 +172,21 @@ void QQnxInputContext::keyboardLocaleChanged(const QLocale &locale)
 
 void QQnxInputContext::setFocusObject(QObject *object)
 {
-    qInputContextDebug() << Q_FUNC_INFO << "input item=" << object;
+    qInputContextDebug() << "input item=" << object;
 
     if (!inputMethodAccepted()) {
         if (m_inputPanelVisible)
             hideInputPanel();
     } else {
-        QInputMethodQueryEvent query(Qt::ImHints);
+        QInputMethodQueryEvent query(Qt::ImHints | Qt::ImEnterKeyType);
         QCoreApplication::sendEvent(object, &query);
         int inputHints = query.value(Qt::ImHints).toInt();
+        Qt::EnterKeyType qtEnterKeyType = Qt::EnterKeyType(query.value(Qt::ImEnterKeyType).toInt());
 
         m_virtualKeyboard.setInputHints(inputHints);
+        m_virtualKeyboard.setEnterKeyType(
+            QQnxAbstractVirtualKeyboard::qtEnterKeyTypeToQnx(qtEnterKeyType)
+        );
 
         if (!m_inputPanelVisible)
             showInputPanel();

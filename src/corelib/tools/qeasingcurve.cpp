@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -170,7 +176,7 @@
     \value OutSine      \image qeasingcurve-outsine.png
                         \caption
                         Easing curve for a sinusoidal (sin(t)) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutSine    \image qeasingcurve-inoutsine.png
                         \caption
                         Easing curve for a sinusoidal (sin(t)) function:
@@ -186,7 +192,7 @@
     \value OutExpo      \image qeasingcurve-outexpo.png
                         \caption
                         Easing curve for an exponential (2^t) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutExpo    \image qeasingcurve-inoutexpo.png
                         \caption
                         Easing curve for an exponential (2^t) function:
@@ -202,7 +208,7 @@
     \value OutCirc      \image qeasingcurve-outcirc.png
                         \caption
                         Easing curve for a circular (sqrt(1-t^2)) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutCirc    \image qeasingcurve-inoutcirc.png
                         \caption
                         Easing curve for a circular (sqrt(1-t^2)) function:
@@ -222,7 +228,7 @@
                         \caption
                         Easing curve for an elastic
                         (exponentially decaying sine wave) function:
-                        decelerating from zero velocity.  The peak amplitude
+                        decelerating to zero velocity.  The peak amplitude
                         can be set with the \e amplitude parameter, and the
                         period of decay by the \e period parameter.
     \value InOutElastic \image qeasingcurve-inoutelastic.png
@@ -340,6 +346,7 @@ struct TCBPoint {
                 qFuzzyCompare(_b, other._b);
     }
 };
+Q_DECLARE_TYPEINFO(TCBPoint, Q_PRIMITIVE_TYPE);
 
 
 typedef QVector<TCBPoint> TCBPoints;
@@ -437,7 +444,7 @@ struct BezierEase : public QEasingCurveFunction
 
     void init()
     {
-        if (_bezierCurves.last() == QPointF(1.0, 1.0)) {
+        if (_bezierCurves.constLast() == QPointF(1.0, 1.0)) {
             _init = true;
             _curveCount = _bezierCurves.count() / 3;
 
@@ -489,7 +496,7 @@ struct BezierEase : public QEasingCurveFunction
         }
     }
 
-    QEasingCurveFunction *copy() const Q_DECL_OVERRIDE
+    QEasingCurveFunction *copy() const override
     {
         BezierEase *rv = new BezierEase();
         rv->_t = _t;
@@ -525,7 +532,7 @@ struct BezierEase : public QEasingCurveFunction
         return newT;
     }
 
-    qreal value(qreal x) Q_DECL_OVERRIDE
+    qreal value(qreal x) override
     {
         Q_ASSERT(_bezierCurves.count() % 3 == 0);
 
@@ -790,27 +797,60 @@ struct BezierEase : public QEasingCurveFunction
         return t3;
     }
 
-     qreal static inline findTForX(const SingleCubicBezier &singleCubicBezier, qreal x)
-     {
-         const qreal p0 = singleCubicBezier.p0x;
-         const qreal p1 = singleCubicBezier.p1x;
-         const qreal p2 = singleCubicBezier.p2x;
-         const qreal p3 = singleCubicBezier.p3x;
+    bool static inline almostZero(qreal value)
+    {
+        // 1e-3 might seem excessively fuzzy, but any smaller value will make the
+        // factors a, b, and c large enough to knock out the cubic solver.
+        return value > -1e-3 && value < 1e-3;
+    }
 
-         const qreal factorT3 = p3 - p0 + 3 * p1 - 3 * p2;
-         const qreal factorT2 = 3 * p0 - 6 * p1 + 3 * p2;
-         const qreal factorT1 = -3 * p0 + 3 * p1;
-         const qreal factorT0 = p0 - x;
+    qreal static inline findTForX(const SingleCubicBezier &singleCubicBezier, qreal x)
+    {
+        const qreal p0 = singleCubicBezier.p0x;
+        const qreal p1 = singleCubicBezier.p1x;
+        const qreal p2 = singleCubicBezier.p2x;
+        const qreal p3 = singleCubicBezier.p3x;
 
-         const qreal a = factorT2 / factorT3;
-         const qreal b = factorT1 / factorT3;
-         const qreal c = factorT0 / factorT3;
+        const qreal factorT3 = p3 - p0 + 3 * p1 - 3 * p2;
+        const qreal factorT2 = 3 * p0 - 6 * p1 + 3 * p2;
+        const qreal factorT1 = -3 * p0 + 3 * p1;
+        const qreal factorT0 = p0 - x;
 
-         return singleRealSolutionForCubic(a, b, c);
+        // Cases for quadratic, linear and invalid equations
+        if (almostZero(factorT3)) {
+            if (almostZero(factorT2)) {
+                if (almostZero(factorT1))
+                    return 0.0;
 
-         //one new iteration to increase numeric stability
-         //return newtonIteration(singleCubicBezier, t, x);
-     }
+                return -factorT0 / factorT1;
+            }
+            const qreal discriminant = factorT1 * factorT1 - 4.0 * factorT2 * factorT0;
+            if (discriminant < 0.0)
+                return 0.0;
+
+            if (discriminant == 0.0)
+                return -factorT1 / (2.0 * factorT2);
+
+            const qreal solution1 = (-factorT1 + std::sqrt(discriminant)) / (2.0 * factorT2);
+            if (solution1 >= 0.0 && solution1 <= 1.0)
+                return solution1;
+
+            const qreal solution2 = (-factorT1 - std::sqrt(discriminant)) / (2.0 * factorT2);
+            if (solution2 >= 0.0 && solution2 <= 1.0)
+                return solution2;
+
+            return 0.0;
+        }
+
+        const qreal a = factorT2 / factorT3;
+        const qreal b = factorT1 / factorT3;
+        const qreal c = factorT0 / factorT3;
+
+        return singleRealSolutionForCubic(a, b, c);
+
+        //one new iteration to increase numeric stability
+        //return newtonIteration(singleCubicBezier, t, x);
+    }
 };
 
 struct TCBEase : public BezierEase
@@ -819,7 +859,7 @@ struct TCBEase : public BezierEase
         : BezierEase(QEasingCurve::TCBSpline)
     { }
 
-    qreal value(qreal x) Q_DECL_OVERRIDE
+    qreal value(qreal x) override
     {
         Q_ASSERT(_bezierCurves.count() % 3 == 0);
 
@@ -839,7 +879,7 @@ struct ElasticEase : public QEasingCurveFunction
         : QEasingCurveFunction(type, qreal(0.3), qreal(1.0))
     { }
 
-    QEasingCurveFunction *copy() const Q_DECL_OVERRIDE
+    QEasingCurveFunction *copy() const override
     {
         ElasticEase *rv = new ElasticEase(_t);
         rv->_p = _p;
@@ -849,7 +889,7 @@ struct ElasticEase : public QEasingCurveFunction
         return rv;
     }
 
-    qreal value(qreal t) Q_DECL_OVERRIDE
+    qreal value(qreal t) override
     {
         qreal p = (_p < 0) ? qreal(0.3) : _p;
         qreal a = (_a < 0) ? qreal(1.0) : _a;
@@ -874,7 +914,7 @@ struct BounceEase : public QEasingCurveFunction
         : QEasingCurveFunction(type, qreal(0.3), qreal(1.0))
     { }
 
-    QEasingCurveFunction *copy() const Q_DECL_OVERRIDE
+    QEasingCurveFunction *copy() const override
     {
         BounceEase *rv = new BounceEase(_t);
         rv->_a = _a;
@@ -883,7 +923,7 @@ struct BounceEase : public QEasingCurveFunction
         return rv;
     }
 
-    qreal value(qreal t) Q_DECL_OVERRIDE
+    qreal value(qreal t) override
     {
         qreal a = (_a < 0) ? qreal(1.0) : _a;
         switch(_t) {
@@ -907,7 +947,7 @@ struct BackEase : public QEasingCurveFunction
         : QEasingCurveFunction(type, qreal(0.3), qreal(1.0), qreal(1.70158))
     { }
 
-    QEasingCurveFunction *copy() const Q_DECL_OVERRIDE
+    QEasingCurveFunction *copy() const override
     {
         BackEase *rv = new BackEase(_t);
         rv->_o = _o;
@@ -916,7 +956,7 @@ struct BackEase : public QEasingCurveFunction
         return rv;
     }
 
-    qreal value(qreal t) Q_DECL_OVERRIDE
+    qreal value(qreal t) override
     {
         qreal o = (_o < 0) ? qreal(1.70158) : _o;
         switch(_t) {
@@ -1219,6 +1259,7 @@ QVector<QPointF> static inline tcbToBezier(const TCBPoints &tcbPoints)
 {
     const int count = tcbPoints.count();
     QVector<QPointF> bezierPoints;
+    bezierPoints.reserve(3 * (count - 1));
 
     for (int i = 1; i < count; i++) {
         const qreal t_0 = tcbPoints.at(i - 1)._t;
@@ -1325,8 +1366,8 @@ void QEasingCurvePrivate::setType_helper(QEasingCurve::Type newType)
         amp = config->_a;
         period = config->_p;
         overshoot = config->_o;
-        bezierCurves = config->_bezierCurves;
-        tcbPoints = config->_tcbPoints;
+        bezierCurves = std::move(config->_bezierCurves);
+        tcbPoints = std::move(config->_tcbPoints);
 
         delete config;
         config = 0;
@@ -1341,8 +1382,8 @@ void QEasingCurvePrivate::setType_helper(QEasingCurve::Type newType)
             config->_p = period;
         if (overshoot != -1.0)
             config->_o = overshoot;
-        config->_bezierCurves = bezierCurves;
-        config->_tcbPoints = tcbPoints;
+        config->_bezierCurves = std::move(bezierCurves);
+        config->_tcbPoints = std::move(tcbPoints);
         func = 0;
     } else if (newType != QEasingCurve::Custom) {
         func = curveToFunc(newType);
@@ -1480,7 +1521,7 @@ QDataStream &operator>>(QDataStream &stream, QEasingCurve &easing)
     bool hasConfig;
     stream >> hasConfig;
     delete easing.d_ptr->config;
-    easing.d_ptr->config = Q_NULLPTR;
+    easing.d_ptr->config = nullptr;
     if (hasConfig) {
         QEasingCurveFunction *config = curveToFunctionObject(type);
         stream >> config->_p;
@@ -1493,3 +1534,5 @@ QDataStream &operator>>(QDataStream &stream, QEasingCurve &easing)
 #endif // QT_NO_DATASTREAM
 
 QT_END_NAMESPACE
+
+#include "moc_qeasingcurve.cpp"

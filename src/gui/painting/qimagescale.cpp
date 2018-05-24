@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -77,8 +83,9 @@ QT_BEGIN_NAMESPACE
  *
  * Changes include formatting, namespaces and other C++'ings, removal of old
  * #ifdef'ed code, and removal of unneeded border calculation code.
- * Later the code has been refactored and an SSE4.1 optimizated path have been
- * added instead of the removed MMX assembler.
+ * Later the code has been refactored, an SSE4.1 optimizated path have been
+ * added instead of the removed MMX assembler, and scaling of clipped area
+ * removed.
  *
  * Imlib2 is (C) Carsten Haitzler and various contributors. The MMX code
  * is by Willem Monsuwe <willem@stack.nl>. All other modifications are
@@ -256,34 +263,39 @@ QImageScaleInfo* QImageScale::qimageCalcScaleInfo(const QImage &img,
 
 
 static void qt_qimageScaleAARGBA_up_x_down_y(QImageScaleInfo *isi, unsigned int *dest,
-                                             int dxx, int dyy, int dx, int dy,
                                              int dw, int dh, int dow, int sow);
 
 static void qt_qimageScaleAARGBA_down_x_up_y(QImageScaleInfo *isi, unsigned int *dest,
-                                             int dxx, int dyy, int dx, int dy,
                                              int dw, int dh, int dow, int sow);
 
 static void qt_qimageScaleAARGBA_down_xy(QImageScaleInfo *isi, unsigned int *dest,
-                                         int dxx, int dyy, int dx, int dy, int dw,
-                                         int dh, int dow, int sow);
+                                         int dw, int dh, int dow, int sow);
 
 #if defined(QT_COMPILER_SUPPORTS_SSE4_1)
 template<bool RGB>
 void qt_qimageScaleAARGBA_up_x_down_y_sse4(QImageScaleInfo *isi, unsigned int *dest,
-                                           int dxx, int dyy, int dx, int dy,
                                            int dw, int dh, int dow, int sow);
 template<bool RGB>
 void qt_qimageScaleAARGBA_down_x_up_y_sse4(QImageScaleInfo *isi, unsigned int *dest,
-                                           int dxx, int dyy, int dx, int dy,
                                            int dw, int dh, int dow, int sow);
 template<bool RGB>
 void qt_qimageScaleAARGBA_down_xy_sse4(QImageScaleInfo *isi, unsigned int *dest,
-                                       int dxx, int dyy, int dx, int dy,
+                                       int dw, int dh, int dow, int sow);
+#endif
+
+#if defined(__ARM_NEON__)
+template<bool RGB>
+void qt_qimageScaleAARGBA_up_x_down_y_neon(QImageScaleInfo *isi, unsigned int *dest,
+                                           int dw, int dh, int dow, int sow);
+template<bool RGB>
+void qt_qimageScaleAARGBA_down_x_up_y_neon(QImageScaleInfo *isi, unsigned int *dest,
+                                           int dw, int dh, int dow, int sow);
+template<bool RGB>
+void qt_qimageScaleAARGBA_down_xy_neon(QImageScaleInfo *isi, unsigned int *dest,
                                        int dw, int dh, int dow, int sow);
 #endif
 
 static void qt_qimageScaleAARGBA_up_xy(QImageScaleInfo *isi, unsigned int *dest,
-                                       int dxx, int dyy, int dx, int dy,
                                        int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
@@ -291,25 +303,24 @@ static void qt_qimageScaleAARGBA_up_xy(QImageScaleInfo *isi, unsigned int *dest,
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
     /* go through every scanline in the output buffer */
     for (int y = 0; y < dh; y++) {
         /* calculate the source line we'll scan from */
-        const unsigned int *sptr = ypoints[dyy + y];
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        const int yap = yapoints[dyy + y];
+        const unsigned int *sptr = ypoints[y];
+        unsigned int *dptr = dest + (y * dow);
+        const int yap = yapoints[y];
         if (yap > 0) {
-            for (int x = dxx; x < end; x++) {
+            for (int x = 0; x < dw; x++) {
                 const unsigned int *pix = sptr + xpoints[x];
                 const int xap = xapoints[x];
                 if (xap > 0)
-                    *dptr = interpolate_4_pixels(pix[0], pix[1], pix[sow], pix[sow + 1], xap, yap);
+                    *dptr = interpolate_4_pixels(pix, pix + sow, xap, yap);
                 else
                     *dptr = INTERPOLATE_PIXEL_256(pix[0], 256 - yap, pix[sow], yap);
                 dptr++;
             }
         } else {
-            for (int x = dxx; x < end; x++) {
+            for (int x = 0; x < dw; x++) {
                 const unsigned int *pix = sptr + xpoints[x];
                 const int xap = xapoints[x];
                 if (xap > 0)
@@ -324,39 +335,50 @@ static void qt_qimageScaleAARGBA_up_xy(QImageScaleInfo *isi, unsigned int *dest,
 
 /* scale by area sampling */
 static void qt_qimageScaleAARGBA(QImageScaleInfo *isi, unsigned int *dest,
-                                 int dxx, int dyy, int dx, int dy, int dw,
-                                 int dh, int dow, int sow)
+                                 int dw, int dh, int dow, int sow)
 {
     /* scaling up both ways */
     if (isi->xup_yup == 3) {
-        qt_qimageScaleAARGBA_up_xy(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGBA_up_xy(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down vertically */
     else if (isi->xup_yup == 1) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_up_x_down_y_sse4<false>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_up_x_down_y_sse4<false>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_up_x_down_y_neon<false>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGBA_up_x_down_y(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGBA_up_x_down_y(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down horizontally */
     else if (isi->xup_yup == 2) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_down_x_up_y_sse4<false>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_down_x_up_y_sse4<false>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_down_x_up_y_neon<false>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGBA_down_x_up_y(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGBA_down_x_up_y(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down horizontally & vertically */
     else {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_down_xy_sse4<false>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_down_xy_sse4<false>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_down_xy_neon<false>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGBA_down_xy(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGBA_down_xy(isi, dest, dw, dh, dow, sow);
     }
 }
 
@@ -382,7 +404,6 @@ inline static void qt_qimageScaleAARGBA_helper(const unsigned int *pix, int xyap
 }
 
 static void qt_qimageScaleAARGBA_up_x_down_y(QImageScaleInfo *isi, unsigned int *dest,
-                                             int dxx, int dyy, int dx, int dy,
                                              int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
@@ -390,16 +411,14 @@ static void qt_qimageScaleAARGBA_up_x_down_y(QImageScaleInfo *isi, unsigned int 
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     /* go through every scanline in the output buffer */
     for (int y = 0; y < dh; y++) {
-        int Cy = (yapoints[dyy + y]) >> 16;
-        int yap = (yapoints[dyy + y]) & 0xffff;
+        int Cy = yapoints[y] >> 16;
+        int yap = yapoints[y] & 0xffff;
 
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int r, g, b, a;
             qt_qimageScaleAARGBA_helper(sptr, yap, Cy, sow, r, g, b, a);
 
@@ -423,7 +442,6 @@ static void qt_qimageScaleAARGBA_up_x_down_y(QImageScaleInfo *isi, unsigned int 
 }
 
 static void qt_qimageScaleAARGBA_down_x_up_y(QImageScaleInfo *isi, unsigned int *dest,
-                                             int dxx, int dyy, int dx, int dy,
                                              int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
@@ -431,20 +449,18 @@ static void qt_qimageScaleAARGBA_down_x_up_y(QImageScaleInfo *isi, unsigned int 
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     /* go through every scanline in the output buffer */
     for (int y = 0; y < dh; y++) {
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
             int Cx = xapoints[x] >> 16;
             int xap = xapoints[x] & 0xffff;
 
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int r, g, b, a;
             qt_qimageScaleAARGBA_helper(sptr, xap, Cx, 1, r, g, b, a);
 
-            int yap = yapoints[dyy + y];
+            int yap = yapoints[y];
             if (yap > 0) {
                 int rr, gg, bb, aa;
                 qt_qimageScaleAARGBA_helper(sptr + sow, xap, Cx, 1, rr, gg, bb, aa);
@@ -465,26 +481,23 @@ static void qt_qimageScaleAARGBA_down_x_up_y(QImageScaleInfo *isi, unsigned int 
 }
 
 static void qt_qimageScaleAARGBA_down_xy(QImageScaleInfo *isi, unsigned int *dest,
-                                         int dxx, int dyy, int dx, int dy, int dw,
-                                         int dh, int dow, int sow)
+                                         int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
     int *xpoints = isi->xpoints;
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     for (int y = 0; y < dh; y++) {
-        int Cy = (yapoints[dyy + y]) >> 16;
-        int yap = (yapoints[dyy + y]) & 0xffff;
+        int Cy = (yapoints[y]) >> 16;
+        int yap = (yapoints[y]) & 0xffff;
 
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
             int Cx = xapoints[x] >> 16;
             int xap = xapoints[x] & 0xffff;
 
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int rx, gx, bx, ax;
             qt_qimageScaleAARGBA_helper(sptr, xap, Cx, 1, rx, gx, bx, ax);
 
@@ -517,52 +530,60 @@ static void qt_qimageScaleAARGBA_down_xy(QImageScaleInfo *isi, unsigned int *des
 }
 
 static void qt_qimageScaleAARGB_up_x_down_y(QImageScaleInfo *isi, unsigned int *dest,
-                                            int dxx, int dyy, int dx, int dy, int dw,
-                                            int dh, int dow, int sow);
+                                            int dw, int dh, int dow, int sow);
 
 static void qt_qimageScaleAARGB_down_x_up_y(QImageScaleInfo *isi, unsigned int *dest,
-                                            int dxx, int dyy, int dx, int dy, int dw,
-                                            int dh, int dow, int sow);
+                                            int dw, int dh, int dow, int sow);
 
 static void qt_qimageScaleAARGB_down_xy(QImageScaleInfo *isi, unsigned int *dest,
-                                        int dxx, int dyy, int dx, int dy, int dw,
-                                        int dh, int dow, int sow);
+                                        int dw, int dh, int dow, int sow);
 
 /* scale by area sampling - IGNORE the ALPHA byte*/
 static void qt_qimageScaleAARGB(QImageScaleInfo *isi, unsigned int *dest,
-                                int dxx, int dyy, int dx, int dy,
                                 int dw, int dh, int dow, int sow)
 {
     /* scaling up both ways */
     if (isi->xup_yup == 3) {
-        qt_qimageScaleAARGBA_up_xy(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGBA_up_xy(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down vertically */
     else if (isi->xup_yup == 1) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_up_x_down_y_sse4<true>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_up_x_down_y_sse4<true>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_up_x_down_y_neon<true>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGB_up_x_down_y(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGB_up_x_down_y(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down horizontally */
     else if (isi->xup_yup == 2) {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_down_x_up_y_sse4<true>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_down_x_up_y_sse4<true>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_down_x_up_y_neon<true>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGB_down_x_up_y(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGB_down_x_up_y(isi, dest, dw, dh, dow, sow);
     }
     /* if we're scaling down horizontally & vertically */
     else {
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
         if (qCpuHasFeature(SSE4_1))
-            qt_qimageScaleAARGBA_down_xy_sse4<true>(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+            qt_qimageScaleAARGBA_down_xy_sse4<true>(isi, dest, dw, dh, dow, sow);
+        else
+#elif defined(__ARM_NEON__)
+        if (qCpuHasFeature(NEON))
+            qt_qimageScaleAARGBA_down_xy_neon<true>(isi, dest, dw, dh, dow, sow);
         else
 #endif
-        qt_qimageScaleAARGB_down_xy(isi, dest, dxx, dyy, dx, dy, dw, dh, dow, sow);
+        qt_qimageScaleAARGB_down_xy(isi, dest, dw, dh, dow, sow);
     }
 }
 
@@ -586,24 +607,21 @@ inline static void qt_qimageScaleAARGB_helper(const unsigned int *pix, int xyap,
 }
 
 static void qt_qimageScaleAARGB_up_x_down_y(QImageScaleInfo *isi, unsigned int *dest,
-                                            int dxx, int dyy, int dx, int dy, int dw,
-                                            int dh, int dow, int sow)
+                                            int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
     int *xpoints = isi->xpoints;
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     /* go through every scanline in the output buffer */
     for (int y = 0; y < dh; y++) {
-        int Cy = (yapoints[dyy + y]) >> 16;
-        int yap = (yapoints[dyy + y]) & 0xffff;
+        int Cy = yapoints[y] >> 16;
+        int yap = yapoints[y] & 0xffff;
 
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int r, g, b;
             qt_qimageScaleAARGB_helper(sptr, yap, Cy, sow, r, g, b);
 
@@ -625,28 +643,25 @@ static void qt_qimageScaleAARGB_up_x_down_y(QImageScaleInfo *isi, unsigned int *
 }
 
 static void qt_qimageScaleAARGB_down_x_up_y(QImageScaleInfo *isi, unsigned int *dest,
-                                            int dxx, int dyy, int dx, int dy, int dw,
-                                            int dh, int dow, int sow)
+                                            int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
     int *xpoints = isi->xpoints;
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     /* go through every scanline in the output buffer */
     for (int y = 0; y < dh; y++) {
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
             int Cx = xapoints[x] >> 16;
             int xap = xapoints[x] & 0xffff;
 
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int r, g, b;
             qt_qimageScaleAARGB_helper(sptr, xap, Cx, 1, r, g, b);
 
-            int yap = yapoints[dyy + y];
+            int yap = yapoints[y];
             if (yap > 0) {
                 int rr, bb, gg;
                 qt_qimageScaleAARGB_helper(sptr + sow, xap, Cx, 1, rr, gg, bb);
@@ -664,26 +679,23 @@ static void qt_qimageScaleAARGB_down_x_up_y(QImageScaleInfo *isi, unsigned int *
 }
 
 static void qt_qimageScaleAARGB_down_xy(QImageScaleInfo *isi, unsigned int *dest,
-                                        int dxx, int dyy, int dx, int dy, int dw,
-                                        int dh, int dow, int sow)
+                                        int dw, int dh, int dow, int sow)
 {
     const unsigned int **ypoints = isi->ypoints;
     int *xpoints = isi->xpoints;
     int *xapoints = isi->xapoints;
     int *yapoints = isi->yapoints;
 
-    int end = dxx + dw;
-
     for (int y = 0; y < dh; y++) {
-        int Cy = (yapoints[dyy + y]) >> 16;
-        int yap = (yapoints[dyy + y]) & 0xffff;
+        int Cy = yapoints[y] >> 16;
+        int yap = yapoints[y] & 0xffff;
 
-        unsigned int *dptr = dest + dx + ((y + dy) * dow);
-        for (int x = dxx; x < end; x++) {
+        unsigned int *dptr = dest + (y * dow);
+        for (int x = 0; x < dw; x++) {
             int Cx = xapoints[x] >> 16;
             int xap = xapoints[x] & 0xffff;
 
-            const unsigned int *sptr = ypoints[dyy + y] + xpoints[x];
+            const unsigned int *sptr = ypoints[y] + xpoints[x];
             int rx, gx, bx;
             qt_qimageScaleAARGB_helper(sptr, xap, Cx, 1, rx, gx, bx);
 
@@ -735,10 +747,10 @@ QImage qSmoothScaleImage(const QImage &src, int dw, int dh)
 
     if (src.hasAlphaChannel())
         qt_qimageScaleAARGBA(scaleinfo, (unsigned int *)buffer.scanLine(0),
-                             0, 0, 0, 0, dw, dh, dw, src.bytesPerLine() / 4);
+                             dw, dh, dw, src.bytesPerLine() / 4);
     else
         qt_qimageScaleAARGB(scaleinfo, (unsigned int *)buffer.scanLine(0),
-                            0, 0, 0, 0, dw, dh, dw, src.bytesPerLine() / 4);
+                            dw, dh, dw, src.bytesPerLine() / 4);
 
     qimageFreeScaleInfo(scaleinfo);
     return buffer;

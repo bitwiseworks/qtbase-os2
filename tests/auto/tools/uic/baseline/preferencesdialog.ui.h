@@ -10,9 +10,7 @@
 #define PREFERENCESDIALOG_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
@@ -20,7 +18,6 @@
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QSpacerItem>
 #include <QtWidgets/QToolButton>
@@ -153,11 +150,11 @@ public:
 
     void retranslateUi(QDialog *PreferencesDialog)
     {
-        PreferencesDialog->setWindowTitle(QApplication::translate("PreferencesDialog", "Preferences", 0));
-        m_uiModeGroupBox->setTitle(QApplication::translate("PreferencesDialog", "User Interface Mode", 0));
-        m_templatePathGroupBox->setTitle(QApplication::translate("PreferencesDialog", "Additional Template Paths", 0));
-        m_addTemplatePathButton->setText(QApplication::translate("PreferencesDialog", "...", 0));
-        m_removeTemplatePathButton->setText(QApplication::translate("PreferencesDialog", "...", 0));
+        PreferencesDialog->setWindowTitle(QApplication::translate("PreferencesDialog", "Preferences", nullptr));
+        m_uiModeGroupBox->setTitle(QApplication::translate("PreferencesDialog", "User Interface Mode", nullptr));
+        m_templatePathGroupBox->setTitle(QApplication::translate("PreferencesDialog", "Additional Template Paths", nullptr));
+        m_addTemplatePathButton->setText(QApplication::translate("PreferencesDialog", "...", nullptr));
+        m_removeTemplatePathButton->setText(QApplication::translate("PreferencesDialog", "...", nullptr));
     } // retranslateUi
 
 };

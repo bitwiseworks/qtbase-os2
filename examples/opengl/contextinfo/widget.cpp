@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -50,10 +60,12 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QSplitter>
+#include <QGuiApplication>
 #include <QSurfaceFormat>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QDebug>
+#include <QTextStream>
 
 struct Version {
     const char *str;
@@ -225,6 +237,24 @@ Widget::Widget(QWidget *parent)
     m_renderWindowContainer = new QWidget;
     addRenderWindow();
 
+    QString description;
+    QTextStream str(&description);
+    str << "Qt " << QT_VERSION_STR << ' ' << QGuiApplication::platformName();
+    const char *openGlVariables[] =
+        {"QT_ANGLE_PLATFORM", "QT_OPENGL", "QT_OPENGL_BUGLIST", "QT_OPENGL_DLL"};
+    const size_t variableCount = sizeof(openGlVariables) / sizeof(openGlVariables[0]);
+    for (size_t v = 0; v < variableCount; ++v) {
+        if (qEnvironmentVariableIsSet(openGlVariables[v]))
+            str << ' ' << openGlVariables[v] << '=' << qgetenv(openGlVariables[v]);
+    }
+    if (QCoreApplication::testAttribute(Qt::AA_UseOpenGLES))
+        str << " Qt::AA_UseOpenGLES";
+    if (QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
+        str << " Qt::AA_UseSoftwareOpenGL";
+    if (QCoreApplication::testAttribute(Qt::AA_UseDesktopOpenGL))
+        str << " Qt::AA_UseSoftwareOpenGL";
+    layout->addWidget(new QLabel(description));
+
     setLayout(layout);
 }
 
@@ -299,7 +329,7 @@ void Widget::printFormat(const QSurfaceFormat &format)
     QString opts;
     for (size_t i = 0; i < sizeof(options) / sizeof(Option); ++i)
         if (format.testOption(options[i].option))
-            opts += QString::fromLatin1(options[i].str) + QStringLiteral(" ");
+            opts += QString::fromLatin1(options[i].str) + QLatin1Char(' ');
     m_output->append(tr("Options: %1").arg(opts));
 
     for (size_t i = 0; i < sizeof(renderables) / sizeof(Renderable); ++i)

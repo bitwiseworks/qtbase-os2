@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Windows main function of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -49,43 +59,37 @@
   entry point within the newly created GUI thread.
 */
 
-#include <new.h>
-
-typedef struct
-{
-    int newmode;
-} _startupinfo;
-
 extern "C" {
-    int __getmainargs(int *argc, char ***argv, char ***env, int expandWildcards, _startupinfo *info);
     int main(int, char **);
 }
 
 #include <qbytearray.h>
 #include <qstring.h>
-#include <qlist.h>
-#include <qvector.h>
 #include <qdir.h>
 #include <qstandardpaths.h>
+#include <qfunctions_winrt.h>
+#include <qcoreapplication.h>
 
 #include <wrl.h>
 #include <Windows.ApplicationModel.core.h>
+#include <windows.ui.xaml.h>
+#include <windows.ui.xaml.controls.h>
 
 using namespace ABI::Windows::ApplicationModel;
+using namespace ABI::Windows::ApplicationModel::Activation;
+using namespace ABI::Windows::ApplicationModel::Core;
 using namespace ABI::Windows::Foundation;
+using namespace ABI::Windows::UI;
 using namespace Microsoft::WRL;
 using namespace Microsoft::WRL::Wrappers;
 
 #define qHString(x) Wrappers::HString::MakeReference(x).Get()
 #define CoreApplicationClass RuntimeClass_Windows_ApplicationModel_Core_CoreApplication
-typedef ITypedEventHandler<Core::CoreApplicationView *, Activation::IActivatedEventArgs *> ActivatedHandler;
-
-static int g_mainExitCode;
+typedef ITypedEventHandler<CoreApplicationView *, Activation::IActivatedEventArgs *> ActivatedHandler;
 
 static QtMessageHandler defaultMessageHandler;
 static void devMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
-#ifndef Q_OS_WINPHONE
     static HANDLE shmem = 0;
     static HANDLE event = 0;
     if (!shmem)
@@ -93,178 +97,290 @@ static void devMessageHandler(QtMsgType type, const QMessageLogContext &context,
     if (!event)
         event = CreateEventEx(NULL, L"qdebug-event", 0, EVENT_ALL_ACCESS);
 
+    Q_ASSERT_X(shmem, Q_FUNC_INFO, "Could not create file mapping");
+    Q_ASSERT_X(event, Q_FUNC_INFO, "Could not create debug event");
+
     void *data = MapViewOfFileFromApp(shmem, FILE_MAP_WRITE, 0, 4096);
+    Q_ASSERT_X(data, Q_FUNC_INFO, "Could not map file");
+
     memset(data, quint32(type), sizeof(quint32));
     memcpy_s(static_cast<quint32 *>(data) + 1, 4096 - sizeof(quint32),
              message.data(), (message.length() + 1) * sizeof(wchar_t));
     UnmapViewOfFile(data);
     SetEvent(event);
-#endif // !Q_OS_WINPHONE
     defaultMessageHandler(type, context, message);
 }
 
-class AppContainer : public Microsoft::WRL::RuntimeClass<Core::IFrameworkView>
+class QActivationEvent : public QEvent
 {
 public:
-    AppContainer(int argc, char *argv[]) : m_argc(argc), m_deleteArgv0(false)
+    explicit QActivationEvent(IInspectable *args)
+        : QEvent(QEvent::WinEventAct)
     {
-        m_argv.reserve(argc);
-        for (int i = 0; i < argc; ++i) {
-            // Workaround for empty argv[0] which occurs when WMAppManifest's ImageParams is used
-            // The second argument is taken to be the executable
-            if (i == 0 && argc >= 2 && !qstrlen(argv[0])) {
-                const QByteArray argv0 = QDir::current()
-                        .absoluteFilePath(QString::fromLatin1(argv[1])).toUtf8();
-                m_argv.append(qstrdup(argv0.constData()));
-                m_argc -= 1;
-                m_deleteArgv0 = true;
-                ++i;
-                continue;
-            }
-            m_argv.append(argv[i]);
-        }
+        setAccepted(false);
+        args->AddRef();
+        d = reinterpret_cast<QEventPrivate *>(args);
+    }
+
+    ~QActivationEvent() {
+        IUnknown *args = reinterpret_cast<IUnknown *>(d);
+        args->Release();
+        d = nullptr;
+    }
+};
+
+class AppContainer : public RuntimeClass<Xaml::IApplicationOverrides>
+{
+public:
+    AppContainer()
+    {
+        ComPtr<Xaml::IApplicationFactory> applicationFactory;
+        HRESULT hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_Xaml_Application).Get(),
+                                            IID_PPV_ARGS(&applicationFactory));
+        Q_ASSERT_SUCCEEDED(hr);
+
+        hr = applicationFactory->CreateInstance(this, &base, &core);
+        RETURN_VOID_IF_FAILED("Failed to create application container instance");
+
+        pidFile = INVALID_HANDLE_VALUE;
     }
 
     ~AppContainer()
     {
-        if (m_deleteArgv0)
-            delete[] m_argv[0];
-        for (int i = m_argc; i < m_argv.size(); ++i)
-            delete[] m_argv[i];
     }
 
-    // IFrameworkView Methods
-    HRESULT __stdcall Initialize(Core::ICoreApplicationView *view)
+    int exec(int argc, char **argv)
     {
-        view->add_Activated(Callback<ActivatedHandler>(this, &AppContainer::onActivated).Get(),
-                            &m_activationToken);
+        args.reserve(argc);
+        for (int i = 0; i < argc; ++i)
+            args.append(argv[i]);
+
+        mainThread = CreateThread(NULL, 0, [](void *param) -> DWORD {
+            AppContainer *app = reinterpret_cast<AppContainer *>(param);
+            int argc = app->args.count();
+            char **argv = app->args.data();
+            const int res = main(argc, argv);
+            if (app->pidFile != INVALID_HANDLE_VALUE) {
+                const QByteArray resString = QByteArray::number(res);
+                WriteFile(app->pidFile, reinterpret_cast<LPCVOID>(resString.constData()),
+                          resString.size(), NULL, NULL);
+                FlushFileBuffers(app->pidFile);
+                CloseHandle(app->pidFile);
+            }
+            app->core->Exit();
+            return res;
+        }, this, CREATE_SUSPENDED, nullptr);
+        Q_ASSERT_X(mainThread, Q_FUNC_INFO, "Could not create Qt main thread");
+
+        HRESULT hr;
+        ComPtr<Xaml::IApplicationStatics> appStatics;
+        hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_Xaml_Application).Get(),
+                                    IID_PPV_ARGS(&appStatics));
+        Q_ASSERT_SUCCEEDED(hr);
+        hr = appStatics->Start(Callback<Xaml::IApplicationInitializationCallback>([](Xaml::IApplicationInitializationCallbackParams *) {
+            return S_OK;
+        }).Get());
+        Q_ASSERT_SUCCEEDED(hr);
+
+        WaitForSingleObjectEx(mainThread, INFINITE, FALSE);
+        DWORD exitCode;
+        GetExitCodeThread(mainThread, &exitCode);
+        return exitCode;
+    }
+
+private:
+    HRESULT activatedLaunch(IInspectable *activateArgs) {
+        // Check if an application instance is already running
+        // This is mostly needed for Windows Phone and file pickers
+        QAbstractEventDispatcher *dispatcher = QCoreApplication::eventDispatcher();
+        if (dispatcher) {
+            QCoreApplication::postEvent(dispatcher, new QActivationEvent(activateArgs));
+            return S_OK;
+        }
+
+        QCoreApplication *app = QCoreApplication::instance();
+
+        // Check whether the app already runs
+        if (!app) {
+            // I*EventArgs have no launch arguments, hence we
+            // need to prepend the application binary manually
+            wchar_t fn[513];
+            DWORD res = GetModuleFileName(0, fn, 512);
+
+            if (SUCCEEDED(res))
+                args.prepend(QString::fromWCharArray(fn, res).toUtf8().data());
+
+            ResumeThread(mainThread);
+
+            // We give main() a max of 100ms to create an application object.
+            // No eventhandling needs to happen at that point, all we want is
+            // append our activation event
+            int iterations = 0;
+            while (true) {
+                app = QCoreApplication::instance();
+                if (app || iterations++ > 10)
+                    break;
+                Sleep(10);
+            }
+        }
+
+        if (app)
+            QCoreApplication::postEvent(app, new QActivationEvent(activateArgs));
         return S_OK;
     }
-    HRESULT __stdcall SetWindow(ABI::Windows::UI::Core::ICoreWindow *) { return S_OK; }
-    HRESULT __stdcall Load(HSTRING) { return S_OK; }
-    HRESULT __stdcall Run()
+
+    HRESULT __stdcall OnActivated(IActivatedEventArgs *args) override
     {
+        return activatedLaunch(args);
+    }
+
+    HRESULT __stdcall OnLaunched(ILaunchActivatedEventArgs *launchArgs) override
+    {
+        ComPtr<IPrelaunchActivatedEventArgs> preArgs;
+        HRESULT hr = launchArgs->QueryInterface(preArgs.GetAddressOf());
+        if (SUCCEEDED(hr)) {
+            boolean prelaunched;
+            preArgs->get_PrelaunchActivated(&prelaunched);
+            if (prelaunched)
+                return S_OK;
+        }
+
+        commandLine = QString::fromWCharArray(GetCommandLine()).toUtf8();
+
+        HString launchCommandLine;
+        launchArgs->get_Arguments(launchCommandLine.GetAddressOf());
+        if (launchCommandLine.IsValid()) {
+            quint32 launchCommandLineLength;
+            const wchar_t *launchCommandLineBuffer = launchCommandLine.GetRawBuffer(&launchCommandLineLength);
+            if (!commandLine.isEmpty() && launchCommandLineLength)
+                commandLine += ' ';
+            if (launchCommandLineLength)
+                commandLine += QString::fromWCharArray(launchCommandLineBuffer, launchCommandLineLength).toUtf8();
+        }
+        if (!commandLine.isEmpty())
+            args.append(commandLine.data());
+
+        bool quote = false;
+        bool escape = false;
+        for (int i = 0; i < commandLine.size(); ++i) {
+            switch (commandLine.at(i)) {
+            case '\\':
+                escape = true;
+                break;
+            case '"':
+                if (escape) {
+                    escape = false;
+                    break;
+                }
+                quote = !quote;
+                commandLine[i] = '\0';
+                break;
+            case ' ':
+                if (quote)
+                    break;
+                commandLine[i] = '\0';
+                if (args.last()[0] != '\0')
+                    args.append(commandLine.data() + i + 1);
+                // fall through
+            default:
+                if (args.last()[0] == '\0')
+                    args.last() = commandLine.data() + i;
+                escape = false; // only quotes are escaped
+                break;
+            }
+        }
+
+        if (args.count() >= 2 && strncmp(args.at(1), "-ServerName:", 12) == 0)
+            args.remove(1);
+
         bool develMode = false;
         bool debugWait = false;
-        foreach (const QByteArray &arg, m_argv) {
-            if (arg == "-qdevel")
+        for (int i = args.count() - 1; i >= 0; --i) {
+            const char *arg = args.at(i);
+            if (strcmp(arg, "-qdevel") == 0) {
                 develMode = true;
-            if (arg == "-qdebug")
+                args.remove(i);
+            } else if (strcmp(arg, "-qdebug") == 0) {
                 debugWait = true;
+                args.remove(i);
+            }
         }
         if (develMode) {
             // Write a PID file to help runner
             const QString pidFileName = QDir(QStandardPaths::writableLocation(QStandardPaths::DataLocation))
-                    .absoluteFilePath(QString::number(uint(GetCurrentProcessId())) + QStringLiteral(".pid"));
+                    .absoluteFilePath(QString::asprintf("%u.pid", uint(GetCurrentProcessId())));
             CREATEFILE2_EXTENDED_PARAMETERS params = {
                 sizeof(CREATEFILE2_EXTENDED_PARAMETERS),
-                FILE_ATTRIBUTE_NORMAL, FILE_FLAG_DELETE_ON_CLOSE
+                FILE_ATTRIBUTE_NORMAL
             };
-            // (Unused) handle will automatically be closed when the app exits
-            CreateFile2(reinterpret_cast<LPCWSTR>(pidFileName.utf16()),
-                        0, FILE_SHARE_READ|FILE_SHARE_DELETE, CREATE_ALWAYS, &params);
+            pidFile = CreateFile2(reinterpret_cast<LPCWSTR>(pidFileName.utf16()),
+                        GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, &params);
             // Install the develMode message handler
-#ifndef Q_OS_WINPHONE
             defaultMessageHandler = qInstallMessageHandler(devMessageHandler);
-#endif
         }
         // Wait for debugger before continuing
         if (debugWait) {
             while (!IsDebuggerPresent())
                 WaitForSingleObjectEx(GetCurrentThread(), 1, true);
         }
-        g_mainExitCode = main(m_argv.count(), m_argv.data());
-        return S_OK;
-    }
-    HRESULT __stdcall Uninitialize() { return S_OK; }
 
-private:
-    // Activation handler
-    HRESULT onActivated(Core::ICoreApplicationView *, Activation::IActivatedEventArgs *args)
-    {
-        Activation::ILaunchActivatedEventArgs *launchArgs;
-        if (SUCCEEDED(args->QueryInterface(&launchArgs))) {
-            for (int i = m_argc; i < m_argv.size(); ++i)
-                delete[] m_argv[i];
-            m_argv.resize(m_argc);
-            HString arguments;
-            launchArgs->get_Arguments(arguments.GetAddressOf());
-            if (arguments.IsValid()) {
-                foreach (const QByteArray &arg, QString::fromWCharArray(
-                             arguments.GetRawBuffer(nullptr)).toLocal8Bit().split(' ')) {
-                    m_argv.append(qstrdup(arg.constData()));
-                }
-            }
-        }
+        ResumeThread(mainThread);
         return S_OK;
     }
 
-    int m_argc;
-    QVector<char *> m_argv;
-    bool m_deleteArgv0;
-    EventRegistrationToken m_activationToken;
-};
-
-class AppViewSource : public Microsoft::WRL::RuntimeClass<Core::IFrameworkViewSource>
-{
-public:
-    AppViewSource(int argc, char **argv) : m_argc(argc), m_argv(argv) { }
-    HRESULT __stdcall CreateView(Core::IFrameworkView **frameworkView)
+    HRESULT __stdcall OnFileActivated(IFileActivatedEventArgs *args) override
     {
-        return (*frameworkView = Make<AppContainer>(m_argc, m_argv).Detach()) ? S_OK : E_OUTOFMEMORY;
+        return activatedLaunch(args);
     }
-private:
-    int m_argc;
-    char **m_argv;
+
+    HRESULT __stdcall OnSearchActivated(ISearchActivatedEventArgs *args) override
+    {
+        Q_UNUSED(args);
+        return S_OK;
+    }
+
+    HRESULT __stdcall OnShareTargetActivated(IShareTargetActivatedEventArgs *args) override
+    {
+        return activatedLaunch(args);
+    }
+
+    HRESULT __stdcall OnFileOpenPickerActivated(IFileOpenPickerActivatedEventArgs *args) override
+    {
+        Q_UNUSED(args);
+        return S_OK;
+    }
+
+    HRESULT __stdcall OnFileSavePickerActivated(IFileSavePickerActivatedEventArgs *args) override
+    {
+        Q_UNUSED(args);
+        return S_OK;
+    }
+
+    HRESULT __stdcall OnCachedFileUpdaterActivated(ICachedFileUpdaterActivatedEventArgs *args) override
+    {
+        Q_UNUSED(args);
+        return S_OK;
+    }
+
+    HRESULT __stdcall OnWindowCreated(Xaml::IWindowCreatedEventArgs *args) override
+    {
+        Q_UNUSED(args);
+        return S_OK;
+    }
+
+    ComPtr<Xaml::IApplicationOverrides> base;
+    ComPtr<Xaml::IApplication> core;
+    QByteArray commandLine;
+    QVarLengthArray<char *> args;
+    HANDLE mainThread{0};
+    HANDLE pidFile;
 };
 
 // Main entry point for Appx containers
 int __stdcall WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
-#if _MSC_VER < 1900
     int argc = 0;
-    char **argv, **env;
-    _startupinfo info = { _query_new_mode() };
-    if (int init = __getmainargs(&argc, &argv, &env, false, &info))
-        return init;
-#else
-    QByteArray commandLine = QString::fromWCharArray(GetCommandLine()).toUtf8();
-    QVarLengthArray<char *> args;
-    args.append(commandLine.data());
-    bool quote = false;
-    bool escape = false;
-    for (int i = 0; i < commandLine.size(); ++i) {
-        switch (commandLine.at(i)) {
-        case '\\':
-            escape = true;
-            break;
-        case '"':
-            if (escape) {
-                escape = false;
-                break;
-            }
-            quote = !quote;
-            commandLine[i] = '\0';
-            break;
-        case ' ':
-            if (quote)
-                break;
-            commandLine[i] = '\0';
-            if (args.last()[0] != '\0')
-                args.append(commandLine.data() + i + 1);
-            // fall through
-        default:
-            if (args.last()[0] == '\0')
-                args.last() = commandLine.data() + i;
-            escape = false; // only quotes are escaped
-            break;
-        }
-    }
-    int argc = args.size();
-    char **argv = args.data();
-    char **env = Q_NULLPTR;
-#endif // _MSC_VER >= 1900
-
+    char **argv = 0, **env = 0;
     for (int i = 0; env && env[i]; ++i) {
         QByteArray var(env[i]);
         int split = var.indexOf('=');
@@ -275,10 +391,6 @@ int __stdcall WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     if (FAILED(RoInitialize(RO_INIT_MULTITHREADED)))
         return 1;
 
-    Core::ICoreApplication *appFactory;
-    if (FAILED(RoGetActivationFactory(qHString(CoreApplicationClass), IID_PPV_ARGS(&appFactory))))
-        return 2;
-
-    appFactory->Run(Make<AppViewSource>(argc, argv).Get());
-    return g_mainExitCode;
+    ComPtr<AppContainer> app = Make<AppContainer>();
+    return app->exec(argc, argv);
 }

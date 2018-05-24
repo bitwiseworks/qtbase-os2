@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,6 +54,8 @@
 
 #include <QtDebug>
 
+QT_BEGIN_NAMESPACE
+
 QIOSWindow::QIOSWindow(QWindow *window)
     : QPlatformWindow(window)
     , m_view([[QUIView alloc] initWithQIOSWindow:this])
@@ -65,7 +73,7 @@ QIOSWindow::QIOSWindow(QWindow *window)
     m_normalGeometry = initialGeometry(window, QPlatformWindow::geometry(),
         screen()->availableGeometry().width(), screen()->availableGeometry().height());
 
-    setWindowState(window->windowState());
+    setWindowState(window->windowStates());
     setOpacity(window->opacity());
 
     Qt::ScreenOrientation initialOrientation = window->contentOrientation();
@@ -85,7 +93,7 @@ QIOSWindow::~QIOSWindow()
     // practice this doesn't seem to happen when removing the view from its superview. To ensure that
     // Qt's internal state for touch and mouse handling is kept consistent, we therefor have to force
     // cancellation of all touch events.
-    [m_view touchesCancelled:0 withEvent:0];
+    [m_view touchesCancelled:[NSSet set] withEvent:0];
 
     clearAccessibleCache();
     m_view->m_qioswindow = 0;
@@ -205,7 +213,7 @@ void QIOSWindow::applyGeometry(const QRect &rect)
     // The baseclass takes care of persisting this for us.
     QPlatformWindow::setGeometry(rect);
 
-    m_view.frame = toCGRect(rect);
+    m_view.frame = rect.toCGRect();
 
     // iOS will automatically trigger -[layoutSubviews:] for resize,
     // but not for move, so we force it just in case.
@@ -215,32 +223,20 @@ void QIOSWindow::applyGeometry(const QRect &rect)
         [m_view layoutIfNeeded];
 }
 
+QMargins QIOSWindow::safeAreaMargins() const
+{
+    UIEdgeInsets safeAreaInsets = m_view.qt_safeAreaInsets;
+    return QMargins(safeAreaInsets.left, safeAreaInsets.top,
+        safeAreaInsets.right, safeAreaInsets.bottom);
+}
+
 bool QIOSWindow::isExposed() const
 {
-    // Note: At startup of an iOS app it will enter UIApplicationStateInactive
-    // while showing the launch screen, and once the application returns from
-    // applicationDidFinishLaunching it will hide the launch screen and enter
-    // UIApplicationStateActive. Technically, a window is not exposed until
-    // it's actually visible on screen, and Apple also documents that "Apps
-    // that use OpenGL ES for drawing must not use didFinishLaunching to
-    // prepare their drawing environment. Instead, defer any OpenGL ES
-    // drawing calls to applicationDidBecomeActive". Unfortunately, if we
-    // wait until the applicationState reaches ApplicationActive to signal
-    // that the window is exposed, we get a lag between hiding the launch
-    // screen and blitting the first pixels of the application, as Qt
-    // spends some time drawing those pixels in response to the expose.
-    // In practice there doesn't seem to be any issues starting GL setup
-    // and drawing from within applicationDidFinishLaunching, and this is
-    // also the recommended approach for other 3rd party GL toolkits on iOS,
-    // so we 'cheat', and report that a window is exposed even if the app
-    // is in UIApplicationStateInactive, so that the startup transition
-    // between the launch screen and the application content is smooth.
-
-    return qApp->applicationState() > Qt::ApplicationHidden
+    return qApp->applicationState() != Qt::ApplicationSuspended
         && window()->isVisible() && !window()->geometry().isEmpty();
 }
 
-void QIOSWindow::setWindowState(Qt::WindowState state)
+void QIOSWindow::setWindowState(Qt::WindowStates state)
 {
     // Update the QWindow representation straight away, so that
     // we can update the statusbar visibility based on the new
@@ -250,24 +246,27 @@ void QIOSWindow::setWindowState(Qt::WindowState state)
     if (window()->isTopLevel() && window()->isVisible() && window()->isActive())
         [m_view.qtViewController updateProperties];
 
-    switch (state) {
-    case Qt::WindowNoState:
-        applyGeometry(m_normalGeometry);
-        break;
-    case Qt::WindowMaximized:
-        applyGeometry(window()->flags() & Qt::MaximizeUsingFullscreenGeometryHint ?
-            screen()->geometry() : screen()->availableGeometry());
-        break;
-    case Qt::WindowFullScreen:
-        applyGeometry(screen()->geometry());
-        break;
-    case Qt::WindowMinimized:
+    if (state & Qt::WindowMinimized) {
         applyGeometry(QRect());
-        break;
-    case Qt::WindowActive:
-        Q_UNREACHABLE();
-    default:
-        Q_UNREACHABLE();
+    } else if (state & (Qt::WindowFullScreen | Qt::WindowMaximized)) {
+        // When an application is in split-view mode, the UIScreen still has the
+        // same geometry, but the UIWindow is resized to the area reserved for the
+        // application. We use this to constrain the geometry used when applying the
+        // fullscreen or maximized window states. Note that we do not do this
+        // in applyGeometry(), as we don't want to artificially limit window
+        // placement "outside" of the screen bounds if that's what the user wants.
+
+        QRect uiWindowBounds = QRectF::fromCGRect(m_view.window.bounds).toRect();
+        QRect fullscreenGeometry = screen()->geometry().intersected(uiWindowBounds);
+        QRect maximizedGeometry = window()->flags() & Qt::MaximizeUsingFullscreenGeometryHint ?
+            fullscreenGeometry : screen()->availableGeometry().intersected(uiWindowBounds);
+
+        if (state & Qt::WindowFullScreen)
+            applyGeometry(fullscreenGeometry);
+        else
+            applyGeometry(maximizedGeometry);
+    } else {
+        applyGeometry(m_normalGeometry);
     }
 }
 
@@ -370,6 +369,30 @@ void QIOSWindow::clearAccessibleCache()
 {
     [m_view clearAccessibleCache];
 }
+
+void QIOSWindow::requestUpdate()
+{
+    static_cast<QIOSScreen *>(screen())->setUpdatesPaused(false);
+}
+
+CAEAGLLayer *QIOSWindow::eaglLayer() const
+{
+    Q_ASSERT([m_view.layer isKindOfClass:[CAEAGLLayer class]]);
+    return static_cast<CAEAGLLayer *>(m_view.layer);
+}
+
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QIOSWindow *window)
+{
+    QDebugStateSaver saver(debug);
+    debug.nospace();
+    debug << "QIOSWindow(" << (const void *)window;
+    if (window)
+        debug << ", window=" << window->window();
+    debug << ')';
+    return debug;
+}
+#endif // !QT_NO_DEBUG_STREAM
 
 #include "moc_qioswindow.cpp"
 

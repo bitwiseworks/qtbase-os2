@@ -3,63 +3,76 @@
 PRECOMPILED_HEADER = ../corelib/global/qt_pch.h
 INCLUDEPATH += $$PWD
 
-HEADERS += kernel/qauthenticator.h \
-	   kernel/qauthenticator_p.h \
-           kernel/qdnslookup.h \
-           kernel/qdnslookup_p.h \
+HEADERS += kernel/qtnetworkglobal.h \
+           kernel/qtnetworkglobal_p.h \
+           kernel/qauthenticator.h \
+           kernel/qauthenticator_p.h \
            kernel/qhostaddress.h \
            kernel/qhostaddress_p.h \
            kernel/qhostinfo.h \
            kernel/qhostinfo_p.h \
-           kernel/qurlinfo_p.h \
-           kernel/qnetworkproxy.h \
-           kernel/qnetworkproxy_p.h \
-	   kernel/qnetworkinterface.h \
-	   kernel/qnetworkinterface_p.h
+           kernel/qnetworkdatagram.h \
+           kernel/qnetworkdatagram_p.h \
+           kernel/qnetworkinterface.h \
+           kernel/qnetworkinterface_p.h \
+           kernel/qnetworkinterface_unix_p.h \
+           kernel/qnetworkproxy.h
 
 SOURCES += kernel/qauthenticator.cpp \
-           kernel/qdnslookup.cpp \
            kernel/qhostaddress.cpp \
            kernel/qhostinfo.cpp \
-           kernel/qurlinfo.cpp \
-           kernel/qnetworkproxy.cpp \
-	   kernel/qnetworkinterface.cpp
+           kernel/qnetworkdatagram.cpp \
+           kernel/qnetworkinterface.cpp \
+           kernel/qnetworkproxy.cpp
 
-unix:SOURCES += kernel/qdnslookup_unix.cpp kernel/qhostinfo_unix.cpp kernel/qnetworkinterface_unix.cpp
+qtConfig(ftp) {
+    HEADERS += kernel/qurlinfo_p.h
+    SOURCES += kernel/qurlinfo.cpp
+}
 
-android {
+qtConfig(dnslookup) {
+    HEADERS += kernel/qdnslookup.h \
+               kernel/qdnslookup_p.h
+
+    SOURCES += kernel/qdnslookup.cpp
+}
+
+unix {
+    !integrity:qtConfig(dnslookup): SOURCES += kernel/qdnslookup_unix.cpp
+    SOURCES += kernel/qhostinfo_unix.cpp
+
+    qtConfig(linux-netlink): SOURCES += kernel/qnetworkinterface_linux.cpp
+    else: SOURCES += kernel/qnetworkinterface_unix.cpp
+}
+
+android:qtConfig(dnslookup) {
     SOURCES -= kernel/qdnslookup_unix.cpp
     SOURCES += kernel/qdnslookup_android.cpp
 }
 
 win32: {
+    SOURCES += kernel/qhostinfo_win.cpp
+
     !winrt {
-        HEADERS += kernel/qnetworkinterface_win_p.h
-        SOURCES += kernel/qdnslookup_win.cpp \
-                   kernel/qhostinfo_win.cpp \
-                   kernel/qnetworkinterface_win.cpp
-        LIBS_PRIVATE += -ldnsapi
+        SOURCES += kernel/qnetworkinterface_win.cpp
+        qtConfig(dnslookup): SOURCES += kernel/qdnslookup_win.cpp
+        LIBS_PRIVATE += -ldnsapi -liphlpapi
     } else {
-        SOURCES += kernel/qdnslookup_winrt.cpp \
-                   kernel/qhostinfo_winrt.cpp \
-                   kernel/qnetworkinterface_winrt.cpp
+        SOURCES += kernel/qnetworkinterface_winrt.cpp
+        qtConfig(dnslookup): SOURCES += kernel/qdnslookup_winrt.cpp
     }
 }
-integrity:SOURCES += kernel/qdnslookup_unix.cpp kernel/qhostinfo_unix.cpp kernel/qnetworkinterface_unix.cpp
 
 mac {
-    LIBS_PRIVATE += -framework SystemConfiguration -framework CoreFoundation
-    !ios: LIBS_PRIVATE += -framework CoreServices
+    LIBS_PRIVATE += -framework CoreFoundation
+    !uikit: LIBS_PRIVATE += -framework CoreServices -framework SystemConfiguration
 }
 
-mac:!ios:SOURCES += kernel/qnetworkproxy_mac.cpp
-else:win32:SOURCES += kernel/qnetworkproxy_win.cpp
-else:blackberry {
-    SOURCES += kernel/qnetworkproxy_blackberry.cpp
-    LIBS_PRIVATE += -lbps
-}
-else:contains(QT_CONFIG, libproxy) {
+uikit:HEADERS += kernel/qnetworkinterface_uikit_p.h
+osx:SOURCES += kernel/qnetworkproxy_mac.cpp
+else:win32:!winrt: SOURCES += kernel/qnetworkproxy_win.cpp
+else: qtConfig(libproxy) {
     SOURCES += kernel/qnetworkproxy_libproxy.cpp
-    LIBS_PRIVATE += -lproxy
+    QMAKE_USE_PRIVATE += libproxy libdl
 }
 else:SOURCES += kernel/qnetworkproxy_generic.cpp

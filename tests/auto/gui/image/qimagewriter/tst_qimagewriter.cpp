@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -52,7 +47,7 @@
 #include <algorithm>
 
 typedef QMap<QString, QString> QStringMap;
-typedef QList<int> QIntList;
+typedef QVector<int> QIntList;
 Q_DECLARE_METATYPE(QImageWriter::ImageWriterError)
 Q_DECLARE_METATYPE(QImage::Format)
 
@@ -60,14 +55,8 @@ class tst_QImageWriter : public QObject
 {
     Q_OBJECT
 
-public:
-    tst_QImageWriter();
-    virtual ~tst_QImageWriter();
-
 public slots:
-    void init();
     void initTestCase();
-    void cleanup();
 
 private slots:
     void getSetCheck();
@@ -88,7 +77,11 @@ private slots:
     void saveWithNoFormat();
 
     void saveToTemporaryFile();
+
+    void writeEmpty();
+
 private:
+    QTemporaryDir m_temporaryDir;
     QString prefix;
     QString writePrefix;
 };
@@ -96,7 +89,7 @@ private:
 // helper to skip an autotest when the given image format is not supported
 #define SKIP_IF_UNSUPPORTED(format) do {                                                          \
     if (!QByteArray(format).isEmpty() && !QImageReader::supportedImageFormats().contains(format)) \
-        QSKIP("\"" + QByteArray(format) + "\" images are not supported");             \
+        QSKIP('"' + QByteArray(format) + "\" images are not supported");             \
 } while (0)
 
 static void initializePadding(QImage *image)
@@ -112,14 +105,11 @@ static void initializePadding(QImage *image)
 
 void tst_QImageWriter::initTestCase()
 {
+    QVERIFY(m_temporaryDir.isValid());
     prefix = QFINDTESTDATA("images/");
     if (prefix.isEmpty())
         QFAIL("Can't find images directory!");
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
-    writePrefix = QDir::homePath();
-#else
-    writePrefix = prefix;
-#endif
+    writePrefix = m_temporaryDir.path() + QLatin1Char('/');
 }
 
 // Testing get/set functions
@@ -165,28 +155,6 @@ void tst_QImageWriter::getSetCheck()
     QCOMPARE(1.1f, obj1.gamma());
 }
 
-tst_QImageWriter::tst_QImageWriter()
-{
-}
-
-tst_QImageWriter::~tst_QImageWriter()
-{
-    QDir dir(prefix);
-    QStringList filesToDelete = dir.entryList(QStringList() << "gen-*" , QDir::NoDotAndDotDot | QDir::Files);
-    foreach( QString file, filesToDelete) {
-        QFile::remove(dir.absoluteFilePath(file));
-    }
-
-}
-
-void tst_QImageWriter::init()
-{
-}
-
-void tst_QImageWriter::cleanup()
-{
-}
-
 void tst_QImageWriter::writeImage_data()
 {
     QTest::addColumn<QString>("fileName");
@@ -201,6 +169,7 @@ void tst_QImageWriter::writeImage_data()
     QTest::newRow("PBM: ship63") << QString("ship63.pbm") << true << QByteArray("pbm");
     QTest::newRow("XBM: gnus") << QString("gnus.xbm") << false << QByteArray("xbm");
     QTest::newRow("JPEG: beavis") << QString("beavis.jpg") << true << QByteArray("jpeg");
+    QTest::newRow("ICO: App") << QString("App.ico") << true << QByteArray("ico");
 }
 
 void tst_QImageWriter::writeImage()
@@ -261,8 +230,15 @@ void tst_QImageWriter::writeImage2_data()
     QTest::addColumn<QByteArray>("format");
     QTest::addColumn<QImage>("image");
 
-    const QStringList formats = QStringList() << "bmp" << "xpm" << "png"
-                                              << "ppm"; //<< "jpeg";
+    static const QLatin1String formats[] = {
+        QLatin1String("bmp"),
+        QLatin1String("xpm"),
+        QLatin1String("png"),
+        QLatin1String("ppm"),
+        QLatin1String("ico"),
+        // QLatin1String("jpeg"),
+    };
+
     QImage image0(70, 70, QImage::Format_ARGB32);
     image0.fill(QColor(Qt::red).rgb());
 
@@ -270,11 +246,11 @@ void tst_QImageWriter::writeImage2_data()
     while (imgFormat != QImage::NImageFormats) {
         QImage image = image0.convertToFormat(imgFormat);
         initializePadding(&image);
-        foreach (const QString format, formats) {
-            const QString fileName = QString("solidcolor_%1.%2").arg(imgFormat)
-                                     .arg(format);
-            QTest::newRow(fileName.toLatin1()) << fileName
-                                               << format.toLatin1()
+        for (QLatin1String format : formats) {
+            const QString fileName = QLatin1String("solidcolor_")
+                + QString::number(imgFormat) + QLatin1Char('.') + format;
+            QTest::newRow(fileName.toLatin1()) << writePrefix + fileName
+                                               << QByteArray(format.data(), format.size())
                                                << image;
         }
         imgFormat = QImage::Format(int(imgFormat) + 1);
@@ -338,41 +314,38 @@ void tst_QImageWriter::writeImage2()
     QVERIFY(QFile::remove(fileName));
 }
 
+namespace {
+// C++98-library version of C++11 std::is_sorted
+template <typename C>
+bool is_sorted(const C &c)
+{
+    return std::adjacent_find(c.begin(), c.end(), std::greater_equal<typename C::value_type>()) == c.end();
+}
+}
+
 void tst_QImageWriter::supportedFormats()
 {
     QList<QByteArray> formats = QImageWriter::supportedImageFormats();
-    QList<QByteArray> sortedFormats = formats;
-    std::sort(sortedFormats.begin(), sortedFormats.end());
 
     // check that the list is sorted
-    QCOMPARE(formats, sortedFormats);
-
-    QSet<QByteArray> formatSet;
-    foreach (QByteArray format, formats)
-        formatSet << format;
+    QVERIFY(is_sorted(formats));
 
     // check that the list does not contain duplicates
-    QCOMPARE(formatSet.size(), formats.size());
+    QVERIFY(std::unique(formats.begin(), formats.end()) == formats.end());
 }
 
 void tst_QImageWriter::supportedMimeTypes()
 {
     QList<QByteArray> mimeTypes = QImageWriter::supportedMimeTypes();
-    QList<QByteArray> sortedMimeTypes = mimeTypes;
-    std::sort(sortedMimeTypes.begin(), sortedMimeTypes.end());
 
     // check that the list is sorted
-    QCOMPARE(mimeTypes, sortedMimeTypes);
-
-    QSet<QByteArray> mimeTypeSet;
-    foreach (QByteArray mimeType, mimeTypes)
-        mimeTypeSet << mimeType;
+    QVERIFY(is_sorted(mimeTypes));
 
     // check the list as a minimum contains image/bmp
-    QVERIFY(mimeTypeSet.contains("image/bmp"));
+    QVERIFY(mimeTypes.contains("image/bmp"));
 
     // check that the list does not contain duplicates
-    QCOMPARE(mimeTypeSet.size(), mimeTypes.size());
+    QVERIFY(std::unique(mimeTypes.begin(), mimeTypes.end()) == mimeTypes.end());
 }
 
 void tst_QImageWriter::writeToInvalidDevice()
@@ -416,7 +389,7 @@ void tst_QImageWriter::testCanWrite()
     {
         // check if canWrite won't leave an empty file
         QTemporaryDir dir;
-        QVERIFY(dir.isValid());
+        QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
         QString fileName(dir.path() + QLatin1String("/001.garble"));
         QVERIFY(!QFileInfo(fileName).exists());
         QImageWriter writer(fileName);
@@ -446,30 +419,27 @@ void tst_QImageWriter::supportsOption()
     QFETCH(QString, fileName);
     QFETCH(QIntList, options);
 
-    QSet<QImageIOHandler::ImageOption> allOptions;
-    allOptions << QImageIOHandler::Size
-               << QImageIOHandler::ClipRect
-               << QImageIOHandler::Description
-               << QImageIOHandler::ScaledClipRect
-               << QImageIOHandler::ScaledSize
-               << QImageIOHandler::CompressionRatio
-               << QImageIOHandler::Gamma
-               << QImageIOHandler::Quality
-               << QImageIOHandler::Name
-               << QImageIOHandler::SubType
-               << QImageIOHandler::IncrementalReading
-               << QImageIOHandler::Endianness
-               << QImageIOHandler::Animation
-               << QImageIOHandler::BackgroundColor;
+    static Q_CONSTEXPR QImageIOHandler::ImageOption allOptions[] = {
+        QImageIOHandler::Size,
+        QImageIOHandler::ClipRect,
+        QImageIOHandler::Description,
+        QImageIOHandler::ScaledClipRect,
+        QImageIOHandler::ScaledSize,
+        QImageIOHandler::CompressionRatio,
+        QImageIOHandler::Gamma,
+        QImageIOHandler::Quality,
+        QImageIOHandler::Name,
+        QImageIOHandler::SubType,
+        QImageIOHandler::IncrementalReading,
+        QImageIOHandler::Endianness,
+        QImageIOHandler::Animation,
+        QImageIOHandler::BackgroundColor,
+    };
 
     QImageWriter writer(writePrefix + fileName);
-    for (int i = 0; i < options.size(); ++i) {
-        QVERIFY(writer.supportsOption(QImageIOHandler::ImageOption(options.at(i))));
-        allOptions.remove(QImageIOHandler::ImageOption(options.at(i)));
+    for (auto option : allOptions) {
+        QCOMPARE(writer.supportsOption(option), options.contains(option));
     }
-
-    foreach (QImageIOHandler::ImageOption option, allOptions)
-        QVERIFY(!writer.supportsOption(option));
 }
 
 void tst_QImageWriter::saveWithNoFormat_data()
@@ -496,7 +466,7 @@ void tst_QImageWriter::saveWithNoFormat()
     SKIP_IF_UNSUPPORTED(format);
 
     QImage niceImage(64, 64, QImage::Format_ARGB32);
-    memset(niceImage.bits(), 0, niceImage.byteCount());
+    memset(niceImage.bits(), 0, niceImage.sizeInBytes());
 
     QImageWriter writer(fileName /* , 0 - no format! */);
     if (error != 0) {
@@ -524,21 +494,18 @@ void tst_QImageWriter::saveToTemporaryFile()
     {
         // 1) Via QImageWriter's API, with a standard temp file name
         QTemporaryFile file;
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QImageWriter writer(&file, "PNG");
         if (writer.canWrite())
             QVERIFY(writer.write(image));
         else
             qWarning() << file.errorString();
-#if defined(Q_OS_WINCE)
-        file.reset();
-#endif
         QCOMPARE(QImage(writer.fileName()), image);
     }
     {
         // 2) Via QImage's API, with a standard temp file name
         QTemporaryFile file;
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QVERIFY(image.save(&file, "PNG"));
         file.reset();
         QImage tmp;
@@ -547,25 +514,35 @@ void tst_QImageWriter::saveToTemporaryFile()
     }
     {
         // 3) Via QImageWriter's API, with a named temp file
-        QTemporaryFile file("tempXXXXXX");
-        QVERIFY(file.open());
+        QTemporaryFile file(writePrefix + QLatin1String("tempXXXXXX"));
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QImageWriter writer(&file, "PNG");
         QVERIFY(writer.write(image));
-#if defined(Q_OS_WINCE)
-        file.reset();
-#endif
         QCOMPARE(QImage(writer.fileName()), image);
     }
     {
         // 4) Via QImage's API, with a named temp file
-        QTemporaryFile file("tempXXXXXX");
-        QVERIFY(file.open());
+        QTemporaryFile file(writePrefix + QLatin1String("tempXXXXXX"));
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QVERIFY(image.save(&file, "PNG"));
         file.reset();
         QImage tmp;
         QVERIFY(tmp.load(&file, "PNG"));
         QCOMPARE(tmp, image);
     }
+}
+
+void tst_QImageWriter::writeEmpty()
+{
+    // check writing a null QImage errors gracefully
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+    QString fileName(dir.path() + QLatin1String("/testimage.bmp"));
+    QVERIFY(!QFileInfo(fileName).exists());
+    QImageWriter writer(fileName);
+    QVERIFY(!writer.write(QImage()));
+    QCOMPARE(writer.error(), QImageWriter::InvalidImageError);
+    QVERIFY(!QFileInfo(fileName).exists());
 }
 
 QTEST_MAIN(tst_QImageWriter)

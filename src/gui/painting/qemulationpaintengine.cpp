@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -66,6 +72,14 @@ QPainterState *QEmulationPaintEngine::createState(QPainterState *orig) const
     return real_engine->createState(orig);
 }
 
+static inline void combineXForm(QBrush *brush, const QRectF &r)
+{
+    QTransform t = brush->transform();
+    t.translate(r.x(), r.y());
+    t.scale(r.width(), r.height());
+    brush->setTransform(t);
+}
+
 void QEmulationPaintEngine::fill(const QVectorPath &path, const QBrush &brush)
 {
     QPainterState *s = state();
@@ -78,26 +92,14 @@ void QEmulationPaintEngine::fill(const QVectorPath &path, const QBrush &brush)
 
     Qt::BrushStyle style = qbrush_style(brush);
     if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern) {
-        const QGradient *g = brush.gradient();
-
-        if (g->coordinateMode() > QGradient::LogicalMode) {
-            if (g->coordinateMode() == QGradient::StretchToDeviceMode) {
-                QBrush copy = brush;
-                QTransform mat = copy.transform();
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-                copy.setTransform(mat);
-                real_engine->fill(path, copy);
-                return;
-            } else if (g->coordinateMode() == QGradient::ObjectBoundingMode) {
-                QBrush copy = brush;
-                QTransform mat = copy.transform();
-                QRectF r = path.controlPointRect();
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-                copy.setTransform(mat);
-                real_engine->fill(path, copy);
-                return;
-            }
+        QGradient::CoordinateMode coMode = brush.gradient()->coordinateMode();
+        if (coMode > QGradient::LogicalMode) {
+            QBrush copy = brush;
+            const QPaintDevice *d = real_engine->painter()->device();
+            QRectF r = (coMode == QGradient::ObjectBoundingMode) ? path.controlPointRect() : QRectF(0, 0, d->width(), d->height());
+            combineXForm(&copy, r);
+            real_engine->fill(path, copy);
+            return;
         }
     }
 
@@ -118,27 +120,15 @@ void QEmulationPaintEngine::stroke(const QVectorPath &path, const QPen &pen)
     QBrush brush = pen.brush();
     QPen copy = pen;
     Qt::BrushStyle style = qbrush_style(brush);
-    if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern) {
-        const QGradient *g = brush.gradient();
-
-        if (g->coordinateMode() > QGradient::LogicalMode) {
-            if (g->coordinateMode() == QGradient::StretchToDeviceMode) {
-                QTransform mat = brush.transform();
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-                brush.setTransform(mat);
-                copy.setBrush(brush);
-                real_engine->stroke(path, copy);
-                return;
-            } else if (g->coordinateMode() == QGradient::ObjectBoundingMode) {
-                QTransform mat = brush.transform();
-                QRectF r = path.controlPointRect();
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-                brush.setTransform(mat);
-                copy.setBrush(brush);
-                real_engine->stroke(path, copy);
-                return;
-            }
+    if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern ) {
+        QGradient::CoordinateMode coMode = brush.gradient()->coordinateMode();
+        if (coMode > QGradient::LogicalMode) {
+            const QPaintDevice *d = real_engine->painter()->device();
+            QRectF r = (coMode == QGradient::ObjectBoundingMode) ? path.controlPointRect() : QRectF(0, 0, d->width(), d->height());
+            combineXForm(&brush, r);
+            copy.setBrush(brush);
+            real_engine->stroke(path, copy);
+            return;
         }
     }
 
@@ -173,18 +163,16 @@ void QEmulationPaintEngine::drawTextItem(const QPointF &p, const QTextItem &text
         QGradient g = *s->pen.brush().gradient();
 
         if (g.coordinateMode() > QGradient::LogicalMode) {
-            QTransform mat = s->pen.brush().transform();
-            if (g.coordinateMode() == QGradient::StretchToDeviceMode) {
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-            } else if (g.coordinateMode() == QGradient::ObjectBoundingMode) {
-                const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
-                QRectF r(p.x(), p.y() - ti.ascent.toReal(), ti.width.toReal(), (ti.ascent + ti.descent + 1).toReal());
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-            }
+            QBrush copy = s->pen.brush();
+            const QPaintDevice *d = real_engine->painter()->device();
+            const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
+            QRectF r = (g.coordinateMode() == QGradient::ObjectBoundingMode) ?
+                        QRectF(p.x(), p.y() - ti.ascent.toReal(), ti.width.toReal(), (ti.ascent + ti.descent + 1).toReal()) :
+                        QRectF(0, 0, d->width(), d->height());
+            combineXForm(&copy, r);
             g.setCoordinateMode(QGradient::LogicalMode);
             QBrush brush(g);
-            brush.setTransform(mat);
+            brush.setTransform(copy.transform());
             s->pen.setBrush(brush);
             penChanged();
             real_engine->drawTextItem(p, textItem);

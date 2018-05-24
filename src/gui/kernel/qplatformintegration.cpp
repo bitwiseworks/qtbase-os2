@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,7 +45,6 @@
 #include <qpa/qplatformtheme.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qpixmap_raster_p.h>
-#include <qpa/qplatformscreen_p.h>
 #include <private/qdnd_p.h>
 #include <private/qsimpledrag_p.h>
 
@@ -150,13 +155,11 @@ QPlatformServices *QPlatformIntegration::services() const
 /*!
     \fn QPlatformWindow *QPlatformIntegration::createPlatformWindow(QWindow *window) const
 
-    Factory function for QPlatformWindow. The \a window parameter is a pointer to the top level
-    window which the QPlatformWindow is supposed to be created for.
+    Factory function for QPlatformWindow. The \a window parameter is a pointer to the window
+    which the QPlatformWindow is supposed to be created for.
 
-    All top level windows have to have a QPlatformWindow, and it will be created when the
-    QPlatformWindow is set to be visible for the first time. If the top level window's flags are
-    changed, or if the top level window's QPlatformWindowFormat is changed, then the top level
-    window's QPlatformWindow is deleted and a new one is created.
+    All windows have to have a QPlatformWindow, and it will be created on-demand when the
+    QWindow is made visible for the first time, or explicitly through calling QWindow::create().
 
     In the constructor, of the QPlatformWindow, the window flags, state, title and geometry
     of the \a window should be applied to the underlying window. If the resulting flags or state
@@ -209,8 +212,7 @@ QPlatformServices *QPlatformIntegration::services() const
     behavior for desktop platforms.
 
     \value ForeignWindows The platform allows creating QWindows which represent
-    native windows created by other processes or anyway created by using native
-    libraries.
+    native windows created by other processes or by using native libraries.
 
     \value NonFullScreenWindows The platform supports top-level windows which do not
     fill the screen. The default implementation returns \c true. Returning false for
@@ -222,7 +224,8 @@ QPlatformServices *QPlatformIntegration::services() const
     platforms where no window management is available, meaning for example that windows
     are never repositioned by the window manager. The default implementation returns \c true.
 
-    \value AllGLFunctionsQueryable The QOpenGLContext backend provided by the platform is
+    \value AllGLFunctionsQueryable Deprecated. Used to indicate whether the QOpenGLContext
+    backend provided by the platform is
     able to return function pointers from getProcAddress() even for standard OpenGL
     functions, for example OpenGL 1 functions like glClear() or glDrawArrays(). This is
     important because the OpenGL specifications do not require this ability from the
@@ -230,9 +233,14 @@ QPlatformServices *QPlatformIntegration::services() const
     platform plugins may however choose to enhance the behavior in the backend
     implementation for QOpenGLContext::getProcAddress() and support returning a function
     pointer also for the standard, non-extension functions. This capability is a
-    prerequisite for dynamic OpenGL loading.
+    prerequisite for dynamic OpenGL loading. Starting with Qt 5.7, the platform plugin
+    is required to have this capability.
 
     \value ApplicationIcon The platform supports setting the application icon. (since 5.5)
+
+    \value TopStackedNativeChildWindows The platform supports native child windows via
+    QWindowContainer without having to punch a transparent hole in the
+    backingstore. (since 5.10)
  */
 
 /*!
@@ -256,7 +264,8 @@ QPlatformServices *QPlatformIntegration::services() const
 
 bool QPlatformIntegration::hasCapability(Capability cap) const
 {
-    return cap == NonFullScreenWindows || cap == NativeWidgets || cap == WindowManagement;
+    return cap == NonFullScreenWindows || cap == NativeWidgets || cap == WindowManagement
+        || cap == TopStackedNativeChildWindows || cap == WindowActivation;
 }
 
 QPlatformPixmap *QPlatformIntegration::createPlatformPixmap(QPlatformPixmap::PixelType type) const
@@ -350,11 +359,16 @@ QPlatformInputContext *QPlatformIntegration::inputContext() const
 /*!
   Returns the platforms accessibility.
 
-  The default implementation returns 0, implying no accessibility support.
+  The default implementation returns QPlatformAccessibility which
+  delegates handling of accessibility to accessiblebridge plugins.
 */
 QPlatformAccessibility *QPlatformIntegration::accessibility() const
 {
-    return 0;
+    static QPlatformAccessibility *accessibility = 0;
+    if (Q_UNLIKELY(!accessibility)) {
+        accessibility = new QPlatformAccessibility;
+    }
+    return accessibility;
 }
 
 #endif
@@ -378,6 +392,8 @@ QVariant QPlatformIntegration::styleHint(StyleHint hint) const
         return false;
     case ShowIsMaximized:
         return false;
+    case ShowShortcutsInContextMenus:
+        return QPlatformTheme::defaultThemeHint(QPlatformTheme::ShowShortcutsInContextMenus);
     case PasswordMaskDelay:
         return QPlatformTheme::defaultThemeHint(QPlatformTheme::PasswordMaskDelay);
     case PasswordMaskCharacter:
@@ -398,6 +414,12 @@ QVariant QPlatformIntegration::styleHint(StyleHint hint) const
         return true;
     case ItemViewActivateItemOnSingleClick:
         return QPlatformTheme::defaultThemeHint(QPlatformTheme::ItemViewActivateItemOnSingleClick);
+    case UiEffects:
+        return QPlatformTheme::defaultThemeHint(QPlatformTheme::UiEffects);
+    case WheelScrollLines:
+        return QPlatformTheme::defaultThemeHint(QPlatformTheme::WheelScrollLines);
+    case MouseQuickSelectionThreshold:
+        return QPlatformTheme::defaultThemeHint(QPlatformTheme::MouseQuickSelectionThreshold);
     }
 
     return 0;
@@ -424,12 +446,13 @@ Qt::KeyboardModifiers QPlatformIntegration::queryKeyboardModifiers() const
 
 /*!
   Should be used to obtain a list of possible shortcuts for the given key
-  event. As that needs system functionality it cannot be done in qkeymapper.
+  event. Shortcuts should be encoded as int(Qt::Key + Qt::KeyboardModifiers).
 
-  One example for more than 1 possibility is the key combination of Shift+5.
+  One example for more than one possibility is the key combination of Shift+5.
   That one might trigger a shortcut which is set as "Shift+5" as well as one
-  using %. These combinations depend on the currently set keyboard layout
-  which cannot be obtained by Qt functionality.
+  using %. These combinations depend on the currently set keyboard layout.
+
+  \note This function should be called only from key event handlers.
 */
 QList<int> QPlatformIntegration::possibleKeys(const QKeyEvent *) const
 {
@@ -450,13 +473,31 @@ QList<int> QPlatformIntegration::possibleKeys(const QKeyEvent *) const
 void QPlatformIntegration::screenAdded(QPlatformScreen *ps, bool isPrimary)
 {
     QScreen *screen = new QScreen(ps);
-    ps->d_func()->screen = screen;
+
     if (isPrimary) {
         QGuiApplicationPrivate::screen_list.prepend(screen);
     } else {
         QGuiApplicationPrivate::screen_list.append(screen);
     }
     emit qGuiApp->screenAdded(screen);
+
+    if (isPrimary)
+        emit qGuiApp->primaryScreenChanged(screen);
+}
+
+/*!
+  Just removes the screen, call destroyScreen instead.
+
+  \sa destroyScreen()
+*/
+
+void QPlatformIntegration::removeScreen(QScreen *screen)
+{
+    const bool wasPrimary = (!QGuiApplicationPrivate::screen_list.isEmpty() && QGuiApplicationPrivate::screen_list.at(0) == screen);
+    QGuiApplicationPrivate::screen_list.removeOne(screen);
+
+    if (wasPrimary && qGuiApp && !QGuiApplicationPrivate::screen_list.isEmpty())
+        emit qGuiApp->primaryScreenChanged(QGuiApplicationPrivate::screen_list.at(0));
 }
 
 /*!
@@ -469,9 +510,29 @@ void QPlatformIntegration::screenAdded(QPlatformScreen *ps, bool isPrimary)
 */
 void QPlatformIntegration::destroyScreen(QPlatformScreen *screen)
 {
-    QGuiApplicationPrivate::screen_list.removeOne(screen->d_func()->screen);
-    delete screen->d_func()->screen;
+    QScreen *qScreen = screen->screen();
+    removeScreen(qScreen);
+    delete qScreen;
     delete screen;
+}
+
+/*!
+  Should be called whenever the primary screen changes.
+
+  When the screen specified as primary changes, this method will notify
+  QGuiApplication and emit the QGuiApplication::primaryScreenChanged signal.
+ */
+
+void QPlatformIntegration::setPrimaryScreen(QPlatformScreen *newPrimary)
+{
+    QScreen* newPrimaryScreen = newPrimary->screen();
+    int idx = QGuiApplicationPrivate::screen_list.indexOf(newPrimaryScreen);
+    Q_ASSERT(idx >= 0);
+    if (idx == 0)
+        return;
+
+    QGuiApplicationPrivate::screen_list.swap(0, idx);
+    emit qGuiApp->primaryScreenChanged(newPrimaryScreen);
 }
 
 QStringList QPlatformIntegration::themeNames() const
@@ -523,6 +584,17 @@ void QPlatformIntegration::sync()
 {
 }
 
+/*!
+   \since 5.7
+
+    Should sound a bell, using the default volume and sound.
+
+    \sa QApplication::beep()
+*/
+void QPlatformIntegration::beep() const
+{
+}
+
 #ifndef QT_NO_OPENGL
 /*!
   Platform integration function for querying the OpenGL implementation type.
@@ -559,5 +631,27 @@ void QPlatformIntegration::setApplicationIcon(const QIcon &icon) const
 {
     Q_UNUSED(icon);
 }
+
+#if QT_CONFIG(vulkan) || defined(Q_CLANG_QDOC)
+
+/*!
+    Factory function for QPlatformVulkanInstance. The \a instance parameter is a
+    pointer to the instance for which a platform-specific backend needs to be
+    created.
+
+    Returns a pointer to a QPlatformOpenGLContext instance or \c NULL if the context could
+    not be created.
+
+    \sa QVulkanInstance
+    \since 5.10
+*/
+QPlatformVulkanInstance *QPlatformIntegration::createPlatformVulkanInstance(QVulkanInstance *instance) const
+{
+    Q_UNUSED(instance);
+    qWarning("This plugin does not support createPlatformVulkanInstance");
+    return nullptr;
+}
+
+#endif // QT_CONFIG(vulkan)
 
 QT_END_NAMESPACE

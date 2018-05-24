@@ -7,7 +7,12 @@ qtHaveModule(gui): SUBDIRS += \
     qabstractproxymodel \
     qidentityproxymodel \
     qitemselectionmodel \
+    qsortfilterproxymodel_recursive \
 
-qtHaveModule(widgets): SUBDIRS += \
-    qitemmodel \
-    qsortfilterproxymodel \
+qtHaveModule(widgets) {
+    SUBDIRS += \
+        qsortfilterproxymodel
+
+    qtHaveModule(sql): SUBDIRS += \
+        qitemmodel
+}

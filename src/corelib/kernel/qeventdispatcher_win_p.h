@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -100,9 +106,12 @@ public:
 
     bool event(QEvent *e);
 
+    HWND internalHwnd();
+
 protected:
     QEventDispatcherWin32(QEventDispatcherWin32Private &dd, QObject *parent = 0);
     virtual void sendPostedEvents();
+    void doUnregisterSocketNotifier(QSocketNotifier *notifier);
 
 private:
     friend LRESULT QT_WIN_CALLBACK qt_internal_proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp);
@@ -117,9 +126,10 @@ typedef QHash<int, QSockNot *> QSNDict;
 
 struct QSockFd {
     long event;
+    long mask;
     bool selected;
 
-    explicit inline QSockFd(long ev = 0) : event(ev), selected(false) { }
+    explicit inline QSockFd(long ev = 0, long ma = 0) : event(ev), mask(ma), selected(false) { }
 };
 typedef QHash<int, QSockFd> QSFDict;
 
@@ -131,7 +141,7 @@ struct WinTimerInfo {                           // internal timer info
     quint64 timeout;                            // - when to actually fire
     QObject *obj;                               // - object to receive events
     bool inTimerEvent;
-    int fastTimerId;
+    UINT fastTimerId;
 };
 
 class QZeroTimerEvent : public QTimerEvent
@@ -151,6 +161,7 @@ class Q_CORE_EXPORT QEventDispatcherWin32Private : public QAbstractEventDispatch
 public:
     QEventDispatcherWin32Private();
     ~QEventDispatcherWin32Private();
+    static QEventDispatcherWin32Private *get(QEventDispatcherWin32 *q) { return q->d_func(); }
 
     DWORD threadId;
 
@@ -178,9 +189,13 @@ public:
     QSNDict sn_write;
     QSNDict sn_except;
     QSFDict active_fd;
+    bool activateNotifiersPosted;
+    void postActivateSocketNotifiers();
     void doWsaAsyncSelect(int socket, long event);
 
+    HANDLE winEventNotifierActivatedEvent;
     QList<QWinEventNotifier *> winEventNotifierList;
+    bool winEventNotifierListModified = false;
     void activateEventNotifier(QWinEventNotifier * wen);
 
     QList<MSG> queuedUserInputEvents;

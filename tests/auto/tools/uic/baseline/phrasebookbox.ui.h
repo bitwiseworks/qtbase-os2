@@ -1,32 +1,27 @@
 /*
 *********************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the autotests of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,9 +40,7 @@
 #define PHRASEBOOKBOX_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
@@ -191,38 +184,38 @@ public:
 
     void retranslateUi(QDialog *PhraseBookBox)
     {
-        PhraseBookBox->setWindowTitle(QApplication::translate("PhraseBookBox", "Edit Phrase Book", 0));
+        PhraseBookBox->setWindowTitle(QApplication::translate("PhraseBookBox", "Edit Phrase Book", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        PhraseBookBox->setWhatsThis(QApplication::translate("PhraseBookBox", "This window allows you to add, modify, or delete phrases in a phrase book.", 0));
+        PhraseBookBox->setWhatsThis(QApplication::translate("PhraseBookBox", "This window allows you to add, modify, or delete phrases in a phrase book.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        target->setText(QApplication::translate("PhraseBookBox", "&Translation:", 0));
+        target->setText(QApplication::translate("PhraseBookBox", "&Translation:", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        targetLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is the phrase in the target language corresponding to the source phrase.", 0));
+        targetLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is the phrase in the target language corresponding to the source phrase.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        source->setText(QApplication::translate("PhraseBookBox", "S&ource phrase:", 0));
+        source->setText(QApplication::translate("PhraseBookBox", "S&ource phrase:", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        definitionLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is a definition for the source phrase.", 0));
+        definitionLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is a definition for the source phrase.", nullptr));
 #endif // QT_NO_WHATSTHIS
 #ifndef QT_NO_WHATSTHIS
-        sourceLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is the phrase in the source language.", 0));
+        sourceLed->setWhatsThis(QApplication::translate("PhraseBookBox", "This is the phrase in the source language.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        definition->setText(QApplication::translate("PhraseBookBox", "&Definition:", 0));
+        definition->setText(QApplication::translate("PhraseBookBox", "&Definition:", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        newBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to add the phrase to the phrase book.", 0));
+        newBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to add the phrase to the phrase book.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        newBut->setText(QApplication::translate("PhraseBookBox", "&New Phrase", 0));
+        newBut->setText(QApplication::translate("PhraseBookBox", "&New Phrase", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        removeBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to remove the phrase from the phrase book.", 0));
+        removeBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to remove the phrase from the phrase book.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        removeBut->setText(QApplication::translate("PhraseBookBox", "&Remove Phrase", 0));
+        removeBut->setText(QApplication::translate("PhraseBookBox", "&Remove Phrase", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        saveBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to save the changes made.", 0));
+        saveBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to save the changes made.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        saveBut->setText(QApplication::translate("PhraseBookBox", "&Save", 0));
+        saveBut->setText(QApplication::translate("PhraseBookBox", "&Save", nullptr));
 #ifndef QT_NO_WHATSTHIS
-        closeBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to close this window.", 0));
+        closeBut->setWhatsThis(QApplication::translate("PhraseBookBox", "Click here to close this window.", nullptr));
 #endif // QT_NO_WHATSTHIS
-        closeBut->setText(QApplication::translate("PhraseBookBox", "Close", 0));
+        closeBut->setText(QApplication::translate("PhraseBookBox", "Close", nullptr));
     } // retranslateUi
 
 };

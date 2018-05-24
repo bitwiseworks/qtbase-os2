@@ -1,32 +1,39 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,18 +43,12 @@
 #include "private/qfilesystementry_p.h"
 #include <qt_windows.h>
 
-#include "QtCore/qcoreapplication.h"
 #include "QtCore/qfileinfo.h"
 #include "QtCore/qdatetime.h"
 #include "QtCore/qdebug.h"
 #include "QtCore/qthread.h"
 
 QT_BEGIN_NAMESPACE
-
-static inline QByteArray localHostName()
-{
-    return qgetenv("COMPUTERNAME");
-}
 
 static inline bool fileExists(const wchar_t *fileName)
 {
@@ -67,7 +68,7 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
 #ifndef Q_OS_WINRT
     SECURITY_ATTRIBUTES securityAtts = { sizeof(SECURITY_ATTRIBUTES), NULL, FALSE };
     HANDLE fh = CreateFile((const wchar_t*)fileEntry.nativeFilePath().utf16(),
-                           GENERIC_WRITE,
+                           GENERIC_READ | GENERIC_WRITE,
                            dwShareMode,
                            &securityAtts,
                            CREATE_NEW, // error if already exists
@@ -75,7 +76,7 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
                            NULL);
 #else // !Q_OS_WINRT
     HANDLE fh = CreateFile2((const wchar_t*)fileEntry.nativeFilePath().utf16(),
-                            GENERIC_WRITE,
+                            GENERIC_READ | GENERIC_WRITE,
                             dwShareMode,
                             CREATE_NEW, // error if already exists
                             NULL);
@@ -94,22 +95,14 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
                 ? QLockFile::LockFailedError
                 : QLockFile::PermissionError;
         default:
-            qWarning() << "Got unexpected locking error" << lastError;
+            qWarning("Got unexpected locking error %llu", quint64(lastError));
             return QLockFile::UnknownError;
         }
     }
 
     // We hold the lock, continue.
     fileHandle = fh;
-    // Assemble data, to write in a single call to write
-    // (otherwise we'd have to check every write call)
-    QByteArray fileData;
-    fileData += QByteArray::number(QCoreApplication::applicationPid());
-    fileData += '\n';
-    fileData += QCoreApplication::applicationName().toUtf8();
-    fileData += '\n';
-    fileData += localHostName();
-    fileData += '\n';
+    QByteArray fileData = lockFileContents();
     DWORD bytesWritten = 0;
     QLockFile::LockError error = QLockFile::NoError;
     if (!WriteFile(fh, fileData.constData(), fileData.size(), &bytesWritten, NULL) || !FlushFileBuffers(fh))
@@ -123,41 +116,38 @@ bool QLockFilePrivate::removeStaleLock()
     return QFile::remove(fileName);
 }
 
-bool QLockFilePrivate::isApparentlyStale() const
+bool QLockFilePrivate::isProcessRunning(qint64 pid, const QString &appname)
 {
-    qint64 pid;
-    QString hostname, appname;
-
     // On WinRT there seems to be no way of obtaining information about other
     // processes due to sandboxing
 #ifndef Q_OS_WINRT
-    if (getLockInfo(&pid, &hostname, &appname)) {
-        if (hostname.isEmpty() || hostname == QString::fromLocal8Bit(localHostName())) {
-            HANDLE procHandle = ::OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-            if (!procHandle)
-                return true;
-            // We got a handle but check if process is still alive
-            DWORD dwR = ::WaitForSingleObject(procHandle, 0);
-            ::CloseHandle(procHandle);
-            if (dwR == WAIT_TIMEOUT)
-                return true;
-            const QString processName = processNameByPid(pid);
-            if (!processName.isEmpty() && processName != appname)
-                return true; // PID got reused by a different application.
-        }
-    }
+    HANDLE procHandle = ::OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+    if (!procHandle)
+        return false;
+
+    // We got a handle but check if process is still alive
+    DWORD exitCode = 0;
+    if (!::GetExitCodeProcess(procHandle, &exitCode))
+        exitCode = 0;
+    ::CloseHandle(procHandle);
+    if (exitCode != STILL_ACTIVE)
+        return false;
+
+    const QString processName = processNameByPid(pid);
+    if (!processName.isEmpty() && processName != appname)
+        return false; // PID got reused by a different application.
+
 #else // !Q_OS_WINRT
     Q_UNUSED(pid);
-    Q_UNUSED(hostname);
     Q_UNUSED(appname);
 #endif // Q_OS_WINRT
-    const qint64 age = QFileInfo(fileName).lastModified().msecsTo(QDateTime::currentDateTime());
-    return staleLockTime > 0 && age > staleLockTime;
+
+    return true;
 }
 
 QString QLockFilePrivate::processNameByPid(qint64 pid)
 {
-#if !defined(Q_OS_WINRT) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_WINRT)
     typedef DWORD (WINAPI *GetModuleFileNameExFunc)(HANDLE, HMODULE, LPTSTR, DWORD);
 
     HMODULE hPsapi = LoadLibraryA("psapi");

@@ -1,39 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qglobal.h"
-
-#ifndef QT_NO_GRAPHICSVIEW
 
 #include "qgraphicslayout.h"
 #include "qgraphicsproxywidget.h"
@@ -49,9 +53,12 @@
 #include <QtGui/qpainter.h>
 #include <QtWidgets/qstyleoption.h>
 #include <QtWidgets/qgraphicsview.h>
-#include <QtWidgets/qlistview.h>
+#if QT_CONFIG(lineedit)
 #include <QtWidgets/qlineedit.h>
+#endif
+#if QT_CONFIG(textedit)
 #include <QtWidgets/qtextedit.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -187,6 +194,31 @@ Q_WIDGETS_EXPORT extern bool qt_tab_all_widgets();
 /*!
     \internal
 */
+QGraphicsProxyWidgetPrivate::QGraphicsProxyWidgetPrivate()
+    : QGraphicsWidgetPrivate(),
+      dragDropWidget(nullptr),
+      posChangeMode(NoMode),
+      sizeChangeMode(NoMode),
+      visibleChangeMode(NoMode),
+      enabledChangeMode(NoMode),
+      styleChangeMode(NoMode),
+      paletteChangeMode(NoMode),
+      tooltipChangeMode(NoMode),
+      focusFromWidgetToProxy(false),
+      proxyIsGivingFocus(false)
+{
+}
+
+/*!
+    \internal
+*/
+QGraphicsProxyWidgetPrivate::~QGraphicsProxyWidgetPrivate()
+{
+}
+
+/*!
+    \internal
+*/
 void QGraphicsProxyWidgetPrivate::init()
 {
     Q_Q(QGraphicsProxyWidget);
@@ -269,8 +301,7 @@ void QGraphicsProxyWidgetPrivate::sendWidgetMouseEvent(QGraphicsSceneMouseEvent 
     // Send mouse event.
     QMouseEvent mouseEvent(type, pos, receiver->mapTo(receiver->topLevelWidget(), pos.toPoint()),
                            receiver->mapToGlobal(pos.toPoint()),
-                           event->button(), event->buttons(), event->modifiers());
-    QGuiApplicationPrivate::setMouseEventSource(&mouseEvent, event->source());
+                           event->button(), event->buttons(), event->modifiers(), event->source());
 
     QWidget *embeddedMouseGrabberPtr = (QWidget *)embeddedMouseGrabber;
     QApplicationPrivate::sendMouseEvent(receiver, &mouseEvent, alienWidget, widget,
@@ -514,6 +545,7 @@ QGraphicsProxyWidget::~QGraphicsProxyWidget()
 {
     Q_D(QGraphicsProxyWidget);
     if (d->widget) {
+        d->widget->removeEventFilter(this);
         QObject::disconnect(d->widget, SIGNAL(destroyed()), this, SLOT(_q_removeWidgetSlot()));
         delete d->widget;
     }
@@ -571,7 +603,8 @@ void QGraphicsProxyWidgetPrivate::setWidget_helper(QWidget *newWidget, bool auto
         resolvePalette(inheritedPaletteResolveMask);
         widget->update();
 
-        foreach (QGraphicsItem *child, q->childItems()) {
+        const auto childItems = q->childItems();
+        for (QGraphicsItem *child : childItems) {
             if (child->d_ptr->isProxyWidget()) {
                 QGraphicsProxyWidget *childProxy = static_cast<QGraphicsProxyWidget *>(child);
                 QWidget * parent = childProxy->widget();
@@ -880,6 +913,19 @@ bool QGraphicsProxyWidget::event(QEvent *event)
         break;
     }
 #endif
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+    case QEvent::TouchEnd: {
+        if (event->spontaneous())
+            qt_sendSpontaneousEvent(d->widget, event);
+        else
+            QApplication::sendEvent(d->widget, event);
+
+        if (event->isAccepted())
+            return true;
+
+        break;
+   }
     default:
         break;
     }
@@ -1156,7 +1202,7 @@ void QGraphicsProxyWidget::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::hoverMoveEvent";
+    qDebug("QGraphicsProxyWidget::hoverMoveEvent");
 #endif
     // Ignore events on the window frame.
     if (!d->widget || !rect().contains(event->pos())) {
@@ -1196,7 +1242,7 @@ void QGraphicsProxyWidget::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::mouseMoveEvent";
+    qDebug("QGraphicsProxyWidget::mouseMoveEvent");
 #endif
     d->sendWidgetMouseEvent(event);
 }
@@ -1208,7 +1254,7 @@ void QGraphicsProxyWidget::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::mousePressEvent";
+    qDebug("QGraphicsProxyWidget::mousePressEvent");
 #endif
     d->sendWidgetMouseEvent(event);
 }
@@ -1220,7 +1266,7 @@ void QGraphicsProxyWidget::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::mouseDoubleClickEvent";
+    qDebug("QGraphicsProxyWidget::mouseDoubleClickEvent");
 #endif
     d->sendWidgetMouseEvent(event);
 }
@@ -1228,12 +1274,12 @@ void QGraphicsProxyWidget::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event
 /*!
     \reimp
 */
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
 void QGraphicsProxyWidget::wheelEvent(QGraphicsSceneWheelEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::wheelEvent";
+    qDebug("QGraphicsProxyWidget::wheelEvent");
 #endif
     if (!d->widget)
         return;
@@ -1271,7 +1317,7 @@ void QGraphicsProxyWidget::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::mouseReleaseEvent";
+    qDebug("QGraphicsProxyWidget::mouseReleaseEvent");
 #endif
     d->sendWidgetMouseEvent(event);
 }
@@ -1283,7 +1329,7 @@ void QGraphicsProxyWidget::keyPressEvent(QKeyEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::keyPressEvent";
+    qDebug("QGraphicsProxyWidget::keyPressEvent");
 #endif
     d->sendWidgetKeyEvent(event);
 }
@@ -1295,7 +1341,7 @@ void QGraphicsProxyWidget::keyReleaseEvent(QKeyEvent *event)
 {
     Q_D(QGraphicsProxyWidget);
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::keyReleaseEvent";
+    qDebug("QGraphicsProxyWidget::keyReleaseEvent");
 #endif
     d->sendWidgetKeyEvent(event);
 }
@@ -1306,7 +1352,7 @@ void QGraphicsProxyWidget::keyReleaseEvent(QKeyEvent *event)
 void QGraphicsProxyWidget::focusInEvent(QFocusEvent *event)
 {
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::focusInEvent";
+    qDebug("QGraphicsProxyWidget::focusInEvent");
 #endif
     Q_D(QGraphicsProxyWidget);
 
@@ -1345,7 +1391,7 @@ void QGraphicsProxyWidget::focusInEvent(QFocusEvent *event)
 void QGraphicsProxyWidget::focusOutEvent(QFocusEvent *event)
 {
 #ifdef GRAPHICSPROXYWIDGET_DEBUG
-    qDebug() << "QGraphicsProxyWidget::focusOutEvent";
+    qDebug("QGraphicsProxyWidget::focusOutEvent");
 #endif
     Q_D(QGraphicsProxyWidget);
     if (d->widget) {
@@ -1491,6 +1537,14 @@ void QGraphicsProxyWidget::paint(QPainter *painter, const QStyleOptionGraphicsIt
 }
 
 /*!
+  \enum QGraphicsProxyWidget::anonymous
+
+  The value returned by the virtual type() function.
+
+  \value Type A graphics proxy widget
+*/
+
+/*!
     \reimp
 */
 int QGraphicsProxyWidget::type() const
@@ -1562,5 +1616,3 @@ QGraphicsProxyWidget *QGraphicsProxyWidget::newProxyWidget(const QWidget *)
 QT_END_NAMESPACE
 
 #include "moc_qgraphicsproxywidget.cpp"
-
-#endif //QT_NO_GRAPHICSVIEW

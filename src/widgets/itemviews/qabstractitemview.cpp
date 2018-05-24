@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +39,6 @@
 
 #include "qabstractitemview.h"
 
-#ifndef QT_NO_ITEMVIEWS
 #include <qpointer.h>
 #include <qapplication.h>
 #include <qclipboard.h>
@@ -42,24 +47,28 @@
 #include <qdrag.h>
 #include <qevent.h>
 #include <qscrollbar.h>
-#include <qwhatsthis.h>
 #include <qtooltip.h>
 #include <qdatetime.h>
+#if QT_CONFIG(lineedit)
 #include <qlineedit.h>
+#endif
+#if QT_CONFIG(spinbox)
 #include <qspinbox.h>
-#include <qtreeview.h>
-#include <qtableview.h>
+#endif
 #include <qheaderview.h>
 #include <qstyleditemdelegate.h>
 #include <private/qabstractitemview_p.h>
 #include <private/qabstractitemmodel_p.h>
 #include <private/qguiapplication_p.h>
+#include <private/qscrollbar_p.h>
 #ifndef QT_NO_ACCESSIBILITY
 #include <qaccessible.h>
 #endif
-#ifndef QT_NO_GESTURES
+#if QT_CONFIG(gestures) && QT_CONFIG(scroller)
 #  include <qscroller.h>
 #endif
+
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -101,7 +110,9 @@ QAbstractItemViewPrivate::QAbstractItemViewPrivate()
         currentIndexSet(false),
         wrapItemText(false),
         delayedPendingLayout(true),
-        moveCursorUpdatedView(false)
+        moveCursorUpdatedView(false),
+        verticalScrollModeSet(false),
+        horizontalScrollModeSet(false)
 {
     keyboardInputTime.invalidate();
 }
@@ -130,6 +141,9 @@ void QAbstractItemViewPrivate::init()
     viewport->setBackgroundRole(QPalette::Base);
 
     q->setAttribute(Qt::WA_InputMethodEnabled);
+
+    verticalScrollMode = static_cast<QAbstractItemView::ScrollMode>(q->style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, q, 0));
+    horizontalScrollMode = static_cast<QAbstractItemView::ScrollMode>(q->style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, q, 0));
 }
 
 void QAbstractItemViewPrivate::setHoverIndex(const QPersistentModelIndex &index)
@@ -160,7 +174,7 @@ void QAbstractItemViewPrivate::checkMouseMove(const QPersistentModelIndex &index
 
         if (index.isValid()) {
             emit q->entered(index);
-#ifndef QT_NO_STATUSTIP
+#if QT_CONFIG(statustip)
             QString statustip = model->data(index, Qt::StatusTipRole).toString();
             if (parent && (shouldClearStatusTip || !statustip.isEmpty())) {
                 QStatusTipEvent tip(statustip);
@@ -169,7 +183,7 @@ void QAbstractItemViewPrivate::checkMouseMove(const QPersistentModelIndex &index
             }
 #endif
         } else {
-#ifndef QT_NO_STATUSTIP
+#if QT_CONFIG(statustip)
             if (parent && shouldClearStatusTip) {
                 QString emptyString;
                 QStatusTipEvent tip( emptyString );
@@ -182,7 +196,7 @@ void QAbstractItemViewPrivate::checkMouseMove(const QPersistentModelIndex &index
     }
 }
 
-#ifndef QT_NO_GESTURES
+#if QT_CONFIG(gestures) && QT_CONFIG(scroller)
 
 // stores and restores the selection and current item when flicking
 void QAbstractItemViewPrivate::_q_scrollerStateChanged()
@@ -205,7 +219,7 @@ void QAbstractItemViewPrivate::_q_scrollerStateChanged()
                 q->selectionModel()->select(oldSelection, QItemSelectionModel::ClearAndSelect);
                 q->selectionModel()->setCurrentIndex(oldCurrent, QItemSelectionModel::NoUpdate);
             }
-            // fall through
+            Q_FALLTHROUGH();
 
         default:
             oldSelection = QItemSelection();
@@ -326,8 +340,8 @@ void QAbstractItemViewPrivate::_q_scrollerStateChanged()
     This enum indicates how the view responds to user selections:
 
     \value SingleSelection  When the user selects an item, any already-selected
-    item becomes unselected, and the user cannot unselect the selected item by
-    clicking on it.
+    item becomes unselected. It is possible for the user to deselect the selected
+    item.
 
     \value ContiguousSelection When the user selects an item in the usual way,
     the selection is cleared and the new item selected. However, if the user
@@ -426,6 +440,11 @@ void QAbstractItemViewPrivate::_q_scrollerStateChanged()
 /*!
     \since 4.2
     \enum QAbstractItemView::ScrollMode
+
+    Describes how the scrollbar should behave. When setting the scroll mode
+    to ScrollPerPixel the single step size will adjust automatically unless
+    it was set explicitly using \l{QAbstractSlider::}{setSingleStep()}.
+    The automatic adjustment can be restored by setting the single step size to -1.
 
     \value ScrollPerItem    The view will scroll the contents one item at a time.
     \value ScrollPerPixel   The view will scroll the contents one pixel at a time.
@@ -758,14 +777,22 @@ void QAbstractItemView::setSelectionModel(QItemSelectionModel *selectionModel)
     Q_ASSERT(selectionModel);
     Q_D(QAbstractItemView);
 
-    if (selectionModel->model() != d->model) {
+    if (Q_UNLIKELY(selectionModel->model() != d->model)) {
         qWarning("QAbstractItemView::setSelectionModel() failed: "
                  "Trying to set a selection model, which works on "
                  "a different model than the view.");
         return;
     }
 
+    QItemSelection oldSelection;
+    QModelIndex oldCurrentIndex;
+
     if (d->selectionModel) {
+        if (d->selectionModel->model() == selectionModel->model()) {
+            oldSelection = d->selectionModel->selection();
+            oldCurrentIndex = d->selectionModel->currentIndex();
+        }
+
         disconnect(d->selectionModel, SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
                    this, SLOT(selectionChanged(QItemSelection,QItemSelection)));
         disconnect(d->selectionModel, SIGNAL(currentChanged(QModelIndex,QModelIndex)),
@@ -779,6 +806,9 @@ void QAbstractItemView::setSelectionModel(QItemSelectionModel *selectionModel)
                 this, SLOT(selectionChanged(QItemSelection,QItemSelection)));
         connect(d->selectionModel, SIGNAL(currentChanged(QModelIndex,QModelIndex)),
                 this, SLOT(currentChanged(QModelIndex,QModelIndex)));
+
+        selectionChanged(d->selectionModel->selection(), oldSelection);
+        currentChanged(d->selectionModel->currentIndex(), oldCurrentIndex);
     }
 }
 
@@ -1113,7 +1143,7 @@ void QAbstractItemView::reset()
 void QAbstractItemView::setRootIndex(const QModelIndex &index)
 {
     Q_D(QAbstractItemView);
-    if (index.isValid() && index.model() != d->model) {
+    if (Q_UNLIKELY(index.isValid() && index.model() != d->model)) {
         qWarning("QAbstractItemView::setRootIndex failed : index must be from the currently set model");
         return;
     }
@@ -1166,9 +1196,9 @@ void QAbstractItemView::selectAll()
 void QAbstractItemView::edit(const QModelIndex &index)
 {
     Q_D(QAbstractItemView);
-    if (!d->isIndexValid(index))
+    if (Q_UNLIKELY(!d->isIndexValid(index)))
         qWarning("edit: index was invalid");
-    if (!edit(index, AllEditTriggers, 0))
+    if (Q_UNLIKELY(!edit(index, AllEditTriggers, 0)))
         qWarning("edit: editing failed");
 }
 
@@ -1225,16 +1255,22 @@ QAbstractItemView::EditTriggers QAbstractItemView::editTriggers() const
     \brief how the view scrolls its contents in the vertical direction
 
     This property controls how the view scroll its contents vertically.
-    Scrolling can be done either per pixel or per item.
+    Scrolling can be done either per pixel or per item. Its default value
+    comes from the style via the QStyle::SH_ItemView_ScrollMode style hint.
 */
 
 void QAbstractItemView::setVerticalScrollMode(ScrollMode mode)
 {
     Q_D(QAbstractItemView);
+    d->verticalScrollModeSet = true;
     if (mode == d->verticalScrollMode)
         return;
     QModelIndex topLeft = indexAt(QPoint(0, 0));
     d->verticalScrollMode = mode;
+    if (mode == ScrollPerItem)
+        verticalScrollBar()->d_func()->itemviewChangeSingleStep(1); // setSingleStep(-1) => step with 1
+    else
+        verticalScrollBar()->setSingleStep(-1); // Ensure that the view can update single step
     updateGeometries(); // update the scroll bars
     scrollTo(topLeft, QAbstractItemView::PositionAtTop);
 }
@@ -1245,19 +1281,34 @@ QAbstractItemView::ScrollMode QAbstractItemView::verticalScrollMode() const
     return d->verticalScrollMode;
 }
 
+void QAbstractItemView::resetVerticalScrollMode()
+{
+    auto sm = static_cast<ScrollMode>(style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, this, 0));
+    setVerticalScrollMode(sm);
+    d_func()->verticalScrollModeSet = false;
+}
+
 /*!
     \since 4.2
     \property QAbstractItemView::horizontalScrollMode
     \brief how the view scrolls its contents in the horizontal direction
 
     This property controls how the view scroll its contents horizontally.
-    Scrolling can be done either per pixel or per item.
+    Scrolling can be done either per pixel or per item. Its default value
+    comes from the style via the QStyle::SH_ItemView_ScrollMode style hint.
 */
 
 void QAbstractItemView::setHorizontalScrollMode(ScrollMode mode)
 {
     Q_D(QAbstractItemView);
+    d->horizontalScrollModeSet = true;
+    if (mode == d->horizontalScrollMode)
+        return;
     d->horizontalScrollMode = mode;
+    if (mode == ScrollPerItem)
+        horizontalScrollBar()->d_func()->itemviewChangeSingleStep(1); // setSingleStep(-1) => step with 1
+    else
+        horizontalScrollBar()->setSingleStep(-1); // Ensure that the view can update single step
     updateGeometries(); // update the scroll bars
 }
 
@@ -1265,6 +1316,13 @@ QAbstractItemView::ScrollMode QAbstractItemView::horizontalScrollMode() const
 {
     Q_D(const QAbstractItemView);
     return d->horizontalScrollMode;
+}
+
+void QAbstractItemView::resetHorizontalScrollMode()
+{
+    auto sm = static_cast<ScrollMode>(style()->styleHint(QStyle::SH_ItemView_ScrollMode, 0, this, 0));
+    setHorizontalScrollMode(sm);
+    d_func()->horizontalScrollModeSet = false;
 }
 
 #ifndef QT_NO_DRAGANDDROP
@@ -1605,6 +1663,10 @@ bool QAbstractItemView::event(QEvent *event)
         break;
     case QEvent::StyleChange:
         doItemsLayout();
+        if (!d->verticalScrollModeSet)
+            resetVerticalScrollMode();
+        if (!d->horizontalScrollModeSet)
+            resetHorizontalScrollMode();
         break;
     case QEvent::FocusOut:
         d->checkPersistentEditorFocus();
@@ -1641,7 +1703,8 @@ bool QAbstractItemView::viewportEvent(QEvent *event)
         d->viewportEnteredNeeded = true;
         break;
     case QEvent::Leave:
-    #ifndef QT_NO_STATUSTIP
+        d->setHoverIndex(QModelIndex()); // If we've left, no hover should be needed anymore
+    #if QT_CONFIG(statustip)
         if (d->shouldClearStatusTip && d->parent) {
             QString empty;
             QStatusTipEvent tip(empty);
@@ -1674,7 +1737,7 @@ bool QAbstractItemView::viewportEvent(QEvent *event)
         break;
     case QEvent::ScrollPrepare:
         executeDelayedItemsLayout();
-#ifndef QT_NO_GESTURES
+#if QT_CONFIG(gestures) && QT_CONFIG(scroller)
         connect(QScroller::scroller(d->viewport), SIGNAL(stateChanged(QScroller::State)), this, SLOT(_q_scrollerStateChanged()), Qt::UniqueConnection);
 #endif
         break;
@@ -1724,13 +1787,18 @@ void QAbstractItemView::mousePressEvent(QMouseEvent *event)
         d->autoScroll = false;
         d->selectionModel->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
         d->autoScroll = autoScroll;
-        QRect rect(visualRect(d->currentSelectionStartIndex).center(), pos);
         if (command.testFlag(QItemSelectionModel::Toggle)) {
             command &= ~QItemSelectionModel::Toggle;
             d->ctrlDragSelectionFlag = d->selectionModel->isSelected(index) ? QItemSelectionModel::Deselect : QItemSelectionModel::Select;
             command |= d->ctrlDragSelectionFlag;
         }
-        setSelection(rect, command);
+
+        if ((command & QItemSelectionModel::Current) == 0) {
+            setSelection(QRect(pos, QSize(1, 1)), command);
+        } else {
+            QRect rect(visualRect(d->currentSelectionStartIndex).center(), pos);
+            setSelection(rect, command);
+        }
 
         // signal handlers may change the model
         emit pressed(index);
@@ -1861,7 +1929,7 @@ void QAbstractItemView::mouseReleaseEvent(QMouseEvent *event)
         QStyleOptionViewItem option = d->viewOptionsV1();
         if (d->pressedAlreadySelected)
             option.state |= QStyle::State_Selected;
-        if ((model()->flags(index) & Qt::ItemIsEnabled)
+        if ((d->model->flags(index) & Qt::ItemIsEnabled)
             && style()->styleHint(QStyle::SH_ItemView_ActivateItemOnSingleClick, &option, this))
             emit activated(index);
     }
@@ -1882,8 +1950,7 @@ void QAbstractItemView::mouseDoubleClickEvent(QMouseEvent *event)
         || (d->pressedIndex != index)) {
         QMouseEvent me(QEvent::MouseButtonPress,
                        event->localPos(), event->windowPos(), event->screenPos(),
-                       event->button(), event->buttons(), event->modifiers());
-        QGuiApplicationPrivate::setMouseEventSource(&me, event->source());
+                       event->button(), event->buttons(), event->modifiers(), event->source());
         mousePressEvent(&me);
         return;
     }
@@ -2127,7 +2194,7 @@ QAbstractItemViewPrivate::position(const QPoint &pos, const QRect &rect, const Q
 {
     QAbstractItemView::DropIndicatorPosition r = QAbstractItemView::OnViewport;
     if (!overwrite) {
-        const int margin = 2;
+        const int margin = qBound(2, qRound(qreal(rect.height()) / 5.5), 12);
         if (pos.y() - rect.top() < margin) {
             r = QAbstractItemView::AboveItem;
         } else if (rect.bottom() - pos.y() < margin) {
@@ -2163,7 +2230,7 @@ void QAbstractItemView::focusInEvent(QFocusEvent *event)
     QAbstractScrollArea::focusInEvent(event);
 
     const QItemSelectionModel* model = selectionModel();
-    const bool currentIndexValid = currentIndex().isValid();
+    bool currentIndexValid = currentIndex().isValid();
 
     if (model
         && !d->currentIndexSet
@@ -2171,19 +2238,16 @@ void QAbstractItemView::focusInEvent(QFocusEvent *event)
         bool autoScroll = d->autoScroll;
         d->autoScroll = false;
         QModelIndex index = moveCursor(MoveNext, Qt::NoModifier); // first visible index
-        if (index.isValid() && d->isIndexEnabled(index) && event->reason() != Qt::MouseFocusReason)
+        if (index.isValid() && d->isIndexEnabled(index) && event->reason() != Qt::MouseFocusReason) {
             selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+            currentIndexValid = true;
+        }
         d->autoScroll = autoScroll;
     }
 
-    if (model && currentIndexValid) {
-        if (currentIndex().flags() != Qt::ItemIsEditable)
-            setAttribute(Qt::WA_InputMethodEnabled, false);
-        else
-            setAttribute(Qt::WA_InputMethodEnabled);
-    }
-
-    if (!currentIndexValid)
+    if (model && currentIndexValid)
+        setAttribute(Qt::WA_InputMethodEnabled, (currentIndex().flags() & Qt::ItemIsEditable));
+    else if (!currentIndexValid)
         setAttribute(Qt::WA_InputMethodEnabled, false);
 
     d->viewport->update();
@@ -2191,7 +2255,7 @@ void QAbstractItemView::focusInEvent(QFocusEvent *event)
 
 /*!
     This function is called with the given \a event when the widget
-    looses the focus. By default, the event is ignored.
+    loses the focus. By default, the event is ignored.
 
     \sa clearFocus(), focusInEvent()
 */
@@ -2386,7 +2450,7 @@ void QAbstractItemView::keyPressEvent(QKeyEvent *event)
         }
 #endif
         break;
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     case Qt::Key_Enter:
     case Qt::Key_Return:
         // Propagate the enter if you couldn't edit the item and there are no
@@ -2412,11 +2476,13 @@ void QAbstractItemView::keyPressEvent(QKeyEvent *event)
         break;
 #endif
     default: {
+#ifndef QT_NO_SHORTCUT
        if (event == QKeySequence::SelectAll && selectionMode() != NoSelection) {
             selectAll();
             break;
         }
-#ifdef Q_OS_MAC
+#endif
+#ifdef Q_OS_OSX
         if (event->key() == Qt::Key_O && event->modifiers() & Qt::ControlModifier && currentIndex().isValid()) {
             emit activated(currentIndex());
             break;
@@ -2545,12 +2611,11 @@ QModelIndexList QAbstractItemView::selectedIndexes() const
     QModelIndexList indexes;
     if (d->selectionModel) {
         indexes = d->selectionModel->selectedIndexes();
-        QList<QModelIndex>::iterator it = indexes.begin();
-        while (it != indexes.end())
-            if (isIndexHidden(*it))
-                it = indexes.erase(it);
-            else
-                ++it;
+        auto isHidden = [this](const QModelIndex &idx) {
+            return isIndexHidden(idx);
+        };
+        const auto end = indexes.end();
+        indexes.erase(std::remove_if(indexes.begin(), end, isHidden), end);
     }
     return indexes;
 }
@@ -2637,6 +2702,11 @@ void QAbstractItemView::updateEditorGeometries()
     Q_D(QAbstractItemView);
     if(d->editorIndexHash.isEmpty())
         return;
+    if (d->delayedPendingLayout) {
+        // doItemsLayout() will end up calling this function again
+        d->executePostedLayout();
+        return;
+    }
     QStyleOptionViewItem option = d->viewOptionsV1();
     QEditorIndexHash::iterator it = d->editorIndexHash.begin();
     QWidgetList editorsToRelease;
@@ -2919,7 +2989,11 @@ void QAbstractItemView::keyboardSearch(const QString &search)
                         : d->model->index(0, 0, d->root);
     bool skipRow = false;
     bool keyboardTimeWasValid = d->keyboardInputTime.isValid();
-    qint64 keyboardInputTimeElapsed = d->keyboardInputTime.restart();
+    qint64 keyboardInputTimeElapsed;
+    if (keyboardTimeWasValid)
+        keyboardInputTimeElapsed = d->keyboardInputTime.restart();
+    else
+        d->keyboardInputTime.start();
     if (search.isEmpty() || !keyboardTimeWasValid
         || keyboardInputTimeElapsed > QApplication::keyboardInputInterval()) {
         d->keyboardInput = search;
@@ -3017,13 +3091,12 @@ int QAbstractItemView::sizeHintForRow(int row) const
     QStyleOptionViewItem option = d->viewOptionsV1();
     int height = 0;
     int colCount = d->model->columnCount(d->root);
-    QModelIndex index;
     for (int c = 0; c < colCount; ++c) {
-        index = d->model->index(row, c, d->root);
+        const QModelIndex index = d->model->index(row, c, d->root);
         if (QWidget *editor = d->editorForIndex(index).widget.data())
             height = qMax(height, editor->height());
-        int hint = d->delegateForIndex(index)->sizeHint(option, index).height();
-        height = qMax(height, hint);
+        if (const QAbstractItemDelegate *delegate = d->delegateForIndex(index))
+            height = qMax(height, delegate->sizeHint(option, index).height());
     }
     return height;
 }
@@ -3048,13 +3121,12 @@ int QAbstractItemView::sizeHintForColumn(int column) const
     QStyleOptionViewItem option = d->viewOptionsV1();
     int width = 0;
     int rows = d->model->rowCount(d->root);
-    QModelIndex index;
     for (int r = 0; r < rows; ++r) {
-        index = d->model->index(r, column, d->root);
+        const QModelIndex index = d->model->index(r, column, d->root);
         if (QWidget *editor = d->editorForIndex(index).widget.data())
             width = qMax(width, editor->sizeHint().width());
-        int hint = d->delegateForIndex(index)->sizeHint(option, index).width();
-        width = qMax(width, hint);
+        if (const QAbstractItemDelegate *delegate = d->delegateForIndex(index))
+            width = qMax(width, delegate->sizeHint(option, index).width());
     }
     return width;
 }
@@ -3063,7 +3135,7 @@ int QAbstractItemView::sizeHintForColumn(int column) const
     Opens a persistent editor on the item at the given \a index.
     If no editor exists, the delegate will create a new editor.
 
-    \sa closePersistentEditor()
+    \sa closePersistentEditor(), isPersistentEditorOpen()
 */
 void QAbstractItemView::openPersistentEditor(const QModelIndex &index)
 {
@@ -3082,7 +3154,7 @@ void QAbstractItemView::openPersistentEditor(const QModelIndex &index)
 /*!
     Closes the persistent editor for the item at the given \a index.
 
-    \sa openPersistentEditor()
+    \sa openPersistentEditor(), isPersistentEditorOpen()
 */
 void QAbstractItemView::closePersistentEditor(const QModelIndex &index)
 {
@@ -3094,6 +3166,19 @@ void QAbstractItemView::closePersistentEditor(const QModelIndex &index)
         d->removeEditor(editor);
         d->releaseEditor(editor, index);
     }
+}
+
+/*!
+    \since 5.10
+
+    Returns whether a persistent editor is open for the item at index \a index.
+
+    \sa openPersistentEditor(), closePersistentEditor()
+*/
+bool QAbstractItemView::isPersistentEditorOpen(const QModelIndex &index) const
+{
+    Q_D(const QAbstractItemView);
+    return d->editorForIndex(index).widget;
 }
 
 /*!
@@ -3132,12 +3217,14 @@ void QAbstractItemView::setIndexWidget(const QModelIndex &index, QWidget *widget
     if (QWidget *oldWidget = indexWidget(index)) {
         d->persistent.remove(oldWidget);
         d->removeEditor(oldWidget);
+        oldWidget->removeEventFilter(this);
         oldWidget->deleteLater();
     }
     if (widget) {
         widget->setParent(viewport());
         d->persistent.insert(widget);
         d->addEditor(index, widget, true);
+        widget->installEventFilter(this);
         widget->show();
         dataChanged(index, index); // update the geometry
         if (!d->delayedPendingLayout)
@@ -3577,6 +3664,7 @@ void QAbstractItemView::currentChanged(const QModelIndex &current, const QModelI
             d->shouldScrollToCurrentOnShow = d->autoScroll;
         }
     }
+    setAttribute(Qt::WA_InputMethodEnabled, (current.isValid() && (current.flags() & Qt::ItemIsEditable)));
 }
 
 #ifndef QT_NO_DRAGANDDROP
@@ -3605,6 +3693,9 @@ void QAbstractItemView::startDrag(Qt::DropActions supportedActions)
             defaultDropAction = Qt::CopyAction;
         if (drag->exec(supportedActions, defaultDropAction) == Qt::MoveAction)
             d->clearOrRemove();
+        // Reset the drop indicator
+        d->dropIndicatorRect = QRect();
+        d->dropIndicatorPosition = OnItem;
     }
 }
 #endif // QT_NO_DRAGANDDROP
@@ -3621,7 +3712,7 @@ QStyleOptionViewItem QAbstractItemView::viewOptions() const
     option.state &= ~QStyle::State_MouseOver;
     option.font = font();
 
-#ifndef Q_DEAD_CODE_FROM_QT4_MAC
+#if 1 // Used to be excluded in Qt4 for Q_WS_MAC
     // On mac the focus appearance follows window activation
     // not widget activation
     if (!hasFocus())
@@ -3803,7 +3894,7 @@ void QAbstractItemView::doAutoScroll()
     int horizontalValue = horizontalScroll->value();
 
     QPoint pos = d->viewport->mapFromGlobal(QCursor::pos());
-    QRect area = static_cast<QAbstractItemView*>(d->viewport)->d_func()->clipRect(); // access QWidget private by bending C++ rules
+    QRect area = QWidgetPrivate::get(d->viewport)->clipRect();
 
     // do the scrolling if we are in the scroll margins
     if (pos.y() - area.top() < margin)
@@ -3957,6 +4048,7 @@ QItemSelectionModel::SelectionFlags QAbstractItemViewPrivate::extendedSelectionC
             switch (static_cast<const QKeyEvent*>(event)->key()) {
             case Qt::Key_Backtab:
                 modifiers = modifiers & ~Qt::ShiftModifier; // special case for backtab
+                Q_FALLTHROUGH();
             case Qt::Key_Down:
             case Qt::Key_Up:
             case Qt::Key_Left:
@@ -4140,11 +4232,11 @@ QWidget *QAbstractItemViewPrivate::editor(const QModelIndex &index,
             QWidget *focusWidget = w;
             while (QWidget *fp = focusWidget->focusProxy())
                 focusWidget = fp;
-#ifndef QT_NO_LINEEDIT
+#if QT_CONFIG(lineedit)
             if (QLineEdit *le = qobject_cast<QLineEdit*>(focusWidget))
                 le->selectAll();
 #endif
-#ifndef QT_NO_SPINBOX
+#if QT_CONFIG(spinbox)
             if (QSpinBox *sb = qobject_cast<QSpinBox*>(focusWidget))
                 sb->selectAll();
             else if (QDoubleSpinBox *dsb = qobject_cast<QDoubleSpinBox*>(focusWidget))
@@ -4257,6 +4349,12 @@ const QEditorInfo & QAbstractItemViewPrivate::editorForIndex(const QModelIndex &
     return it.value();
 }
 
+bool QAbstractItemViewPrivate::hasEditor(const QModelIndex &index) const
+{
+    // Search's implicit cast (QModelIndex to QPersistentModelIndex) is slow; use cheap pre-test to avoid when we can.
+    return !indexEditorHash.isEmpty() && indexEditorHash.contains(index);
+}
+
 QModelIndex QAbstractItemViewPrivate::indexForEditor(QWidget *editor) const
 {
     // do not try to search to avoid slow implicit cast from QModelIndex to QPersistentModelIndex
@@ -4272,9 +4370,8 @@ QModelIndex QAbstractItemViewPrivate::indexForEditor(QWidget *editor) const
 
 void QAbstractItemViewPrivate::removeEditor(QWidget *editor)
 {
-   QEditorIndexHash::iterator it = editorIndexHash.find(editor);
-    if (it != editorIndexHash.end())
-    {
+    const auto it = editorIndexHash.constFind(editor);
+    if (it != editorIndexHash.cend()) {
         indexEditorHash.remove(it.value());
         editorIndexHash.erase(it);
     }
@@ -4333,11 +4430,10 @@ QItemViewPaintPairs QAbstractItemViewPrivate::draggablePaintPairs(const QModelIn
     QRect &rect = *r;
     const QRect viewportRect = viewport->rect();
     QItemViewPaintPairs ret;
-    for (int i = 0; i < indexes.count(); ++i) {
-        const QModelIndex &index = indexes.at(i);
+    for (const auto &index : indexes) {
         const QRect current = q->visualRect(index);
         if (current.intersects(viewportRect)) {
-            ret += qMakePair(current, index);
+            ret.append({current, index});
             rect |= current;
         }
     }
@@ -4351,14 +4447,27 @@ QPixmap QAbstractItemViewPrivate::renderToPixmap(const QModelIndexList &indexes,
     QItemViewPaintPairs paintPairs = draggablePaintPairs(indexes, r);
     if (paintPairs.isEmpty())
         return QPixmap();
-    QPixmap pixmap(r->size());
+
+    qreal scale = 1.0f;
+
+    Q_Q(const QAbstractItemView);
+    QWidget *window = q->window();
+    if (window) {
+        QWindow *windowHandle = window->windowHandle();
+        if (windowHandle)
+            scale = windowHandle->devicePixelRatio();
+    }
+
+    QPixmap pixmap(r->size() * scale);
+    pixmap.setDevicePixelRatio(scale);
+
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     QStyleOptionViewItem option = viewOptionsV1();
     option.state |= QStyle::State_Selected;
     for (int j = 0; j < paintPairs.count(); ++j) {
-        option.rect = paintPairs.at(j).first.translated(-r->topLeft());
-        const QModelIndex &current = paintPairs.at(j).second;
+        option.rect = paintPairs.at(j).rect.translated(-r->topLeft());
+        const QModelIndex &current = paintPairs.at(j).index;
         adjustViewOptionsForIndex(&option, current);
         delegateForIndex(current)->paint(&painter, option, current);
     }
@@ -4383,16 +4492,34 @@ QModelIndexList QAbstractItemViewPrivate::selectedDraggableIndexes() const
 {
     Q_Q(const QAbstractItemView);
     QModelIndexList indexes = q->selectedIndexes();
-    for(int i = indexes.count() - 1 ; i >= 0; --i) {
-        if (!isIndexDragEnabled(indexes.at(i)))
-            indexes.removeAt(i);
-    }
+    auto isNotDragEnabled = [this](const QModelIndex &index) {
+        return !isIndexDragEnabled(index);
+    };
+    indexes.erase(std::remove_if(indexes.begin(), indexes.end(),
+                                 isNotDragEnabled),
+                  indexes.end());
     return indexes;
 }
 
+/*!
+    \reimp
+*/
+
+bool QAbstractItemView::eventFilter(QObject *object, QEvent *event)
+{
+    Q_D(QAbstractItemView);
+    if (object == this || object == viewport() || event->type() != QEvent::FocusIn)
+        return QAbstractScrollArea::eventFilter(object, event);
+    QWidget *widget = qobject_cast<QWidget *>(object);
+    // If it is not a persistent widget then we did not install
+    // the event filter on it, so assume a base implementation is
+    // filtering
+    if (!widget || !d->persistent.contains(widget))
+        return QAbstractScrollArea::eventFilter(object, event);
+    setCurrentIndex(d->indexForEditor(widget));
+    return false;
+}
 
 QT_END_NAMESPACE
 
 #include "moc_qabstractitemview.cpp"
-
-#endif // QT_NO_ITEMVIEWS

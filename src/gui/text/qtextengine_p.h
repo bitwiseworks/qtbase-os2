@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,7 +51,7 @@
 // We mean it.
 //
 
-#include "QtCore/qglobal.h"
+#include <QtGui/private/qtguiglobal_p.h>
 #include "QtCore/qstring.h"
 #include "QtCore/qvarlengtharray.h"
 #include "QtCore/qnamespace.h"
@@ -107,6 +113,22 @@ struct Q_GUI_EXPORT glyph_metrics_t
 
     glyph_metrics_t transformed(const QTransform &xform) const;
     inline bool isValid() const {return x != 100000 && y != 100000;}
+
+    inline QFixed leftBearing() const
+    {
+        if (!isValid())
+            return QFixed();
+
+        return x;
+    }
+
+    inline QFixed rightBearing() const
+    {
+        if (!isValid())
+            return QFixed();
+
+        return xoff - x - width;
+    }
 };
 Q_DECLARE_TYPEINFO(glyph_metrics_t, Q_PRIMITIVE_TYPE);
 
@@ -124,9 +146,17 @@ struct Q_AUTOTEST_EXPORT QScriptAnalysis
         TabOrObject = Tab,
         Object = 7
     };
-    unsigned short script    : 7;
-    unsigned short bidiLevel : 6;  // Unicode Bidi algorithm embedding level (0-61)
-    unsigned short flags     : 3;
+    enum BidiFlags {
+        BidiBN = 1,
+        BidiMaybeResetToParagraphLevel = 2,
+        BidiResetToParagraphLevel = 4,
+        BidiMirrored = 8
+    };
+    unsigned short script    : 8;
+    unsigned short flags     : 4;
+    unsigned short bidiFlags : 4;
+    unsigned short bidiLevel : 8;  // Unicode Bidi algorithm embedding level (0-125)
+    QChar::Direction bidiDirection : 8; // used when running the bidi algorithm
     inline bool operator == (const QScriptAnalysis &other) const {
         return script == other.script && bidiLevel == other.bidiLevel && flags == other.flags;
     }
@@ -158,6 +188,7 @@ struct QGlyphAttributes {
     uchar reserved      : 2;
 };
 Q_STATIC_ASSERT(sizeof(QGlyphAttributes) == 1);
+Q_DECLARE_TYPEINFO(QGlyphAttributes, Q_PRIMITIVE_TYPE);
 
 struct QGlyphLayout
 {
@@ -213,13 +244,13 @@ struct QGlyphLayout
             last = numGlyphs;
         if (first == 0 && last == numGlyphs
             && reinterpret_cast<char *>(offsets + numGlyphs) == reinterpret_cast<char *>(glyphs)) {
-            memset(offsets, 0, (numGlyphs * SpaceNeeded));
+            memset(static_cast<void *>(offsets), 0, (numGlyphs * SpaceNeeded));
         } else {
             const int num = last - first;
-            memset(offsets + first, 0, num * sizeof(QFixedPoint));
+            memset(static_cast<void *>(offsets + first), 0, num * sizeof(QFixedPoint));
             memset(glyphs + first, 0, num * sizeof(glyph_t));
-            memset(advances + first, 0, num * sizeof(QFixed));
-            memset(justifications + first, 0, num * sizeof(QGlyphJustification));
+            memset(static_cast<void *>(advances + first), 0, num * sizeof(QFixed));
+            memset(static_cast<void *>(justifications + first), 0, num * sizeof(QGlyphJustification));
             memset(attributes + first, 0, num * sizeof(QGlyphAttributes));
         }
     }
@@ -300,13 +331,9 @@ public:
     QFontEngine *fontEngine;
 };
 
-struct Q_AUTOTEST_EXPORT QScriptItem
+struct QScriptItem
 {
-    inline QScriptItem()
-        : position(0),
-          num_glyphs(0), descent(-1), ascent(-1), leading(-1), width(-1),
-          glyph_data_offset(0) {}
-    inline QScriptItem(int p, const QScriptAnalysis &a)
+    Q_DECL_CONSTEXPR QScriptItem(int p, QScriptAnalysis a) Q_DECL_NOTHROW
         : position(p), analysis(a),
           num_glyphs(0), descent(-1), ascent(-1), leading(-1), width(-1),
           glyph_data_offset(0) {}
@@ -319,11 +346,12 @@ struct Q_AUTOTEST_EXPORT QScriptItem
     QFixed leading;
     QFixed width;
     int glyph_data_offset;
-    QFixed height() const { return ascent + descent; }
+    Q_DECL_CONSTEXPR QFixed height() const Q_DECL_NOTHROW { return ascent + descent; }
+private:
+    friend class QVector<QScriptItem>;
+    QScriptItem() {}; // for QVector, don't use
 };
-
-
-Q_DECLARE_TYPEINFO(QScriptItem, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QScriptItem, Q_PRIMITIVE_TYPE);
 
 typedef QVector<QScriptItem> QScriptItemArray;
 
@@ -351,8 +379,7 @@ struct Q_AUTOTEST_EXPORT QScriptLine
     uint leadingIncluded : 1;
     QFixed height() const { return ascent + descent
                             + (leadingIncluded?  qMax(QFixed(),leading) : QFixed()); }
-    QFixed base() const { return ascent
-                          + (leadingIncluded ? qMax(QFixed(),leading) : QFixed()); }
+    QFixed base() const { return ascent; }
     void setDefaultHeight(QTextEngine *eng);
     void operator+=(const QScriptLine &other);
 };
@@ -400,6 +427,7 @@ public:
     };
 
     struct ItemDecoration {
+        ItemDecoration() {} // for QVector, don't use
         ItemDecoration(qreal x1, qreal x2, qreal y, const QPen &pen):
             x1(x1), x2(x2), y(y), pen(pen) {}
 
@@ -409,7 +437,7 @@ public:
         QPen pen;
     };
 
-    typedef QList<ItemDecoration> ItemDecorationList;
+    typedef QVector<ItemDecoration> ItemDecorationList;
 
     QTextEngine();
     QTextEngine(const QString &str, const QFont &f);
@@ -496,7 +524,7 @@ public:
 
     void freeMemory();
 
-    int findItem(int strPos) const;
+    int findItem(int strPos, int firstItem = 0) const;
     inline QTextFormatCollection *formatCollection() const {
         if (block.docHandle())
             return block.docHandle()->formatCollection();
@@ -570,9 +598,9 @@ public:
 
     inline bool hasFormats() const
     { return block.docHandle() || (specialData && !specialData->formats.isEmpty()); }
-    inline QList<QTextLayout::FormatRange> formats() const
-    { return specialData ? specialData->formats : QList<QTextLayout::FormatRange>(); }
-    void setFormats(const QList<QTextLayout::FormatRange> &formats);
+    inline QVector<QTextLayout::FormatRange> formats() const
+    { return specialData ? specialData->formats : QVector<QTextLayout::FormatRange>(); }
+    void setFormats(const QVector<QTextLayout::FormatRange> &formats);
 
 private:
     static void init(QTextEngine *e);
@@ -580,7 +608,7 @@ private:
     struct SpecialData {
         int preeditPosition;
         QString preeditText;
-        QList<QTextLayout::FormatRange> formats;
+        QVector<QTextLayout::FormatRange> formats;
         QVector<QTextCharFormat> resolvedFormats;
         // only used when no docHandle is available
         QScopedPointer<QTextFormatCollection> formatCollection;
@@ -626,8 +654,14 @@ private:
     void setBoundary(int strPos) const;
     void addRequiredBoundaries() const;
     void shapeText(int item) const;
-#ifdef QT_ENABLE_HARFBUZZ_NG
-    int shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, const QVector<uint> &itemBoundaries, bool kerningEnabled) const;
+#if QT_CONFIG(harfbuzz)
+    int shapeTextWithHarfbuzzNG(const QScriptItem &si,
+                                const ushort *string,
+                                int itemLength,
+                                QFontEngine *fontEngine,
+                                const QVector<uint> &itemBoundaries,
+                                bool kerningEnabled,
+                                bool hasLetterSpacing) const;
 #endif
     int shapeTextWithHarfbuzz(const QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, const QVector<uint> &itemBoundaries, bool kerningEnabled) const;
 
@@ -643,6 +677,7 @@ public:
     LayoutData _layoutData;
     void *_memory[MemSize];
 };
+Q_DECLARE_TYPEINFO(QTextEngine::ItemDecoration, Q_MOVABLE_TYPE);
 
 struct QTextLineItemIterator
 {

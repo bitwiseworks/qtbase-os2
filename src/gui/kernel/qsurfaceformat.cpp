@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,6 +41,8 @@
 
 #include <QtCore/qatomic.h>
 #include <QtCore/QDebug>
+#include <QOpenGLContext>
+#include <QtGui/qguiapplication.h>
 
 #ifdef major
 #undef major
@@ -65,6 +73,7 @@ public:
         , major(2)
         , minor(0)
         , swapInterval(1) // default to vsync
+        , colorSpace(QSurfaceFormat::DefaultColorSpace)
     {
     }
 
@@ -83,7 +92,8 @@ public:
           profile(other->profile),
           major(other->major),
           minor(other->minor),
-          swapInterval(other->swapInterval)
+          swapInterval(other->swapInterval),
+          colorSpace(other->colorSpace)
     {
     }
 
@@ -102,6 +112,7 @@ public:
     int major;
     int minor;
     int swapInterval;
+    QSurfaceFormat::ColorSpace colorSpace;
 };
 
 /*!
@@ -116,6 +127,12 @@ public:
     contains surface configuration parameters such as OpenGL profile and
     version for rendering, whether or not to enable stereo buffers, and swap
     behaviour.
+
+    \note When troubleshooting context or window format issues, it can be
+    helpful to enable the logging category \c{qt.qpa.gl}. Depending on the
+    platform, this may print useful debug information when it comes to OpenGL
+    initialization and the native visual or framebuffer configurations which
+    QSurfaceFormat gets mapped to.
 */
 
 /*!
@@ -189,6 +206,22 @@ public:
     \value CoreProfile          Functionality deprecated in OpenGL version 3.0 is not available.
     \value CompatibilityProfile Functionality from earlier OpenGL versions is available.
 */
+
+/*!
+    \enum QSurfaceFormat::ColorSpace
+
+    This enum is used to specify the preferred color space, controlling if the
+    window's associated default framebuffer is able to do updates and blending
+    in a given encoding instead of the standard linear operations.
+
+    \value DefaultColorSpace The default, unspecified color space.
+
+    \value sRGBColorSpace When \c{GL_ARB_framebuffer_sRGB} or
+    \c{GL_EXT_framebuffer_sRGB} is supported by the platform and this value is
+    set, the window will be created with an sRGB-capable default
+    framebuffer. Note that some platforms may return windows with a sRGB-capable
+    default framebuffer even when not requested explicitly.
+ */
 
 /*!
     Constructs a default initialized QSurfaceFormat.
@@ -276,11 +309,8 @@ QSurfaceFormat::~QSurfaceFormat()
 void QSurfaceFormat::setStereo(bool enable)
 {
     QSurfaceFormat::FormatOptions newOptions = d->opts;
-    if (enable) {
-        newOptions |= QSurfaceFormat::StereoBuffers;
-    } else {
-        newOptions &= ~QSurfaceFormat::StereoBuffers;
-    }
+    newOptions.setFlag(QSurfaceFormat::StereoBuffers, enable);
+
     if (int(newOptions) != int(d->opts)) {
         detach();
         d->opts = newOptions;
@@ -731,6 +761,47 @@ int QSurfaceFormat::swapInterval() const
     return d->swapInterval;
 }
 
+/*!
+    Sets the preferred \a colorSpace.
+
+    For example, this allows requesting windows with default framebuffers that
+    are sRGB-capable on platforms that support it.
+
+    \note When the requested color space is not supported by the platform, the
+    request is ignored. Query the QSurfaceFormat after window creation to verify
+    if the color space request could be honored or not.
+
+    \note This setting controls if the default framebuffer of the window is
+    capable of updates and blending in a given color space. It does not change
+    applications' output by itself. The applications' rendering code will still
+    have to opt in via the appropriate OpenGL calls to enable updates and
+    blending to be performed in the given color space instead of using the
+    standard linear operations.
+
+    \since 5.10
+
+    \sa colorSpace()
+ */
+void QSurfaceFormat::setColorSpace(ColorSpace colorSpace)
+{
+    if (d->colorSpace != colorSpace) {
+        detach();
+        d->colorSpace = colorSpace;
+    }
+}
+
+/*!
+    \return the color space.
+
+    \since 5.10
+
+    \sa setColorSpace()
+*/
+QSurfaceFormat::ColorSpace QSurfaceFormat::colorSpace() const
+{
+    return d->colorSpace;
+}
+
 Q_GLOBAL_STATIC(QSurfaceFormat, qt_default_surface_format)
 
 /*!
@@ -758,6 +829,16 @@ Q_GLOBAL_STATIC(QSurfaceFormat, qt_default_surface_format)
  */
 void QSurfaceFormat::setDefaultFormat(const QSurfaceFormat &format)
 {
+#ifndef QT_NO_OPENGL
+    if (qApp) {
+        QOpenGLContext *globalContext = QOpenGLContext::globalShareContext();
+        if (globalContext && globalContext->isValid()) {
+            qWarning("Warning: Setting a new default format with a different version or profile "
+                     "after the global shared context is created may cause issues with context "
+                     "sharing.");
+        }
+    }
+#endif
     *qt_default_surface_format() = format;
 }
 
@@ -826,6 +907,7 @@ QDebug operator<<(QDebug dbg, const QSurfaceFormat &f)
                   << ", samples " << d->numSamples
                   << ", swapBehavior " << d->swapBehavior
                   << ", swapInterval " << d->swapInterval
+                  << ", colorSpace " << d->colorSpace
                   << ", profile  " << d->profile
                   << ')';
 

@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2015 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Tobias Koenig <tobias.koenig@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -112,12 +118,12 @@ void HaikuWindowProxy::zoomByQt()
 
 QHaikuWindow::QHaikuWindow(QWindow *window)
     : QPlatformWindow(window)
-    , m_window(Q_NULLPTR)
+    , m_window(nullptr)
     , m_windowState(Qt::WindowNoState)
 {
     const QRect rect = initialGeometry(window, window->geometry(), DefaultWindowWidth, DefaultWindowHeight);
 
-    HaikuWindowProxy *haikuWindow = new HaikuWindowProxy(window, rect, Q_NULLPTR);
+    HaikuWindowProxy *haikuWindow = new HaikuWindowProxy(window, rect, nullptr);
     connect(haikuWindow, SIGNAL(moved(QPoint)), SLOT(haikuWindowMoved(QPoint)));
     connect(haikuWindow, SIGNAL(resized(QSize,bool)), SLOT(haikuWindowResized(QSize,bool)));
     connect(haikuWindow, SIGNAL(windowActivated(bool)), SLOT(haikuWindowActivated(bool)));
@@ -127,9 +133,10 @@ QHaikuWindow::QHaikuWindow(QWindow *window)
 
     m_window = haikuWindow;
 
-    if (!m_window)
+    if (Q_UNLIKELY(!m_window))
         qFatal("QHaikuWindow: failed to create window");
 
+    setGeometry(rect);
     setWindowFlags(window->flags());
 }
 
@@ -138,7 +145,7 @@ QHaikuWindow::~QHaikuWindow()
     m_window->LockLooper();
     m_window->Quit();
 
-    m_window = Q_NULLPTR;
+    m_window = nullptr;
 }
 
 void QHaikuWindow::setGeometry(const QRect &rect)
@@ -164,13 +171,13 @@ void QHaikuWindow::setVisible(bool visible)
 {
     if (visible) {
         m_window->Show();
+
+        window()->requestActivate();
+
+        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), window()->geometry().size()));
     } else {
         m_window->Hide();
     }
-
-    window()->requestActivate();
-
-    QWindowSystemInterface::handleExposeEvent(window(), window()->geometry());
 }
 
 bool QHaikuWindow::isExposed() const
@@ -198,26 +205,23 @@ void QHaikuWindow::requestActivateWindow()
     m_window->Activate(true);
 }
 
-void QHaikuWindow::setWindowState(Qt::WindowState state)
+void QHaikuWindow::setWindowState(Qt::WindowStates state)
 {
     if (m_windowState == state)
         return;
 
-    const Qt::WindowState oldState = m_windowState;
+    const Qt::WindowStates oldState = m_windowState;
 
     m_windowState = state;
 
-    if (m_windowState == Qt::WindowMaximized) {
-        m_window->zoomByQt();
-    } else if (m_windowState == Qt::WindowMinimized) {
+    if (m_windowState & Qt::WindowMinimized)
         m_window->Minimize(true);
-    } else if (m_windowState == Qt::WindowNoState) {
-        if (oldState == Qt::WindowMaximized)
-            m_window->zoomByQt(); // undo zoom
-
-        if (oldState == Qt::WindowMinimized)
-            m_window->Minimize(false); // undo minimize
-    }
+    else if (m_windowState & Qt::WindowMaximized)
+        m_window->zoomByQt();
+    else if (oldState & Qt::WindowMinimized)
+        m_window->Minimize(false); // undo minimize
+    else if (oldState & Qt::WindowMaximized)
+        m_window->zoomByQt(); // undo zoom
 }
 
 void QHaikuWindow::setWindowFlags(Qt::WindowFlags flags)
@@ -305,22 +309,16 @@ void QHaikuWindow::haikuWindowMoved(const QPoint &pos)
 {
     const QRect newGeometry(pos, geometry().size());
 
-    QPlatformWindow::setGeometry(newGeometry);
-    QWindowSystemInterface::setSynchronousWindowsSystemEvents(true);
     QWindowSystemInterface::handleGeometryChange(window(), newGeometry);
-    QWindowSystemInterface::handleExposeEvent(window(), newGeometry);
-    QWindowSystemInterface::setSynchronousWindowsSystemEvents(false);
+    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), newGeometry.size()));
 }
 
 void QHaikuWindow::haikuWindowResized(const QSize &size, bool zoomInProgress)
 {
     const QRect newGeometry(geometry().topLeft(), size);
 
-    QPlatformWindow::setGeometry(newGeometry);
-    QWindowSystemInterface::setSynchronousWindowsSystemEvents(true);
     QWindowSystemInterface::handleGeometryChange(window(), newGeometry);
-    QWindowSystemInterface::handleExposeEvent(window(), newGeometry);
-    QWindowSystemInterface::setSynchronousWindowsSystemEvents(false);
+    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), newGeometry.size()));
 
     if ((m_windowState == Qt::WindowMaximized) && !zoomInProgress) {
         // the user has resized the window while maximized -> reset maximized flag
@@ -332,7 +330,7 @@ void QHaikuWindow::haikuWindowResized(const QSize &size, bool zoomInProgress)
 
 void QHaikuWindow::haikuWindowActivated(bool activated)
 {
-    QWindowSystemInterface::handleWindowActivated(activated ? window() : Q_NULLPTR);
+    QWindowSystemInterface::handleWindowActivated(activated ? window() : nullptr);
 }
 
 void QHaikuWindow::haikuWindowMinimized(bool minimize)

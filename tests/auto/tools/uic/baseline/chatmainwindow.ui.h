@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'chatmainwindow.ui'
 **
-** Created by: Qt User Interface Compiler version 5.0.0
+** Created by: Qt User Interface Compiler version 5.9.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -12,9 +12,7 @@
 #include <QtCore/QVariant>
 #include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMainWindow>
@@ -149,25 +147,29 @@ public:
 
     void retranslateUi(QMainWindow *ChatMainWindow)
     {
-        ChatMainWindow->setWindowTitle(QApplication::translate("ChatMainWindow", "Qt D-Bus Chat", 0));
-        actionQuit->setText(QApplication::translate("ChatMainWindow", "Quit", 0));
-        actionQuit->setShortcut(QApplication::translate("ChatMainWindow", "Ctrl+Q", 0));
-        actionAboutQt->setText(QApplication::translate("ChatMainWindow", "About Qt...", 0));
-        actionChangeNickname->setText(QApplication::translate("ChatMainWindow", "Change nickname...", 0));
-        actionChangeNickname->setShortcut(QApplication::translate("ChatMainWindow", "Ctrl+N", 0));
+        ChatMainWindow->setWindowTitle(QApplication::translate("ChatMainWindow", "Qt D-Bus Chat", nullptr));
+        actionQuit->setText(QApplication::translate("ChatMainWindow", "Quit", nullptr));
+#ifndef QT_NO_SHORTCUT
+        actionQuit->setShortcut(QApplication::translate("ChatMainWindow", "Ctrl+Q", nullptr));
+#endif // QT_NO_SHORTCUT
+        actionAboutQt->setText(QApplication::translate("ChatMainWindow", "About Qt...", nullptr));
+        actionChangeNickname->setText(QApplication::translate("ChatMainWindow", "Change nickname...", nullptr));
+#ifndef QT_NO_SHORTCUT
+        actionChangeNickname->setShortcut(QApplication::translate("ChatMainWindow", "Ctrl+N", nullptr));
+#endif // QT_NO_SHORTCUT
 #ifndef QT_NO_TOOLTIP
-        chatHistory->setToolTip(QApplication::translate("ChatMainWindow", "Messages sent and received from other users", 0));
+        chatHistory->setToolTip(QApplication::translate("ChatMainWindow", "Messages sent and received from other users", nullptr));
 #endif // QT_NO_TOOLTIP
-        label->setText(QApplication::translate("ChatMainWindow", "Message:", 0));
+        label->setText(QApplication::translate("ChatMainWindow", "Message:", nullptr));
 #ifndef QT_NO_TOOLTIP
-        sendButton->setToolTip(QApplication::translate("ChatMainWindow", "Sends a message to other people", 0));
+        sendButton->setToolTip(QApplication::translate("ChatMainWindow", "Sends a message to other people", nullptr));
 #endif // QT_NO_TOOLTIP
 #ifndef QT_NO_WHATSTHIS
         sendButton->setWhatsThis(QString());
 #endif // QT_NO_WHATSTHIS
-        sendButton->setText(QApplication::translate("ChatMainWindow", "Send", 0));
-        menuQuit->setTitle(QApplication::translate("ChatMainWindow", "Help", 0));
-        menuFile->setTitle(QApplication::translate("ChatMainWindow", "File", 0));
+        sendButton->setText(QApplication::translate("ChatMainWindow", "Send", nullptr));
+        menuQuit->setTitle(QApplication::translate("ChatMainWindow", "Help", nullptr));
+        menuFile->setTitle(QApplication::translate("ChatMainWindow", "File", nullptr));
     } // retranslateUi
 
 };

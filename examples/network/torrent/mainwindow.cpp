@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -57,8 +67,8 @@ signals:
     void fileDropped(const QString &fileName);
 
 protected:
-    void dragMoveEvent(QDragMoveEvent *event) Q_DECL_OVERRIDE;
-    void dropEvent(QDropEvent *event) Q_DECL_OVERRIDE;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 #endif
 };
 
@@ -70,7 +80,7 @@ public:
     inline TorrentViewDelegate(MainWindow *mainWindow) : QItemDelegate(mainWindow) {}
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
-               const QModelIndex &index ) const Q_DECL_OVERRIDE
+               const QModelIndex &index ) const override
     {
         if (index.column() != 2) {
             QItemDelegate::paint(painter, option, index);
@@ -119,12 +129,12 @@ MainWindow::MainWindow(QWidget *parent)
     // Set header resize modes and initial section sizes
     QFontMetrics fm = fontMetrics();
     QHeaderView *header = torrentView->header();
-    header->resizeSection(0, fm.width("typical-name-for-a-torrent.torrent"));
-    header->resizeSection(1, fm.width(headers.at(1) + "  "));
-    header->resizeSection(2, fm.width(headers.at(2) + "  "));
-    header->resizeSection(3, qMax(fm.width(headers.at(3) + "  "), fm.width(" 1234.0 KB/s ")));
-    header->resizeSection(4, qMax(fm.width(headers.at(4) + "  "), fm.width(" 1234.0 KB/s ")));
-    header->resizeSection(5, qMax(fm.width(headers.at(5) + "  "), fm.width(tr("Downloading") + "  ")));
+    header->resizeSection(0, fm.horizontalAdvance("typical-name-for-a-torrent.torrent"));
+    header->resizeSection(1, fm.horizontalAdvance(headers.at(1) + "  "));
+    header->resizeSection(2, fm.horizontalAdvance(headers.at(2) + "  "));
+    header->resizeSection(3, qMax(fm.horizontalAdvance(headers.at(3) + "  "), fm.horizontalAdvance(" 1234.0 KB/s ")));
+    header->resizeSection(4, qMax(fm.horizontalAdvance(headers.at(4) + "  "), fm.horizontalAdvance(" 1234.0 KB/s ")));
+    header->resizeSection(5, qMax(fm.horizontalAdvance(headers.at(5) + "  "), fm.horizontalAdvance(tr("Downloading") + "  ")));
 
     // Create common actions
     QAction *newTorrentAction = new QAction(QIcon(":/icons/bottom.png"), tr("Add &new torrent"), this);
@@ -164,14 +174,14 @@ MainWindow::MainWindow(QWidget *parent)
     bottomBar->addWidget(new QLabel(tr("Max download:")));
     bottomBar->addWidget(downloadLimitSlider);
     bottomBar->addWidget((downloadLimitLabel = new QLabel(tr("0 KB/s"))));
-    downloadLimitLabel->setFixedSize(QSize(fm.width(tr("99999 KB/s")), fm.lineSpacing()));
+    downloadLimitLabel->setFixedSize(QSize(fm.horizontalAdvance(tr("99999 KB/s")), fm.lineSpacing()));
     bottomBar->addSeparator();
     uploadLimitSlider = new QSlider(Qt::Horizontal);
     uploadLimitSlider->setRange(0, 1000);
     bottomBar->addWidget(new QLabel(tr("Max upload:")));
     bottomBar->addWidget(uploadLimitSlider);
     bottomBar->addWidget((uploadLimitLabel = new QLabel(tr("0 KB/s"))));
-    uploadLimitLabel->setFixedSize(QSize(fm.width(tr("99999 KB/s")), fm.lineSpacing()));
+    uploadLimitLabel->setFixedSize(QSize(fm.horizontalAdvance(tr("99999 KB/s")), fm.lineSpacing()));
 
 #ifdef Q_OS_OSX
     setUnifiedTitleAndToolBarOnMac(true);
@@ -210,7 +220,7 @@ QSize MainWindow::sizeHint() const
     // Add up the sizes of all header sections. The last section is
     // stretched, so its size is relative to the size of the width;
     // instead of counting it, we count the size of its largest value.
-    int width = fontMetrics().width(tr("Downloading") + "  ");
+    int width = fontMetrics().horizontalAdvance(tr("Downloading") + "  ");
     for (int i = 0; i < header->count() - 1; ++i)
         width += header->sectionSize(i);
 
@@ -702,7 +712,7 @@ void TorrentView::dragMoveEvent(QDragMoveEvent *event)
 {
     // Accept file actions with a '.torrent' extension.
     QUrl url(event->mimeData()->text());
-    if (url.isValid() && url.scheme().toLower() == "file"
+    if (url.isValid() && url.scheme() == "file"
             && url.path().toLower().endsWith(".torrent"))
         event->acceptProposedAction();
 }

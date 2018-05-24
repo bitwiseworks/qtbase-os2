@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,7 +44,7 @@
 #include <qdatastream.h>
 #include <qdebug.h>
 #include <qmap.h>
-#include <qhash.h>
+#include <qhashfunctions.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -158,24 +164,25 @@ QDataStream &operator>>(QDataStream &stream, QTextLength &length)
 }
 #endif // QT_NO_DATASTREAM
 
+namespace {
+struct Property
+{
+    inline Property(qint32 k, const QVariant &v) : key(k), value(v) {}
+    inline Property() {}
+
+    qint32 key = -1;
+    QVariant value;
+
+    inline bool operator==(const Property &other) const
+    { return key == other.key && value == other.value; }
+};
+}
+Q_DECLARE_TYPEINFO(Property, Q_MOVABLE_TYPE);
+
 class QTextFormatPrivate : public QSharedData
 {
 public:
     QTextFormatPrivate() : hashDirty(true), fontDirty(true), hashValue(0) {}
-
-    struct Property
-    {
-        inline Property(qint32 k, const QVariant &v) : key(k), value(v) {}
-        inline Property() {}
-
-        qint32 key;
-        QVariant value;
-
-        inline bool operator==(const Property &other) const
-        { return key == other.key && value == other.value; }
-        inline bool operator!=(const Property &other) const
-        { return key != other.key || value != other.value; }
-    };
 
     inline uint hash() const
     {
@@ -194,8 +201,10 @@ public:
     inline void insertProperty(qint32 key, const QVariant &value)
     {
         hashDirty = true;
-        if (key >= QTextFormat::FirstFontProperty && key <= QTextFormat::LastFontProperty)
+        if ((key >= QTextFormat::FirstFontProperty && key <= QTextFormat::LastFontProperty)
+                || key == QTextFormat::FontLetterSpacingType) {
             fontDirty = true;
+        }
         for (int i = 0; i < props.count(); ++i)
             if (props.at(i).key == key) {
                 props[i].value = value;
@@ -209,8 +218,10 @@ public:
         for (int i = 0; i < props.count(); ++i)
             if (props.at(i).key == key) {
                 hashDirty = true;
-                if (key >= QTextFormat::FirstFontProperty && key <= QTextFormat::LastFontProperty)
+                if ((key >= QTextFormat::FirstFontProperty && key <= QTextFormat::LastFontProperty)
+                        || key == QTextFormat::FontLetterSpacingType) {
                     fontDirty = true;
+                }
                 props.remove(i);
                 return;
             }
@@ -357,9 +368,10 @@ void QTextFormatPrivate::recalcFont() const
                 f.setPixelSize(props.at(i).value.toInt());
                 break;
             case QTextFormat::FontWeight: {
-                int weight = props.at(i).value.toInt();
-                if (weight == 0) weight = QFont::Normal;
-                f.setWeight(weight);
+                const QVariant weightValue = props.at(i).value;
+                int weight = weightValue.toInt();
+                if (weight >= 0 && weightValue.isValid())
+                    f.setWeight(weight);
                 break; }
             case QTextFormat::FontItalic:
                 f.setItalic(props.at(i).value.toBool());
@@ -837,10 +849,10 @@ void QTextFormat::merge(const QTextFormat &other)
 
     QTextFormatPrivate *d = this->d;
 
-    const QVector<QTextFormatPrivate::Property> &otherProps = other.d->props;
+    const QVector<QT_PREPEND_NAMESPACE(Property)> &otherProps = other.d->props;
     d->props.reserve(d->props.size() + otherProps.size());
     for (int i = 0; i < otherProps.count(); ++i) {
-        const QTextFormatPrivate::Property &p = otherProps.at(i);
+        const QT_PREPEND_NAMESPACE(Property) &p = otherProps.at(i);
         d->insertProperty(p.key, p.value);
     }
 }
@@ -1115,7 +1127,9 @@ void QTextFormat::setProperty(int propertyId, const QVector<QTextLength> &value)
     if (!d)
         d = new QTextFormatPrivate;
     QVariantList list;
-    for (int i=0; i<value.size(); ++i)
+    const int numValues = value.size();
+    list.reserve(numValues);
+    for (int i = 0; i < numValues; ++i)
         list << value.at(i);
     d->insertProperty(propertyId, list);
 }
@@ -1323,9 +1337,9 @@ bool QTextFormat::operator==(const QTextFormat &rhs) const
     \value DashDotLine          Dashs and dots are drawn using Qt::DashDotLine.
     \value DashDotDotLine       Underlines draw drawn using Qt::DashDotDotLine.
     \value WaveUnderline        The text is underlined using a wave shaped line.
-    \value SpellCheckUnderline  The underline is drawn depending on the QStyle::SH_SpellCeckUnderlineStyle
-                                style hint of the QApplication style. By default this is mapped to
-                                WaveUnderline, on OS X it is mapped to DashDotLine.
+    \value SpellCheckUnderline  The underline is drawn depending on the SpellCheckUnderlineStyle
+                                theme hint of QPlatformTheme. By default this is mapped to
+                                WaveUnderline, on \macos it is mapped to DotLine.
 
     \sa Qt::PenStyle
 */
@@ -2041,6 +2055,7 @@ QTextBlockFormat::QTextBlockFormat(const QTextFormat &fmt)
 void QTextBlockFormat::setTabPositions(const QList<QTextOption::Tab> &tabs)
 {
     QList<QVariant> list;
+    list.reserve(tabs.count());
     QList<QTextOption::Tab>::ConstIterator iter = tabs.constBegin();
     while (iter != tabs.constEnd()) {
         QVariant v;
@@ -2065,6 +2080,7 @@ QList<QTextOption::Tab> QTextBlockFormat::tabPositions() const
     QList<QTextOption::Tab> answer;
     QList<QVariant> variantsList = qvariant_cast<QList<QVariant> >(variant);
     QList<QVariant>::Iterator iter = variantsList.begin();
+    answer.reserve(variantsList.count());
     while(iter != variantsList.end()) {
         answer.append( qvariant_cast<QTextOption::Tab>(*iter));
         ++iter;
@@ -2572,13 +2588,13 @@ QTextFrameFormat::QTextFrameFormat(const QTextFormat &fmt)
 }
 
 /*!
-    \fn QTextFrameFormat::isValid() const
+    \fn bool QTextFrameFormat::isValid() const
 
     Returns \c true if the format description is valid; otherwise returns \c false.
 */
 
 /*!
-    \fn QTextFrameFormat::setPosition(Position policy)
+    \fn void QTextFrameFormat::setPosition(Position policy)
 
     Sets the \a policy for positioning frames with this frame format.
 
@@ -2591,7 +2607,7 @@ QTextFrameFormat::QTextFrameFormat(const QTextFormat &fmt)
 */
 
 /*!
-    \fn QTextFrameFormat::setBorder(qreal width)
+    \fn void QTextFrameFormat::setBorder(qreal width)
 
     Sets the \a width (in pixels) of the frame's border.
 */
@@ -2603,7 +2619,7 @@ QTextFrameFormat::QTextFrameFormat(const QTextFormat &fmt)
 */
 
 /*!
-    \fn QTextFrameFormat::setBorderBrush(const QBrush &brush)
+    \fn void QTextFrameFormat::setBorderBrush(const QBrush &brush)
     \since 4.3
 
     Sets the \a brush used for the frame's border.
@@ -2617,7 +2633,7 @@ QTextFrameFormat::QTextFrameFormat(const QTextFormat &fmt)
 */
 
 /*!
-    \fn QTextFrameFormat::setBorderStyle(BorderStyle style)
+    \fn void QTextFrameFormat::setBorderStyle(BorderStyle style)
     \since 4.3
 
     Sets the \a style of the frame's border.
@@ -2631,7 +2647,7 @@ QTextFrameFormat::QTextFrameFormat(const QTextFormat &fmt)
 */
 
 /*!
-    \fn QTextFrameFormat::setMargin(qreal margin)
+    \fn void QTextFrameFormat::setMargin(qreal margin)
 
     Sets the frame's \a margin in pixels.
     This method also sets the left, right, top and bottom margins
@@ -2655,7 +2671,7 @@ void QTextFrameFormat::setMargin(qreal amargin)
 */
 
 /*!
-    \fn QTextFrameFormat::setTopMargin(qreal margin)
+    \fn void QTextFrameFormat::setTopMargin(qreal margin)
     \since 4.3
 
     Sets the frame's top \a margin in pixels.
@@ -2675,7 +2691,7 @@ qreal QTextFrameFormat::topMargin() const
 }
 
 /*!
-    \fn QTextFrameFormat::setBottomMargin(qreal margin)
+    \fn void QTextFrameFormat::setBottomMargin(qreal margin)
     \since 4.3
 
     Sets the frame's bottom \a margin in pixels.
@@ -2695,7 +2711,7 @@ qreal QTextFrameFormat::bottomMargin() const
 }
 
 /*!
-    \fn QTextFrameFormat::setLeftMargin(qreal margin)
+    \fn void QTextFrameFormat::setLeftMargin(qreal margin)
     \since 4.3
 
     Sets the frame's left \a margin in pixels.
@@ -2715,7 +2731,7 @@ qreal QTextFrameFormat::leftMargin() const
 }
 
 /*!
-    \fn QTextFrameFormat::setRightMargin(qreal margin)
+    \fn void QTextFrameFormat::setRightMargin(qreal margin)
     \since 4.3
 
     Sets the frame's right \a margin in pixels.
@@ -2735,7 +2751,7 @@ qreal QTextFrameFormat::rightMargin() const
 }
 
 /*!
-    \fn QTextFrameFormat::setPadding(qreal width)
+    \fn void QTextFrameFormat::setPadding(qreal width)
 
     Sets the \a width of the frame's internal padding in pixels.
 */
@@ -2747,7 +2763,7 @@ qreal QTextFrameFormat::rightMargin() const
 */
 
 /*!
-    \fn QTextFrameFormat::setWidth(const QTextLength &width)
+    \fn void QTextFrameFormat::setWidth(const QTextLength &width)
 
     Sets the frame's border rectangle's \a width.
 
@@ -2755,7 +2771,7 @@ qreal QTextFrameFormat::rightMargin() const
 */
 
 /*!
-    \fn QTextFrameFormat::setWidth(qreal width)
+    \fn void QTextFrameFormat::setWidth(qreal width)
     \overload
 
     Convenience method that sets the width of the frame's border
@@ -3359,22 +3375,15 @@ QTextTableCellFormat::QTextTableCellFormat(const QTextFormat &fmt)
 
 // ------------------------------------------------------
 
-
-QTextFormatCollection::QTextFormatCollection(const QTextFormatCollection &rhs)
-{
-    formats = rhs.formats;
-    objFormats = rhs.objFormats;
-}
-
-QTextFormatCollection &QTextFormatCollection::operator=(const QTextFormatCollection &rhs)
-{
-    formats = rhs.formats;
-    objFormats = rhs.objFormats;
-    return *this;
-}
-
 QTextFormatCollection::~QTextFormatCollection()
 {
+}
+
+void QTextFormatCollection::clear()
+{
+    formats.clear();
+    objFormats.clear();
+    hashes.clear();
 }
 
 int QTextFormatCollection::indexForFormat(const QTextFormat &format)
@@ -3397,8 +3406,7 @@ int QTextFormatCollection::indexForFormat(const QTextFormat &format)
             f.d = new QTextFormatPrivate;
         f.d->resolveFont(defaultFnt);
 
-        if (!hashes.contains(hash, idx))
-            hashes.insert(hash, idx);
+        hashes.insert(hash, idx);
 
     } QT_CATCH(...) {
         formats.pop_back();
@@ -3451,7 +3459,7 @@ void QTextFormatCollection::setDefaultFont(const QFont &f)
 {
     defaultFnt = f;
     for (int i = 0; i < formats.count(); ++i)
-        if (formats[i].d)
+        if (formats.at(i).d)
             formats[i].d->resolveFont(defaultFnt);
 }
 
