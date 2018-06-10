@@ -36,9 +36,9 @@
 relconf=`basename $0`
 # the directory of this script is the "source tree"
 relpath=`dirname $0`
-relpath=`(cd "$relpath"; /bin/pwd)`
+relpath=`(cd "$relpath"; pwd)`
 # the current directory is the "build tree" or "object tree"
-outpath=`/bin/pwd`
+outpath=`pwd`
 
 WHICH="which"
 
@@ -608,6 +608,9 @@ if [ -z "$PLATFORM" ]; then
      LynxOS*:*)
         PLATFORM=lynxos-g++
         ;;
+     OS/2:*)
+        PLATFORM=os2-g++
+        ;;
      QNX:*)
         PLATFORM=unsupported/qnx-g++
         ;;
@@ -773,6 +776,9 @@ setBootstrapVariable()
         case `basename "$PLATFORM"` in
         win32-g++*)
             cat "$in_mkfile.win32" >> "$mkfile"
+            ;;
+        os2-*)
+            cat "$in_mkfile.os2" >> "$mkfile"
             ;;
         *)
             cat "$in_mkfile.unix" >> "$mkfile"
