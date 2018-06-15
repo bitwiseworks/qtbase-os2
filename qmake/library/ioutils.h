@@ -59,14 +59,14 @@ public:
     static QString shellQuoteUnix(const QString &arg);
     static QString shellQuoteWin(const QString &arg);
     static QString shellQuote(const QString &arg)
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
         { return shellQuoteUnix(arg); }
 #else
         { return shellQuoteWin(arg); }
 #endif
 #if defined(PROEVALUATOR_FULL)
     static bool touchFile(const QString &targetFileName, const QString &referenceFileName, QString *errorString);
-# if defined(QT_BUILD_QMAKE) && defined(Q_OS_UNIX)
+# if defined(QT_BUILD_QMAKE) && defined(Q_OS_UNIXLIKE)
     static bool readLinkTarget(const QString &symlinkPath, QString *target);
 # endif
 #endif

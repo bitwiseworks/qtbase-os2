@@ -48,7 +48,7 @@
 # include <qthreadpool.h>
 #endif
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <unistd.h>
 #include <sys/utsname.h>
 #else
@@ -79,9 +79,13 @@ QMakeGlobals::QMakeGlobals()
 #ifdef PROEVALUATOR_DEBUG
     debugLevel = 0;
 #endif
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     dirlist_sep = QLatin1Char(';');
+#ifdef Q_OS_UNIXLIKE
+    dir_sep = QLatin1Char('/');
+#else
     dir_sep = QLatin1Char('\\');
+#endif
 #else
     dirlist_sep = QLatin1Char(':');
     dir_sep = QLatin1Char('/');

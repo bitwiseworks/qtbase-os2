@@ -50,7 +50,7 @@
 # include <qthreadpool.h>
 #endif
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <unistd.h>
 #include <sys/utsname.h>
 #  ifdef Q_OS_BSD4
