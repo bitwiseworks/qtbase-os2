@@ -215,7 +215,7 @@
 #    endif
 #  endif
 
-#  ifdef Q_OS_WIN
+#  ifdef Q_OS_DOSLIKE
 #    define Q_DECL_EXPORT     __declspec(dllexport)
 #    define Q_DECL_IMPORT     __declspec(dllimport)
 #  elif defined(QT_VISIBILITY_AVAILABLE)

@@ -70,6 +70,9 @@
      BSD4     - Any BSD 4.4 system
      UNIX     - Any UNIX BSD/SYSV system
      ANDROID  - Android platform
+     OS2      - OS/2
+     UNIXLIKE - BSD/SYSV emulation (OS/2 EMX etc)
+     DOSLIKE  - DOS-based (Windows, OS/2)
      HAIKU    - Haiku
 
    The following operating systems have variants:
@@ -166,6 +169,8 @@
 #  define Q_OS_INTEGRITY
 #elif defined(VXWORKS) /* there is no "real" VxWorks define - this has to be set in the mkspec! */
 #  define Q_OS_VXWORKS
+#elif defined(__OS2__)
+#  define Q_OS_OS2
 #elif defined(__HAIKU__)
 #  define Q_OS_HAIKU
 #elif defined(__MAKEDEPEND__)
@@ -177,10 +182,22 @@
 #  define Q_OS_WIN
 #endif
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_WIN) || defined(Q_OS_OS2)
 #  undef Q_OS_UNIX
 #elif !defined(Q_OS_UNIX)
 #  define Q_OS_UNIX
+#endif
+
+#if defined(Q_OS_UNIX) || defined(Q_OS_OS2)
+#  define Q_OS_UNIXLIKE
+#else
+#  undef Q_OS_UNIXLIKE
+#endif
+
+#if defined(Q_OS_WIN) || defined(Q_OS_OS2)
+#  define Q_OS_DOSLIKE
+#else
+#  undef Q_OS_DOSLIKE
 #endif
 
 // Compatibility synonyms
