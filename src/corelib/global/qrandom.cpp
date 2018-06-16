@@ -57,10 +57,10 @@
 #  endif
 #endif // !QT_CONFIG(getentropy)
 
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX)
 #  include <fcntl.h>
 #  include <private/qcore_unix_p.h>
-#else
+#elif defined(Q_OS_WIN)
 #  include <qt_windows.h>
 
 // RtlGenRandom is not exported by its name in advapi32.dll, but as SystemFunction036
@@ -209,7 +209,7 @@ struct QRandomGenerator::SystemGenerator
         auto RtlGenRandom = SystemFunction036;
         return RtlGenRandom(buffer, ULONG(count)) ? count: 0;
     }
-#elif defined(Q_OS_WINRT)
+#elif defined(Q_OS_WINRT) || defined(Q_OS_OS2)
     qsizetype fillBuffer(void *, qsizetype) Q_DECL_NOTHROW
     {
         // always use the fallback
