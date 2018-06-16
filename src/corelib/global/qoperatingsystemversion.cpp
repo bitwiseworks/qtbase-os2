@@ -158,7 +158,7 @@ QT_BEGIN_NAMESPACE
 
     \sa currentType()
 */
-#if !defined(Q_OS_DARWIN) && !defined(Q_OS_WIN)
+#if !defined(Q_OS_DARWIN) && !defined(Q_OS_WIN) && !defined(Q_OS_OS2)
 QOperatingSystemVersion QOperatingSystemVersion::current()
 {
     QOperatingSystemVersion version;
@@ -342,6 +342,8 @@ QString QOperatingSystemVersion::name() const
         return QStringLiteral("watchOS");
     case QOperatingSystemVersion::Android:
         return QStringLiteral("Android");
+    case QOperatingSystemVersion::OS2:
+        return QStringLiteral("OS/2");
     case QOperatingSystemVersion::Unknown:
     default:
         return QString();
@@ -520,6 +522,30 @@ const QOperatingSystemVersion QOperatingSystemVersion::AndroidNougat_MR1 =
  */
 const QOperatingSystemVersion QOperatingSystemVersion::AndroidOreo =
     QOperatingSystemVersion(QOperatingSystemVersion::Android, 8, 0);
+
+/*!
+    \variable QOperatingSystemVersion::OS2Warp3
+    \brief a version corresponding to OS/2 Warp 3.
+    \since 5.11.0
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::OS2Warp3 =
+    QOperatingSystemVersion(QOperatingSystemVersion::OS2, 20, 30);
+
+/*!
+    \variable QOperatingSystemVersion::OS2Warp4
+    \brief a version corresponding to OS/2 Warp 4.
+    \since 5.11.0
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::OS2Warp4 =
+    QOperatingSystemVersion(QOperatingSystemVersion::OS2, 20, 40);
+
+/*!
+    \variable QOperatingSystemVersion::OS2Warp4_5
+    \brief a version corresponding to OS/2 Warp 4.5.
+    \since 5.11.0
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::OS2Warp4_5 =
+    QOperatingSystemVersion(QOperatingSystemVersion::OS2, 20, 45);
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug debug, const QOperatingSystemVersion &ov)

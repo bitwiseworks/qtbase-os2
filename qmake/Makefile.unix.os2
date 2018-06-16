@@ -1,0 +1,5 @@
+EXEEXT = .exe
+QTOBJS = \
+    qoperatingsystemversion_os2.o
+QTSRCS = \
+    $(SOURCE_PATH)/src/corelib/global/qoperatingsystemversion_os2.cpp

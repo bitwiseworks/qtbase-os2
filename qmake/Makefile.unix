@@ -328,6 +328,9 @@ qoperatingsystemversion_win.o: $(SOURCE_PATH)/src/corelib/global/qoperatingsyste
 qoperatingsystemversion_darwin.o: $(SOURCE_PATH)/src/corelib/global/qoperatingsystemversion_darwin.mm
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
+qoperatingsystemversion_os2.o: $(SOURCE_PATH)/src/corelib/global/qoperatingsystemversion_os2.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
 qcore_mac_objc.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_mac_objc.mm
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 

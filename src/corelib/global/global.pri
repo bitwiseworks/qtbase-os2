@@ -67,6 +67,9 @@ win32 {
     SOURCES += global/qoperatingsystemversion_win.cpp
     HEADERS += global/qoperatingsystemversion_win_p.h
 }
+os2 {
+    SOURCES += global/qoperatingsystemversion_os2.cpp
+}
 
 # qlibraryinfo.cpp includes qconfig.cpp
 INCLUDEPATH += $$QT_BUILD_TREE/src/corelib/global
