@@ -92,7 +92,7 @@ public:
     bool isRelative() const;
     bool isClean() const;
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     bool isDriveRoot() const;
     static bool isDriveRootPath(const QString &path);
 #endif

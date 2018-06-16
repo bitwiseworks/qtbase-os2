@@ -66,7 +66,7 @@
 
 QT_BEGIN_NAMESPACE
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
 static QString driveSpec(const QString &path)
 {
     if (path.size() < 2)
@@ -81,7 +81,7 @@ static QString driveSpec(const QString &path)
 #endif
 
 enum {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     OSSupportsUncPaths = true
 #else
     OSSupportsUncPaths = false
@@ -103,7 +103,7 @@ static int rootLength(const QString &name, bool allowUncPaths)
     if (name.startsWith(rootPath, Qt::CaseInsensitive))
         return rootPath.size();
 #endif // Q_OS_WINRT
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     if (len >= 2 && name.at(1) == QLatin1Char(':')) {
         // Handle a possible drive letter
         return len > 2 && name.at(2) == QLatin1Char('/') ? 3 : 2;
@@ -193,7 +193,7 @@ inline void QDirPrivate::setPath(const QString &path)
     QString p = QDir::fromNativeSeparators(path);
     if (p.endsWith(QLatin1Char('/'))
             && p.length() > 1
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
 #  if defined (Q_OS_WINRT)
         && (!(p.toLower() == QDir::rootPath().toLower()))
 #  else
@@ -397,7 +397,7 @@ inline void QDirPrivate::initFileEngine()
 
     A QDir can point to a file using either a relative or an absolute
     path. Absolute paths begin with the directory separator
-    (optionally preceded by a drive specification under Windows).
+    (optionally preceded by a drive specification under Windows and OS/2).
     Relative file names begin with a directory name or a file name and
     specify a path relative to the current directory.
 
@@ -511,9 +511,9 @@ inline void QDirPrivate::initFileEngine()
 
     The drives() static function provides a list of root directories for each
     device that contains a filing system. On Unix systems this returns a list
-    containing a single root directory "/"; on Windows the list will usually
-    contain \c{C:/}, and possibly other drive letters such as \c{D:/}, depending
-    on the configuration of the user's system.
+    containing a single root directory "/"; on Windows and OS/2 the list will
+    usually contain \c{C:/}, and possibly other drive letters such as \c{D:/},
+    depending on the configuration of the user's system.
 
     \section1 Path Manipulation and Strings
 
@@ -628,7 +628,7 @@ QDir::~QDir()
 
     The path can be either absolute or relative. Absolute paths begin
     with the directory separator "/" (optionally preceded by a drive
-    specification under Windows). Relative file names begin with a
+    specification under Windows and OS/2). Relative file names begin with a
     directory name or a file name and specify a path relative to the
     current directory. An example of an absolute path is the string
     "/tmp/quartz", a relative path might look like "src/fatlib".
@@ -750,7 +750,7 @@ QString QDir::filePath(const QString &fileName) const
 QString QDir::absoluteFilePath(const QString &fileName) const
 {
     const QDirPrivate* d = d_ptr.constData();
-    // Don't trust our own isAbsolutePath(); Q_OS_WIN needs a drive.
+    // Don't trust our own isAbsolutePath(); Q_OS_DOSLIKE needs a drive.
     if (QFileSystemEntry(fileName).isAbsolute())
         return fileName;
 
@@ -758,7 +758,7 @@ QString QDir::absoluteFilePath(const QString &fileName) const
     const QString absoluteDirPath = d->absoluteDirEntry.filePath();
     if (fileName.isEmpty())
         return absoluteDirPath;
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     // Handle the "absolute except for drive" case (i.e. \blah not c:\blah):
     int size = absoluteDirPath.length();
     if ((fileName.startsWith(QLatin1Char('/'))
@@ -790,7 +790,7 @@ QString QDir::absoluteFilePath(const QString &fileName) const
         }
         return absoluteDirPath.leftRef(drive) % fileName;
     }
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
     if (!absoluteDirPath.endsWith(QLatin1Char('/')))
         return absoluteDirPath % QLatin1Char('/') % fileName;
     return absoluteDirPath % fileName;
@@ -811,7 +811,7 @@ QString QDir::relativeFilePath(const QString &fileName) const
     if (isRelativePath(file) || isRelativePath(dir))
         return file;
 
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     QString dirDrive = driveSpec(dir);
     QString fileDrive = driveSpec(file);
 
@@ -837,7 +837,7 @@ QString QDir::relativeFilePath(const QString &fileName) const
 
     int i = 0;
     while (i < dirElts.size() && i < fileElts.size() &&
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
            dirElts.at(i).compare(fileElts.at(i), Qt::CaseInsensitive) == 0)
 #else
            dirElts.at(i) == fileElts.at(i))
@@ -865,7 +865,7 @@ QString QDir::relativeFilePath(const QString &fileName) const
     separators that are appropriate for the underlying operating
     system.
 
-    On Windows, toNativeSeparators("c:/winnt/system32") returns
+    On Windows and OS/2, toNativeSeparators("c:/winnt/system32") returns
     "c:\\winnt\\system32".
 
     The returned string may be the same as the argument on some
@@ -875,7 +875,7 @@ QString QDir::relativeFilePath(const QString &fileName) const
 */
 QString QDir::toNativeSeparators(const QString &pathName)
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     int i = pathName.indexOf(QLatin1Char('/'));
     if (i != -1) {
         QString n(pathName);
@@ -897,7 +897,7 @@ QString QDir::toNativeSeparators(const QString &pathName)
 /*!
     \since 4.2
 
-    Returns \a pathName using '/' as file separator. On Windows,
+    Returns \a pathName using '/' as file separator. On Windows and OS/2,
     for instance, fromNativeSeparators("\c{c:\\winnt\\system32}") returns
     "c:/winnt/system32".
 
@@ -908,7 +908,7 @@ QString QDir::toNativeSeparators(const QString &pathName)
 */
 QString QDir::fromNativeSeparators(const QString &pathName)
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     int i = pathName.indexOf(QLatin1Char('\\'));
     if (i != -1) {
         QString n(pathName);
@@ -1899,8 +1899,8 @@ bool QDir::isEmpty(Filters filters) const
 /*!
     Returns a list of the root directories on this system.
 
-    On Windows this returns a list of QFileInfo objects containing "C:/",
-    "D:/", etc. On other operating systems, it returns a list containing
+    On Windows and OS/2 this returns a list of QFileInfo objects containing
+    "C:/", "D:/", etc. On other operating systems, it returns a list containing
     just one root directory (i.e. "/").
 
     \sa root(), rootPath()
@@ -1916,7 +1916,7 @@ QFileInfoList QDir::drives()
 
 /*!
     Returns the native directory separator: "/" under Unix
-    and "\\" under Windows.
+    and "\\" under Windows and OS/2.
 
     You do not need to use this function to build file paths. If you
     always use "/", Qt will translate your paths to conform to the
@@ -1928,7 +1928,7 @@ QFileInfoList QDir::drives()
 */
 QChar QDir::separator()
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     return QLatin1Char('\\');
 #else
     return QLatin1Char('/');
@@ -1940,7 +1940,7 @@ QChar QDir::separator()
     \since 5.6
 
     Returns the native path list separator: ':' under Unix
-    and ';' under Windows.
+    and ';' under Windows and OS/2.
 
     \sa separator()
 */
@@ -2076,7 +2076,7 @@ QString QDir::tempPath()
 /*!
     Returns the absolute path of the root directory.
 
-    For Unix operating systems this returns "/". For Windows file
+    For Unix operating systems this returns "/". For Windows and OS/2 file
     systems this normally returns "c:/".
 
     \sa root(), drives(), currentPath(), homePath(), tempPath()
@@ -2255,7 +2255,7 @@ static QString qt_cleanPath(const QString &path, bool *ok)
 
     // Strip away last slash except for root directories
     if (ret.length() > 1 && ret.endsWith(QLatin1Char('/'))) {
-#if defined (Q_OS_WIN)
+#if defined (Q_OS_DOSLIKE)
 #  if defined(Q_OS_WINRT)
         if (!((ret.length() == 3 || ret.length() == QDir::rootPath().length()) && ret.at(1) == QLatin1Char(':')))
 #  else

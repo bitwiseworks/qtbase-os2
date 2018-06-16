@@ -43,14 +43,17 @@
 #ifndef QPLATFORMDEFS_H
 #define QPLATFORMDEFS_H
 
-// Get Qt defines/settings
+// Drag in _osmajor, _abspath and others from <stdlib.h>
+#define _EMX_SOURCE
 
+// Get Qt defines/settings
 #include "qglobal.h"
 
 #include <io.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/process.h>
 #include <stdlib.h>
@@ -91,6 +94,7 @@
 #define QT_OPEN_CREAT           O_CREAT
 #define QT_OPEN_TRUNC           O_TRUNC
 #define QT_OPEN_APPEND          O_APPEND
+#define QT_OPEN_EXCL            O_EXCL
 #if defined(O_TEXT)
 # define QT_OPEN_TEXT           O_TEXT
 # define QT_OPEN_BINARY         O_BINARY
@@ -103,6 +107,14 @@
 #define QT_FSETPOS              ::fsetpos
 #define QT_FPOS_T               fpos_t
 #define QT_OFF_T                off_t
+
+#define QT_MMAP                 ::mmap
+
+#define QT_DIR                  DIR
+#define QT_DIRENT               struct dirent
+#define QT_OPENDIR              ::opendir
+#define QT_CLOSEDIR             ::closedir
+#define QT_READDIR              ::readdir
 
 #define QT_SIGNAL_ARGS          int
 

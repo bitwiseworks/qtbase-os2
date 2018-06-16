@@ -39,7 +39,7 @@
 **
 ****************************************************************************/
 
-#define _EMX_SOURCE // for _osmajor etc. from <stdlib.h> (included elsewhere)
+#include "qplatformdefs.h"
 
 #include "qoperatingsystemversion_p.h"
 

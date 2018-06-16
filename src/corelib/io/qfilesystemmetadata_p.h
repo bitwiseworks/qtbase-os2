@@ -223,7 +223,7 @@ public:
     uint groupId() const;
     uint ownerId(QAbstractFileEngine::FileOwner owner) const;
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     void fillFromStatxBuf(const struct statx &statBuffer);
     void fillFromStatBuf(const QT_STATBUF &statBuffer);
     void fillFromDirEnt(const QT_DIRENT &statBuffer);
@@ -274,7 +274,7 @@ inline bool QFileSystemMetaData::isBundle() const                   { return fal
 inline bool QFileSystemMetaData::isAlias() const                    { return false; }
 #endif
 
-#if defined(Q_OS_UNIX) || defined (Q_OS_WIN)
+#if defined(Q_OS_UNIX) || defined (Q_OS_DOSLIKE)
 inline QDateTime QFileSystemMetaData::fileTime(QAbstractFileEngine::FileTime time) const
 {
     switch (time) {
@@ -295,7 +295,7 @@ inline QDateTime QFileSystemMetaData::fileTime(QAbstractFileEngine::FileTime tim
 }
 #endif
 
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
 inline QDateTime QFileSystemMetaData::birthTime() const
 { return birthTime_ ? QDateTime::fromMSecsSinceEpoch(birthTime_) : QDateTime(); }
 inline QDateTime QFileSystemMetaData::metadataChangeTime() const

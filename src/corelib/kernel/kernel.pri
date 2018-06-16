@@ -210,4 +210,9 @@ android:!android-embedded {
                    kernel/qjni_p.h
 }
 
+os2 {
+    SOURCES += \
+            kernel/qcore_unix.cpp
+}
+
 !darwin:!unix:!win32: SOURCES += kernel/qelapsedtimer_generic.cpp

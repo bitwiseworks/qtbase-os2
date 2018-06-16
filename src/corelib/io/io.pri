@@ -185,5 +185,9 @@ win32 {
                 HEADERS += io/qfilesystemwatcher_kqueue_p.h
             }
         }
+} else:os2 {
+        SOURCES += \
+                io/qfsfileengine_unix.cpp \
+                io/qfilesystemengine_unix.cpp \
+                io/qfilesystemiterator_unix.cpp
 }
-

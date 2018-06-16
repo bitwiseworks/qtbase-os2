@@ -57,7 +57,7 @@
 #include "qatomic.h"
 #include "qbytearray.h"
 
-#ifndef Q_OS_UNIX
+#ifndef Q_OS_UNIXLIKE
 # error "qcore_unix_p.h included on a non-Unix system"
 #endif
 

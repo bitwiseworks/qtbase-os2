@@ -68,7 +68,7 @@ QString QFileSystemEngine::slowCanonicalized(const QString &path)
 
     known.insert(path);
     do {
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
         if (separatorPos == 0) {
             if (tmpPath.size() >= 2 && tmpPath.at(0) == slash && tmpPath.at(1) == slash) {
                 // UNC, skip past the first two elements

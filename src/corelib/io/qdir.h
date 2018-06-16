@@ -186,7 +186,7 @@ public:
 
     Q_DECL_CONSTEXPR static inline QChar listSeparator() Q_DECL_NOTHROW
     {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
         return QLatin1Char(';');
 #else
         return QLatin1Char(':');

@@ -48,6 +48,7 @@
 #include <QtCore/qvarlengtharray.h>
 
 #include <pwd.h>
+#include <grp.h>
 #include <stdlib.h> // for realpath()
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -127,7 +128,7 @@ struct statx { mode_t stx_mode; };      // dummy
 QT_BEGIN_NAMESPACE
 
 enum {
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_OS2)
     // On Android, the link(2) system call has been observed to always fail
     // with EACCES, regardless of whether there are permission problems or not.
     SupportsHardlinking = false
@@ -579,7 +580,7 @@ void QFileSystemMetaData::fillFromDirEnt(const QT_DIRENT &entry)
             }
         }
     }
-#elif defined(_DIRENT_HAVE_D_TYPE) || defined(Q_OS_BSD4)
+#elif defined(_DIRENT_HAVE_D_TYPE) || defined(Q_OS_BSD4) || defined(Q_OS_OS2)
     // BSD4 includes OS X and iOS
 
     // ### This will clear all entry flags and knownFlagsMask
@@ -722,7 +723,7 @@ QFileSystemEntry QFileSystemEngine::canonicalName(const QFileSystemEntry &entry,
     if (entry.isRoot())
         return entry;
 
-#if !defined(Q_OS_MAC) && !defined(Q_OS_QNX) && !defined(Q_OS_ANDROID) && !defined(Q_OS_HAIKU) && _POSIX_VERSION < 200809L
+#if !defined(Q_OS_MAC) && !defined(Q_OS_QNX) && !defined(Q_OS_ANDROID) && !defined(Q_OS_HAIKU) && !defined(Q_OS_OS2) && _POSIX_VERSION < 200809L
     // realpath(X,0) is not supported
     Q_UNUSED(data);
     return QFileSystemEntry(slowCanonicalized(absoluteName(entry).filePath()));
@@ -756,7 +757,7 @@ QFileSystemEntry QFileSystemEngine::canonicalName(const QFileSystemEntry &entry,
     }
 
 # else
-#  if _POSIX_VERSION >= 200801L
+#  if _POSIX_VERSION >= 200801L || defined(Q_OS_OS2)
     ret = realpath(entry.nativeFilePath().constData(), (char*)0);
 #  else
     ret = (char*)malloc(PATH_MAX + 1);
@@ -788,6 +789,44 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
 {
     if (Q_UNLIKELY(entry.isEmpty()))
         return emptyFileEntryWarning(), entry;
+#ifdef Q_OS_OS2
+    // We mostly follow the Windows logic here. Note that at QFileSystemEntry
+    // level isAbsolute() is not necessarily a negation of isRelative() like it
+    // is at QFileInfo level.
+    QString ret = entry.filePath();
+
+    if (entry.isAbsolute() && entry.isClean() && ret.at(0).isUpper())
+        return entry;
+
+    if (!entry.isRelative()) {
+        if (!entry.isAbsolute()) {
+            // Ask LIBC to resolve cases like "D:foo.txt" and "/foo.txt"
+            QVarLengthArray<char, PATH_MAX * 2 + 1> buf;
+            if (::_abspath(buf.data(), entry.nativeFilePath().constData(), buf.size()) == 0) {
+                ret = QFile::decodeName(buf.constData());
+            } else {
+                qErrnoWarning("_abspath() failed for '%s'", entry.nativeFilePath().constData());
+                return QFileSystemEntry();
+            }
+        }
+    } else {
+        ret = QDir::cleanPath(QDir::currentPath() + QLatin1Char('/') + ret);
+    }
+
+    // The path should be absolute at this point.
+    // From the docs :
+    // Absolute paths begin with the directory separator "/"
+    // (optionally preceded by a drive specification under Windows).
+    if (ret.at(0) != QLatin1Char('/')) {
+        Q_ASSERT(ret.length() >= 2);
+        Q_ASSERT(ret.at(0).isLetter());
+        Q_ASSERT(ret.at(1) == QLatin1Char(':'));
+
+        // Force uppercase drive letters.
+        ret[0] = ret.at(0).toUpper();
+    }
+    return QFileSystemEntry(ret, QFileSystemEntry::FromInternalPath());
+#else
     if (entry.isAbsolute() && entry.isClean())
         return entry;
 
@@ -816,6 +855,7 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
     if (isDir)
         stringVersion.append(QLatin1Char('/'));
     return QFileSystemEntry(stringVersion);
+#endif
 }
 
 //static
@@ -1524,6 +1564,10 @@ QString QFileSystemEngine::tempPath()
     return QLatin1String(QT_UNIX_TEMP_PATH_OVERRIDE);
 #else
     QString temp = QFile::decodeName(qgetenv("TMPDIR"));
+#if defined(Q_OS_OS2)
+    if (temp.isEmpty())
+        temp = QFile::decodeName(qgetenv("TEMP"));
+#endif
     if (temp.isEmpty()) {
         if (false) {
 #if defined(Q_OS_DARWIN) && !defined(QT_BOOTSTRAPPED)
@@ -1556,7 +1600,7 @@ QFileSystemEntry QFileSystemEngine::currentPath()
     }
 #else
     char currentName[PATH_MAX+1];
-    if (::getcwd(currentName, PATH_MAX)) {
+    if (QT_GETCWD(currentName, PATH_MAX)) {
 #if defined(Q_OS_VXWORKS) && defined(VXWORKS_VXSIM)
         QByteArray dir(currentName);
         if (dir.indexOf(':') < dir.indexOf('/'))
