@@ -773,12 +773,14 @@ setBootstrapVariable()
         echo "RM_F = rm -f" >> "$mkfile"
         echo "RM_RF = rm -rf" >> "$mkfile"
 
+        build_on_os2=
         case `basename "$PLATFORM"` in
         win32-g++*)
             cat "$in_mkfile.win32" >> "$mkfile"
             ;;
         os2-*)
             cat "$in_mkfile.os2" >> "$mkfile"
+            build_on_os2="yes"
             ;;
         *)
             cat "$in_mkfile.unix" >> "$mkfile"
@@ -789,7 +791,7 @@ setBootstrapVariable()
         esac
         echo >>"$mkfile"
 
-        if [ "$BUILD_ON_MAC" = "yes" ]; then
+        if [ "$BUILD_ON_MAC" = "yes" -o "$build_on_os2" = "yes" ]; then
             echo "EXTRA_CXXFLAGS += -MMD" >> "$mkfile"
             cat "$in_mkfile" >> "$mkfile"
             echo "-include \$(notdir \$(DEPEND_SRC:%.cpp=%.d))" >> "$mkfile"
