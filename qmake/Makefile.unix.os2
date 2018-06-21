@@ -1,4 +1,5 @@
 EXEEXT = .exe
+EXTRA_LFLAGS = -lcx
 QTOBJS = \
     qcore_unix.o \
     qfilesystemengine_unix.o \
