@@ -848,7 +848,7 @@ bool QFSFileEngine::isSequential() const
 /*!
     \internal
 */
-#ifdef Q_OS_UNIX
+#ifndef Q_OS_WIN
 bool QFSFileEnginePrivate::isSequentialFdFh() const
 {
     if (doStat(QFileSystemMetaData::SequentialType))
