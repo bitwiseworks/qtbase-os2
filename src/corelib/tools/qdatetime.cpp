@@ -4478,7 +4478,7 @@ qint64 QDateTime::currentSecsSinceEpoch() Q_DECL_NOTHROW
                    - julianDayFromDate(1970, 1, 1)) * Q_INT64_C(86400);
 }
 
-#elif defined(Q_OS_UNIX)
+#elif defined(Q_OS_UNIXLIKE)
 QDate QDate::currentDate()
 {
     return QDateTime::currentDateTime().date();
