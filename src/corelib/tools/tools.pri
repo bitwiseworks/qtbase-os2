@@ -124,6 +124,9 @@ false: SOURCES += $$NO_PCH_SOURCES # Hack for QtCreator
 else:unix {
     SOURCES += tools/qlocale_unix.cpp
 }
+else:os2 {
+    SOURCES += tools/qlocale_unix.cpp
+}
 else:win32 {
     SOURCES += tools/qlocale_win.cpp
     winrt-*-msvc2013: LIBS += advapi32.lib
