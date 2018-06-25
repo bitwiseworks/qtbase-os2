@@ -81,7 +81,7 @@ bool IoUtils::isRelativePath(const QString &path)
 #else
     if (path.startsWith(QLatin1Char('/')))
         return false;
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
     return true;
 }
 
@@ -106,7 +106,7 @@ QString IoUtils::resolvePath(const QString &baseDir, const QString &fileName)
         Q_ASSERT_X(isAbsolutePath(baseDir), "IoUtils::resolvePath", qUtf8Printable(baseDir));
         return QDir::cleanPath(baseDir.left(2) + fileName);
     }
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
     return QDir::cleanPath(baseDir + QLatin1Char('/') + fileName);
 }
 

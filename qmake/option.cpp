@@ -322,7 +322,7 @@ Option::init(int argc, char **argv)
 
     if(argc && argv) {
         QString argv0 = argv[0];
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
         if (!argv0.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive))
             argv0 += QLatin1String(".exe");
 #endif
@@ -331,7 +331,7 @@ Option::init(int argc, char **argv)
         if (!argv0.isEmpty() && IoUtils::isAbsolutePath(argv0)) {
             globals->qmake_abslocation = argv0;
         } else if (argv0.contains(QLatin1Char('/'))
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
                    || argv0.contains(QLatin1Char('\\'))
 #endif
             ) { //relative PWD
@@ -339,7 +339,7 @@ Option::init(int argc, char **argv)
         } else { //in the PATH
             QByteArray pEnv = qgetenv("PATH");
             QDir currentDir = QDir::current();
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
             QStringList paths = QString::fromLocal8Bit(pEnv).split(QLatin1String(";"));
             paths.prepend(QLatin1String("."));
 #else
@@ -360,7 +360,7 @@ Option::init(int argc, char **argv)
             globals->qmake_abslocation = QLibraryInfo::rawLocation(
                                                 QLibraryInfo::HostBinariesPath,
                                                 QLibraryInfo::EffectivePaths)
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
                                          + "/qmake.exe";
 #else
                                          + "/qmake";
@@ -548,7 +548,7 @@ Option::fixString(QString string, uchar flags)
     if (flags & Option::FixPathToNormalSeparators) {
         string.replace('\\', '/');
     } else if (flags & Option::FixPathToLocalSeparators) {
-#if defined(Q_OS_WIN32)
+#if defined(Q_OS_DOSLIKE)
         string.replace('/', '\\');
 #else
         string.replace('\\', '/');
