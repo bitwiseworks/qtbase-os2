@@ -800,8 +800,8 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
 
     if (!entry.isRelative()) {
         if (!entry.isAbsolute()) {
-            // Ask LIBC to resolve cases like "D:foo.txt" and "/foo.txt"
-            QVarLengthArray<char, PATH_MAX * 2 + 1> buf;
+            // Ask LIBC to resolve cases like "D:foo.txt" and "\foo.txt"
+            QVarLengthArray<char, PATH_MAX * 2 + 1> buf(PATH_MAX * 2 + 1);
             if (::_abspath(buf.data(), entry.nativeFilePath().constData(), buf.size()) == 0) {
                 ret = QFile::decodeName(buf.constData());
             } else {
