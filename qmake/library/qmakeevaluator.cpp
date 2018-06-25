@@ -1088,6 +1088,18 @@ void QMakeEvaluator::loadDefaults()
                 vcInstallDir,
                 m_option->getEnv(QLatin1String("PATH")));
 # endif
+#elif defined(Q_OS_OS2)
+    // Follow the Windows logic
+    vars[ProKey("QMAKE_HOST.os")] << ProString("OS/2");
+    vars[ProKey("QMAKE_HOST.version")] << ProString(QSysInfo::kernelVersion());
+    vars[ProKey("QMAKE_HOST.version_string")] << ProString(QSysInfo::productVersion());
+    /// Use x86 for arch as on Windows too (note: uname always returns i386)
+    vars[ProKey("QMAKE_HOST.arch")] << ProString("x86");
+    // Take the host name from uname
+    struct utsname name;
+    if (uname(&name) != -1) {
+        vars[ProKey("QMAKE_HOST.name")] << ProString(QString::fromLocal8Bit(name.nodename));
+    }
 #elif defined(Q_OS_UNIX)
     struct utsname name;
     if (uname(&name) != -1) {
