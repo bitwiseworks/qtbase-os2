@@ -116,6 +116,10 @@ bool QFSFileEnginePrivate::nativeOpen(QIODevice::OpenMode openMode)
                "QFSFileEngine no longer supports buffered mode; upper layer must buffer");
     if (openMode & QIODevice::Unbuffered) {
         int flags = openModeToOpenFlags(openMode);
+#if defined(QT_OPEN_BINARY)
+        // always open in binary mode here as all QIODevice::Text processing is done by Qt
+        flags |= QT_OPEN_BINARY;
+#endif
 
         // Try to open the file in unbuffered mode.
         do {

@@ -251,6 +251,9 @@ static bool createFileFromTemplate(NativeFileHandle &file, QTemporaryFileName &t
 #else // POSIX
         Q_UNUSED(flags)
         file = QT_OPEN(path.constData(),
+#if defined(QT_OPEN_BINARY)
+                QT_OPEN_BINARY |
+#endif
                 QT_OPEN_CREAT | QT_OPEN_EXCL | QT_OPEN_RDWR | QT_OPEN_LARGEFILE,
                 static_cast<mode_t>(mode));
 
