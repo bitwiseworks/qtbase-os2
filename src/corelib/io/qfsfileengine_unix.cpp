@@ -141,7 +141,7 @@ bool QFSFileEnginePrivate::nativeOpen(QIODevice::OpenMode openMode)
         }
 
         // Seek to the end when in Append mode.
-        if (flags & QFile::Append) {
+        if (openMode & QIODevice::Append) {
             int ret;
             do {
                 ret = QT_LSEEK(fd, 0, SEEK_END);
