@@ -710,7 +710,7 @@ qint64 QFSFileEnginePrivate::readLineFdFh(char *data, qint64 maxlen)
         return q->QAbstractFileEngine::readLine(data, maxlen);
 
     QT_OFF_T oldPos = 0;
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     bool seq = q->isSequential();
     if (!seq)
 #endif
@@ -726,7 +726,7 @@ qint64 QFSFileEnginePrivate::readLineFdFh(char *data, qint64 maxlen)
         return -1;              // error
     }
 
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     if (seq)
         return qstrlen(data);
 #endif

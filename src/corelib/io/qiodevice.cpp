@@ -1656,7 +1656,7 @@ qint64 QIODevice::write(const char *data, qint64 maxSize)
     if (d->pos != d->devicePos && !sequential && !seek(d->pos))
         return qint64(-1);
 
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     if (d->openMode & Text) {
         const char *endOfData = data + maxSize;
         const char *startOfBlock = data;

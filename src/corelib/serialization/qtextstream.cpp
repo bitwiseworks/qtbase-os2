@@ -430,10 +430,10 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
     // read raw data into a temporary buffer
     char buf[QTEXTSTREAM_BUFFERSIZE];
     qint64 bytesRead = 0;
-#if defined(Q_OS_WIN)
-    // On Windows, there is no non-blocking stdin - so we fall back to reading
-    // lines instead. If there is no QOBJECT, we read lines for all sequential
-    // devices; otherwise, we read lines only for stdin.
+#if defined(Q_OS_DOSLIKE)
+    // On Windows and OS/2, there is no non-blocking stdin - so we fall back to
+    // reading lines instead. If there is no QOBJECT, we read lines for all
+    // sequential devices; otherwise, we read lines only for stdin.
     QFile *file = 0;
     Q_UNUSED(file);
     if (device->isSequential()
@@ -558,7 +558,7 @@ void QTextStreamPrivate::flushWriteBuffer()
     if (writeBuffer.isEmpty())
         return;
 
-#if defined (Q_OS_WIN)
+#if defined (Q_OS_DOSLIKE)
     // handle text translation and bypass the Text flag in the device.
     bool textModeEnabled = device->isTextModeEnabled();
     if (textModeEnabled) {
@@ -592,7 +592,7 @@ void QTextStreamPrivate::flushWriteBuffer()
            qt_prettyDebug(data.constData(), qMin(data.size(),32), data.size()).constData(), int(bytesWritten));
 #endif
 
-#if defined (Q_OS_WIN)
+#if defined (Q_OS_DOSLIKE)
     // reset the text flag
     if (textModeEnabled)
         device->setTextModeEnabled(true);
@@ -2951,7 +2951,7 @@ QTextStream &center(QTextStream &stream)
 
     \snippet code/src_corelib_io_qtextstream.cpp 9
 
-    Note: On Windows, all '\\n' characters are written as '\\r\\n' if
+    Note: On Windows and OS/2, all '\\n' characters are written as '\\r\\n' if
     QTextStream's device or string is opened using the QIODevice::Text flag.
 
     \sa flush(), reset(), {QTextStream manipulators}

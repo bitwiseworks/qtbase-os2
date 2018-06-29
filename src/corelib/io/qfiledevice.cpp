@@ -488,7 +488,7 @@ bool QFileDevicePrivate::putCharHelper(char c)
     // Cutoff for code that doesn't only touch the buffer.
     qint64 writeBufferSize = writeBuffer.size();
     if ((openMode & QIODevice::Unbuffered) || writeBufferSize + 1 >= writeBufferChunkSize
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
         || ((openMode & QIODevice::Text) && c == '\n'
             && writeBufferSize + 2 >= writeBufferChunkSize)
 #endif
@@ -512,7 +512,7 @@ bool QFileDevicePrivate::putCharHelper(char c)
     lastWasWrite = true;
 
     int len = 1;
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     if ((openMode & QIODevice::Text) && c == '\n') {
         ++len;
         *writeBuffer.reserve(1) = '\r';
