@@ -366,15 +366,18 @@ defineTest(qtConfTest_linkerSupportsFlag) {
 
 defineReplace(qtConfFindInPathList) {
     for (dir, 2) {
-        exists("$$dir/$${1}"): \
-            return("$$dir/$${1}")
+        f = $$system_path($$dir/$${1})
+        exists($$f): \
+            return($$f)
     }
     return()
 }
 
 defineReplace(qtConfFindInPath) {
     ensurePathEnv()
-    return($$qtConfFindInPathList($$1, $$2 $$QMAKE_PATH_ENV))
+    exe = $$qtConfFindInPathList($$1, $$2 $$QMAKE_PATH_ENV)
+    win32|os2:isEmpty(exe): exe = $$qtConfFindInPathList($${1}.exe, $$2 $$QMAKE_PATH_ENV)
+    return($$exe)
 }
 
 defineReplace(qtConfPkgConfigEnv) {
