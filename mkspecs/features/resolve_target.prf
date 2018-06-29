@@ -15,7 +15,7 @@ exclusive_builds: load(exclusive_builds_post)
 
 QMAKE_RESOLVED_TARGET = $$absolute_path($$DESTDIR, $$OUT_PWD)/
 
-win32 {
+win32|os2 {
     contains(TEMPLATE, .*lib) {
         !skip_target_version_ext:isEmpty(TARGET_VERSION_EXT):!isEmpty(VERSION) {
             TARGET_VERSION_EXT = $$section(VERSION, ., 0, 0)

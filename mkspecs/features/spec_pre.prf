@@ -33,7 +33,7 @@ defineTest(ensurePathEnv) {
     }
 }
 
-equals(QMAKE_HOST.os, Windows) {
+equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2) {
     QMAKE_EXT_OBJ       = .obj
     QMAKE_EXT_RES       = .res
     QMAKE_SH            =

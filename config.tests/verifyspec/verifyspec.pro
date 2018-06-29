@@ -2,7 +2,7 @@ SOURCES = verifyspec.cpp
 
 # Provide a function to be used by mkspecs
 defineTest(deviceSanityCheckCompiler) {
-    equals(QMAKE_HOST.os, Windows): \
+    equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2): \
         sfx = .exe
     else: \
         sfx =

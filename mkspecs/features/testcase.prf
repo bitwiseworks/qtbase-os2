@@ -163,7 +163,7 @@ isEmpty(BUILDS)|build_pass {
     #   $$[QT_INSTALL_TESTS]/$$TARGET/some/helper1
     #   $$[QT_INSTALL_TESTS]/$$TARGET/some/helper2
     #
-    win32: extension = .exe
+    win32|os2: extension = .exe
     for(test_helper, TEST_HELPER_INSTALLS) {
         test_helper_dir = $$dirname(test_helper)
         output = $$basename(test_helper_dir)

@@ -73,7 +73,7 @@ defineTest(qtPrepareTool) {
         exists($${cmd}.pl) {
             $${1}_EXE = $${cmd}.pl
             cmd = perl -w $$system_path($${cmd}.pl)
-        } else: contains(QMAKE_HOST.os, Windows) {
+        } else: contains(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2) {
             $${1}_EXE = $${cmd}.exe
             cmd = $$system_path($${cmd}.exe)
         } else:contains(QMAKE_HOST.os, Darwin) {

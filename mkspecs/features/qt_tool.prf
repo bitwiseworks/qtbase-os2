@@ -53,7 +53,7 @@ DEFINES *= QT_USE_QSTRINGBUILDER
         bin = $$system_path($$QMAKE_RESOLVED_TARGET)
     } else {
         bin = $${HOST_QT_TOOLS}/$${TARGET}
-        equals(QMAKE_HOST.os, Windows): bin = $${bin}.exe
+        equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2): bin = $${bin}.exe
         bin = $$system_path($$bin)
     }
 

@@ -110,7 +110,7 @@ CMAKE_RELEASE_TYPE =
 #   true, and 'make release' is subsequently invoked, CMake is only aware of
 #   the debug libraries at build time.
 
-equals(QMAKE_HOST.os, Windows): CMAKE_BIN_SUFFIX = ".exe"
+equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2): CMAKE_BIN_SUFFIX = ".exe"
 if(build_all|CONFIG(debug, debug|release)): CMAKE_DEBUG_TYPE = debug
 if(build_all|CONFIG(release, debug|release)): CMAKE_RELEASE_TYPE = release
 

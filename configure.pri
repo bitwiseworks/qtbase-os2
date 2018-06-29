@@ -143,7 +143,7 @@ defineReplace(qtConfFunc_licenseCheck) {
                     Licheck = licheck64
             } else: equals(QMAKE_HOST.os, Darwin) {
                 Licheck = licheck_mac
-            } else: equals(QMAKE_HOST.os, Windows) {
+            } else: equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2) {
                 Licheck = licheck.exe
             } else {
                 qtConfFatalError("Host operating system not supported by this edition of Qt.")
@@ -255,7 +255,7 @@ defineTest(qtConfTest_architecture) {
     test_out_dir = $$OUT_PWD/$$basename(QMAKE_CONFIG_TESTS_DIR)/$$test
     unix:exists($$test_out_dir/arch): \
         content = $$cat($$test_out_dir/arch, blob)
-    else: win32:exists($$test_out_dir/arch.exe): \
+    else: win32|os2:exists($$test_out_dir/arch.exe): \
         content = $$cat($$test_out_dir/arch.exe, blob)
     else: android:exists($$test_out_dir/libarch.so): \
         content = $$cat($$test_out_dir/libarch.so, blob)

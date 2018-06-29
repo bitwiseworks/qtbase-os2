@@ -5,7 +5,7 @@ TEMPLATE = aux
 QMAKE_DOCS = $$PWD/doc/qmake.qdocconf
 
 # qmake binary
-win32: EXTENSION = .exe
+win32|os2: EXTENSION = .exe
 
 !build_pass {
     qmake_exe.target = $$OUT_PWD/qmake$$EXTENSION
