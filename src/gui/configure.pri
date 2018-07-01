@@ -55,6 +55,7 @@ defineTest(qtConfTest_qpaDefaultPlatform) {
     else: qnx: name = qnx
     else: integrity: name = integrityfb
     else: haiku: name = haiku
+    else: os2: name = os2
     else: name = xcb
 
     $${1}.value = $$name
