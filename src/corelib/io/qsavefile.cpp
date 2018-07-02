@@ -273,7 +273,7 @@ bool QSaveFile::open(OpenMode mode)
     // Same as in QFile: QIODevice provides the buffering, so there's no need to request it from the file engine.
     if (!d->fileEngine->open(mode | QIODevice::Unbuffered)) {
         QFileDevice::FileError err = d->fileEngine->error();
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
         if (d->directWriteFallback && err == QFileDevice::OpenError && errno == EACCES) {
             delete d->fileEngine;
             if (openDirectly())
