@@ -57,6 +57,7 @@
 #include <sys/stat.h>
 #include <sys/process.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 // compiler-dependent network includes
 #include <sys/socket.h>
