@@ -279,16 +279,21 @@ static QStringList xdgDataDirs()
     // http://standards.freedesktop.org/basedir-spec/latest/
     QString xdgDataDirsEnv = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
     if (xdgDataDirsEnv.isEmpty()) {
+#ifdef Q_OS_OS2
+        dirs.append(QString::fromLatin1("/@unixroot/usr/local/share"));
+        dirs.append(QString::fromLatin1("/@unixroot//usr/share"));
+#else
         dirs.append(QString::fromLatin1("/usr/local/share"));
         dirs.append(QString::fromLatin1("/usr/share"));
+#endif
     } else {
-        dirs = xdgDataDirsEnv.split(QLatin1Char(':'), QString::SkipEmptyParts);
+        dirs = xdgDataDirsEnv.split(QDir::listSeparator(), QString::SkipEmptyParts);
 
         // Normalize paths, skip relative paths
         QMutableListIterator<QString> it(dirs);
         while (it.hasNext()) {
             const QString dir = it.next();
-            if (!dir.startsWith(QLatin1Char('/')))
+            if (QFileInfo(dir).isRelative())
                 it.remove();
             else
                 it.setValue(QDir::cleanPath(dir));
@@ -311,9 +316,13 @@ static QStringList xdgConfigDirs()
     // http://standards.freedesktop.org/basedir-spec/latest/
     const QString xdgConfigDirs = QFile::decodeName(qgetenv("XDG_CONFIG_DIRS"));
     if (xdgConfigDirs.isEmpty())
+#ifdef Q_OS_OS2
+        dirs.append(QString::fromLatin1("/@unixroot/etc/xdg"));
+#else
         dirs.append(QString::fromLatin1("/etc/xdg"));
+#endif
     else
-        dirs = xdgConfigDirs.split(QLatin1Char(':'));
+        dirs = xdgConfigDirs.split(QDir::listSeparator());
     return dirs;
 }
 

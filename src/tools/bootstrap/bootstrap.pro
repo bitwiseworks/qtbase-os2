@@ -127,10 +127,10 @@ mac {
 macx {
     OBJECTIVE_SOURCES += \
         ../../corelib/io/qstandardpaths_mac.mm
-} else:unix {
+} else:unix|os2 {
     SOURCES += \
         ../../corelib/io/qstandardpaths_unix.cpp
-} else {
+} else:win32 {
     SOURCES += \
         ../../corelib/io/qstandardpaths_win.cpp
 }

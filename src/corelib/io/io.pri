@@ -189,5 +189,6 @@ win32 {
         SOURCES += \
                 io/qfsfileengine_unix.cpp \
                 io/qfilesystemengine_unix.cpp \
-                io/qfilesystemiterator_unix.cpp
+                io/qfilesystemiterator_unix.cpp \
+                io/qstandardpaths_unix.cpp
 }
