@@ -38,6 +38,7 @@
 **
 ****************************************************************************/
 
+#include "qplatformdefs.h"
 #include "qcoreapplication.h"
 #include "qcoreapplication_p.h"
 
@@ -106,7 +107,7 @@
 
 #include <stdlib.h>
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #  include <locale.h>
 #  include <unistd.h>
 #  include <sys/types.h>
@@ -172,6 +173,10 @@ QString QCoreApplicationPrivate::appName() const
     QString applicationName;
 #ifdef Q_OS_DARWIN
     applicationName = infoDictionaryStringProperty(QStringLiteral("CFBundleName"));
+#elif defined(Q_OS_OS2)
+    applicationName = QCoreApplication::applicationFilePath();
+    if (!applicationName.isEmpty())
+        applicationName = QFileInfo(applicationName).completeBaseName();
 #endif
     if (applicationName.isEmpty() && argv[0]) {
         char *p = strrchr(argv[0], '/');
@@ -186,6 +191,8 @@ QString QCoreApplicationPrivate::appVersion() const
 #ifndef QT_BOOTSTRAPPED
 #  ifdef Q_OS_DARWIN
     applicationVersion = infoDictionaryStringProperty(QStringLiteral("CFBundleVersion"));
+#  elif defined(Q_OS_OS2)
+    // ### TODO use module DESCRIPTION string etc.
 #  elif defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     QJNIObjectPrivate context(QtAndroidPrivate::context());
     if (context.isValid()) {
@@ -2253,6 +2260,17 @@ QString QCoreApplication::applicationFilePath()
             QCoreApplicationPrivate::setApplicationFilePath(fi.canonicalFilePath());
             return *QCoreApplicationPrivate::cachedApplicationFilePath;
         }
+    }
+#elif defined(Q_OS_OS2)
+    char appPath[PATH_MAX + 1];
+    if (_execname(appPath, sizeof(appPath)) == 0) {
+        // _execname returns the uppercased path, try to get the real case
+        char *path = appPath;
+        char realAppPath[PATH_MAX + 1];
+        if (_realrealpath(appPath, realAppPath, sizeof(realAppPath)))
+            path = realAppPath;
+        QCoreApplicationPrivate::setApplicationFilePath(QFileInfo(QFile::decodeName(path)).canonicalFilePath());
+        return *QCoreApplicationPrivate::cachedApplicationFilePath;
     }
 #endif
 #if defined( Q_OS_UNIX )

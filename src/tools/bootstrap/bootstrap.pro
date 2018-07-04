@@ -96,10 +96,12 @@ SOURCES += \
            ../../xml/dom/qdom.cpp \
            ../../xml/sax/qxml.cpp
 
-unix:SOURCES += ../../corelib/kernel/qcore_unix.cpp \
-                ../../corelib/io/qfilesystemengine_unix.cpp \
-                ../../corelib/io/qfilesystemiterator_unix.cpp \
-                ../../corelib/io/qfsfileengine_unix.cpp
+unix|os2:SOURCES += ../../corelib/kernel/qcore_unix.cpp \
+                    ../../corelib/io/qfilesystemengine_unix.cpp \
+                    ../../corelib/io/qfilesystemiterator_unix.cpp \
+                    ../../corelib/io/qfsfileengine_unix.cpp
+
+os2:SOURCES += ../../corelib/global/qoperatingsystemversion_os2.cpp
 
 win32:SOURCES += ../../corelib/global/qoperatingsystemversion_win.cpp \
                  ../../corelib/io/qfilesystemengine_win.cpp \
