@@ -104,7 +104,57 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_release_lock(void)
 
 #endif /* SLJIT_UTIL_GLOBAL_LOCK */
 
-#else /* _WIN32 */
+#elif defined(__OS2__)
+
+/* Preserve BOOL definition in pcre2_internal.h */
+#define BOOL __OS2_BOOL
+
+#define INCL_BASE
+#include <os2.h>
+
+#undef BOOL
+
+#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
+
+static HMTX allocator_mutex = NULLHANDLE;
+
+static SLJIT_INLINE void allocator_grab_lock(void)
+{
+	/* No idea what to do if an error occures. Static mutexes should never fail... */
+	if (allocator_mutex == NULLHANDLE)
+		DosCreateMutexSem(NULL, &allocator_mutex, 0, TRUE);
+	else
+		DosRequestMutexSem(allocator_mutex, SEM_INDEFINITE_WAIT);
+}
+
+static SLJIT_INLINE void allocator_release_lock(void)
+{
+	DosReleaseMutexSem(allocator_mutex);
+}
+
+#endif /* SLJIT_EXECUTABLE_ALLOCATOR */
+
+#if (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
+
+static HMTX global_mutex = NULLHANDLE;
+
+SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_grab_lock(void)
+{
+	/* No idea what to do if an error occures. Static mutexes should never fail... */
+	if (global_mutex == NULLHANDLE)
+		DosCreateMutexSem(NULL, &global_mutex, 0, TRUE);
+	else
+		DosRequestMutexSem(global_mutex, SEM_INDEFINITE_WAIT);
+}
+
+SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_release_lock(void)
+{
+	DosReleaseMutexSem(global_mutex);
+}
+
+#endif /* SLJIT_UTIL_GLOBAL_LOCK */
+
+#else /* __OS2__ */
 
 #if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
 
@@ -142,7 +192,7 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_release_lock(void)
 
 #endif /* SLJIT_UTIL_GLOBAL_LOCK */
 
-#endif /* _WIN32 */
+#endif /* __OS2__ */
 
 /* ------------------------------------------------------------------------ */
 /*  Stack                                                                   */
@@ -152,7 +202,7 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_release_lock(void)
 
 #ifdef _WIN32
 #include "windows.h"
-#else
+#elif !defined(__OS2__)
 /* Provides mmap function. */
 #include <sys/mman.h>
 /* For detecting the page size. */
@@ -220,6 +270,13 @@ SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_CALL sljit_allocate_stack(slj
 		GetSystemInfo(&si);
 		sljit_page_align = si.dwPageSize - 1;
 	}
+#elif defined(__OS2__)
+	if (!sljit_page_align) {
+		ULONG pgsize = 0;
+		if (DosQUerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE, &pgsize, sizeof(pgsize)))
+			pgsize = 4096; /* Should never happen. */
+		sljit_page_align = pgsize - 1;
+	}
 #else
 	if (!sljit_page_align) {
 		sljit_page_align = sysconf(_SC_PAGESIZE);
@@ -240,6 +297,21 @@ SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_CALL sljit_allocate_stack(slj
 #ifdef _WIN32
 	ptr = VirtualAlloc(NULL, max_limit, MEM_RESERVE, PAGE_READWRITE);
 	if (!ptr) {
+		SLJIT_FREE(stack, allocator_data);
+		return NULL;
+	}
+	stack->max_limit = (sljit_u8 *)ptr;
+	stack->base = stack->max_limit + max_limit;
+	stack->limit = stack->base;
+	if (sljit_stack_resize(stack, stack->base - limit)) {
+		sljit_free_stack(stack, allocator_data);
+		return NULL;
+	}
+#elif defined(__OS2__)
+	APIRET arc = DosAllocMem(&ptr, max_limit, PAG_COMMIT | PAG_READ | PAG_WRITE | OBJ_ANY);
+	if (arc)
+		arc = DosAllocMem(&ptr, max_limit, PAG_COMMIT | PAG_READ | PAG_WRITE);
+	if (arc) {
 		SLJIT_FREE(stack, allocator_data);
 		return NULL;
 	}
@@ -281,6 +353,8 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_free_stack(struct sljit_stack *st
 	SLJIT_UNUSED_ARG(allocator_data);
 #ifdef _WIN32
 	VirtualFree((void*)stack->max_limit, 0, MEM_RELEASE);
+#elif defined(__OS2__)
+	DosFreeMem((PVOID)stack->max_limit);
 #else
 	munmap((void*)stack->max_limit, stack->base - stack->max_limit);
 #endif
@@ -304,6 +378,21 @@ SLJIT_API_FUNC_ATTRIBUTE sljit_sw SLJIT_CALL sljit_stack_resize(struct sljit_sta
 		}
 		else {
 			if (!VirtualFree((void*)aligned_old_limit, aligned_new_limit - aligned_old_limit, MEM_DECOMMIT))
+				return -1;
+		}
+	}
+	stack->limit = new_limit;
+	return 0;
+#elif defined(__OS2__)
+	aligned_new_limit = (sljit_uw)new_limit & ~sljit_page_align;
+	aligned_old_limit = ((sljit_uw)stack->limit) & ~sljit_page_align;
+	if (aligned_new_limit != aligned_old_limit) {
+		if (aligned_new_limit < aligned_old_limit) {
+			if (DosSetMem((PVOID)aligned_new_limit, aligned_old_limit - aligned_new_limit, PAG_COMMIT | PAG_DEFAULT))
+				return -1;
+		}
+		else {
+			if (DosSetMem((PVOID)aligned_old_limit, aligned_new_limit - aligned_old_limit, PAG_DECOMMIT))
 				return -1;
 		}
 	}
