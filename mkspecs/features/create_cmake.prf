@@ -219,7 +219,7 @@ mac {
             CMAKE_LIB_FILE_LOCATION_RELEASE = lib$${CMAKE_QT_STEM}.$$eval(QT.$${MODULE}.VERSION).dylib
         }
     }
-} else:win32 {
+} else:win32|os2 {
     CMAKE_WINDOWS_BUILD = "true"
     CMAKE_FIND_OTHER_LIBRARY_BUILD = "true"
 

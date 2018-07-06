@@ -38,7 +38,7 @@ THE_TARGET = $$qt5LibraryTarget($$TARGET)
         "QMAKE_INCDIR_$${ucmodule} = $$val_escape(MODULE_INCLUDEPATH)" \
         "QMAKE_DEFINES_$${ucmodule} = $$val_escape(MODULE_DEFINES)"
     debug_and_release {
-        win32: MODULE_DEBUG_LIBS = -L$$DESTDIR -l$${TARGET}d
+        win32|os2: MODULE_DEBUG_LIBS = -L$$DESTDIR -l$${TARGET}d
         darwin: MODULE_DEBUG_LIBS = -L$$DESTDIR -l$${TARGET}_debug
         MODULE_RELEASE_LIBS = -L$$DESTDIR -l$$TARGET
         MODULE_PRI_CONT += \
