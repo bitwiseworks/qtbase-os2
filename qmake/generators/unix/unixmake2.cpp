@@ -1255,7 +1255,8 @@ void UnixMakefileGenerator::init2()
     } else {
         ProString prefix = project->first("QMAKE_PREFIX_SHLIB");
         project->values("TARGETA").append(project->first("DESTDIR") + project->first("QMAKE_PREFIX_STATICLIB")
-                + project->first("TARGET") + "." + project->first("QMAKE_EXTENSION_STATICLIB"));
+                + project->first("TARGET") + project->first("QMAKE_SUFFIX_STATICSHLIB") + "."
+                + project->first("QMAKE_EXTENSION_STATICLIB"));
 
         ProStringList &ar_cmd = project->values("QMAKE_AR_CMD");
         if (!ar_cmd.isEmpty())
