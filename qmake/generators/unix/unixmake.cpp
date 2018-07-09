@@ -46,6 +46,9 @@ UnixMakefileGenerator::init()
     if(project->isEmpty("QMAKE_EXTENSION_PLUGIN"))
         project->values("QMAKE_EXTENSION_PLUGIN").append(project->first("QMAKE_EXTENSION_SHLIB"));
 
+    if(!project->isSet("QMAKE_PREFIX_SHLIB"))
+       project->values("QMAKE_PREFIX_SHLIB").append("lib");
+
     project->values("QMAKE_ORIG_TARGET") = project->values("TARGET");
 
     //version handling
