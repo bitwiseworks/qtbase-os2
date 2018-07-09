@@ -17,7 +17,7 @@ QMAKE_RESOLVED_TARGET = $$absolute_path($$DESTDIR, $$OUT_PWD)/
 
 win32|os2 {
     contains(TEMPLATE, .*lib) {
-        !skip_target_version_ext:isEmpty(TARGET_VERSION_EXT):!isEmpty(VERSION) {
+        !os2:!skip_target_version_ext:isEmpty(TARGET_VERSION_EXT):!isEmpty(VERSION) {
             TARGET_VERSION_EXT = $$section(VERSION, ., 0, 0)
         }
         static:TARGET_EXT = .lib
@@ -92,6 +92,7 @@ win32|os2 {
             }
         } else {
             QMAKE_RESOLVED_TARGET = $${QMAKE_RESOLVED_TARGET}$${TARGET}
+            !isEmpty(QMAKE_EXTENSION_APP): QMAKE_RESOLVED_TARGET += $${QMAKE_RESOLVED_TARGET}.$${QMAKE_EXTENSION_APP}
         }
     }
 }
