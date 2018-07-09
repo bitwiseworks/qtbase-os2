@@ -83,7 +83,9 @@ stack_protector_strong {
     enable_gdb_index: QMAKE_LFLAGS += $$QMAKE_LFLAGS_GDB_INDEX
 }
 
-dll:win32: QMAKE_LFLAGS += $$QMAKE_LFLAGS_DLL
+dll: {
+    wi32|os2: QMAKE_LFLAGS += $$QMAKE_LFLAGS_DLL
+}
 static:mac: QMAKE_LFLAGS += $$QMAKE_LFLAGS_STATIC_LIB
 staticlib:unix {
     QMAKE_CFLAGS += $$QMAKE_CFLAGS_STATIC_LIB
