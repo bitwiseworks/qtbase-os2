@@ -82,6 +82,10 @@ UnixMakefileGenerator::init()
         return; /* subdirs is done */
     }
 
+    /* Always force unversioned_libname on OS/2 (to disable unneeded code in other places) */
+    if(project->isActiveConfig("os2") && configs.indexOf("unversioned_libname") == -1)
+        configs.append("unversioned_libname");
+
     project->values("QMAKE_ORIG_DESTDIR") = project->values("DESTDIR");
     project->values("QMAKE_LIBS") += project->values("LIBS");
     project->values("QMAKE_LIBS_PRIVATE") += project->values("LIBS_PRIVATE");
@@ -304,11 +308,13 @@ UnixMakefileGenerator::init()
 
     init2();
     project->values("QMAKE_INTERNAL_PRL_LIBS") << "QMAKE_LIBS";
-    ProString target = project->first("TARGET");
-    int slsh = target.lastIndexOf(Option::dir_sep);
-    if (slsh != -1)
-        target.chopFront(slsh + 1);
-    project->values("LIB_TARGET").prepend(target);
+    if (project->isEmpty("LIB_TARGET")) {
+        ProString target = project->first("TARGET");
+        int slsh = target.lastIndexOf(Option::dir_sep);
+        if (slsh != -1)
+            target.chopFront(slsh + 1);
+        project->values("LIB_TARGET").prepend(target);
+    }
     if(!project->isEmpty("QMAKE_MAX_FILES_PER_AR")) {
         bool ok;
         int max_files = project->first("QMAKE_MAX_FILES_PER_AR").toInt(&ok);
@@ -728,6 +734,15 @@ UnixMakefileGenerator::defaultInstall(const QString &t)
                     uninst.append("-$(DEL_FILE) " + dst_link);
                 }
             }
+        }
+        if(project->first("TEMPLATE") == "lib" && !project->isActiveConfig("staticlib")
+            && !project->isActiveConfig("plugin") && !project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
+            QString dst_lib = escapeFilePath(
+                        filePrefixRoot(root, fileFixify(targetdir, FileFixifyAbsolute))) + "$(LIB_TARGET)";
+            ret += "\n\t-$(INSTALL_FILE) " + destdir + "$(LIB_TARGET) " + dst_lib;
+            if(!uninst.isEmpty())
+                uninst.append("\n\t");
+            uninst.append("-$(DEL_FILE) " + dst_lib);
         }
     }
     if(project->first("TEMPLATE") == "lib") {

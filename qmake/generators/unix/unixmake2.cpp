@@ -298,6 +298,9 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                 t << "TARGETD       = " << fileVar("TARGET_x") << endl;
             }
         }
+        if (!project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
+            t << "LIB_TARGET    = " << fileVar("LIB_TARGET") << endl;
+        }
     }
     writeExtraCompilerVariables(t);
     writeExtraVariables(t);
@@ -670,6 +673,14 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
         t << endl << endl;
 
         if (! project->isActiveConfig("plugin")) {
+            if (!project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
+                allDeps += ' ' + destdir_d + "$(LIB_TARGET)";
+                t << destdir_d << "$(LIB_TARGET): " << destdir_d << "$(TARGET)";
+                t << "\n\t-$(DEL_FILE) " << destdir << "$(LIB_TARGET)";
+                t << "\n\t" << var("QMAKE_LINK_IMPLIB_CMD").replace("$(LIB_TARGET)", destdir + "$(LIB_TARGET)")
+                     .replace("$(TARGET)", destdir + "$(TARGET)");
+                t << endl << endl;
+            }
             t << "staticlib: $(TARGETA)\n\n";
             t << "$(TARGETA): " << depVar("PRE_TARGETDEPS") << " $(OBJECTS) $(OBJCOMP)";
             if(do_incremental)
@@ -1113,6 +1124,9 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
         } else {
             t << "\t-$(DEL_FILE) $(TARGETA)\n";
         }
+        if (!project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
+            t << "\t-$(DEL_FILE) $(DESTDIR)$(LIB_TARGET)\n";
+        }
     } else {
         t << "\t-$(DEL_FILE) $(TARGET) \n";
     }
@@ -1263,7 +1277,15 @@ void UnixMakefileGenerator::init2()
             ar_cmd[0] = ar_cmd.at(0).toQString().replace(QLatin1String("(TARGET)"), QLatin1String("(TARGETA)"));
         else
             ar_cmd.append("$(AR) $(TARGETA) $(OBJECTS)");
-        if (!project->isEmpty("QMAKE_BUNDLE")) {
+
+        if (project->isActiveConfig("os2")) {
+            ProString dll = prefix + project->first("TARGET");
+            project->values("LIB_TARGET").prepend(project->first("QMAKE_PREFIX_STATICLIB")
+                    + project->first("TARGET") + "." + project->first("QMAKE_EXTENSION_STATICLIB"));
+            project->values("TARGET_PRL").prepend(project->first("QMAKE_PREFIX_STATICLIB") + project->first("TARGET"));
+            project->values("TARGET_x").prepend(prefix + dll + "." + project->first("QMAKE_EXTENSION_SHLIB"));
+            project->values("TARGET") = project->values("TARGET_x");
+        } else if (!project->isEmpty("QMAKE_BUNDLE")) {
             ProString bundle_loc = project->first("QMAKE_BUNDLE_LOCATION");
             if(!bundle_loc.isEmpty() && !bundle_loc.startsWith("/"))
                 bundle_loc.prepend("/");
