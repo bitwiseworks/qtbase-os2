@@ -84,7 +84,7 @@ stack_protector_strong {
 }
 
 dll: {
-    wi32|os2: QMAKE_LFLAGS += $$QMAKE_LFLAGS_DLL
+    win32|os2: QMAKE_LFLAGS += $$QMAKE_LFLAGS_DLL
 }
 static:mac: QMAKE_LFLAGS += $$QMAKE_LFLAGS_STATIC_LIB
 staticlib:unix {
