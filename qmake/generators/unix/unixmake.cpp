@@ -591,6 +591,8 @@ UnixMakefileGenerator::defaultInstall(const QString &t)
         bundle = project->isActiveConfig("sliced_bundle") ? SlicedBundle : SolidBundle;
     } else if(project->first("TEMPLATE") == "app") {
         target = "$(QMAKE_TARGET)";
+        if (!project->isEmpty("QMAKE_EXTENSION_APP"))
+            target += "." + project->first("QMAKE_EXTENSION_APP");
     } else if(project->first("TEMPLATE") == "lib") {
             if (!project->isActiveConfig("staticlib")
                     && !project->isActiveConfig("plugin")
