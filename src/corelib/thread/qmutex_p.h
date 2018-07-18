@@ -69,6 +69,8 @@
 #  include <semaphore.h>
 #  define QT_UNIX_SEMAPHORE
 # endif
+#elif defined(Q_OS_OS2)
+# include "qt_os2.h"
 #endif
 
 struct timespec;
@@ -137,6 +139,8 @@ public:
     pthread_cond_t cond;
 #elif defined(Q_OS_WIN)
     Qt::HANDLE event;
+#elif defined(Q_OS_OS2)
+    HEV event;
 #endif
 };
 #endif //QT_LINUX_FUTEX

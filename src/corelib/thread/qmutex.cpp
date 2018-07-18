@@ -736,8 +736,10 @@ QT_END_NAMESPACE
 #  include "qmutex_mac.cpp"
 #elif defined(Q_OS_WIN)
 #  include "qmutex_win.cpp"
-#else
+#elif defined(Q_OS_UNIX)
 #  include "qmutex_unix.cpp"
+#elif defined(Q_OS_OS2)
+#  include "qmutex_os2.cpp"
 #endif
 
 #endif // QT_NO_THREAD
