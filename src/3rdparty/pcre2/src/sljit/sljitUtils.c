@@ -273,7 +273,7 @@ SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_CALL sljit_allocate_stack(slj
 #elif defined(__OS2__)
 	if (!sljit_page_align) {
 		ULONG pgsize = 0;
-		if (DosQUerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE, &pgsize, sizeof(pgsize)))
+		if (DosQuerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE, &pgsize, sizeof(pgsize)))
 			pgsize = 4096; /* Should never happen. */
 		sljit_page_align = pgsize - 1;
 	}
