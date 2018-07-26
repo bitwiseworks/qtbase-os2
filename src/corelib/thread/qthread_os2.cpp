@@ -1,78 +1,72 @@
 /****************************************************************************
 **
-** Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
-** All rights reserved.
-** Contact: Nokia Corporation (qt-info@nokia.com)
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
-** Copyright (C) 2010 netlabs.org. OS/2 parts.
+** Copyright (C) 2018 bww bitwise works GmbH. OS/2 parts.
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
-** Commercial Usage
-** Licensees holding valid Qt Commercial licenses may use this file in
-** accordance with the Qt Commercial License Agreement provided with the
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Nokia.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** In addition, as a special exception, Nokia gives you certain additional
-** rights.  These rights are described in the Nokia Qt LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
-** If you have questions regarding the use of this file, please contact
-** Nokia at qt-info@nokia.com.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
+#include "qplatformdefs.h"
 #include "qthread.h"
 #include "qthread_p.h"
 #include "qthreadstorage.h"
 #include "qmutex.h"
 
-#include <qcoreapplication.h>
-#include <qpointer.h>
-
 #include <private/qcoreapplication_p.h>
-#include <private/qeventdispatcher_pm_p.h>
-
-#include <qt_os2.h>
+#include <private/qeventdispatcher_os2_p.h>
 
 #ifndef QT_NO_THREAD
 
 QT_BEGIN_NAMESPACE
 
-static void qt_watch_adopted_thread(const TID adoptedTID, QThread *qthread);
+static void qt_watch_adopted_thread(const int adoptedTID, QThread *qthread);
 static void qt_adopted_thread_watcher_function(void *);
 
 static QThreadData **qt_tls = NULL;
 
-Q_CORE_EXPORT void qt_create_tls()
+static void qt_create_tls()
 {
     if (qt_tls != NULL)
         return;
-    static QMutex mutex;
+    static QBasicMutex mutex;
     QMutexLocker locker(&mutex);
-    APIRET rc = DosAllocThreadLocalMemory((sizeof(QThreadData *) + 3)/4,
-                                          (PULONG *)&qt_tls);
-    if (rc != NO_ERROR)
-        qWarning("qt_create_tls: DosAllocThreadLocalMemory returned %lu", rc);
+    APIRET arc = DosAllocThreadLocalMemory((sizeof(QThreadData *) + 3)/4,
+                                           (PULONG *)&qt_tls);
+    if (arc != NO_ERROR)
+        qWarning("qt_create_tls: DosAllocThreadLocalMemory returned %lu", arc);
 }
 
 static void qt_free_tls()
@@ -83,39 +77,35 @@ static void qt_free_tls()
     }
 }
 
-static Q_DESTRUCTOR_FUNCTION(qt_free_tls)
+Q_DESTRUCTOR_FUNCTION(qt_free_tls)
 
 /*
     QThreadData
 */
-QThreadData *QThreadData::current()
+
+void QThreadData::clearCurrentThreadData()
+{
+    *qt_tls = 0;
+}
+
+QThreadData *QThreadData::current(bool createIfNecessary)
 {
     qt_create_tls();
     QThreadData *threadData = *qt_tls;
-    if (!threadData) {
-        QThread *adopted = 0;
-        if (QInternal::activateCallbacks(QInternal::AdoptCurrentThread, (void **) &adopted)) {
-            Q_ASSERT(adopted);
-            threadData = QThreadData::get2(adopted);
-            *qt_tls = threadData;
-            adopted->d_func()->running = true;
-            adopted->d_func()->finished = false;
-            static_cast<QAdoptedThread *>(adopted)->init();
-        } else {
-            threadData = new QThreadData;
-            // This needs to be called prior to new AdoptedThread() to
-            // avoid recursion.
-            *qt_tls = threadData;
-            threadData->thread = new QAdoptedThread(threadData);
-            threadData->deref();
-        }
+    if (!threadData && createIfNecessary) {
+        threadData = new QThreadData;
+        // This needs to be called prior to new AdoptedThread() to
+        // avoid recursion.
+        *qt_tls = threadData;
+        threadData->thread = new QAdoptedThread(threadData);
+        threadData->deref();
+        threadData->isAdopted = true;
+        threadData->threadId.store(reinterpret_cast<Qt::HANDLE>(_gettid()));
 
         if (!QCoreApplicationPrivate::theMainThread) {
-            QCoreApplicationPrivate::theMainThread = threadData->thread;
+            QCoreApplicationPrivate::theMainThread = threadData->thread.load();
         } else {
-            PTIB ptib;
-            DosGetInfoBlocks(&ptib, NULL);
-            qt_watch_adopted_thread(ptib->tib_ptib2->tib2_ultid, threadData->thread);
+            qt_watch_adopted_thread(_gettid(), threadData->thread);
         }
     }
     return threadData;
@@ -123,49 +113,53 @@ QThreadData *QThreadData::current()
 
 void QAdoptedThread::init()
 {
-    PTIB ptib;
-    DosGetInfoBlocks(&ptib, NULL);
-    d_func()->tid = ptib->tib_ptib2->tib2_ultid;
+    d_func()->tid = _gettid();
 }
 
-static QVector<TID> qt_adopted_thread_tids;
+static QVector<int> qt_adopted_thread_tids;
 static QVector<QThread *> qt_adopted_qthreads;
-static QMutex qt_adopted_thread_watcher_mutex;
-static TID qt_adopted_thread_watcher_tid = 0;
+static QBasicMutex qt_adopted_thread_watcher_mutex;
+static int qt_adopted_thread_watcher_tid = 0;
 static HEV qt_adopted_thread_wakeup = NULLHANDLE;
 
-/*! \internal
+/*!
+    \internal
     Adds an adopted thread to the list of threads that Qt watches to make sure
     the thread data is properly cleaned up. This function starts the watcher
     thread if necessary.
 */
-static void qt_watch_adopted_thread(const TID adoptedTID, QThread *qthread)
+static void qt_watch_adopted_thread(const int adoptedTID, QThread *qthread)
 {
     QMutexLocker lock(&qt_adopted_thread_watcher_mutex);
+
+    if (_gettid() == qt_adopted_thread_watcher_tid) {
+        return;
+    }
+
     qt_adopted_thread_tids.append(adoptedTID);
     qt_adopted_qthreads.append(qthread);
 
     // Start watcher thread if it is not already running.
     if (qt_adopted_thread_watcher_tid == 0) {
-        APIRET rc = DosCreateEventSem(NULL, &qt_adopted_thread_wakeup,
-                                      DCE_AUTORESET, FALSE);
-        if (rc != NO_ERROR) {
-            qWarning("qt_watch_adopted_thread: DosCreateEventSem returned %lu", rc);
+        APIRET arc = DosCreateEventSem(NULL, &qt_adopted_thread_wakeup,
+                                       DCE_AUTORESET, FALSE);
+        if (arc != NO_ERROR) {
+            qWarning("qt_watch_adopted_thread: DosCreateEventSem returned %lu", arc);
             return;
         }
 
-        int tid =
-            (TID)_beginthread(qt_adopted_thread_watcher_function, NULL, 0, NULL);
+        int tid = _beginthread(qt_adopted_thread_watcher_function, NULL, 0, NULL);
         if (tid == -1)
             qErrnoWarning(errno, "qt_watch_adopted_thread: _beginthread failed");
         else
-            qt_adopted_thread_watcher_tid = (TID) tid;
+            qt_adopted_thread_watcher_tid = tid;
     } else {
         DosPostEventSem(qt_adopted_thread_wakeup);
     }
 }
 
-/*! \internal
+/*!
+    \internal
     This function loops and waits for native adopted threads to finish.
     When this happens it derefs the QThreadData for the adopted thread
     to make sure it gets cleaned up properly.
@@ -184,31 +178,48 @@ static void qt_adopted_thread_watcher_function(void *)
             break;
         }
 
-        APIRET rc;
-        TID tid;
+        APIRET arc;
+        int tid;
 
         for (int i = 0; i < qt_adopted_thread_tids.size();) {
             tid = qt_adopted_thread_tids.at(i);
-            qDosNI(rc = DosWaitThread(&tid, DCWW_NOWAIT));
-            if (rc != ERROR_THREAD_NOT_TERMINATED) {
-                if (rc == NO_ERROR || rc == ERROR_INVALID_THREADID) {
-                    QThreadData::get2(qt_adopted_qthreads.at(i))->deref();
+            qDosNI(arc = DosWaitThread((PTID)&tid, DCWW_NOWAIT));
+            if (arc != ERROR_THREAD_NOT_TERMINATED) {
+                if (arc == NO_ERROR || arc == ERROR_INVALID_THREADID) {
+                    QThreadData *data = QThreadData::get2(qt_adopted_qthreads.at(i));
+                    qt_adopted_thread_watcher_mutex.unlock();
+
+                    if (data->isAdopted) {
+                        QThread *thread = data->thread;
+                        Q_ASSERT(thread);
+                        QThreadPrivate *thread_p = static_cast<QThreadPrivate *>(QObjectPrivate::get(thread));
+                        Q_UNUSED(thread_p)
+                        Q_ASSERT(!thread_p->finished);
+                        thread_p->finish(thread);
+                    }
+                    data->deref();
+
+                    qt_adopted_thread_watcher_mutex.lock();
                     qt_adopted_thread_tids.remove(i);
                     qt_adopted_qthreads.remove(i);
                     continue;
                 }
-                qWarning("qt_adopted_thread_watcher_function: DosWaitThread returned %lu", rc);
+                qWarning("qt_adopted_thread_watcher_function: DosWaitThread returned %lu", arc);
             }
             ++i;
         }
 
         qt_adopted_thread_watcher_mutex.unlock();
 
-        qDosNI(rc = DosWaitEventSem(qt_adopted_thread_wakeup, 300));
-        if (rc != NO_ERROR && rc != ERROR_TIMEOUT) {
-            qWarning("qt_adopted_thread_watcher_function: DosWaitEventSem returned %lu", rc);
+        qDosNI(arc = DosWaitEventSem(qt_adopted_thread_wakeup, 300));
+        if (arc != NO_ERROR && arc != ERROR_TIMEOUT) {
+            qWarning("qt_adopted_thread_watcher_function: DosWaitEventSem returned %lu", arc);
         }
     }
+
+    QThreadData *threadData = *qt_tls;
+    if (threadData)
+        threadData->deref();
 }
 
 /**************************************************************************
@@ -217,31 +228,40 @@ static void qt_adopted_thread_watcher_function(void *)
 
 #endif // QT_NO_THREAD
 
-void QThreadPrivate::createEventDispatcher(QThreadData *data)
+QAbstractEventDispatcher *QThreadPrivate::createEventDispatcher(QThreadData *data)
 {
-    data->eventDispatcher = new QEventDispatcherPM;
-    data->eventDispatcher->startingUp();
+    Q_UNUSED(data);
+    return new QEventDispatcherOS2;
 }
 
 #ifndef QT_NO_THREAD
 
 // static
-void QThreadPrivate::start(void *arg)
+void QThreadPrivate::start(void *arg) Q_DECL_NOEXCEPT
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadData *data = QThreadData::get2(thr);
 
     qt_create_tls();
     *qt_tls = data;
+    data->threadId.store(reinterpret_cast<Qt::HANDLE>(_gettid()));
 
     QThread::setTerminationEnabled(false);
 
-    data->quitNow = false;
-    // ### TODO: allow the user to create a custom event dispatcher
-    if (QCoreApplication::instance())
-        createEventDispatcher(data);
+    {
+        QMutexLocker locker(&thr->d_func()->mutex);
+        data->quitNow = thr->d_func()->exited;
+    }
 
-    emit thr->started();
+    QAbstractEventDispatcher *eventDispatcher = data->eventDispatcher.load();
+    if (!eventDispatcher) {
+        eventDispatcher = createEventDispatcher(data);
+        data->eventDispatcher.storeRelease(eventDispatcher);
+    }
+
+    eventDispatcher->startingUp();
+
+    emit thr->started(QThread::QPrivateSignal());
     QThread::setTerminationEnabled(true);
     thr->run();
 
@@ -249,48 +269,48 @@ void QThreadPrivate::start(void *arg)
 }
 
 // static
-void QThreadPrivate::finish(void *arg, bool lockAnyway)
+void QThreadPrivate::finish(void *arg, bool lockAnyway) Q_DECL_NOEXCEPT
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadPrivate *d = thr->d_func();
 
-    if (lockAnyway)
-        d->mutex.lock();
+    QMutexLocker locker(lockAnyway ? &d->mutex : 0);
+    d->isInFinish = true;
     d->priority = QThread::InheritPriority;
-    d->running = false;
-    d->finished = true;
-    if (d->terminated)
-        emit thr->terminated();
-    d->terminated = false;
-    emit thr->finished();
+    void **tls_data = reinterpret_cast<void **>(&d->data->tls);
+    locker.unlock();
+    emit thr->finished(QThread::QPrivateSignal());
+    QCoreApplication::sendPostedEvents(0, QEvent::DeferredDelete);
+    QThreadStorageData::finish(tls_data);
+    locker.relock();
 
-    if (d->data->eventDispatcher) {
-        d->data->eventDispatcher->closingDown();
-        QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher;
+    QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.load();
+    if (eventDispatcher) {
         d->data->eventDispatcher = 0;
+        locker.unlock();
+        eventDispatcher->closingDown();
         delete eventDispatcher;
+        locker.relock();
     }
 
-    QThreadStorageData::finish(reinterpret_cast<void **>(&d->data->tls));
+    d->running = false;
+    d->finished = true;
+    d->isInFinish = false;
+    d->interruptionRequested = false;
 
     d->tid = 0;
-
-    if (lockAnyway)
-        d->mutex.unlock();
 }
 
 /**************************************************************************
  ** QThread
  *************************************************************************/
 
-Qt::HANDLE QThread::currentThreadId()
+Qt::HANDLE QThread::currentThreadId() Q_DECL_NOTHROW
 {
-    PTIB ptib;
-    DosGetInfoBlocks(&ptib, NULL);
-    return (Qt::HANDLE)ptib->tib_ptib2->tib2_ultid;
+    return reinterpret_cast<Qt::HANDLE>(_gettid());
 }
 
-int QThread::idealThreadCount()
+int QThread::idealThreadCount() Q_DECL_NOTHROW
 {
     ULONG cpuCnt = 1;
     APIRET rc = DosQuerySysInfo(QSV_NUMPROCESSORS, QSV_NUMPROCESSORS,
@@ -320,6 +340,7 @@ void QThread::usleep(unsigned long usecs)
     DosSleep((usecs / 1000) + 1);
 }
 
+// NOTE: Caller must hold the mutex.
 void QThreadPrivate::setPriority(QThread::Priority priority)
 {
     this->priority = priority;
@@ -378,12 +399,20 @@ void QThread::start(Priority priority)
     Q_D(QThread);
     QMutexLocker locker(&d->mutex);
 
+    if (d->isInFinish) {
+        locker.unlock();
+        wait();
+        locker.relock();
+    }
+
     if (d->running)
         return;
 
     d->running = true;
     d->finished = false;
-    d->terminated = false;
+    d->exited = false;
+    d->returnCode = 0;
+    d->interruptionRequested = false;
 
     int tid = _beginthread(QThreadPrivate::start, NULL, d->stackSize, this);
     d->tid = tid != -1 ? (TID) tid : 0;
@@ -413,7 +442,6 @@ void QThread::terminate()
         return;
     }
     DosKillThread(d->tid);
-    d->terminated = true;
     QThreadPrivate::finish(this, false);
 }
 
@@ -442,7 +470,7 @@ bool QThread::wait(unsigned long time)
             // OS/2 doesn't support specifying a maximum time to wait for a
             // thread to end other than infininty, so we run a loop of small
             // wait intervals (in ms)
-            enum { THREAD_WAIT_INTERVAL = 1000 };
+            constexpr ULONG THREAD_WAIT_INTERVAL = 1000;
             sleep = time > THREAD_WAIT_INTERVAL ? THREAD_WAIT_INTERVAL : time;
             DosSleep(sleep);
             qDosNI(rc = DosWaitThread(&tid, DCWW_NOWAIT));
@@ -465,7 +493,6 @@ bool QThread::wait(unsigned long time)
 
     if (ret && !d->finished) {
         // thread was terminated by someone else
-        d->terminated = true;
         QThreadPrivate::finish(this, false);
     }
 
@@ -481,23 +508,10 @@ void QThread::setTerminationEnabled(bool enabled)
     QMutexLocker locker(&d->mutex);
     d->terminationEnabled = enabled;
     if (enabled && d->terminatePending) {
-        d->terminated = true;
         QThreadPrivate::finish(thr, false);
         locker.unlock(); // don't leave the mutex locked!
         _endthread();
     }
-}
-
-void QThread::setPriority(Priority priority)
-{
-    Q_D(QThread);
-    QMutexLocker locker(&d->mutex);
-    if (!d->running) {
-        qWarning("QThread::setPriority: Cannot set priority, thread is not running");
-        return;
-    }
-
-    d->setPriority(priority);
 }
 
 QT_END_NAMESPACE

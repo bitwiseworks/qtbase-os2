@@ -60,6 +60,7 @@ win32 {
 } else: os2 {
     SOURCES += \
         thread/qmutex_os2.cpp \
+        thread/qthread_os2.cpp \
         thread/qwaitcondition_win.cpp
 } else {
     darwin {
