@@ -1,48 +1,46 @@
 /****************************************************************************
 **
-** Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
-** All rights reserved.
-** Contact: Nokia Corporation (qt-info@nokia.com)
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
-** Copyright (C) 2010 netlabs.org. OS/2 parts.
+** Copyright (C) 2018 bww bitwise works GmbH. OS/2 parts.
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
-** Commercial Usage
-** Licensees holding valid Qt Commercial licenses may use this file in
-** accordance with the Qt Commercial License Agreement provided with the
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Nokia.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** In addition, as a special exception, Nokia gives you certain additional
-** rights.  These rights are described in the Nokia Qt LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
-** If you have questions regarding the use of this file, please contact
-** Nokia at qt-info@nokia.com.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-#ifndef QEVENTDISPATCHER_PM_P_H
-#define QEVENTDISPATCHER_PM_P_H
+#ifndef QEVENTDISPATCHER_OS2_P_H
+#define QEVENTDISPATCHER_OS2_P_H
 
 //
 //  W A R N I N G
@@ -59,18 +57,18 @@
 
 QT_BEGIN_NAMESPACE
 
-class QEventDispatcherPMPrivate;
+class QEventDispatcherOS2Private;
 
-class Q_CORE_EXPORT QEventDispatcherPM : public QAbstractEventDispatcher
+class Q_CORE_EXPORT QEventDispatcherOS2 : public QAbstractEventDispatcher
 {
     Q_OBJECT
-    Q_DECLARE_PRIVATE(QEventDispatcherPM)
+    Q_DECLARE_PRIVATE(QEventDispatcherOS2)
 
     friend class QGuiEventDispatcherPM;
 
 public:
-    explicit QEventDispatcherPM(QObject *parent = 0);
-    ~QEventDispatcherPM();
+    explicit QEventDispatcherOS2(QObject *parent = 0);
+    ~QEventDispatcherOS2();
 
     bool processEvents(QEventLoop::ProcessEventsFlags flags);
     bool hasPendingEvents();
@@ -78,10 +76,12 @@ public:
     void registerSocketNotifier(QSocketNotifier *notifier);
     void unregisterSocketNotifier(QSocketNotifier *notifier);
 
-    void registerTimer(int timerId, int interval, QObject *object);
+    void registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object);
     bool unregisterTimer(int timerId);
     bool unregisterTimers(QObject *object);
     QList<TimerInfo> registeredTimers(QObject *object) const;
+
+    int remainingTime(int timerId);
 
     void wakeUp();
     void interrupt();
@@ -89,10 +89,8 @@ public:
 
     void startingUp();
     void closingDown();
-
-    void createMsgQueue();
 };
 
 QT_END_NAMESPACE
 
-#endif // QEVENTDISPATCHER_WIN_P_H
+#endif // QEVENTDISPATCHER_OS2_P_H

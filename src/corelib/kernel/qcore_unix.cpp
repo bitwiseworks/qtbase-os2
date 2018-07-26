@@ -50,6 +50,24 @@
 
 QT_BEGIN_NAMESPACE
 
+#ifdef Q_OS_OS2
+// used in qcore_unix.cpp and qeventdispatcher_os2.cpp
+struct timespec qt_gettime() Q_DECL_NOTHROW
+{
+    // TODO: Use a high resolution timer and move this to qelapsedtimer_os2.cpp,
+    // see #24 for more info.
+
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
+    timespec tv_ts;
+    tv_ts.tv_sec = tv.tv_sec;
+    tv_ts.tv_nsec = tv.tv_usec * 1000;
+
+    return tv_ts;
+}
+#endif
+
 QByteArray qt_readlink(const char *path)
 {
 #ifndef PATH_MAX

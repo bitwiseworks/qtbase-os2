@@ -212,7 +212,13 @@ android:!android-embedded {
 
 os2 {
     SOURCES += \
-            kernel/qcore_unix.cpp
+               kernel/qcore_unix.cpp \
+               kernel/qeventdispatcher_os2.cpp \
+               kernel/qtimerinfo_unix.cpp
+    HEADERS += \
+               kernel/qcore_unix_p.h \
+               kernel/qeventdispatcher_os2_p.h \
+               kernel/qtimerinfo_unix_p.h
 }
 
 !darwin:!unix:!win32: SOURCES += kernel/qelapsedtimer_generic.cpp
