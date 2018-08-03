@@ -80,6 +80,8 @@ public:
     static Q_CORE_EXPORT QString stdString(int errorCode = -1);
 #ifdef Q_OS_WIN
     static Q_CORE_EXPORT QString windowsString(int errorCode = -1);
+#elif defined(Q_OS_OS2)
+    static Q_CORE_EXPORT QString os2String(int errorCode = -1);
 #endif
 
     //data members

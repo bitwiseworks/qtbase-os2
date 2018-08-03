@@ -46,6 +46,9 @@
 #ifdef Q_OS_WIN
 #  include <qt_windows.h>
 #endif
+#ifdef Q_OS_OS2
+#  include <qt_os2.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -110,6 +113,23 @@ static QString windowsErrorString(int errorCode)
 }
 #endif
 
+#if defined(Q_OS_OS2)
+QString QSystemError::os2String(int errorCode)
+{
+    // TODO: provide textual representations for common errors
+    // (also may be use WinGetErrorInfo when appropriate)
+
+    if (errorCode == -1) {
+        // Assume WIN/GPI error
+        ERRORID err = WinGetLastError(NULLHANDLE);
+        return QString::fromLatin1("PM error 0x%1").arg(err, 8, 16, QLatin1Char('0'));
+    }
+
+    // Assume DOS error
+    return QString::fromLatin1("DOS error %1").arg (errorCode);
+}
+#endif
+
 static QString standardLibraryErrorString(int errorCode)
 {
     const char *s = 0;
@@ -152,6 +172,8 @@ QString QSystemError::string(ErrorScope errorScope, int errorCode)
     case NativeError:
 #if defined (Q_OS_WIN)
         return windowsErrorString(errorCode);
+#elif defined (Q_OS_OS2)
+        return os2String(errorCode);
 #else
         //unix: fall through as native and standard library are the same
         Q_FALLTHROUGH();
