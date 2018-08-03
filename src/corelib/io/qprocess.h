@@ -52,8 +52,10 @@ QT_BEGIN_NAMESPACE
 
 class QProcessPrivate;
 
-#if !defined(Q_OS_WIN) || defined(Q_CLANG_QDOC)
+#if !(defined(Q_OS_WIN) || defined(Q_OS_OS2)) || defined(Q_CLANG_QDOC)
 typedef qint64 Q_PID;
+#elif defined(Q_OS_OS2)
+typedef unsigned int Q_PID;
 #else
 QT_END_NAMESPACE
 typedef struct _PROCESS_INFORMATION *Q_PID;
@@ -298,6 +300,9 @@ private:
     Q_PRIVATE_SLOT(d_func(), bool _q_canWrite())
     Q_PRIVATE_SLOT(d_func(), bool _q_startupNotification())
     Q_PRIVATE_SLOT(d_func(), bool _q_processDied())
+#if defined(Q_OS_OS2)
+    Q_PRIVATE_SLOT(d_func(), void _q_notified(int))
+#endif
     friend class QProcessManager;
 };
 

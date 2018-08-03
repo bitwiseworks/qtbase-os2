@@ -1,53 +1,49 @@
 /****************************************************************************
 **
-** Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
-** All rights reserved.
-** Contact: Nokia Corporation (qt-info@nokia.com)
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
-** Copyright (C) 2010 netlabs.org. OS/2 parts.
+** Copyright (C) 2018 bww bitwise works GmbH. OS/2 parts.
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
-** Commercial Usage
-** Licensees holding valid Qt Commercial licenses may use this file in
-** accordance with the Qt Commercial License Agreement provided with the
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Nokia.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** In addition, as a special exception, Nokia gives you certain additional
-** rights.  These rights are described in the Nokia Qt LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
-** If you have questions regarding the use of this file, please contact
-** Nokia at qt-info@nokia.com.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 //#define QPROCESS_DEBUG
 
-#if defined(__INNOTEK_LIBC__)
-#include <emx/umalloc.h> // for _lmalloc()
-#endif
+#include "qplatformdefs.h"
 
-#ifndef QT_NO_PROCESS
+#include <emx/umalloc.h> // for _lmalloc()
 
 #if defined QPROCESS_DEBUG
 #include "qdebug.h"
@@ -82,15 +78,13 @@ QT_END_NAMESPACE
 #define DEBUG(a) do {} while(0)
 #endif
 
-#include "qplatformdefs.h"
-
 #include "qprocess.h"
 #include "qprocess_p.h"
-
-#include <QtCore/qt_os2.h>
+#include <qglobal.h>
 
 #include <private/qcoreapplication_p.h>
 #include <private/qthread_p.h>
+#include <private/qsystemerror_p.h>
 #include <qdatetime.h>
 #include <qfile.h>
 #include <qfileinfo.h>
@@ -104,7 +98,25 @@ QT_END_NAMESPACE
 
 QT_BEGIN_NAMESPACE
 
-extern QString qAppFileName();
+#if QT_CONFIG(process)
+
+// NOTE: Copied over from qprocess_unix.cpp.
+QProcessEnvironment QProcessEnvironment::systemEnvironment()
+{
+    QProcessEnvironment env;
+    const char *entry;
+    for (int count = 0; (entry = environ[count]); ++count) {
+        const char *equal = strchr(entry, '=');
+        if (!equal)
+            continue;
+
+        QByteArray name(entry, equal - entry);
+        QByteArray value(equal + 1);
+        env.d->vars.insert(QProcessEnvironmentPrivate::Key(name),
+                           QProcessEnvironmentPrivate::Value(value));
+    }
+    return env;
+}
 
 enum
 {
@@ -256,6 +268,8 @@ USHORT QProcessManager::addProcess(QProcess *process)
         instance->start();
     }
 
+    QProcessPrivate *d = process->d_func();
+
     USHORT procKey = instance->lastProcKey + 1;
     if (procKey > MaxProcKey) {
         // limit reached, find an unused number
@@ -265,7 +279,9 @@ USHORT QProcessManager::addProcess(QProcess *process)
         Q_ASSERT(procKey <= MaxProcKey);
         if (procKey > MaxProcKey) {
             // oops, no more free keys!
-            process->setErrorString(QLatin1String("Internal error: Too many processes"));
+            locker.unlock();
+            d->setErrorAndEmit(QProcess::FailedToStart,
+                               QProcess::tr("Resource error: Too many processes"));
             return InvalidProcKey;
         }
     } else {
@@ -274,29 +290,29 @@ USHORT QProcessManager::addProcess(QProcess *process)
 
     // attach the semahpore to the pipes of the process
     APIRET arc = NO_ERROR;
-    QProcessPrivate *d = process->d_func();
     if (d->stdinChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stdinChannel.pipe.server != HPIPE(~0)) {
+        d->stdinChannel.pipe.server != INVALID_HPIPE) {
         arc = DosSetNPipeSem(d->stdinChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::InPipe));
     }
     if (arc == NO_ERROR &&
         d->stdoutChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stdoutChannel.pipe.server != HPIPE(~0)) {
+        d->stdoutChannel.pipe.server != INVALID_HPIPE) {
         arc = DosSetNPipeSem(d->stdoutChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::OutPipe));
     }
     if (arc == NO_ERROR &&
         d->stderrChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stderrChannel.pipe.server != HPIPE(~0)) {
+        d->stderrChannel.pipe.server != INVALID_HPIPE) {
         arc = DosSetNPipeSem(d->stderrChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::ErrPipe));
     }
     if (arc != NO_ERROR) {
-        process->setErrorString(QProcess::tr("Internal error: DOS error %1")
-                                .arg(arc));
         if (procKey == instance->lastProcKey)
             --instance->lastProcKey;
+        locker.unlock();
+        d->setErrorAndEmit(QProcess::FailedToStart,
+                           QProcess::tr("Resource error: %1").arg(QSystemError::os2String(arc)));
         return InvalidProcKey;
     }
 
@@ -320,9 +336,9 @@ void QProcessManager::removeProcess(USHORT procKey)
     // pipes in order to ensure that we won't get late NPSS_CLOSE for the
     // removed process with the key that may be already associated with a new one
     QProcessPrivate *d = process->d_func();
-    d->destroyPipe(d->stdinChannel.pipe);
-    d->destroyPipe(d->stdoutChannel.pipe);
-    d->destroyPipe(d->stderrChannel.pipe);
+    d->closeChannel(&d->stdinChannel);
+    d->closeChannel(&d->stdoutChannel);
+    d->closeChannel(&d->stderrChannel);
 
     instance->processes.remove(procKey);
 
@@ -409,7 +425,7 @@ void QProcessManager::run()
 
         if (instance->deathFlag.testAndSetRelaxed(1, 0)) {
             DEBUG(() << "QProcessManager::run(): child death signaled");
-            foreach (QProcess *proc, processes) {
+            for (QProcess *proc : processes) {
                 if (proc->d_func()->waitMode) {
                     DosPostEventSem(proc->d_func()->waitSem);
                 } else {
@@ -489,7 +505,7 @@ void QProcessManager::run()
                 flags |= QProcessPrivate::CanWrite;
                 // save the current number of free bytes in the pipe to let
                 // _q_canWrite() go (this is also used in tryCloseStdinPipe())
-                proc->d_func()->pipeData[type].bytes = pipeStates[i].usAvail;
+                proc->d_func()->pipes[type]->bytes = pipeStates[i].usAvail;
                 break;
             case QProcessPrivate::OutPipe:
                 Q_ASSERT(status == NPSS_CLOSE || status == NPSS_RDATA);
@@ -520,7 +536,6 @@ void QProcessPrivate::init()
 {
     waitMode = false;
     waitSem = NULLHANDLE;
-    memset(pipeData, 0, sizeof(pipeData));
 
     procKey = QProcessManager::InvalidProcKey;
 
@@ -547,12 +562,8 @@ void QProcessPrivate::ensureWaitSem()
 bool QProcessPrivate::createPipe(PipeType type, Channel::Pipe &pipe,
                                  const char *name /*= 0*/)
 {
-    APIRET rc = NO_ERROR;
+    APIRET arc = NO_ERROR;
     char pathBuf[CCHMAXPATH];
-
-    pipe.server = HPIPE(~0);
-    pipe.client = HFILE(~0);
-    pipe.closePending = false;
 
     // we need the process identifier to guarantee pipe name unicity
     PPIB ppib = NULL;
@@ -561,76 +572,87 @@ bool QProcessPrivate::createPipe(PipeType type, Channel::Pipe &pipe,
     switch (type) {
     case InPipe:
         // create our end of the pipe
-        sprintf(pathBuf, "\\pipe\\Qt4\\%08lX\\QProcess\\%p\\%s",
+        sprintf(pathBuf, "\\pipe\\Qt5\\%08lX\\QProcess\\%p\\%s",
                 ppib->pib_ulpid, this->q_func(), name ? name : "Stdin");
-        rc = DosCreateNPipe(pathBuf, &pipe.server,
-                            NP_ACCESS_OUTBOUND | NP_NOINHERIT,
-                            NP_NOWAIT | NP_TYPE_BYTE | 1,
-                            PIPE_SIZE_STDIN, 0, 0);
-        if (rc == NO_ERROR) {
+        arc = DosCreateNPipe(pathBuf, &pipe.server,
+                             NP_ACCESS_OUTBOUND | NP_NOINHERIT,
+                             NP_NOWAIT | NP_TYPE_BYTE | 1,
+                             PIPE_SIZE_STDIN, 0, 0);
+        if (arc == NO_ERROR) {
             DosConnectNPipe(pipe.server);
             // ensure the other end blocks (vital for process->process redirections)
             DosSetNPHState(pipe.server, NP_WAIT);
             // open the client end of the pipe
             ULONG action = 0;
-            rc = DosOpen(pathBuf, &pipe.client, &action, 0, FILE_NORMAL, FILE_OPEN,
-                         OPEN_ACCESS_READONLY | OPEN_SHARE_DENYREADWRITE |
-                         OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
-            if (rc == NO_ERROR) {
+            arc = DosOpen(pathBuf, &pipe.client, &action, 0, FILE_NORMAL, FILE_OPEN,
+                          OPEN_ACCESS_READONLY | OPEN_SHARE_DENYREADWRITE |
+                          OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
+            if (arc == NO_ERROR) {
                 // set the initial number of free bytes
-                pipeData[type].bytes = PIPE_SIZE_STDIN;
+                pipe.bytes = PIPE_SIZE_STDIN;
             }
         }
         break;
     case OutPipe:
     case ErrPipe:
         // create our end of the pipe
-        sprintf(pathBuf, "\\pipe\\Qt4\\%08lX\\QProcess\\%p\\%s",
+        sprintf(pathBuf, "\\pipe\\Qt5\\%08lX\\QProcess\\%p\\%s",
                 ppib->pib_ulpid, this->q_func(),
                 name ? name : type == OutPipe ? "Stdout" : "Stderr");
-        rc = DosCreateNPipe(pathBuf, &pipe.server,
-                            NP_ACCESS_INBOUND | NP_NOINHERIT,
-                            NP_NOWAIT | NP_TYPE_BYTE | 1,
-                            0, type == OutPipe ? PIPE_SIZE_STDOUT : PIPE_SIZE_STDERR, 0);
-        if (rc == NO_ERROR) {
+        arc = DosCreateNPipe(pathBuf, &pipe.server,
+                             NP_ACCESS_INBOUND | NP_NOINHERIT,
+                             NP_NOWAIT | NP_TYPE_BYTE | 1,
+                             0, type == OutPipe ? PIPE_SIZE_STDOUT : PIPE_SIZE_STDERR, 0);
+        if (arc == NO_ERROR) {
             DosConnectNPipe(pipe.server);
             // ensure the other end blocks (vital for process->process redirections)
             DosSetNPHState(pipe.server, NP_WAIT);
             // open the client end of the pipe
             ULONG action = 0;
-            rc = DosOpen(pathBuf, &pipe.client, &action, 0, FILE_NORMAL, FILE_OPEN,
-                         OPEN_ACCESS_WRITEONLY | OPEN_SHARE_DENYREADWRITE |
-                         OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
+            arc = DosOpen(pathBuf, &pipe.client, &action, 0, FILE_NORMAL, FILE_OPEN,
+                          OPEN_ACCESS_WRITEONLY | OPEN_SHARE_DENYREADWRITE |
+                          OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
         }
         break;
     }
 
-    if (rc != NO_ERROR) {
+    if (arc != NO_ERROR) {
         qWarning("QProcessPrivate::createPipe: %s(%s) returned %lu",
-                 pipe.server == HPIPE(~0) ? "DosCreateNPipe" : "DosOpen",
-                 pathBuf, rc);
+                 pipe.server == INVALID_HPIPE ? "DosCreateNPipe" : "DosOpen",
+                 pathBuf, arc);
+        setErrorAndEmit(QProcess::FailedToStart,
+                        QProcess::tr("Resource error: %1").arg(QSystemError::os2String(arc)));
     }
 
-    return rc == NO_ERROR;
+    return arc == NO_ERROR;
 }
 
 void QProcessPrivate::destroyPipe(Channel::Pipe &pipe)
 {
+    pipe.bytes = 0;
+    pipe.result = false;
+    pipe.signaled = false;
+
     pipe.closePending = false;
 
-    if (pipe.client != ~HFILE(~0)) {
+    if (pipe.client != INVALID_HFILE) {
         DosClose(pipe.client);
-        pipe.client = HFILE(~0);
+        pipe.client = INVALID_HFILE;
     }
-    if (pipe.server != HPIPE(~0)) {
+    if (pipe.server != INVALID_HPIPE) {
         // Note: We do not call DosDisConnectNPipe() as this is not necessary
         // and will only cause DosRead() on the other side to return
         // ERROR_PIPE_NOT_CONNECTED that will be interpreted by LIBC read() and
         // fread() as an error (ferror() will return true) and some programs
         // don't like it (e.g. 7z, rar32 when reading data from stdin).
         DosClose(pipe.server);
-        pipe.server = HPIPE(~0);
+        pipe.server = INVALID_HPIPE;
     }
+}
+
+void QProcessPrivate::closeChannel(Channel *channel)
+{
+    destroyPipe(channel->pipe);
 }
 
 /*
@@ -638,29 +660,31 @@ void QProcessPrivate::destroyPipe(Channel::Pipe &pipe)
 
     This function must be called in order: stdin, stdout, stderr
 */
-bool QProcessPrivate::createChannel(Channel &channel)
+bool QProcessPrivate::openChannel(Channel &channel)
 {
-    Q_Q(QProcess);
+    PipeType type;
 
-    channel.pipe.server = HPIPE(~0);
-    channel.pipe.client = HFILE(~0);
-    channel.pipe.closePending = false;
-
-    if (&channel == &stderrChannel && processChannelMode == QProcess::MergedChannels) {
+    if (&channel == &stdinChannel) {
+        type = InPipe;
+        if (inputChannelMode == QProcess::ForwardedInputChannel)
+            return true;
+    } else if (&channel == &stdoutChannel) {
+        type = OutPipe;
+        if (processChannelMode == QProcess::ForwardedChannels ||
+            processChannelMode == QProcess::ForwardedOutputChannel)
         return true;
+    } else if (&channel == &stderrChannel) {
+        type = ErrPipe;
+        if (processChannelMode == QProcess::MergedChannels ||
+            processChannelMode == QProcess::ForwardedChannels ||
+            processChannelMode == QProcess::ForwardedErrorChannel)
+        return true;
+    } else {
+        Q_ASSERT(false);
     }
 
     if (channel.type == Channel::Normal) {
         // we're piping this channel to our own process
-        PipeType type = InPipe;
-        if (&channel == &stdinChannel)
-            type = InPipe;
-        else if (&channel == &stdoutChannel)
-            type = OutPipe;
-        else if (&channel == &stderrChannel)
-            type = ErrPipe;
-        else
-            Q_ASSERT(false);
         return createPipe(type, channel.pipe);
     } else if (channel.type == Channel::Redirect) {
         // we're redirecting the channel to/from a file
@@ -676,7 +700,8 @@ bool QProcessPrivate::createChannel(Channel &channel)
             if (rc == NO_ERROR)
                 return true; // success
 
-            q->setErrorString(QProcess::tr("Could not open input redirection for reading"));
+            setErrorAndEmit(QProcess::FailedToStart,
+                            QProcess::tr("Could not open input redirection for reading"));
         } else {
             int mode = FILE_CREATE;
             if (channel.append)
@@ -695,13 +720,10 @@ bool QProcessPrivate::createChannel(Channel &channel)
             if (rc == NO_ERROR)
                 return true; // success
 
-            q->setErrorString(QProcess::tr("Could not open output redirection for writing"));
+            setErrorAndEmit(QProcess::FailedToStart,
+                            QProcess::tr("Could not open output redirection for writing"));
         }
 
-        // could not open file
-        processError = QProcess::FailedToStart;
-        emit q->error(processError);
-        cleanup();
         return false;
     } else {
         Q_ASSERT_X(channel.process, "QProcess::start", "Internal error");
@@ -715,7 +737,7 @@ bool QProcessPrivate::createChannel(Channel &channel)
             Q_ASSERT(&channel == &stdoutChannel);
             Q_ASSERT(channel.process->stdinChannel.process == this &&
                      channel.process->stdinChannel.type == Channel::PipeSink);
-            if (channel.process->stdinChannel.pipe.server != HPIPE(~0)) {
+            if (channel.process->stdinChannel.pipe.server != INVALID_HPIPE) {
                 // the other process has already started and became the server
             } else {
                 // note: InPipe, since the type is relative to the other side
@@ -727,7 +749,7 @@ bool QProcessPrivate::createChannel(Channel &channel)
             Q_ASSERT(&channel == &stdinChannel);
             Q_ASSERT(channel.process->stdoutChannel.process == this &&
                      channel.process->stdoutChannel.type == Channel::PipeSource);
-            if (channel.process->stdoutChannel.pipe.server != HPIPE(~0)) {
+            if (channel.process->stdoutChannel.pipe.server != INVALID_HPIPE) {
                 // the other process has already started and became the server
             } else {
                 // note: OutPipe, since the type is relative to the other side
@@ -911,11 +933,11 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             // morphing from VIO to PM which doesn't cancel the fact that we
             // are VIO from the OS/2 loader's POV.
             ULONG flags;
-            arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
+            arc = DosQueryAppType(QFile::encodeName(QCoreApplication::applicationFilePath()), &flags);
             if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
                 // we are originally not the PM application and thus DosExecPgm()
                 // won't be able to start PM applications directly (note that the
-                // other way around it works athough undocumented). Check what
+                // other way around it works although undocumented). Check what
                 // the target program is.
                 arc = DosQueryAppType(fullProgramName, &flags);
                 if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
@@ -955,7 +977,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
                           qstricmp(fullProgramName.data() + dot, ".bat") == 0;
 
             QByteArray args;
-            foreach(const QString &arg, arguments) {
+            for (const QString &arg : arguments) {
                 if (!args.isEmpty())
                     args += ' ';
                 if (!arg.isEmpty())
@@ -972,8 +994,10 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
 
             QByteArray env;
             if (envv != environ)
-                for (char **e = envv; *e; ++e)
-                    env += *e + '\0';
+                for (char **e = envv; *e; ++e) {
+                    env += *e;
+                    env += '\0';
+                }
 
 #if defined(__INNOTEK_LIBC__)
             // make sure we store arguments in the low memory for
@@ -1064,24 +1088,22 @@ void QProcessPrivate::startProcess()
     DEBUG(("QProcessPrivate::startProcess"));
 
     // Initialize pipes
-    if (!createChannel(stdinChannel))
+    if (!openChannel(stdinChannel) ||
+        !openChannel(stdoutChannel) ||
+        !openChannel(stderrChannel)) {
+        // setErrorAndEmit() is called inside openChannel()
+        cleanup();
         return;
-    if (processChannelMode != QProcess::ForwardedChannels) {
-        if (!createChannel(stdoutChannel) || !createChannel(stderrChannel))
-            return;
     }
 
-    pipeData[InPipe].signaled = false;
-    pipeData[OutPipe].signaled = false;
-    pipeData[ErrPipe].signaled = false;
+    stdinChannel.pipe.signaled = false;
+    stdoutChannel.pipe.signaled = false;
+    stderrChannel.pipe.signaled = false;
 
     procKey = QProcessManager::addProcess(q);
 
     if (procKey == QProcessManager::InvalidProcKey) {
-        // setErrorString() is called inside addProcess()
-        Q_ASSERT(!q->errorString().isEmpty());
-        processError = QProcess::FailedToStart;
-        emit q->error(processError);
+        // setErrorAndEmit() is called inside addProcess()
         cleanup();
         return;
     }
@@ -1090,7 +1112,7 @@ void QProcessPrivate::startProcess()
 
     q->setProcessState(QProcess::Starting);
 
-    int rc;
+    int rc = 0;
 
     QString error;
     int tmpStdin = -1, tmpStdout = -1, tmpStderr = -1;
@@ -1099,65 +1121,72 @@ void QProcessPrivate::startProcess()
 
     do {
         // save & copy the stdin handle
-        if ((rc = tmpStdin = dup(realStdin)) != -1) {
-            HFILE handle = stdinChannel.pipe.client;
-            if (stdinChannel.type == Channel::PipeSink) {
-                // process -> process redirection
-                if (stdinChannel.pipe.server != HPIPE(~0)) {
-                    // we are the server
-                    handle = (HFILE)stdinChannel.pipe.server;
-                } else {
-                    // we are the client, use the server's variable
-                    handle = stdinChannel.process->stdoutChannel.pipe.client;
+        if (inputChannelMode != QProcess::ForwardedInputChannel) {
+            if ((rc = tmpStdin = dup(realStdin)) != -1) {
+                HFILE handle = stdinChannel.pipe.client;
+                if (stdinChannel.type == Channel::PipeSink) {
+                    // process -> process redirection
+                    if (stdinChannel.pipe.server != INVALID_HPIPE) {
+                        // we are the server
+                        handle = (HFILE)stdinChannel.pipe.server;
+                    } else {
+                        // we are the client, use the server's variable
+                        handle = stdinChannel.process->stdoutChannel.pipe.client;
+                    }
+                    Q_ASSERT(handle != INVALID_HFILE);
                 }
-                Q_ASSERT(handle != HFILE(~0));
+                Q_ASSERT(_imphandle(handle) != -1);
+                rc = dup2(_imphandle(handle), realStdin);
             }
-            Q_ASSERT(_imphandle(handle) != -1);
-            rc = dup2(_imphandle(handle), realStdin);
-        }
-        if (rc == -1) {
-            DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdin "
-                   "failed with %d (%s)", errno, strerror(errno)));
-            break;
+            if (rc == -1) {
+                DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdin "
+                       "failed with %d (%s)", errno, strerror(errno)));
+                break;
+            }
         }
         // save & copy the stdout and stderr handles if asked to
         if (processChannelMode != QProcess::ForwardedChannels) {
-            // save & copy the stdout handle
-            if ((rc = tmpStdout = dup(realStdout)) != -1) {
-                HFILE handle = stdoutChannel.pipe.client;
-                if (stdoutChannel.type == Channel::PipeSource) {
-                    // process -> process redirection
-                    if (stdoutChannel.pipe.server != HPIPE(~0)) {
-                        // we are the server
-                        handle = (HFILE)stdoutChannel.pipe.server;
-                    } else {
-                        // we are the client, use the server's variable
-                        handle = stdoutChannel.process->stdinChannel.pipe.client;
+            if (processChannelMode != QProcess::ForwardedOutputChannel) {
+                // save & copy the stdout handle
+                if ((rc = tmpStdout = dup(realStdout)) != -1) {
+                    HFILE handle = stdoutChannel.pipe.client;
+                    if (stdoutChannel.type == Channel::PipeSource) {
+                        // process -> process redirection
+                        if (stdoutChannel.pipe.server != INVALID_HPIPE) {
+                            // we are the server
+                            handle = (HFILE)stdoutChannel.pipe.server;
+                        } else {
+                            // we are the client, use the server's variable
+                            handle = stdoutChannel.process->stdinChannel.pipe.client;
+                        }
+                        Q_ASSERT(handle != INVALID_HFILE);
                     }
-                    Q_ASSERT(handle != HFILE(~0));
-                }
-                Q_ASSERT(_imphandle(handle) != -1);
-                rc = dup2(_imphandle(handle), realStdout);
-            }
-            if (rc == -1) {
-                DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdout "
-                       "failed with %d (%s)", errno, strerror(errno)));
-                break;
-            }
-            if ((rc = tmpStderr = dup(realStderr)) != -1) {
-                // merge stdout and stderr if asked to
-                if (processChannelMode == QProcess::MergedChannels) {
-                    rc = dup2(realStdout, realStderr);
-                } else {
-                    HFILE handle = stderrChannel.pipe.client;
                     Q_ASSERT(_imphandle(handle) != -1);
-                    rc = dup2(_imphandle(handle), realStderr);
+                    rc = dup2(_imphandle(handle), realStdout);
+                }
+                if (rc == -1) {
+                    DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdout "
+                           "failed with %d (%s)", errno, strerror(errno)));
+                    break;
                 }
             }
-            if (rc == -1) {
-                DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stderr "
-                       "failed with %d (%s)", errno, strerror(errno)));
-                break;
+            // save & copy the stderr handle
+            if (processChannelMode != QProcess::ForwardedErrorChannel) {
+                if ((rc = tmpStderr = dup(realStderr)) != -1) {
+                    // merge stdout and stderr if asked to
+                    if (processChannelMode == QProcess::MergedChannels) {
+                        rc = dup2(realStdout, realStderr);
+                    } else {
+                        HFILE handle = stderrChannel.pipe.client;
+                        Q_ASSERT(_imphandle(handle) != -1);
+                        rc = dup2(_imphandle(handle), realStderr);
+                    }
+                }
+                if (rc == -1) {
+                    DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stderr "
+                           "failed with %d (%s)", errno, strerror(errno)));
+                    break;
+                }
             }
         }
 
@@ -1186,17 +1215,14 @@ void QProcessPrivate::startProcess()
     if (rc == -1 || pid == -1) {
         // Cleanup, report error and return
         q->setProcessState(QProcess::NotRunning);
-        processError = QProcess::FailedToStart;
         if (rc == -1) {
             // handle duplication failed
-            q->setErrorString(QProcess::tr("Process failed to start: %1")
-                                           .arg(qt_error_string(errno)));
+            setErrorAndEmit(QProcess::FailedToStart,
+                            QProcess::tr("Resource error: %1").arg(qt_error_string(errno)));
         } else {
             DEBUG(("spawnvpe failed: %s", qPrintable(qt_error_string(errno))));
-            q->setErrorString(QProcess::tr("Process failed to start: %1")
-                                           .arg(qt_error_string(errno)));
+            setErrorAndEmit(QProcess::FailedToStart, qt_error_string(errno));
         }
-        emit q->error(processError);
         QProcessManager::removeProcess(procKey);
         procKey = QProcessManager::InvalidProcKey;
         cleanup();
@@ -1212,37 +1238,37 @@ void QProcessPrivate::startProcess()
 
     if (stdinChannel.type == Channel::PipeSink) {
         // process -> process redirection
-        if (stdinChannel.pipe.server != HPIPE(~0)) {
+        if (stdinChannel.pipe.server != INVALID_HPIPE) {
             // we are the server, leave the handle for the other party
         } else {
             // we are the client, close the handle
             DosClose(stdinChannel.process->stdoutChannel.pipe.client);
-            stdinChannel.process->stdoutChannel.pipe.client = HFILE(~0);
+            stdinChannel.process->stdoutChannel.pipe.client = INVALID_HFILE;
         }
     } else {
-        if (stdinChannel.pipe.client != HFILE(~0)) {
+        if (stdinChannel.pipe.client != INVALID_HFILE) {
             DosClose(stdinChannel.pipe.client);
-            stdinChannel.pipe.client = HFILE(~0);
+            stdinChannel.pipe.client = INVALID_HFILE;
         }
     }
     if (stdoutChannel.type == Channel::PipeSource) {
         // process -> process redirection
-        if (stdoutChannel.pipe.server != HPIPE(~0)) {
+        if (stdoutChannel.pipe.server != INVALID_HPIPE) {
             // we are the server, leave the handle for the other party
         } else {
             // we are the client, close the handle
             DosClose(stdoutChannel.process->stdinChannel.pipe.client);
-            stdoutChannel.process->stdinChannel.pipe.client = HFILE(~0);
+            stdoutChannel.process->stdinChannel.pipe.client = INVALID_HFILE;
         }
     } else {
-        if (stdoutChannel.pipe.client != HFILE(~0)) {
+        if (stdoutChannel.pipe.client != INVALID_HFILE) {
             DosClose(stdoutChannel.pipe.client);
-            stdoutChannel.pipe.client = HFILE(~0);
+            stdoutChannel.pipe.client = INVALID_HFILE;
         }
     }
-    if (stderrChannel.pipe.client != HFILE(~0)) {
+    if (stderrChannel.pipe.client != INVALID_HFILE) {
         DosClose(stderrChannel.pipe.client);
-        stderrChannel.pipe.client = HFILE(~0);
+        stderrChannel.pipe.client = INVALID_HFILE;
     }
 
     // give the process a chance to start ...
@@ -1251,7 +1277,7 @@ void QProcessPrivate::startProcess()
     _q_startupNotification();
 }
 
-bool QProcessPrivate::processStarted()
+bool QProcessPrivate::processStarted(QString * /*errorMessage*/)
 {
     // we don't actually wait for any notification from the child process
     // assuming it has been started as long as spawnvpe() returns success
@@ -1262,7 +1288,7 @@ bool QProcessPrivate::processStarted()
 qint64 QProcessPrivate::bytesAvailableFromPipe(HPIPE hpipe, bool *closed)
 {
     qint64 bytes = 0;
-    if (hpipe != HPIPE(~0)) {
+    if (hpipe != INVALID_HPIPE) {
         ULONG state, dummy;
         AVAILDATA avail;
         APIRET arc = DosPeekNPipe(hpipe, 0, 0, &dummy, &avail, &state);
@@ -1276,64 +1302,35 @@ qint64 QProcessPrivate::bytesAvailableFromPipe(HPIPE hpipe, bool *closed)
     return bytes;
 }
 
-qint64 QProcessPrivate::bytesAvailableFromStdout() const
+qint64 QProcessPrivate::bytesAvailableInChannel(const Channel *channel) const
 {
+    Q_ASSERT(channel->pipe.server != INVALID_HPIPE);
     qint64 bytes = 0;
     if (!dying) {
-        Q_ASSERT(pipeData[OutPipe].signaled);
+        Q_ASSERT(channel->pipe.signaled);
         // reuse the number we got in _q_notified()
-        bytes = pipeData[OutPipe].bytes;
+        bytes = channel->pipe.bytes;
     } else {
         if (stdoutChannel.type == QProcessPrivate::Channel::Normal)
-            bytes = bytesAvailableFromPipe(stdoutChannel.pipe.server);
+            bytes = bytesAvailableFromPipe(channel->pipe.server);
     }
 
-    DEBUG(("QProcessPrivate::bytesAvailableFromStdout() == %lld", bytes));
+    DEBUG(("QProcessPrivate::bytesAvailableInChannel(%d) == %lld", &channel->pipe - pipes, bytes));
     return bytes;
 }
 
-qint64 QProcessPrivate::bytesAvailableFromStderr() const
-{
-    qint64 bytes = 0;
-    if (!dying) {
-        Q_ASSERT(pipeData[ErrPipe].signaled);
-        // reuse the number we got in _q_notified()
-        bytes = pipeData[ErrPipe].bytes;
-    } else {
-        if (stderrChannel.type == QProcessPrivate::Channel::Normal)
-            bytes = bytesAvailableFromPipe(stderrChannel.pipe.server);
-    }
-
-    DEBUG(("QProcessPrivate::bytesAvailableFromStderr() == %lld", bytes));
-    return bytes;
-}
-
-qint64 QProcessPrivate::readFromStdout(char *data, qint64 maxlen)
+qint64 QProcessPrivate::readFromChannel(const Channel *channel, char *data, qint64 maxlen)
 {
     ULONG actual = 0;
-    APIRET arc = DosRead(stdoutChannel.pipe.server, data, maxlen, &actual);
+    APIRET arc = DosRead(channel->pipe.server, data, maxlen, &actual);
 
     qint64 bytesRead = -1;
     if (arc == NO_ERROR) {
         bytesRead = (qint64)actual;
     }
 
-    DEBUG(("QProcessPrivate::readFromStdout(%p \"%s\", %lld) == %lld",
-           data, qt_prettyDebug(data, bytesRead, 16).constData(), maxlen, bytesRead));
-    return bytesRead;
-}
-
-qint64 QProcessPrivate::readFromStderr(char *data, qint64 maxlen)
-{
-    ULONG actual = 0;
-    APIRET arc = DosRead(stderrChannel.pipe.server, data, maxlen, &actual);
-
-    qint64 bytesRead = -1;
-    if (arc == NO_ERROR) {
-        bytesRead = (qint64)actual;
-    }
-
-    DEBUG(("QProcessPrivate::readFromStderr(%p \"%s\", %lld) == %lld",
+    DEBUG(("QProcessPrivate::readFromStdout(%d, %p \"%s\", %lld) == %lld",
+           &channel->pipe - pipes,
            data, qt_prettyDebug(data, bytesRead, 16).constData(), maxlen, bytesRead));
     return bytesRead;
 }
@@ -1345,14 +1342,17 @@ void QProcessPrivate::tryCloseStdinPipe()
     if (stdinChannel.pipe.closePending) {
         // check if the other end has read everything from the pipe buf so that
         // it's safe to close it (satisfy the closeWriteChannel() request) now
-        if (pipeData[InPipe].bytes == PIPE_SIZE_STDIN) {
-            destroyPipe(stdinChannel.pipe);
+        if (stdinChannel.pipe.bytes == PIPE_SIZE_STDIN) {
+            closeChannel(&stdinChannel);
         }
     }
 }
 
-qint64 QProcessPrivate::writeToStdin(const char *data, qint64 maxlen)
+bool QProcessPrivate::writeToStdin()
 {
+    const char *data = writeBuffer.readPointer();
+    const qint64 bytesToWrite = writeBuffer.nextDataBlockSize();
+
     QMutexLocker lock(QProcessManager::pipeStateLock());
 
     // Reset the number of bytes before writing to the pipe. This makes sure
@@ -1361,19 +1361,25 @@ qint64 QProcessPrivate::writeToStdin(const char *data, qint64 maxlen)
     // lock to avoid cases when ProcessManager::run() overwrites this bytes
     // field with an outdated value from the previous pipe event (that could get
     // reported again due to another event fired on behalf of some other pipe).
-    pipeData[InPipe].bytes = 0;
+    stdinChannel.pipe.bytes = 0;
 
     ULONG actual = 0;
-    APIRET arc = DosWrite(stdinChannel.pipe.server, data, maxlen, &actual);
+    APIRET arc = DosWrite(stdinChannel.pipe.server, data, bytesToWrite, &actual);
 
-    qint64 written = -1;
-    if (arc == NO_ERROR) {
-        written = (qint64)actual;
+    DEBUG(("QProcessPrivate::writeToStdin(), DosWrite(%p \"%s\", %lld, %ld) == %lu",
+           data, qt_prettyDebug(data, bytesToWrite, 16).constData(), bytesToWrite, actual, arc));
+    if (arc != NO_ERROR) {
+        closeChannel(&stdinChannel);
+        setErrorAndEmit(QProcess::WriteError);
+        return false;
     }
-
-    DEBUG(("QProcessPrivate::writeToStdin(%p \"%s\", %lld) == %lld",
-           data, qt_prettyDebug(data, maxlen, 16).constData(), maxlen, written));
-    return written;
+    writeBuffer.free(actual);
+    if (!emittedBytesWritten && actual != 0) {
+        emittedBytesWritten = true;
+        emit q_func()->bytesWritten(actual);
+        emittedBytesWritten = false;
+    }
+    return true;
 }
 
 void QProcessPrivate::terminateProcess()
@@ -1382,7 +1388,8 @@ void QProcessPrivate::terminateProcess()
     if (pid) {
         HSWITCH hswitch = WinQuerySwitchHandle(NULL, pid);
         if (hswitch != NULLHANDLE) {
-            SWCNTRL swcntrl = { 0 };
+            SWCNTRL swcntrl;
+            memset(&swcntrl, 0, sizeof(swcntrl));
             APIRET rc = WinQuerySwitchEntry(hswitch,  &swcntrl);
             // WinQuerySwitchEntry will return a switch entry of the parent
             // process if the specfied one doesn't have a separate session
@@ -1425,18 +1432,15 @@ static int qt_timeout_value(int msecs, int elapsed)
     return timeout < 0 ? 0 : timeout;
 }
 
-bool QProcessPrivate::waitForStarted(int msecs)
+bool QProcessPrivate::waitForStarted(int /*msecs*/)
 {
-    Q_Q(QProcess);
-
     if (processState == QProcess::Running)
         return true;
 
     if (processError == QProcess::FailedToStart)
         return false;
 
-    processError = QProcess::Timedout;
-    q->setErrorString(QProcess::tr("Process operation timed out"));
+    setError(QProcess::Timedout);
     return false;
 }
 
@@ -1465,7 +1469,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
     // due to the absense of the notification via the semaphore
     bool firstTime = true;
     QCoreApplication::sendPostedEvents(q, QEvent::MetaCall);
-    if (QCoreApplication::instance() == NULL) {
+    if (!QCoreApplication::instance()) {
         // however, if there is no QApplication, _q_notified() won't be called
         // by the above, only removed from the queue. So we need a manual call.
         firstTime = false;
@@ -1486,15 +1490,15 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
             case WaitReadyRead: {
                 // check if there was a _q_canReadStandardOutput/Error() signal
                 // that got something from the pipe
-                if (processChannel == QProcess::StandardOutput &&
-                    pipeData[OutPipe].signaled) {
-                    ret = pipeData[OutPipe].result;
+                if (currentReadChannel == QProcess::StandardOutput &&
+                    stdoutChannel.pipe.signaled) {
+                    ret = stdoutChannel.pipe.result;
                     done = true;
                     break;
                 }
-                if (processChannel == QProcess::StandardError &&
-                    pipeData[ErrPipe].signaled) {
-                    ret = pipeData[ErrPipe].result;
+                if (currentReadChannel == QProcess::StandardError &&
+                    stderrChannel.pipe.signaled) {
+                    ret = stderrChannel.pipe.result;
                     done = true;
                     break;
                 }
@@ -1511,8 +1515,8 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
             case WaitBytesWritten: {
                 // check if there was a _q_canWrite() signal that wrote
                 // something to the pipe
-                if (pipeData[InPipe].signaled) {
-                    ret = pipeData[InPipe].result;
+                if (stdinChannel.pipe.signaled) {
+                    ret = stdinChannel.pipe.result;
                     done = true;
                     break;
                 }
@@ -1544,9 +1548,9 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
         }
 
         // reset all signaled flags
-        pipeData[OutPipe].signaled = false;
-        pipeData[ErrPipe].signaled = false;
-        pipeData[InPipe].signaled = false;
+        stdoutChannel.pipe.signaled = false;
+        stderrChannel.pipe.signaled = false;
+        stdinChannel.pipe.signaled = false;
 
         if (done)
             break;
@@ -1556,8 +1560,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
         qDosNI(arc = DosWaitEventSem(waitSem, (ULONG)timeout));
 
         if (arc == ERROR_TIMEOUT) {
-            processError = QProcess::Timedout;
-            q->setErrorString(QProcess::tr("Process operation timed out"));
+            setError(QProcess::Timedout);
             break;
         } else if (arc != NO_ERROR) {
             Q_ASSERT(arc == NO_ERROR);
@@ -1593,12 +1596,6 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
 bool QProcessPrivate::waitForFinished(int msecs)
 {
     return waitFor(WaitFinished, msecs);
-}
-
-bool QProcessPrivate::waitForWrite(int msecs)
-{
-    // ### this function isn't actually used in OS/2 and Unix code paths
-    return false;
 }
 
 void QProcessPrivate::findExitCode()
@@ -1644,28 +1641,28 @@ void QProcessPrivate::_q_notified(int flags)
     // QProcessManager::run() indicated by 0 bytes and to detect closures of
     // the remote end of the pipe indicated by bytes < 0
 
-    // note 2: the PipeData::signaled flag may be set when we enter this method
-    // which means that waitFor() found more than one posted _q_notified() call
-    // of the same type in the event queue; we need to gracefully handle them
-    // all (they may inform about separate payloads)
+    // note 2: the Channel::Pipe::signaled flag may be set when we enter this
+    // method which means that waitFor() found more than one posted
+    // _q_notified() call of the same type in the event queue; we need to
+    // gracefully handle them all (they may inform about separate payloads)
 
     if (flags & CanReadStdOut) {
-        Q_ASSERT(!pipeData[OutPipe].signaled || waitMode);
+        Q_ASSERT(!stdoutChannel.pipe.signaled || waitMode);
         bool closed = false;
         qint64 bytes = bytesAvailableFromPipe(stdoutChannel.pipe.server, &closed);
         if (bytes || closed) {
-            pipeData[OutPipe].bytes = bytes;
-            pipeData[OutPipe].signaled = true;
-            pipeData[OutPipe].result = _q_canReadStandardOutput();
+            stdoutChannel.pipe.bytes = bytes;
+            stdoutChannel.pipe.signaled = true;
+            stdoutChannel.pipe.result = _q_canReadStandardOutput();
             if (closed && bytes) {
                 // ask _q_canReadStandardOutput() to close the pipe by setting
                 // bytes to 0 (only if not already done by the previous call)
-                pipeData[OutPipe].bytes = 0;
+                stdoutChannel.pipe.bytes = 0;
                 _q_canReadStandardOutput();
             }
             if (!waitMode) {
                 // reset the signaled flag
-                pipeData[OutPipe].signaled = false;
+                stdoutChannel.pipe.signaled = false;
             }
 #if defined QPROCESS_DEBUG
         } else if (!waitMode) {
@@ -1675,22 +1672,22 @@ void QProcessPrivate::_q_notified(int flags)
     }
 
     if (flags & CanReadStdErr) {
-        Q_ASSERT(!pipeData[ErrPipe].signaled || waitMode);
+        Q_ASSERT(!stderrChannel.pipe.signaled || waitMode);
         bool closed = false;
         qint64 bytes = bytesAvailableFromPipe(stderrChannel.pipe.server, &closed);
         if (bytes || closed) {
-            pipeData[ErrPipe].bytes = bytes;
-            pipeData[ErrPipe].signaled = true;
-            pipeData[ErrPipe].result = _q_canReadStandardError();
+            stderrChannel.pipe.bytes = bytes;
+            stderrChannel.pipe.signaled = true;
+            stderrChannel.pipe.result = _q_canReadStandardError();
             if (closed && bytes) {
                 // ask _q_canReadStandardError() to close the pipe by setting
                 // bytes to 0 (only if not already done by the previous call)
-                pipeData[ErrPipe].bytes = 0;
+                stderrChannel.pipe.bytes = 0;
                 _q_canReadStandardError();
             }
             if (!waitMode) {
                 // reset the signaled flag
-                pipeData[ErrPipe].signaled = false;
+                stderrChannel.pipe.signaled = false;
             }
 #if defined QPROCESS_DEBUG
         } else if (!waitMode) {
@@ -1700,12 +1697,12 @@ void QProcessPrivate::_q_notified(int flags)
     }
 
     if (flags & CanWrite) {
-        if (pipeData[InPipe].bytes) {
-            pipeData[InPipe].signaled = true;
-            pipeData[InPipe].result = _q_canWrite();
+        if (stdinChannel.pipe.bytes) {
+            stdinChannel.pipe.signaled = true;
+            stdinChannel.pipe.result = _q_canWrite();
             if (!waitMode) {
                 // reset the signaled flag
-                pipeData[InPipe].signaled = false;
+                stdinChannel.pipe.signaled = false;
             }
         }
     }
@@ -1715,11 +1712,11 @@ void QProcessPrivate::_q_notified(int flags)
     }
 }
 
-bool QProcessPrivate::startDetached(const QString &program, const QStringList &arguments,
-                                    const QString &workingDirectory, qint64 *pid)
+bool QProcessPrivate::startDetached(qint64 *pid)
 {
+    QStringList env = environment.toStringList();
     int startedPid = qt_startProcess(program, arguments, workingDirectory,
-                                     NULL, true /* detached */);
+                                     &env, true /* detached */);
 
     if (startedPid == -1)
         return false;
@@ -1729,6 +1726,6 @@ bool QProcessPrivate::startDetached(const QString &program, const QStringList &a
     return true;
 }
 
-QT_END_NAMESPACE
+#endif // QT_CONFIG(process)
 
-#endif // QT_NO_PROCESS
+QT_END_NAMESPACE

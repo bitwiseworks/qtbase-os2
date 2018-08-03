@@ -61,14 +61,18 @@
 
 QT_REQUIRE_CONFIG(processenvironment);
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <QtCore/private/qorderedmutexlocker_p.h>
 #endif
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN)
 #include "QtCore/qt_windows.h"
 typedef HANDLE Q_PIPE;
 #define INVALID_Q_PIPE INVALID_HANDLE_VALUE
+#elif defined(Q_OS_OS2)
+#include "QtCore/qt_os2.h"
+#define INVALID_HPIPE HPIPE(~0)
+#define INVALID_HFILE HFILE(~0)
 #else
 typedef int Q_PIPE;
 #define INVALID_Q_PIPE -1
@@ -206,7 +210,7 @@ public:
     using Map = QMap<Key, Value>;
     Map vars;
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     typedef QHash<QString, Key> NameHash;
     mutable NameHash nameMap;
 
@@ -249,8 +253,10 @@ public:
 
         Channel() : process(0), notifier(0), type(Normal), closed(false), append(false)
         {
+#ifndef Q_OS_OS2
             pipe[0] = INVALID_Q_PIPE;
             pipe[1] = INVALID_Q_PIPE;
+#endif
 #ifdef Q_OS_WIN
             reader = 0;
 #endif
@@ -289,7 +295,21 @@ public:
             QWindowsPipeWriter *writer;
         };
 #endif
+#ifdef Q_OS_OS2
+        struct Pipe {
+            Pipe() : server(INVALID_HPIPE), client(INVALID_HFILE), closePending(false),
+                signaled(false), result(false), bytes(0) {}
+            HPIPE server;
+            HFILE client;
+            bool closePending : 1;
+            bool signaled: 1;
+            bool result : 1;
+            qint64 bytes;
+        };
+        Pipe pipe;
+#else
         Q_PIPE pipe[2];
+#endif
 
         unsigned type : 2;
         bool closed : 1;
@@ -305,6 +325,9 @@ public:
     bool _q_canWrite();
     bool _q_startupNotification();
     bool _q_processDied();
+#if defined(Q_OS_OS2)
+    void _q_notified(int flags);
+#endif
 
     QProcess::ProcessChannelMode processChannelMode;
     QProcess::InputChannelMode inputChannelMode;
@@ -334,6 +357,11 @@ public:
 #endif
     QProcessEnvironment environment;
 
+#ifdef Q_OS_OS2
+    enum PipeType { InPipe = 0, OutPipe = 1, ErrPipe = 2 };
+    bool createPipe(PipeType type, Channel::Pipe &pipe, const char *name = 0);
+    void destroyPipe(Channel::Pipe &pipe);
+#else
     Q_PIPE childStartedPipe[2];
     void destroyPipe(Q_PIPE pipe[2]);
 
@@ -341,6 +369,7 @@ public:
     QSocketNotifier *deathNotifier;
 
     int forkfd;
+#endif
 
 #ifdef Q_OS_WIN
     QTimer *stdinWriteTrigger;
@@ -356,7 +385,7 @@ public:
     void terminateProcess();
     void killProcess();
     void findExitCode();
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) || defined(Q_OS_OS2)
     bool waitForDeadChild();
 #endif
 #ifdef Q_OS_WIN
@@ -365,12 +394,30 @@ public:
     void flushPipeWriter();
     qint64 pipeWriterBytesToWrite() const;
 #endif
+#ifdef Q_OS_OS2
+    void init();
+    void uninit();
+    void ensureWaitSem();
+    void tryCloseStdinPipe();
+    enum WaitCond { WaitReadyRead, WaitBytesWritten, WaitFinished };
+    bool waitFor(WaitCond cond, int msecs);
+    static qint64 bytesAvailableFromPipe(HPIPE hpipe, bool *closed = 0);
+#endif
 
     bool startDetached(qint64 *pPid);
 
     int exitCode;
     QProcess::ExitStatus exitStatus;
     bool crashed;
+
+#ifdef Q_OS_OS2
+    enum { CanReadStdOut = 1, CanReadStdErr = 2, CanWrite = 4, CanDie = 8, CanAll = 0x0F };
+    bool waitMode : 1;
+    HEV waitSem;
+    // NOTE: order of pointers in pipes[] must match order of values in PipeType
+    Channel::Pipe *pipes[3] = { &stdinChannel.pipe, &stdoutChannel.pipe, &stderrChannel.pipe };
+    USHORT procKey;
+#endif
 
     bool waitForStarted(int msecs = 30000);
     bool waitForReadyRead(int msecs = 30000);

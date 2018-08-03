@@ -200,7 +200,7 @@ void QProcessEnvironmentPrivate::insert(const QProcessEnvironmentPrivate &other)
     for ( ; it != end; ++it)
         vars.insert(it.key(), it.value());
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     auto nit = other.nameMap.constBegin();
     const auto nend = other.nameMap.constEnd();
     for ( ; nit != nend; ++nit)
@@ -870,11 +870,13 @@ QProcessPrivate::QProcessPrivate()
     sequenceNumber = 0;
     exitCode = 0;
     exitStatus = QProcess::NormalExit;
+#ifndef Q_OS_OS2
     startupSocketNotifier = 0;
     deathNotifier = 0;
     childStartedPipe[0] = INVALID_Q_PIPE;
     childStartedPipe[1] = INVALID_Q_PIPE;
     forkfd = -1;
+#endif
     crashed = false;
     dying = false;
     emittedReadyRead = false;
@@ -883,6 +885,9 @@ QProcessPrivate::QProcessPrivate()
     stdinWriteTrigger = 0;
     processFinishedNotifier = 0;
 #endif // Q_OS_WIN
+#ifdef Q_OS_OS2
+    init();
+#endif
 }
 
 /*!
@@ -890,6 +895,9 @@ QProcessPrivate::QProcessPrivate()
 */
 QProcessPrivate::~QProcessPrivate()
 {
+#ifdef Q_OS_OS2
+    uninit();
+#endif
     if (stdinChannel.process)
         stdinChannel.process->stdoutChannel.clear();
     if (stdoutChannel.process)
@@ -935,6 +943,7 @@ void QProcessPrivate::cleanup()
         delete stdinChannel.notifier;
         stdinChannel.notifier = 0;
     }
+#ifndef Q_OS_OS2
     if (startupSocketNotifier) {
         delete startupSocketNotifier;
         startupSocketNotifier = 0;
@@ -943,10 +952,13 @@ void QProcessPrivate::cleanup()
         delete deathNotifier;
         deathNotifier = 0;
     }
+#endif
     closeChannel(&stdoutChannel);
     closeChannel(&stderrChannel);
     closeChannel(&stdinChannel);
+#ifndef Q_OS_OS2
     destroyPipe(childStartedPipe);
+#endif
 #ifdef Q_OS_UNIX
     if (forkfd != -1)
         qt_safe_close(forkfd);
@@ -1005,8 +1017,13 @@ void QProcessPrivate::setErrorAndEmit(QProcess::ProcessError error, const QStrin
 bool QProcessPrivate::tryReadFromChannel(Channel *channel)
 {
     Q_Q(QProcess);
+#ifdef Q_OS_OS2
+    if (channel->pipe.server == INVALID_HPIPE)
+        return false;
+#else
     if (channel->pipe[0] == INVALID_Q_PIPE)
         return false;
+#endif
 
     qint64 available = bytesAvailableInChannel(channel);
     if (available == 0)
@@ -1100,6 +1117,10 @@ bool QProcessPrivate::_q_canWrite()
 #if defined QPROCESS_DEBUG
         qDebug("QProcessPrivate::canWrite(), not writing anything (empty write buffer).");
 #endif
+#if defined Q_OS_OS2
+        if (stdinChannel.pipe.closePending)
+            tryCloseStdinPipe();
+#endif
         return false;
     }
 
@@ -1121,7 +1142,7 @@ bool QProcessPrivate::_q_processDied()
 #if defined QPROCESS_DEBUG
     qDebug("QProcessPrivate::_q_processDied()");
 #endif
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) || defined(Q_OS_OS2)
     if (!waitForDeadChild())
         return false;
 #endif
@@ -1191,8 +1212,10 @@ bool QProcessPrivate::_q_startupNotification()
     qDebug("QProcessPrivate::startupNotification()");
 #endif
 
+#ifndef Q_OS_OS2
     if (startupSocketNotifier)
         startupSocketNotifier->setEnabled(false);
+#endif
     QString errorMessage;
     if (processStarted(&errorMessage)) {
         q->setProcessState(QProcess::Running);
@@ -1202,7 +1225,7 @@ bool QProcessPrivate::_q_startupNotification()
 
     q->setProcessState(QProcess::NotRunning);
     setErrorAndEmit(QProcess::FailedToStart, errorMessage);
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) || defined(Q_OS_OS2)
     // make sure the process manager removes this entry
     waitForDeadChild();
     findExitCode();
@@ -1228,7 +1251,13 @@ void QProcessPrivate::closeWriteChannel()
     // instead.
     flushPipeWriter();
 #endif
+#ifdef Q_OS_OS2
+    // postpone the real close until the other end reads all from the pipe buf
+    stdinChannel.pipe.closePending = true;
+    tryCloseStdinPipe();
+#else
     closeChannel(&stdinChannel);
+#endif
 }
 
 /*!
@@ -1257,7 +1286,7 @@ QProcess::~QProcess()
         kill();
         waitForFinished();
     }
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) || defined(Q_OS_OS2)
     // make sure the process manager removes this entry
     d->findExitCode();
 #endif
@@ -2000,6 +2029,10 @@ qint64 QProcess::writeData(const char *data, qint64 len)
 #if defined QPROCESS_DEBUG
     qDebug("QProcess::writeData(%p \"%s\", %lld) == %lld (written to buffer)",
            data, qt_prettyDebug(data, len, 16).constData(), len, len);
+#endif
+#if defined(Q_OS_OS2)
+    // try to write some bytes (there may be space in the pipe)
+    d->_q_notified(QProcessPrivate::CanWrite);
 #endif
     return len;
 }

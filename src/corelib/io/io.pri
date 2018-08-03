@@ -98,6 +98,8 @@ qtConfig(processenvironment) {
         SOURCES += io/qprocess_win.cpp
     else: unix: \
         SOURCES += io/qprocess_unix.cpp
+    else: os2: \
+        SOURCES += io/qprocess_os2.cpp
 }
 
 win32 {
