@@ -193,5 +193,6 @@ win32 {
                 io/qfilesystemengine_unix.cpp \
                 io/qlockfile_os2.cpp \
                 io/qfilesystemiterator_unix.cpp \
-                io/qstandardpaths_unix.cpp
+                io/qstandardpaths_unix.cpp \
+                io/qstorageinfo_stub.cpp
 }
