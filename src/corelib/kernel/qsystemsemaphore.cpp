@@ -89,11 +89,11 @@ QT_BEGIN_NAMESPACE
   When using this class, be aware of the following platform
   differences:
 
-  \b{Windows:} QSystemSemaphore does not own its underlying system
-  semaphore. Windows owns it. This means that when all instances of
+  \b{Windows, OS/2:} QSystemSemaphore does not own its underlying system
+  semaphore. The OS owns it. This means that when all instances of
   QSystemSemaphore for a particular key have been destroyed, either by
   having their destructors called, or because one or more processes
-  crash, Windows removes the underlying system semaphore.
+  crash, the OS removes the underlying system semaphore.
 
   \b{Unix:}
 
@@ -146,7 +146,7 @@ QT_BEGIN_NAMESPACE
   creates a new semaphore for that key and sets its resource count to
   \a initialValue.
 
-  In Windows, \a mode is ignored, and the system always tries to
+  In Windows and OS/2, \a mode is ignored, and the system always tries to
   create a semaphore for the specified \a key. If the system does not
   already have a semaphore identified as \a key, it creates the
   semaphore and sets its resource count to \a initialValue. But if the
@@ -176,7 +176,7 @@ QSystemSemaphore::QSystemSemaphore(const QString &key, int initialValue, AccessM
   system semaphore.
 
   Two important side effects of the destructor depend on the system.
-  In Windows, if acquire() has been called for this semaphore but not
+  In Windows and OS/2, if acquire() has been called for this semaphore but not
   release(), release() will not be called by the destructor, nor will
   the resource be released when the process exits normally. This would
   be a program bug which could be the cause of a deadlock in another
@@ -196,7 +196,7 @@ QSystemSemaphore::~QSystemSemaphore()
   enable handling the problem in Unix implementations of semaphores
   that survive a crash. In Unix, when a semaphore survives a crash, we
   need a way to force it to reset its resource count, when the system
-  reuses the semaphore. In Windows, where semaphores can't survive a
+  reuses the semaphore. In Windows and OS/2, where semaphores can't survive a
   crash, this enum has no effect.
 
   \value Open If the semaphore already exists, its initial resource
@@ -209,7 +209,7 @@ QSystemSemaphore::~QSystemSemaphore()
   This value should be passed to the constructor, when the first
   semaphore for a particular key is constructed and you know that if
   the semaphore already exists it could only be because of a crash. In
-  Windows, where a semaphore can't survive a crash, Create and Open
+  Windows and OS/2, where a semaphore can't survive a crash, Create and Open
   have the same behavior.
 */
 
@@ -228,7 +228,7 @@ void QSystemSemaphore::setKey(const QString &key, int initialValue, AccessMode m
     if (key == d->key && mode == Open)
         return;
     d->clearError();
-#if !defined(Q_OS_WIN) && !defined(QT_POSIX_IPC)
+#if !defined(Q_OS_WIN) && !defined(QT_POSIX_IPC) && !defined(Q_OS_OS2)
     // optimization to not destroy/create the file & semaphore
     if (key == d->key && mode == Create && d->createdSemaphore && d->createdFile) {
         d->initialValue = initialValue;

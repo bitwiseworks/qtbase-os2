@@ -679,7 +679,7 @@
             "purpose": "Provides access to a shared memory segment.",
             "section": "Kernel",
             "condition": [
-                "config.android || config.win32 || (!config.vxworks && (tests.ipc_sysv || tests.ipc_posix))"
+                "config.android || config.win32 || config.os2 || (!config.vxworks && (tests.ipc_sysv || tests.ipc_posix))"
             ],
             "output": [ "publicFeature", "feature" ]
         },
@@ -689,7 +689,7 @@
             "section": "Kernel",
             "condition": [
                 "!config.integrity && !config.vxworks",
-                "config.android || config.win32 || tests.ipc_sysv || tests.ipc_posix"
+                "config.android || config.win32 || config.os2 || tests.ipc_sysv || tests.ipc_posix"
             ],
             "output": [ "publicFeature", "feature" ]
         },

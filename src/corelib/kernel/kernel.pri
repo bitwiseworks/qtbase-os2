@@ -214,7 +214,10 @@ os2 {
     SOURCES += \
                kernel/qcore_unix.cpp \
                kernel/qeventdispatcher_os2.cpp \
-               kernel/qtimerinfo_unix.cpp
+               kernel/qtimerinfo_unix.cpp \
+               kernel/qsharedmemory_os2.cpp \
+               kernel/qsystemsemaphore_os2.cpp
+
     HEADERS += \
                kernel/qcore_unix_p.h \
                kernel/qeventdispatcher_os2_p.h \

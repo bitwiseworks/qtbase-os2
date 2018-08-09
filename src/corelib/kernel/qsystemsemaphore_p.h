@@ -85,6 +85,9 @@ public:
 #elif defined(QT_POSIX_IPC)
     bool handle(QSystemSemaphore::AccessMode mode = QSystemSemaphore::Open);
     void setErrorString(const QString &function);
+#elif defined(Q_OS_OS2)
+    void handle(QSystemSemaphore::AccessMode mode = QSystemSemaphore::Open);
+    void setErrorString(APIRET arc, const QString &function);
 #else
     key_t handle(QSystemSemaphore::AccessMode mode = QSystemSemaphore::Open);
     void setErrorString(const QString &function);
@@ -101,6 +104,8 @@ public:
 #elif defined(QT_POSIX_IPC)
     sem_t *semaphore;
     bool createdSemaphore;
+#elif defined(Q_OS_OS2)
+    HEV semaphore;
 #else
     key_t unix_key;
     int semaphore;

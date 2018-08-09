@@ -79,6 +79,22 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
     return result;
 #elif defined(QT_POSIX_IPC)
     return QLatin1Char('/') + result;
+#elif defined(Q_OS_OS2)
+    QString ns;
+    if (prefix == QLatin1String("qipc_sharedmemory_")) {
+        // use the shared mem namespace (prefix must match one in qsharedmemory_p.h!)
+        ns = QLatin1String("\\SHAREMEM\\");
+    } else {
+        // assume the semaphore namespace
+        ns = QLatin1String("\\SEM32\\");
+    }
+    // Make sure the resulting name fits the OS file name limit (note that
+    // SHA-1 is 20 bytes so its hex form length is 40 chars which means it will
+    // always fit given the limit is 260 chars if we take the right part)
+    int maxlen = CCHMAXPATH - ns.length();
+    if (result.length() > maxlen)
+        result = result.right(maxlen);
+    return result;
 #else
     return QDir::tempPath() + QLatin1Char('/') + result;
 #endif
@@ -103,10 +119,10 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
 
   \list
 
-  \li Windows: QSharedMemory does not "own" the shared memory segment.
+  \li Windows, OS/2: QSharedMemory does not "own" the shared memory segment.
   When all threads or processes that have an instance of QSharedMemory
   attached to a particular shared memory segment have either destroyed
-  their instance of QSharedMemory or exited, the Windows kernel
+  their instance of QSharedMemory or exited, the OS kernel
   releases the shared memory segment automatically.
 
   \li Unix: QSharedMemory "owns" the shared memory segment. When the
@@ -333,7 +349,7 @@ bool QSharedMemory::create(int size, AccessMode mode)
         return false;
 
 #ifndef QT_NO_SYSTEMSEMAPHORE
-#ifndef Q_OS_WIN
+#if !defined(Q_OS_WIN) && !defined(Q_OS_OS2)
     // Take ownership and force set initialValue because the semaphore
     // might have already existed from a previous crash.
     d->systemSemaphore.setKey(d->key, 1, QSystemSemaphore::Create);
@@ -411,7 +427,11 @@ bool QSharedMemory::attach(AccessMode mode)
         return false;
 #endif
 
+#ifdef Q_OS_OS2
+    if (isAttached())
+#else
     if (isAttached() || !d->handle())
+#endif
         return false;
 
     return d->attach(mode);
