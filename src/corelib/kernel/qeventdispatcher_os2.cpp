@@ -200,6 +200,8 @@ void QEventDispatcherOS2Private::destroyMsgQueue()
         stopThread();
         WinDestroyMsgQueue(hmq);
         WinTerminate(hab);
+        hmq = NULLHANDLE;
+        hab = NULLHANDLE;
     }
 }
 
