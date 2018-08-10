@@ -672,15 +672,16 @@ bool QProcessPrivate::openChannel(Channel &channel)
         type = OutPipe;
         if (processChannelMode == QProcess::ForwardedChannels ||
             processChannelMode == QProcess::ForwardedOutputChannel)
-        return true;
+            return true;
     } else if (&channel == &stderrChannel) {
         type = ErrPipe;
         if (processChannelMode == QProcess::MergedChannels ||
             processChannelMode == QProcess::ForwardedChannels ||
             processChannelMode == QProcess::ForwardedErrorChannel)
-        return true;
+            return true;
     } else {
         Q_ASSERT(false);
+        return false;
     }
 
     if (channel.type == Channel::Normal) {
