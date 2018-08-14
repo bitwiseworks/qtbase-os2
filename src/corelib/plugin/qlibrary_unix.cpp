@@ -88,7 +88,9 @@ QStringList QLibraryPrivate::suffixes_sys(const QString& fullVersion)
     }
 #elif defined(Q_OS_AIX)
     suffixes << ".a";
-
+#elif defined(Q_OS_OS2)
+    Q_UNUSED(fullVersion);
+    return QStringList(QStringLiteral(".dll"));
 #else
     if (!fullVersion.isEmpty()) {
         suffixes << QString::fromLatin1(".so.%1").arg(fullVersion);
@@ -109,7 +111,11 @@ QStringList QLibraryPrivate::suffixes_sys(const QString& fullVersion)
 
 QStringList QLibraryPrivate::prefixes_sys()
 {
+#if defined(Q_OS_OS2)
+    return QStringList();
+#else
     return QStringList() << QLatin1String("lib");
+#endif
 }
 
 bool QLibraryPrivate::load_sys()

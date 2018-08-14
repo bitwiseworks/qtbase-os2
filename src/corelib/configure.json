@@ -85,7 +85,7 @@
                 { "libs": "-licui18n -licuuc -licudata", "condition": "!config.win32" }
             ],
             "use": [
-                { "lib": "libdl", "condition": "features.dlopen" }
+                { "lib": "libdl", "condition": "features.dlopen && !config.os2" }
             ]
         },
         "journald": {
@@ -467,7 +467,7 @@
         },
         "dlopen": {
             "label": "dlopen()",
-            "condition": "config.unix && libs.libdl",
+            "condition": "(config.unix && libs.libdl) || config.os2",
             "output": [ "privateFeature" ]
         },
         "doubleconversion": {

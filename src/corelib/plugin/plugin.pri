@@ -30,8 +30,8 @@ qtConfig(library) {
         plugin/qelfparser_p.cpp \
         plugin/qmachparser.cpp
 
-    unix: SOURCES += plugin/qlibrary_unix.cpp
+    unix|os2: SOURCES += plugin/qlibrary_unix.cpp
     else: SOURCES += plugin/qlibrary_win.cpp
 
-    qtConfig(dlopen): QMAKE_USE_PRIVATE += libdl
+    qtConfig(dlopen):!os2: QMAKE_USE_PRIVATE += libdl
 }
