@@ -107,10 +107,13 @@ defineTest(qtPrepareTool) {
 
 # target variable, list of env var names, [non-empty: prepare for system(), not make]
 defineTest(qtAddToolEnv) {
-    isEmpty(3): \
+    isEmpty(3) {
         ds = $$QMAKE_DIR_SEP
-    else: \
+        dls = $$QMAKE_DIRLIST_SEP
+    } else {
         ds = $$DIR_SEPARATOR
+        dls = $$DIRLIST_SEPARATOR
+    }
     batch_sets =
     for(env, 2) {
         value = $$eval($${env}.value)
@@ -118,13 +121,13 @@ defineTest(qtAddToolEnv) {
             name = $$eval($${env}.name)
             config = $$eval($${env}.CONFIG)
             equals(ds, /) {
-                contains(config, prepend): infix = \${$$name:+:\$$$name}
-                else: contains(config, always_prepend): infix = :\$$$name
+                contains(config, prepend): infix = \${$$name:+$${dls}\$$$name}
+                else: contains(config, always_prepend): infix = $${dls}\$$$name
                 else: infix =
                 # Under msys, this path is taken only in the non-system()
                 # case, so using shell_quote() always works.
                 batch_sets += \
-                    "$$name=$$shell_quote($$join(value, :))$$infix" \
+                    "$$name=$$shell_quote($$join(value, $${dls}))$$infix" \
                     "export $$name"
             } else {
                 value ~= s,\\^,^^^^,g
@@ -202,6 +205,11 @@ defineTest(qtAddTargetEnv) {
                 deppath.name = DYLD_LIBRARY_PATH
         } else:equals(QMAKE_HOST.os, AIX) {
             deppath.name = LIBPATH
+        } else:equals(QMAKE_HOST.os, OS/2) {
+            libpathstrict.name = LIBPATHSTRICT
+            libpathstrict.value = T
+            QT_TOOL_ENV += libpathstrict
+            deppath.name = BEGINLIBPATH
         } else {
             error("Operating system not supported.")
         }
