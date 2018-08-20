@@ -126,6 +126,9 @@ static QSet<QByteArray> keywords()
 #ifdef Q_OS_WINRT
             << "winrt"
 #endif
+#ifdef Q_OS_OS2
+            << "os2"
+#endif
 
 #if QT_POINTER_SIZE == 8
             << "64bit"
