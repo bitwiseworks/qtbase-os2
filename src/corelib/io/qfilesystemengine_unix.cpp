@@ -121,6 +121,10 @@ static int statx(int dirfd, const char *pathname, int flag, unsigned mask, struc
 #  endif // !Q_OS_ANDROID
 #endif
 
+#if defined(Q_OS_OS2)
+#include "qt_os2.h"
+#endif
+
 #ifndef STATX_ALL
 struct statx { mode_t stx_mode; };      // dummy
 #endif
@@ -1555,7 +1559,16 @@ QString QFileSystemEngine::homePath()
 
 QString QFileSystemEngine::rootPath()
 {
+#ifdef Q_OS_OS2
+    char root[] = "C:/"; // fallback to C: on any error
+    ULONG drive;
+    APIRET arc = DosQuerySysInfo(QSV_BOOT_DRIVE, QSV_BOOT_DRIVE, &drive, sizeof(drive));
+    if (arc == NO_ERROR && drive >= 1 && drive <= 26)
+        root[0] = 'A' + --drive;
+    return QLatin1String(root);
+#else
     return QLatin1String("/");
+#endif
 }
 
 QString QFileSystemEngine::tempPath()
