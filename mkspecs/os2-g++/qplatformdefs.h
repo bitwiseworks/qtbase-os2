@@ -44,7 +44,9 @@
 #define QPLATFORMDEFS_H
 
 // Drag in _osmajor, _abspath and others from <stdlib.h>
+#ifndef _EMX_SOURCE
 #define _EMX_SOURCE
+#endif
 
 // Get Qt defines/settings
 #include "qglobal.h"

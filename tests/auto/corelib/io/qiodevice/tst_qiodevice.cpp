@@ -621,8 +621,8 @@ void tst_QIODevice::writeInTextMode()
     // Unlike other platforms, Windows implementation expands '\n' into
     // "\r\n" sequence in write(). Ensure that write() properly works with
     // a read buffer on random-access devices.
-#ifndef Q_OS_WIN
-    QSKIP("This is a Windows-only test");
+#ifndef Q_OS_DOSLIKE
+    QSKIP("This is a Windows and OS/2 only test");
 #else
     RandomAccessBuffer buffer("one\r\ntwo\r\nthree\r\n");
     buffer.open(QBuffer::ReadWrite | QBuffer::Text);

@@ -11,7 +11,7 @@ CONFIG += console
 SOURCES += main.cpp
 DEFINES += QT_MESSAGELOGCONTEXT
 
-gcc:!mingw:!haiku {
+gcc:!mingw:!haiku:!os2 {
     QMAKE_LFLAGS += -rdynamic
     contains(QT_ARCH, arm): QMAKE_CXXFLAGS += -funwind-tables -fno-inline
 }

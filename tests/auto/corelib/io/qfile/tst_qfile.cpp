@@ -61,6 +61,9 @@ QT_END_NAMESPACE
 # include <sys/types.h>
 # include <unistd.h>
 #endif
+#ifdef Q_OS_OS2
+# include <qt_os2.h>
+#endif
 #ifdef Q_OS_MAC
 # include <sys/mount.h>
 #elif defined(Q_OS_LINUX)
@@ -85,7 +88,7 @@ QT_END_NAMESPACE
 #include <stdio.h>
 #include <errno.h>
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
 #include "../../../network-settings.h"
 #endif
 
@@ -533,7 +536,7 @@ void tst_QFile::exists()
     file.remove();
     QVERIFY(!file.exists());
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncPath = "//" + QtNetworkSettings::winServerName() + "/testshare/readme.txt";
     QFile unc(uncPath);
     QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
@@ -668,7 +671,7 @@ void tst_QFile::size_data()
     QTest::addColumn<qint64>("size");
 
     QTest::newRow( "exist01" ) << m_testFile << (qint64)245;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     // Only test UNC on Windows./
     QTest::newRow("unc") << "//" + QString(QtNetworkSettings::winServerName() + "/testshare/test.pri") << (qint64)34;
 #endif
@@ -1143,9 +1146,21 @@ void tst_QFile::ungetChar()
     QCOMPARE(buf[2], '4');
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
 QString driveLetters()
 {
+#if defined(Q_OS_OS2)
+    ULONG dummy;
+    ULONG map;
+    QString result;
+    if (DosQueryCurrentDisk(&dummy, &map) == NO_ERROR) {
+        for (int i = 0; i < 26; ++i, map >>= 1) {
+            if (map & 0x1)
+                result.append(QLatin1Char('A' + i));
+        }
+    }
+    return result;
+#else
     wchar_t volumeName[MAX_PATH];
     wchar_t path[MAX_PATH];
     const HANDLE h = FindFirstVolumeW(volumeName, MAX_PATH);
@@ -1160,6 +1175,7 @@ QString driveLetters()
     } while (FindNextVolumeW(h, volumeName, MAX_PATH));
     FindVolumeClose(h);
     return result;
+#endif
 }
 
 static inline QChar invalidDriveLetter()
@@ -1172,12 +1188,12 @@ static inline QChar invalidDriveLetter()
     return QChar();
 }
 
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
 
 void tst_QFile::invalidFile_data()
 {
     QTest::addColumn<QString>("fileName");
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_DOSLIKE)
     QTest::newRow( "x11" ) << QString( "qwe//" );
 #else
 #if !defined(Q_OS_WINRT)
@@ -2398,7 +2414,7 @@ void tst_QFile::writeLargeDataBlock_data()
     QTest::newRow("localfile-Fd")     << "./largeblockfile.txt" << (int)OpenFd;
     QTest::newRow("localfile-Stream") << "./largeblockfile.txt" << (int)OpenStream;
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !defined(QT_NO_NETWORK)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT) && !defined(QT_NO_NETWORK)
     // Some semi-randomness to avoid collisions.
     QTest::newRow("unc file")
         << QString("//" + QtNetworkSettings::winServerName() + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
@@ -2759,7 +2775,7 @@ void tst_QFile::appendAndRead()
 
 void tst_QFile::miscWithUncPathAsCurrentDir()
 {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     QString current = QDir::currentPath();
     const QString path = QLatin1String("//") + QtNetworkSettings::winServerName()
         + QLatin1String("/testshare");
@@ -3469,7 +3485,7 @@ void tst_QFile::objectConstructors()
 
 void tst_QFile::caseSensitivity()
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     const bool caseSensitive = false;
 #elif defined(Q_OS_MAC)
      const bool caseSensitive = pathconf(QDir::currentPath().toLatin1().constData(), _PC_CASE_SENSITIVE);

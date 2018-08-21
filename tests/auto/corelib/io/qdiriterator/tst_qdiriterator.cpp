@@ -41,7 +41,7 @@
 #define Q_NO_SYMLINKS
 #endif
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
 #  include "../../../network-settings.h"
 #endif
 
@@ -103,11 +103,11 @@ private slots:
     void longPath();
     void dirorder();
     void relativePaths();
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     void uncPaths_data();
     void uncPaths();
 #endif
-#ifndef Q_OS_WIN
+#ifndef Q_OS_DOSLIKE
     void hiddenDirs_hiddenFiles();
 #endif
 #ifdef BUILTIN_TESTDATA
@@ -196,7 +196,7 @@ void tst_QDirIterator::initTestCase()
 #  endif
 #endif
 
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_DOSLIKE)
     createDirectory("hiddenDirs_hiddenFiles");
     createFile("hiddenDirs_hiddenFiles/normalFile");
     createFile("hiddenDirs_hiddenFiles/.hiddenFile");
@@ -587,7 +587,7 @@ void tst_QDirIterator::relativePaths()
     }
 }
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
 void tst_QDirIterator::uncPaths_data()
 {
     QTest::addColumn<QString>("dirName");
@@ -609,7 +609,7 @@ void tst_QDirIterator::uncPaths()
 }
 #endif
 
-#ifndef Q_OS_WIN
+#ifndef Q_OS_DOSLIKE
 // In Unix it is easy to create hidden files, but in Windows it requires
 // a special call since hidden files need to be "marked" while in Unix
 // anything starting by a '.' is a hidden file.
@@ -645,7 +645,7 @@ void tst_QDirIterator::hiddenDirs_hiddenFiles()
         QCOMPARE(failures, 0);
     }
 }
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
 
 QTEST_MAIN(tst_QDirIterator)
 
