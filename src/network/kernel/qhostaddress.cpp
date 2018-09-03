@@ -482,8 +482,10 @@ QHostAddress::QHostAddress(const struct sockaddr *sockaddr)
 #ifndef Q_OS_WINRT
     if (sockaddr->sa_family == AF_INET)
         setAddress(htonl(((const sockaddr_in *)sockaddr)->sin_addr.s_addr));
+#ifndef QT_NO_IPV6
     else if (sockaddr->sa_family == AF_INET6)
         setAddress(((const sockaddr_in6 *)sockaddr)->sin6_addr.s6_addr);
+#endif
 #else
     Q_UNUSED(sockaddr)
 #endif
@@ -662,8 +664,10 @@ void QHostAddress::setAddress(const struct sockaddr *sockaddr)
     clear();
     if (sockaddr->sa_family == AF_INET)
         setAddress(htonl(((const sockaddr_in *)sockaddr)->sin_addr.s_addr));
+#ifndef QT_NO_IPV6
     else if (sockaddr->sa_family == AF_INET6)
         setAddress(((const sockaddr_in6 *)sockaddr)->sin6_addr.s6_addr);
+#endif
 #else
     Q_UNUSED(sockaddr)
 #endif

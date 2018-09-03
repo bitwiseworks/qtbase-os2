@@ -103,7 +103,9 @@ typedef INT (WSAAPI *LPFN_WSASENDMSG)(SOCKET s, LPWSAMSG lpMsg, DWORD dwFlags,
 union qt_sockaddr {
     sockaddr a;
     sockaddr_in a4;
+#ifndef QT_NO_IPV6
     sockaddr_in6 a6;
+#endif
 };
 
 namespace {
@@ -299,6 +301,7 @@ public:
      */
     void setPortAndAddress(quint16 port, const QHostAddress &address, qt_sockaddr *aa, QT_SOCKLEN_T *sockAddrSize)
     {
+#ifndef QT_NO_IPV6
         if (address.protocol() == QAbstractSocket::IPv6Protocol
             || address.protocol() == QAbstractSocket::AnyIPProtocol
             || socketProtocol == QAbstractSocket::IPv6Protocol
@@ -313,7 +316,9 @@ public:
             memcpy(&aa->a6.sin6_addr, &tmp, sizeof(tmp));
             *sockAddrSize = sizeof(sockaddr_in6);
             SetSALen::set(&aa->a, sizeof(sockaddr_in6));
-        } else {
+        } else
+#endif
+        {
             memset(&aa->a, 0, sizeof(sockaddr_in));
             aa->a4.sin_family = AF_INET;
             aa->a4.sin_port = htons(port);
