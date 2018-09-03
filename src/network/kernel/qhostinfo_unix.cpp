@@ -66,6 +66,10 @@
 #  include <gnu/lib-names.h>
 #endif
 
+#if defined(Q_OS_OS2)
+#include <libcx/net.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 // Almost always the same. If not, specify in qplatformdefs.h.
@@ -94,7 +98,7 @@ typedef void (*res_nclose_proto)(res_state_ptr);
 static res_nclose_proto local_res_nclose = 0;
 static res_state_ptr local_res = 0;
 
-#if QT_CONFIG(library) && !defined(Q_OS_QNX)
+#if QT_CONFIG(library) && !defined(Q_OS_QNX) && !defined(Q_OS_OS2)
 namespace {
 struct LibResolv
 {
@@ -159,11 +163,11 @@ static void resolveLibrary(LibResolvFeature f)
     if (LibResolv::ReinitNecessary || f == NeedResNInit)
         libResolv();
 }
-#else // QT_CONFIG(library) || Q_OS_QNX
+#else // QT_CONFIG(library) || Q_OS_QNX || Q_OS_OS2
 static void resolveLibrary(LibResolvFeature)
 {
 }
-#endif // QT_CONFIG(library) || Q_OS_QNX
+#endif // QT_CONFIG(library) || Q_OS_QNX || Q_OS_OS2
 
 QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 {
@@ -185,7 +189,9 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
     if (address.setAddress(hostName)) {
         // Reverse lookup
         sockaddr_in sa4;
+#ifndef QT_NO_IPV6
         sockaddr_in6 sa6;
+#endif
         sockaddr *sa = 0;
         QT_SOCKLEN_T saSize = 0;
         if (address.protocol() == QAbstractSocket::IPv4Protocol) {
@@ -195,6 +201,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
             sa4.sin_family = AF_INET;
             sa4.sin_addr.s_addr = htonl(address.toIPv4Address());
         }
+#ifndef QT_NO_IPV6
         else {
             sa = (sockaddr *)&sa6;
             saSize = sizeof(sa6);
@@ -202,6 +209,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
             sa6.sin6_family = AF_INET6;
             memcpy(sa6.sin6_addr.s6_addr, address.toIPv6Address().c, sizeof(sa6.sin6_addr.s6_addr));
         }
+#endif
 
         char hbuf[NI_MAXHOST];
         if (sa && getnameinfo(sa, saSize, hbuf, sizeof(hbuf), 0, 0, 0) == 0)
@@ -256,6 +264,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
                 if (!addresses.contains(addr))
                     addresses.append(addr);
             }
+#ifndef QT_NO_IPV6
             else if (node->ai_family == AF_INET6) {
                 QHostAddress addr;
                 sockaddr_in6 *sa6 = (sockaddr_in6 *) node->ai_addr;
@@ -265,6 +274,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
                 if (!addresses.contains(addr))
                     addresses.append(addr);
             }
+#endif
             node = node->ai_next;
         }
         if (addresses.isEmpty() && node == 0) {

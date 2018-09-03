@@ -68,6 +68,10 @@ mac {
     !uikit: LIBS_PRIVATE += -framework CoreServices -framework SystemConfiguration
 }
 
+os2 {
+    SOURCES += kernel/qhostinfo_unix.cpp
+}
+
 uikit:HEADERS += kernel/qnetworkinterface_uikit_p.h
 osx:SOURCES += kernel/qnetworkproxy_mac.cpp
 else:win32:!winrt: SOURCES += kernel/qnetworkproxy_win.cpp
