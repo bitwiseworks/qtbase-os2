@@ -102,6 +102,11 @@
             "label": "IPv6 ifname",
             "type": "compile",
             "test": {
+                "head": [
+                    "#if defined(__OS2__)",
+                    "#  include <libcx/net.h>",
+                    "#endif"
+                ],
                 "include": [ "sys/types.h", "sys/socket.h", "net/if.h" ],
                 "main": [
                     "char buf[IFNAMSIZ];",
