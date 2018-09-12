@@ -74,6 +74,14 @@
 #  include <linux/if.h>
 #else
 #  include <net/if.h>
+#  ifdef Q_OS_OS2
+#    include <sys/sockio.h>
+#    ifndef ifr_mtu
+#      define ifr_mtu ifr_ifru.ifru_metric // TCP/IP 4.21 docs suggest so
+#    endif
+#    // On OS/2 we use LIBCx which provides if_nametoindex in a custom header.
+#    include <libcx/net.h>
+#  endif
 #endif
 
 QT_BEGIN_NAMESPACE
