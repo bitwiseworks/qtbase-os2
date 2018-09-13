@@ -48,7 +48,7 @@ qtConfig(sctp) {
     HEADERS += socket/qnativesocketengine_p.h
 }
 
-unix {
+unix|os2 {
     SOURCES += socket/qnativesocketengine_unix.cpp
     HEADERS += socket/qnet_unix_p.h
 }
