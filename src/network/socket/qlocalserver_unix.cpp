@@ -63,6 +63,7 @@ void QLocalServerPrivate::init()
 
 bool QLocalServerPrivate::removeServer(const QString &name)
 {
+#ifndef Q_OS_OS2
     QString fileName;
     if (name.startsWith(QLatin1Char('/'))) {
         fileName = name;
@@ -74,6 +75,10 @@ bool QLocalServerPrivate::removeServer(const QString &name)
         return QFile::remove(fileName);
     else
         return true;
+#else
+    Q_UNUSED(name);
+    return true;
+#endif
 }
 
 bool QLocalServerPrivate::listen(const QString &requestedServerName)
@@ -81,12 +86,20 @@ bool QLocalServerPrivate::listen(const QString &requestedServerName)
     Q_Q(QLocalServer);
 
     // determine the full server path
+#ifdef Q_OS_OS2
+    // Local OS/2 sockets must always start with "\socket\"
+    const QLatin1String socketPath("\\socket\\");
+    fullServerName = QDir::toNativeSeparators(requestedServerName);
+    if (!fullServerName.startsWith(socketPath))
+        fullServerName = socketPath + requestedServerName;
+#else
     if (requestedServerName.startsWith(QLatin1Char('/'))) {
         fullServerName = requestedServerName;
     } else {
         fullServerName = QDir::cleanPath(QDir::tempPath());
         fullServerName += QLatin1Char('/') + requestedServerName;
     }
+#endif
     serverName = requestedServerName;
 
     QByteArray encodedTempPath;
@@ -331,6 +344,9 @@ void QLocalServerPrivate::setError(const QString &function)
     default:
         errorString = QLocalServer::tr("%1: Unknown error %2")
                       .arg(function).arg(errno);
+        const char *err = strerror(errno);
+        if (err)
+            errorString += QString(QLatin1String(" (%1)")).arg(QLatin1String(err));
         error = QAbstractSocket::UnknownSocketError;
 #if defined QLOCALSERVER_DEBUG
         qWarning() << errorString << "fullServerName:" << fullServerName;

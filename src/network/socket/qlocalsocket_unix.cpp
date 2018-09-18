@@ -169,6 +169,9 @@ QString QLocalSocketPrivate::generateErrorString(QLocalSocket::LocalSocketError 
     case QLocalSocket::UnknownSocketError:
     default:
         errorString = QLocalSocket::tr("%1: Unknown error %2").arg(function).arg(errno);
+        const char *err = strerror(errno);
+        if (err)
+            errorString += QString(QLatin1String(" (%1)")).arg(QLatin1String(err));
     }
     return errorString;
 }
@@ -270,12 +273,20 @@ void QLocalSocketPrivate::_q_connectToSocket()
     QString connectingPathName;
 
     // determine the full server path
+#ifdef Q_OS_OS2
+    // Local OS/2 sockets must always start with "\socket\"
+    const QLatin1String socketPath("\\socket\\");
+    connectingPathName = QDir::toNativeSeparators(connectingName);
+    if (!connectingName.startsWith(socketPath))
+        connectingPathName = socketPath + connectingName;
+#else
     if (connectingName.startsWith(QLatin1Char('/'))) {
         connectingPathName = connectingName;
     } else {
         connectingPathName = QDir::tempPath();
         connectingPathName += QLatin1Char('/') + connectingName;
     }
+#endif
 
     const QByteArray encodedConnectingPathName = QFile::encodeName(connectingPathName);
     struct sockaddr_un name;

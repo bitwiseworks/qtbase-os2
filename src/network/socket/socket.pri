@@ -77,7 +77,7 @@ qtConfig(localserver) {
         SOURCES += socket/qlocalsocket_tcp.cpp \
                    socket/qlocalserver_tcp.cpp
         DEFINES += QT_LOCALSOCKET_TCP
-    } else: unix {
+    } else: unix|os2 {
         SOURCES += socket/qlocalsocket_unix.cpp \
                    socket/qlocalserver_unix.cpp
     } else: win32 {
