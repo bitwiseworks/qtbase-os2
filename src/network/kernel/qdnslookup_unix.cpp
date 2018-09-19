@@ -50,7 +50,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
-#if !defined(Q_OS_OPENBSD)
+#if !defined(Q_OS_OPENBSD) && !defined(Q_OS_OS2)
 #  include <arpa/nameser_compat.h>
 #endif
 #include <resolv.h>
@@ -65,6 +65,10 @@ QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(library)
 
+#if defined(Q_OS_OS2)
+#define local_res_nquery(state, n, c, t, a, al) res_query(n, c, t, a, al)
+#define local_dn_expand dn_expand
+#else
 #if defined(Q_OS_OPENBSD)
 typedef struct __res_state* res_state;
 #endif
@@ -125,9 +129,24 @@ static bool resolveLibraryInternal()
     return true;
 }
 Q_GLOBAL_STATIC_WITH_ARGS(bool, resolveLibrary, (resolveLibraryInternal()))
+#endif // Q_OS_OS2
 
 void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestName, const QHostAddress &nameserver, QDnsLookupReply *reply)
 {
+#if defined(Q_OS_OS2)
+    // The old resolve API is not thread-safe, use a mutex to serialize access.
+    static QMutex mutex;
+    QMutexLocker locker(&mutex);
+
+    struct __res_state &state = _res;
+
+    // Initialize state.
+    if (res_init() < 0) {
+        reply->error = QDnsLookup::ResolverError;
+        reply->errorString = tr("Resolver initialization failed");
+        return;
+    }
+#else
     // Load dn_expand, res_ninit and res_nquery on demand.
     resolveLibrary();
 
@@ -146,6 +165,7 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
         reply->errorString = tr("Resolver initialization failed");
         return;
     }
+#endif
 
     //Check if a nameserver was set. If so, use it
     if (!nameserver.isNull()) {
@@ -189,7 +209,9 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
 #ifdef QDNSLOOKUP_DEBUG
     state.options |= RES_DEBUG;
 #endif
+#if !defined(Q_OS_OS2)
     QScopedPointer<struct __res_state, QDnsLookupStateDeleter> state_ptr(&state);
+#endif
 
     // Perform DNS query.
     QVarLengthArray<unsigned char, PACKETSZ> buffer(PACKETSZ);

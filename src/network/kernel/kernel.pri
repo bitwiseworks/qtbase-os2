@@ -69,7 +69,8 @@ mac {
 }
 
 os2 {
-    SOURCES += kernel/qhostinfo_unix.cpp \
+    SOURCES += kernel/qdnslookup_unix.cpp \
+               kernel/qhostinfo_unix.cpp \
                kernel/qnetworkinterface_unix.cpp
 }
 
