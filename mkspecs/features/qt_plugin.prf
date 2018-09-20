@@ -92,6 +92,7 @@ target.path = $$[QT_INSTALL_PLUGINS]/$$PLUGIN_TYPE
 INSTALLS += target
 
 TARGET = $$qt5LibraryTarget($$TARGET)
+TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT)
 
 CONFIG += create_cmake
 

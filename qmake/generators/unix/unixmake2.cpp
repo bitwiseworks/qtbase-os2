@@ -1279,7 +1279,9 @@ void UnixMakefileGenerator::init2()
             ar_cmd.append("$(AR) $(TARGETA) $(OBJECTS)");
 
         if (project->isActiveConfig("os2")) {
-            ProString dll = prefix + project->first("TARGET");
+            ProString dll = project->first("TARGET_SHORT");
+            if (dll.isEmpty())
+                dll = prefix + project->first("TARGET");
             project->values("LIB_TARGET").prepend(project->first("QMAKE_PREFIX_STATICLIB")
                     + project->first("TARGET") + "." + project->first("QMAKE_EXTENSION_STATICLIB"));
             project->values("TARGET_PRL").prepend(project->first("QMAKE_PREFIX_STATICLIB") + project->first("TARGET"));

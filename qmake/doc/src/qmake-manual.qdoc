@@ -2556,6 +2556,23 @@
     The project file above would produce an executable named \c myapp on
     unix and \c{myapp.exe} on Windows.
 
+    \section1 TARGET_SHORT
+
+    Specifies the short name of the target file. Used in cases where the normal target
+    name set with \c TARGET would break name length constraints. An example of such a
+    case is an OS/2 DLL name which is limited to 8 characters (excluding the extension).
+    In cases like this \c TARGET_SHORT gives a short variant of \c TARGET used by qmake
+    in places where \c TARGET would not fit.
+
+    On OS/2, \c TARGET_SHORT will be only used to compose the DLL name of a dynamic library.
+    The import library name and names of other related files (e.g. the \c .prl file) will
+    still carry a full name specified by \c TARGET, just like on other platforms. This makes
+    it possible to use such a library in other projects by its full name in a
+    platform-neutral way.
+
+    On other platforms, the value of this variable is ignored so it may be freely used in
+    project files without the platform conditional.
+
     \section1 TARGET_EXT
 
     Specifies the extension of \c TARGET. The value of this variable
