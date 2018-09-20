@@ -1,4 +1,5 @@
 TARGET   = QtNetwork
+TARGET_SHORT = QtNet
 QT = core-private
 
 DEFINES += QT_NO_USING_NAMESPACE QT_NO_FOREACH
