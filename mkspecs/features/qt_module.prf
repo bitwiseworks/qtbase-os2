@@ -315,4 +315,4 @@ win32 {
 }
 
 TARGET = $$qt5LibraryTarget($$TARGET$$QT_LIBINFIX)  # Do this towards the end
-TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT$$QT_LIBINFIX)
+!isEmpty(TARGET_SHORT):TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT$$QT_LIBINFIX)

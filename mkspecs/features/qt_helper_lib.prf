@@ -54,7 +54,7 @@ THE_TARGET = $$qt5LibraryTarget($$TARGET)
 }
 
 TARGET = $$THE_TARGET
-TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT)
+!isEmpty(TARGET_SHORT):TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT)
 
 # In static builds of Qt, convenience libraries must be installed,
 # as in this case they are not linked to the final library/plugin.
