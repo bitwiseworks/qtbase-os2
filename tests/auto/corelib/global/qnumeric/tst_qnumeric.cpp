@@ -467,7 +467,7 @@ template <typename Int> static void mulOverflow_template()
         QCOMPARE(mul_overflow(min, Int(2), &r), true);
         QCOMPARE(mul_overflow(Int(min / 2), Int(3), &r), true);
         QCOMPARE(mul_overflow(Int(min / 2 - 1), Int(2), &r), true);
-        QCOMPARE(mul_overflow(Int(min + min/2), Int(2), &r), true);
+        QCOMPARE(mul_overflow(Int(- min/2), Int(2), &r), true);
     }
 #endif
 }
