@@ -104,6 +104,28 @@ public:
     };
 };
 
+#ifdef Q_OS_OS2
+// wchar_t is 2 bytes just like on Windows. However, GCC/2 lacks proper wchar_t
+// support (https://github.com/psmedley/gcc/issues/30) so we need to specialize
+// QTypeInfo<wchar_t> manually
+template<>
+class QTypeInfo<wchar_t>
+{
+public:
+    enum {
+        isSpecialized = true,
+        isPointer = false,
+        isIntegral = true,
+        isComplex = false,
+        isStatic = true,
+        isRelocatable = false,
+        isLarge = false,
+        isDummy = false,
+        sizeOf = 2
+    };
+};
+#endif
+
 /*!
     \class QTypeInfoQuery
     \inmodule QtCore
@@ -333,8 +355,10 @@ Q_DECLARE_TYPEINFO(long double, Q_RELOCATABLE_TYPE);
 Q_DECLARE_TYPEINFO(char16_t, Q_RELOCATABLE_TYPE);
 Q_DECLARE_TYPEINFO(char32_t, Q_RELOCATABLE_TYPE);
 #  endif
+#  ifndef Q_OS_OS2 // See above
 #  if !defined(Q_CC_MSVC) || defined(_NATIVE_WCHAR_T_DEFINED)
 Q_DECLARE_TYPEINFO(wchar_t, Q_RELOCATABLE_TYPE);
+#  endif
 #  endif
 #endif // Qt 6
 
