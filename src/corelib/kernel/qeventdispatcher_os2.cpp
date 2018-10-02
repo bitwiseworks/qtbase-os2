@@ -233,7 +233,7 @@ void QEventDispatcherOS2Private::startThread()
     if (tid == 0) {
         tid = _beginthread(threadMain, nullptr, 0, this);
         if (tid == -1)
-          qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
+            qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
     }
 }
 
@@ -253,7 +253,9 @@ void QEventDispatcherOS2Private::stopThread()
         TID tid_os2 = tid;
         APIRET arc = DosWaitThread(&tid_os2, DCWW_WAIT);
         if (arc)
-          qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
+            qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
+        else
+            Q_ASSERT(tid == 0);
 
         tid = 0;
     }
@@ -304,7 +306,7 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
         bool hasSockets = false;
 
         // Finish the thread if there is nothing to do.
-        if (d->socketNotifiers.isEmpty() || d->timerList.isEmpty())
+        if (d->socketNotifiers.isEmpty() && d->timerList.isEmpty())
             break;
 
         // Get the maximum time we can wait.
@@ -386,6 +388,9 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
         if (d->unblockFd != -2)
             WinPostQueueMsg(d->hmq, WM_QT_TIMER_OR_SOCKET, MPFROMLONG(hasSockets), NULL);
     }
+
+    // Indicate that we're done.
+    d->tid = 0;
 }
 
 QEventDispatcherOS2::QEventDispatcherOS2(QObject *parent)
