@@ -1304,7 +1304,7 @@ void tst_QFileInfo::isHidden_data()
 #if defined(Q_OS_DOSLIKE)
     QVERIFY(QDir("./hidden-directory").exists() || QDir().mkdir("./hidden-directory"));
 #if defined(Q_OS_OS2)
-    FILESTATUS3 info = { 0 };
+    FILESTATUS3 info;
     QVERIFY(DosQueryPathInfo("./hidden-directory", FIL_STANDARD, &info, sizeof(info)) == NO_ERROR);
     info.attrFile |= FILE_HIDDEN;
     QVERIFY(DosSetPathInfo("./hidden-directory", FIL_STANDARD, &info, sizeof(info), DSPI_WRTTHRU) == NO_ERROR);
