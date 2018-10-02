@@ -1,7 +1,7 @@
 TEMPLATE = subdirs
 TESTPLUGINS =
 
-win32 {
+win32|os2 {
     contains(QT_CONFIG, debug): TESTPLUGINS += debugplugin
     contains(QT_CONFIG, release): TESTPLUGINS += releaseplugin
 } else:osx {

@@ -37,12 +37,12 @@
 #  include <qt_windows.h>
 #endif
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <unistd.h>
 #include <sys/types.h>
 #endif
 
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_ANDROID)
+#if defined(Q_OS_UNIXLIKE) && !defined(Q_OS_MAC) && !defined(Q_OS_ANDROID)
 #define Q_XDG_PLATFORM
 #endif
 

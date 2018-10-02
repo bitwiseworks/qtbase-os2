@@ -5,7 +5,7 @@ tst.depends = lib theplugin
 SUBDIRS = lib \
           theplugin \
           tst
-!android:!win32:!darwin {
+!android:!win32:!darwin:!os2 {
     tst.depends += almostplugin
     SUBDIRS += almostplugin
 }
