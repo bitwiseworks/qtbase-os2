@@ -1,9 +1,10 @@
 TEMPLATE=subdirs
 
-SUBDIRS = qabstractitemmodel \
+SUBDIRS = \
     qstringlistmodel \
 
 qtHaveModule(gui): SUBDIRS += \
+    qabstractitemmodel \
     qabstractproxymodel \
     qidentityproxymodel \
     qitemselectionmodel \
