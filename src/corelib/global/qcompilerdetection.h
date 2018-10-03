@@ -808,7 +808,10 @@
 
 #if defined(Q_CC_GNU) && !defined(Q_CC_INTEL) && !defined(Q_CC_CLANG)
 #  define Q_COMPILER_RESTRICTED_VLA
-#  define Q_COMPILER_THREADSAFE_STATICS
+#  if !defined(Q_OS_OS2)
+//   GCC/2 has problems with statics, see https://github.com/psmedley/gcc/issues/31
+#    define Q_COMPILER_THREADSAFE_STATICS
+#  endif
 #  if Q_CC_GNU >= 403
 //   GCC supports binary literals in C, C++98 and C++11 modes
 #    define Q_COMPILER_BINARY_LITERALS
