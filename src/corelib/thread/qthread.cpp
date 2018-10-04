@@ -174,6 +174,12 @@ QThreadPrivate::QThreadPrivate(QThreadData *d)
     terminatePending = false;
 #endif
 
+#if defined (Q_OS_OS2)
+    tid = 0;
+    terminationEnabled = true;
+    terminatePending = false;
+#endif
+
     if (!data)
         data = new QThreadData;
 }
