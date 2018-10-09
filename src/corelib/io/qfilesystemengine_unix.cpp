@@ -1291,7 +1291,7 @@ bool QFileSystemEngine::removeDirectory(const QFileSystemEntry &entry, bool remo
             } else {
                 return false;
             }
-            slash = dirName.lastIndexOf(QDir::separator(), oldslash-1);
+            slash = dirName.lastIndexOf(QLatin1Char('/'), oldslash-1);
         }
         return true;
     }
