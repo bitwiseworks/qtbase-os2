@@ -538,11 +538,15 @@ void tst_LargeFile::mapOffsetOverflow()
             QTest::ignoreMessage(QtWarningMsg, "QFSFileEngine::map: Mapping a file beyond its size is not portable");
         address = largeFile.map(offset, blockSize);
         QCOMPARE(!!address, succeeds);
+        if (address)
+            largeFile.unmap(address);
 
         if (succeeds)
             QTest::ignoreMessage(QtWarningMsg, "QFSFileEngine::map: Mapping a file beyond its size is not portable");
         address = largeFile.map(offset + blockSize, blockSize);
         QCOMPARE(!!address, succeeds);
+        if (address)
+            largeFile.unmap(address);
     }
 }
 
