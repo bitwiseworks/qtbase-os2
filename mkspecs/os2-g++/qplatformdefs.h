@@ -104,8 +104,8 @@
 #endif
 
 #define QT_FOPEN                ::fopen
-#define QT_FSEEK                ::fseek
-#define QT_FTELL                ::ftell
+#define QT_FSEEK                ::fseeko
+#define QT_FTELL                ::ftello
 #define QT_FGETPOS              ::fgetpos
 #define QT_FSETPOS              ::fsetpos
 #define QT_FPOS_T               fpos_t
