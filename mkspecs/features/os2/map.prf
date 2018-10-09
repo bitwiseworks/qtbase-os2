@@ -1,0 +1,6 @@
+contains(TEMPLATE, ".*lib"):dll|contains(TEMPLATE, ".*app") { 
+    build_pass|isEmpty(BUILDS) {
+        QMAKE_LFLAGS += $$QMAKE_LFLAGS_MAP
+        QMAKE_CLEAN += $(basename $(TARGET)).map
+    }
+}
