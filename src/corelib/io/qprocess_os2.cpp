@@ -58,18 +58,15 @@ QT_BEGIN_NAMESPACE
 extern QByteArray qt_prettyDebug(const char *data, int len, int maxSize);
 
 // redirect qDebug output to a file in the root directory of the current drive
-static void msgHandler(QtMsgType, const char *msg)
+static void msgHandler(QtMsgType, const QMessageLogContext &ctx, const QString &msg)
 {
     static FILE *f = 0;
     if (!f) {
         f = fopen("\\qprocess.dbg", "wb");
         setbuf(f, NULL);
     }
-    fprintf(f, "%s\n", msg);
+    fprintf(f, "%s:%d: %s\n", ctx.function, ctx.line, msg.toLocal8Bit ().data ());
 }
-
-static int setMsgHandler() { qInstallMsgHandler(msgHandler); return 0; }
-Q_CONSTRUCTOR_FUNCTION(setMsgHandler)
 
 QT_END_NAMESPACE
 
@@ -257,7 +254,7 @@ void QProcessManager::release()
 // static
 USHORT QProcessManager::addProcess(QProcess *process)
 {
-    DEBUG(("QProcessManager::addProcess(%p)", process));
+    DEBUG(("%p", process));
 
     QMutexLocker locker(&mutex);
     Q_ASSERT(instance);
@@ -330,7 +327,7 @@ void QProcessManager::removeProcess(USHORT procKey)
     Q_ASSERT(instance->processes.contains(procKey));
     QProcess *process = instance->processes[procKey];
 
-    DEBUG(("QProcessManager::removeProcess(%p)", process));
+    DEBUG(("%p", process));
 
     // to guarantee that the given procKey may be reused, we must close all
     // pipes in order to ensure that we won't get late NPSS_CLOSE for the
@@ -350,7 +347,7 @@ void QProcessManager::removeProcess(USHORT procKey)
 QProcessManager::QProcessManager()
     : refcnt(0), finish(false), eventSem(NULLHANDLE), sa_old_sigchld_handler(0)
 {
-    DEBUG(() << "QProcessManager::QProcessManager()");
+    DEBUG(());
 
     APIRET rc = DosCreateEventSem(NULL, &eventSem,
                                   DC_SEM_SHARED | DCE_AUTORESET | DCE_POSTONE,
@@ -363,7 +360,7 @@ QProcessManager::QProcessManager()
 
 QProcessManager::~QProcessManager()
 {
-    DEBUG(() << "QProcessManager::~QProcessManager()");
+    DEBUG(());
 
     Q_ASSERT(!refcnt);
     Q_ASSERT(!processes.size());
@@ -400,7 +397,7 @@ void QProcessManager::uninstallSigHandler()
 
 void QProcessManager::run()
 {
-    DEBUG(() << "QProcessManager::run() BEGIN");
+    DEBUG(() << "BEGIN");
 
     // Note: the rationale behind using a worker thread for death detection is
     // that calling complex functions from a signal handler is not really a good
@@ -424,7 +421,7 @@ void QProcessManager::run()
             break;
 
         if (instance->deathFlag.testAndSetRelaxed(1, 0)) {
-            DEBUG(() << "QProcessManager::run(): child death signaled");
+            DEBUG(() << "child death signaled");
             for (QProcess *proc : processes) {
                 if (proc->d_func()->waitMode) {
                     DosPostEventSem(proc->d_func()->waitSem);
@@ -440,7 +437,7 @@ void QProcessManager::run()
         if (processes.size() == 0)
             continue;
 
-        DEBUG(() << "QProcessManager::run(): checking pipes");
+        DEBUG(() << "checking pipes");
 
         // make sure the state array is big enough. The best size for sz pipes
         // is sz * 2 (to be able to store both NPSS_RDATA/NPSS_WSPACE and
@@ -528,7 +525,7 @@ void QProcessManager::run()
 
     ::free(pipeStates);
 
-    DEBUG(() << "QProcessManager::run() END");
+    DEBUG(() << "END");
 }
 
 
@@ -834,7 +831,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         QDir::setCurrent(workingDirectory);
     }
 
-    DEBUG(("qt_startProcess: workdir is \"%s\"", qPrintable(QDir::currentPath())));
+    DEBUG(("workdir is \"%s\"", qPrintable(QDir::currentPath())));
 
     // try to find the executable
     QByteArray fullProgramName;
@@ -885,7 +882,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         }
     }
 
-    DEBUG(("qt_startProcess: found \"%s\" for \"%s\"",
+    DEBUG(("found \"%s\" for \"%s\"",
            qPrintable(QFile::decodeName(fullProgramName)),
            qPrintable(QFile::decodeName(programName))));
 
@@ -910,10 +907,10 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             QString path = QFile::decodeName(libPathBuf);
             paths = path.split(QLatin1Char(';'), QString::SkipEmptyParts);
             if (paths.contains(fullPath, Qt::CaseInsensitive)) {
-                DEBUG(("qt_startProcess: \"%s\" is already in BEGINLIBPATH",
+                DEBUG(("\"%s\" is already in BEGINLIBPATH",
                        qPrintable(fullPath)));
             } else {
-                DEBUG(("qt_startProcess: prepending \"%s\" to BEGINLIBPATH",
+                DEBUG(("prepending \"%s\" to BEGINLIBPATH",
                        qPrintable(fullPath)));
                 prependedLibPath = true;
                 QByteArray newLibPath = libPathBuf;
@@ -957,10 +954,10 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         }
 
 #if defined(QPROCESS_DEBUG)
-        DEBUG(("qt_startProcess: executable \"%s\"",
+        DEBUG(("executable \"%s\"",
                qPrintable(QFile::decodeName(programReal))));
         for (int i = 0; argvReal[i]; ++i) {
-            DEBUG(("qt_startProcess:  arg[%d] \"%s\"",
+            DEBUG((" arg[%d] \"%s\"",
                    i, qPrintable(QFile::decodeName(argvReal[i]))));
         }
 #endif
@@ -1040,7 +1037,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
 
             ULONG ulSid, ulPidDummy;
             arc = DosStartSession(&data, &ulSid, &ulPidDummy);
-            DEBUG(("qt_startProcess: DosStartSession() returned %ld", arc));
+            DEBUG(("DosStartSession() returned %ld", arc));
             // Note: for SSF_RELATED_INDEPENDENT, PID of the started process is
             // unknown, return 0 to indicate this
             if (arc == NO_ERROR)
@@ -1058,7 +1055,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             pid = spawnve(mode, programReal, const_cast<char * const *>(argvReal), envv);
         }
 
-        DEBUG(("qt_startProcess: pid %d", pid));
+        DEBUG(("pid %d", pid));
 
         if (prependedLibPath) {
             // restore BEGINLIBPATH
@@ -1086,7 +1083,7 @@ void QProcessPrivate::startProcess()
 {
     Q_Q(QProcess);
 
-    DEBUG(("QProcessPrivate::startProcess"));
+    DEBUG(());
 
     // Initialize pipes
     if (!openChannel(stdinChannel) ||
@@ -1120,6 +1117,11 @@ void QProcessPrivate::startProcess()
     int realStdin = fileno(stdin), realStdout = fileno(stdout),
         realStderr = fileno(stderr);
 
+#if defined(QPROCESS_DEBUG)
+    // Redirect qDebug output to a file as we temporarily change stdout/sterr below.
+    QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
+#endif
+
     do {
         // save & copy the stdin handle
         if (inputChannelMode != QProcess::ForwardedInputChannel) {
@@ -1140,8 +1142,7 @@ void QProcessPrivate::startProcess()
                 rc = dup2(_imphandle(handle), realStdin);
             }
             if (rc == -1) {
-                DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdin "
-                       "failed with %d (%s)", errno, strerror(errno)));
+                DEBUG(("dup/dup2 for stdin failed with %d (%s)", errno, strerror(errno)));
                 break;
             }
         }
@@ -1166,8 +1167,7 @@ void QProcessPrivate::startProcess()
                     rc = dup2(_imphandle(handle), realStdout);
                 }
                 if (rc == -1) {
-                    DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stdout "
-                           "failed with %d (%s)", errno, strerror(errno)));
+                    DEBUG(("dup/dup2 for stdout failed with %d (%s)", errno, strerror(errno)));
                     break;
                 }
             }
@@ -1184,8 +1184,7 @@ void QProcessPrivate::startProcess()
                     }
                 }
                 if (rc == -1) {
-                    DEBUG(("QProcessPrivate::startProcess: dup/dup2 for stderr "
-                           "failed with %d (%s)", errno, strerror(errno)));
+                    DEBUG(("dup/dup2 for stderr failed with %d (%s)", errno, strerror(errno)));
                     break;
                 }
             }
@@ -1212,6 +1211,10 @@ void QProcessPrivate::startProcess()
         dup2(tmpStderr, realStderr);
         close(tmpStderr);
     }
+
+#if defined(QPROCESS_DEBUG)
+    qInstallMessageHandler(oldMsgHandler);
+#endif
 
     if (rc == -1 || pid == -1) {
         // Cleanup, report error and return
@@ -1316,7 +1319,7 @@ qint64 QProcessPrivate::bytesAvailableInChannel(const Channel *channel) const
             bytes = bytesAvailableFromPipe(channel->pipe.server);
     }
 
-    DEBUG(("QProcessPrivate::bytesAvailableInChannel(%d) == %lld", &channel->pipe - pipes, bytes));
+    DEBUG(("%s = %lld", channel == &stdoutChannel ? "stdout" : "stderr", bytes));
     return bytes;
 }
 
@@ -1330,8 +1333,7 @@ qint64 QProcessPrivate::readFromChannel(const Channel *channel, char *data, qint
         bytesRead = (qint64)actual;
     }
 
-    DEBUG(("QProcessPrivate::readFromStdout(%d, %p \"%s\", %lld) == %lld",
-           &channel->pipe - pipes,
+    DEBUG(("%s, %p \"%s\", %lld = %lld", channel == &stdoutChannel ? "stdout" : "stderr",
            data, qt_prettyDebug(data, bytesRead, 16).constData(), maxlen, bytesRead));
     return bytesRead;
 }
@@ -1367,8 +1369,8 @@ bool QProcessPrivate::writeToStdin()
     ULONG actual = 0;
     APIRET arc = DosWrite(stdinChannel.pipe.server, data, bytesToWrite, &actual);
 
-    DEBUG(("QProcessPrivate::writeToStdin(), DosWrite(%p \"%s\", %lld, %ld) == %lu",
-           data, qt_prettyDebug(data, bytesToWrite, 16).constData(), bytesToWrite, actual, arc));
+    DEBUG(("DosWrite(%p \"%s\", %lld, %ld) == %lu", data,
+           qt_prettyDebug(data, bytesToWrite, 16).constData(), bytesToWrite, actual, arc));
     if (arc != NO_ERROR) {
         closeChannel(&stdinChannel);
         setErrorAndEmit(QProcess::WriteError);
@@ -1385,9 +1387,9 @@ bool QProcessPrivate::writeToStdin()
 
 void QProcessPrivate::terminateProcess()
 {
-    DEBUG(("QProcessPrivate::terminateProcess()"));
+    DEBUG(());
     if (pid) {
-        HSWITCH hswitch = WinQuerySwitchHandle(NULL, pid);
+        HSWITCH hswitch = WinQuerySwitchHandle(NULLHANDLE, pid);
         if (hswitch != NULLHANDLE) {
             SWCNTRL swcntrl;
             memset(&swcntrl, 0, sizeof(swcntrl));
@@ -1415,7 +1417,7 @@ void QProcessPrivate::terminateProcess()
 
 void QProcessPrivate::killProcess()
 {
-    DEBUG(("QProcessPrivate::killProcess()"));
+    DEBUG(());
     if (pid)
         DosKillProcess(DKP_PROCESS, pid);
 }
@@ -1453,7 +1455,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
     const char *condStr = cond == WaitReadyRead ? "ReadyRead" :
                           cond == WaitBytesWritten ? "BytesWritten" :
                           cond == WaitFinished ? "Finished" : "???";
-    DEBUG(("QProcessPrivate::waitFor(%s, %d)", condStr, msecs));
+    DEBUG(("%s, %d", condStr, msecs));
 #endif
 
     QTime stopWatch;
@@ -1580,7 +1582,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
                                   Q_ARG(int, QProcessPrivate::CanAll));
     }
 
-    DEBUG(("QProcessPrivate::waitFor(%s, %d) returns %d", condStr, msecs, ret));
+    DEBUG(("%s, %d returns %d", condStr, msecs, ret));
     return ret;
 }
 
@@ -1621,21 +1623,20 @@ bool QProcessPrivate::waitForDeadChild()
     if (waitResult > 0) {
         crashed = !WIFEXITED(exitStatus);
         exitCode = WEXITSTATUS(exitStatus);
-        DEBUG(() << "QProcessPrivate::waitForDeadChild() dead with exitCode"
-                 << exitCode << ", crashed?" << crashed);
+        DEBUG(() << "dead with exitCode" << exitCode << ", crashed?" << crashed);
         return true;
     }
 #if defined QPROCESS_DEBUG
-    DEBUG(() << "QProcessPrivate::waitForDeadChild() not dead!");
+    DEBUG(() << "not dead!");
     if (waitResult == -1)
-        DEBUG(() << "QProcessPrivate::waitForDeadChild()" << strerror(errno));
+        DEBUG(() << strerror(errno));
 #endif
     return false;
 }
 
 void QProcessPrivate::_q_notified(int flags)
 {
-    DEBUG(("QProcessPrivate::_q_notified: flags %x", flags));
+    DEBUG(("flags %x", flags));
 
     // note: in all read cases below, we look for the number of bytes actually
     // available to sort out (ignore) outdated notifications from
@@ -1667,7 +1668,7 @@ void QProcessPrivate::_q_notified(int flags)
             }
 #if defined QPROCESS_DEBUG
         } else if (!waitMode) {
-            DEBUG(("QProcessPrivate::_q_notified: stale CanReadStdOut signal!"));
+            DEBUG(("stale CanReadStdOut signal!"));
 #endif
         }
     }
@@ -1692,7 +1693,7 @@ void QProcessPrivate::_q_notified(int flags)
             }
 #if defined QPROCESS_DEBUG
         } else if (!waitMode) {
-            DEBUG(("QProcessPrivate::_q_notified: stale CanReadStdErr signal!"));
+            DEBUG(("stale CanReadStdErr signal!"));
 #endif
         }
     }

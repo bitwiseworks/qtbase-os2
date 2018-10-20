@@ -54,7 +54,7 @@ QT_BEGIN_NAMESPACE
     Returns a human readable representation of the first \a len
     characters in \a data.
 */
-static QByteArray qt_prettyDebug(const char *data, int len, int maxSize)
+QByteArray qt_prettyDebug(const char *data, int len, int maxSize)
 {
     if (!data) return "(null)";
     QByteArray out;
