@@ -834,50 +834,61 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
     DEBUG(("workdir is \"%s\"", qPrintable(QDir::currentPath())));
 
     // try to find the executable
-    QByteArray fullProgramName;
+    QByteArray fullProgramName(CCHMAXPATH * 2, 0);
+    int rc = -1;
+    errno = ENOENT;
 
     // don't go further if we got an empty program name: a file with such a name
     // cannot exist on OS/2 and many QFileInfo funcs are undefined for this case
+    // (and we will simply return ENOENT to the caller if so)
     if (!programName.isEmpty()) {
+        // While it's tempting to use a nice kLIBC _path2 function here, we
+        // don't do it because it a) doesn't search the current dir if no path
+        // info is given; b) doesn't resolve /@unixroot (and symlinks) to a real
+        // OS/2 path  and we might need it for the DosStartSession case.
         APIRET arc;
-        char pathBuf[CCHMAXPATH];
         QFileInfo programInfo(program);
         QStringList knownExts;
         knownExts << QLatin1String("exe") << QLatin1String("cmd")
                   << QLatin1String("bat"); // in order of CMD.EXE's precedence
-        QByteArray path =
-            QFile::encodeName(QDir::toNativeSeparators(programInfo.path()));
-        if (path == ".")
-            path.clear();
-        // run through all known exe extensions (+ no extension case)
-        for (int i = 0; i <= knownExts.size(); ++i) {
-            QByteArray name;
-            if (i == 0) {
-                // no extension case, only if a known extension is already there
-                if (knownExts.contains(programInfo.suffix(), Qt::CaseInsensitive))
-                    name = QFile::encodeName(programInfo.fileName());
-                else
-                    continue;
-            } else {
-                name = QFile::encodeName(programInfo.fileName() +
-                                         QLatin1String(".") + knownExts[i-1]);
-            }
-            if (!path.isEmpty()) {
-                arc = DosSearchPath(0, path, name, pathBuf, sizeof(pathBuf));
-            } else {
-                arc = DosSearchPath(SEARCH_IGNORENETERRS | SEARCH_ENVIRONMENT |
-                                    SEARCH_CUR_DIRECTORY, "PATH",
-                                    name, pathBuf, sizeof(pathBuf));
-            }
+        QDir dir = programInfo.dir();
+        bool hasPath = dir.path() != QLatin1String(".");
+        QByteArray path;
+        // Use canonicalPath to resolve /@unixroot and symlinks if program has
+        // path information. If canonicalPath returns an empty string, this
+        // means "path not found", so we will stay with ENOENT in such a case.
+        if (!hasPath ||
+            !(path = QFile::encodeName(QDir::toNativeSeparators(dir.canonicalPath()))).isEmpty()) {
+            // run through all known exe extensions (+ no extension case)
+            for (int i = 0; i <= knownExts.size(); ++i) {
+                QByteArray name;
+                if (i == 0) {
+                    // no extension case, only if a known extension is already there
+                    if (knownExts.contains(programInfo.suffix(), Qt::CaseInsensitive))
+                        name = QFile::encodeName(programInfo.fileName());
+                    else
+                        continue;
+                } else {
+                    name = QFile::encodeName(programInfo.fileName() +
+                                             QLatin1String(".") + knownExts[i-1]);
+                }
+                if (hasPath) {
+                    arc = DosSearchPath(0, path, name, fullProgramName.data(), fullProgramName.size());
+                } else {
+                    arc = DosSearchPath(SEARCH_IGNORENETERRS | SEARCH_ENVIRONMENT |
+                                        SEARCH_CUR_DIRECTORY, "PATH",
+                                        name, fullProgramName.data(), fullProgramName.size());
+                }
 
-            if (arc == NO_ERROR) {
-                fullProgramName = pathBuf;
-                break;
-            }
-            if (arc != ERROR_FILE_NOT_FOUND && arc != ERROR_PATH_NOT_FOUND) {
-                qWarning("qt_startProcess: DosSearchPath(%s) returned %lu",
-                         qPrintable(QFile::decodeName(name)), arc);
-                break;
+                if (arc == NO_ERROR) {
+                    rc = 0;
+                    break;
+                }
+                if (arc != ERROR_FILE_NOT_FOUND && arc != ERROR_PATH_NOT_FOUND) {
+                    qWarning("qt_startProcess: DosSearchPath(%s) returned %lu",
+                             qPrintable(QFile::decodeName(name)), arc);
+                    break;
+                }
             }
         }
     }
@@ -887,10 +898,8 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
            qPrintable(QFile::decodeName(programName))));
 
     int pid = -1;
-    if (fullProgramName.isEmpty()) {
-        // return "No such file or directory"
-        errno = ENOENT;
-    } else {
+
+    if (rc != -1) {
         // add the program's dir to BEGINLIBPATH to make sure the DLLs are
         // serached there first (no, the OS/2 loader does't do it itself)
         QFileInfo fullProgramInfo(QFile::decodeName(fullProgramName));
