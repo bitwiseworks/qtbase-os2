@@ -35,16 +35,15 @@ debug_and_release:debug_and_release_target {
 # Allow for a custom test runner script
 $${type}.commands += $(TESTRUNNER)
 
-unix {
+unix|os2 {
     isEmpty(TEST_TARGET_DIR): TEST_TARGET_DIR = .
 
-    app_bundle: \
+    os2: \
+        $${type}.commands += $${TEST_TARGET_DIR}/$(QMAKE_TARGET).exe
+    else:app_bundle: \
         $${type}.commands += $${TEST_TARGET_DIR}/$(QMAKE_TARGET).app/Contents/MacOS/$(QMAKE_TARGET)
     else: \
         $${type}.commands += $${TEST_TARGET_DIR}/$(QMAKE_TARGET)
-} else:os2 {
-    # On OS/2, $(TARGET) already includes the proper dir, so no TEST_TARGET_DIR dance is needed
-    $${type}.commands += $(TARGET)
 } else {
     # Windows
     !isEmpty(TEST_TARGET_DIR): TEST_TARGET_DIR = $$shell_path($$TEST_TARGET_DIR)$${QMAKE_DIR_SEP}
