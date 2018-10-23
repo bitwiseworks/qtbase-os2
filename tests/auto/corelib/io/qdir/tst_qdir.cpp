@@ -394,7 +394,7 @@ void tst_QDir::mkdirRmdir()
 
 void tst_QDir::mkdirOnSymlink()
 {
-#if !defined(Q_OS_UNIX) || defined(Q_NO_SYMLINKS)
+#if !defined(Q_OS_UNIXLIKE) || defined(Q_NO_SYMLINKS)
     QSKIP("Test only valid on an OS that supports symlinks");
 #else
     // Create the structure:
@@ -587,12 +587,15 @@ void tst_QDir::exists_data()
     QTest::newRow("simple dir with slash") << (m_dataPath + "/resources/") << true;
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
-    QTest::newRow("unc 1") << uncRoot << true;
-    QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
-    QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
-    QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
-    QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
-    QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+      QTest::newRow("unc 1") << uncRoot << true;
+      QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
+      QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
+      QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
+      QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
+      QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    }
     QTest::newRow("unc 7") << uncRoot + "/testshare/adirthatshouldnotexist" << false;
     QTest::newRow("unc 8") << uncRoot + "/asharethatshouldnotexist" << false;
     QTest::newRow("unc 9") << "//ahostthatshouldnotexist" << false;
@@ -930,7 +933,11 @@ void tst_QDir::entryListWithTestFiles()
 void tst_QDir::entryListTimedSort()
 {
 #if QT_CONFIG(process)
+#ifdef Q_OS_OS2
+    const QString touchBinary = "/@unixroot/usr/bin/touch.exe";
+#else
     const QString touchBinary = "/bin/touch";
+#endif
     if (!QFile::exists(touchBinary))
         QSKIP("/bin/touch not found");
 
@@ -977,12 +984,15 @@ void tst_QDir::entryListSimple_data()
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
-    QTest::newRow("unc 1") << uncRoot << 2;
-    QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << 2;
-    QTest::newRow("unc 3") << uncRoot + "/testshare" << 2;
-    QTest::newRow("unc 4") << uncRoot + "/testshare/" << 2;
-    QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << 2;
-    QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << 2;
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc 1") << uncRoot << 2;
+        QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << 2;
+        QTest::newRow("unc 3") << uncRoot + "/testshare" << 2;
+        QTest::newRow("unc 4") << uncRoot + "/testshare/" << 2;
+        QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << 2;
+        QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << 2;
+    }
     QTest::newRow("unc 7") << uncRoot + "/testshare/adirthatshouldnotexist" << 0;
     QTest::newRow("unc 8") << uncRoot + "/asharethatshouldnotexist" << 0;
     QTest::newRow("unc 9") << "//ahostthatshouldnotexist" << 0;
@@ -1091,7 +1101,7 @@ void tst_QDir::canonicalPath()
     QFETCH(QString, canonicalPath);
 
     QDir dir(path);
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     QCOMPARE(dir.canonicalPath().toLower(), canonicalPath.toLower());
 #else
     QCOMPARE(dir.canonicalPath(), canonicalPath);
@@ -2341,12 +2351,15 @@ void tst_QDir::cdBelowRoot_data()
         << systemDrive << systemRoot.mid(3) << QDir::cleanPath(systemRoot);
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
     const QString testDirectory = QStringLiteral("testshare");
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
 #ifdef Q_OS_OS2
-    QTest::newRow("os2-share")
+        QTest::newRow("os2-share")
 #else
-    QTest::newRow("windows-share")
+        QTest::newRow("windows-share")
 #endif
-        << uncRoot << testDirectory << QDir::cleanPath(uncRoot + QLatin1Char('/') + testDirectory);
+            << uncRoot << testDirectory << QDir::cleanPath(uncRoot + QLatin1Char('/') + testDirectory);
+    }
 #endif // Windows
 }
 
