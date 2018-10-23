@@ -61,8 +61,8 @@ QFileSystemIterator::QFileSystemIterator(const QFileSystemEntry &entry, QDir::Fi
     if ((dir = QT_OPENDIR(nativePath.constData())) == 0) {
         lastError = errno;
     } else {
-        if (!nativePath.endsWith('/'))
-            nativePath.append('/');
+        if (!nativePath.endsWith(QDir::separator().toLatin1()))
+            nativePath.append(QDir::separator().toLatin1());
     }
 }
 
