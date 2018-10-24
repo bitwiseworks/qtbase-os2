@@ -699,7 +699,14 @@ uchar *QFSFileEnginePrivate::map(qint64 offset, qint64 size, QFile::MemoryMapFla
                    access, sharemode, nativeHandle(), realOffset);
     if (MAP_FAILED != mapAddress) {
         uchar *address = extra + static_cast<uchar*>(mapAddress);
+#ifdef Q_OS_OS2
+        // On OS/2, LIBCx mmap returns the same address for the same region,
+        // account for it (to make two map calls with two subsequent unmap calls
+        // succeed, see tst_QFile for an example).
+        maps.insertMulti(address, QPair<int,size_t>(extra, realSize));
+#else
         maps[address] = QPair<int,size_t>(extra, realSize);
+#endif
         return address;
     }
 
@@ -735,7 +742,11 @@ bool QFSFileEnginePrivate::unmap(uchar *ptr)
         q->setError(QFile::UnspecifiedError, qt_error_string(errno));
         return false;
     }
+#ifdef Q_OS_OS2
+    maps.take(ptr);
+#else
     maps.remove(ptr);
+#endif
     return true;
 #else
     return false;
