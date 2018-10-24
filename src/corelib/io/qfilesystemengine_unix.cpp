@@ -667,6 +667,21 @@ QFileSystemEntry QFileSystemEngine::getLinkTarget(const QFileSystemEntry &link, 
 
     QByteArray s = qt_readlink(link.nativeFilePath().constData());
     if (s.length() > 0) {
+#if defined(Q_OS_OS2)
+        // No idea why Unix code below is so complex, let's do it simpler and
+        // with isRelative specifics but leave the Unix part intact just in case
+        if (s.length() > 1 && s.endsWith('/'))
+            s.chop(1);
+
+        Q_UNUSED(data);
+        QFileSystemEntry ret(s, QFileSystemEntry::FromNativePath());
+        if (ret.isRelative())
+            ret = QFileSystemEntry(QDir::cleanPath(absoluteName(link).path() + QLatin1Char('/') + ret.filePath()));
+        else
+            ret = QFileSystemEntry(QDir::cleanPath(ret.filePath()));
+
+        return ret;
+#else
         QString ret;
         if (!data.hasFlags(QFileSystemMetaData::DirectoryType))
             fillMetaData(link, data, QFileSystemMetaData::DirectoryType);
@@ -685,6 +700,7 @@ QFileSystemEntry QFileSystemEngine::getLinkTarget(const QFileSystemEntry &link, 
         if (ret.size() > 1 && ret.endsWith(QLatin1Char('/')))
             ret.chop(1);
         return QFileSystemEntry(ret);
+#endif
     }
 #if defined(Q_OS_DARWIN)
     {
