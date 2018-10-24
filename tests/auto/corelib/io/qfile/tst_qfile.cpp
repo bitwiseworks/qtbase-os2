@@ -537,9 +537,13 @@ void tst_QFile::exists()
     QVERIFY(!file.exists());
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
-    const QString uncPath = "//" + QtNetworkSettings::winServerName() + "/testshare/readme.txt";
-    QFile unc(uncPath);
-    QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
+    const QString uncRoot = "//" + QtNetworkSettings::winServerName();
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        const QString uncPath = uncRoot + "/testshare/readme.txt";
+        QFile unc(uncPath);
+        QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
+    }
 #endif
 }
 
@@ -619,8 +623,8 @@ void tst_QFile::open()
         QSKIP("Running this test as root doesn't make sense");
 #endif
 
-#if defined(Q_OS_WIN32) || defined(Q_OS_WINRT)
-    QEXPECT_FAIL("noreadfile", "Windows does not currently support non-readable files.", Abort);
+#if defined(Q_OS_DOSLIKE)
+    QEXPECT_FAIL("noreadfile", "Windows and OS/2 do not currently support non-readable files.", Abort);
 #endif
     if (filename.isEmpty())
         QTest::ignoreMessage(QtWarningMsg, "QFSFileEngine::open: No file name specified");
@@ -673,7 +677,11 @@ void tst_QFile::size_data()
     QTest::newRow( "exist01" ) << m_testFile << (qint64)245;
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     // Only test UNC on Windows./
-    QTest::newRow("unc") << "//" + QString(QtNetworkSettings::winServerName() + "/testshare/test.pri") << (qint64)34;
+    const QString uncRoot = "//" + QtNetworkSettings::winServerName();
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc") << "//" + QString(uncRoot + "/testshare/test.pri") << (qint64)34;
+    }
 #endif
 }
 
@@ -1300,11 +1308,14 @@ void tst_QFile::permissions_data()
     QTest::newRow("data0") << QCoreApplication::instance()->applicationFilePath() << uint(QFile::ExeUser) << true << false;
     QTest::newRow("data1") << m_testSourceFile << uint(QFile::ReadUser) << true << false;
     QTest::newRow("readonly") << QString::fromLatin1("readonlyfile") << uint(QFile::WriteUser) << false << false;
+#ifndef Q_OS_OS2
+    // OS/2 file names are limited to 260 chars in total and 256 per component, this is obviously too long.
     QTest::newRow("longfile") << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName.txt") << uint(QFile::ReadUser) << true << true;
+#endif
     QTest::newRow("resource1") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::ReadUser) << true << false;
     QTest::newRow("resource2") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::WriteUser) << false << false;
     QTest::newRow("resource3") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::ExeUser) << false << false;
@@ -1666,7 +1677,7 @@ void tst_QFile::writeTextFile()
     QVERIFY2(file.open(QFile::WriteOnly | QFile::Truncate | QFile::Text),
              msgOpenFailed(file).constData());
     QByteArray out = in;
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     out.replace('\n', "\r\n");
 #endif
     QCOMPARE(file.write(in), qlonglong(in.size()));
@@ -2109,6 +2120,8 @@ void tst_QFile::longFileName_data()
     QTest::newRow( "148 chars" ) << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName.txt");
+#ifndef Q_OS_OS2
+    // OS/2 file names are limited to 260 chars in total and 256 per component, this is obviously too long.
     QTest::newRow( "244 chars" ) << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
@@ -2119,6 +2132,7 @@ void tst_QFile::longFileName_data()
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName.txt")).absoluteFilePath();
+#endif
   /* needs to be put on a windows 2000 > test machine
   QTest::newRow( "244 chars on UNC" ) <<  QString::fromLatin1("//arsia/D/troll/tmp/longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
@@ -2416,10 +2430,14 @@ void tst_QFile::writeLargeDataBlock_data()
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT) && !defined(QT_NO_NETWORK)
     // Some semi-randomness to avoid collisions.
-    QTest::newRow("unc file")
-        << QString("//" + QtNetworkSettings::winServerName() + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
-        .arg(QHostInfo::localHostName())
-        .arg(QTime::currentTime().msec()) << (int)OpenQFile;
+    const QString uncRoot = "//" + QtNetworkSettings::winServerName();
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc file")
+            << QString(uncRoot + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
+            .arg(QHostInfo::localHostName())
+            .arg(QTime::currentTime().msec()) << (int)OpenQFile;
+    }
 #endif
 }
 
@@ -2562,7 +2580,8 @@ void tst_QFile::virtualFile()
 
 void tst_QFile::textFile()
 {
-    const char *openMode = QOperatingSystemVersion::current().type() != QOperatingSystemVersion::Windows
+    const char *openMode = QOperatingSystemVersion::current().type() != QOperatingSystemVersion::Windows &&
+                           QOperatingSystemVersion::current().type() != QOperatingSystemVersion::OS2
         ? "w" : "wt";
     StdioFileGuard fs(fopen("writeabletextfile", openMode));
     QVERIFY(fs);
@@ -2582,7 +2601,7 @@ void tst_QFile::textFile()
     QByteArray data = file.readAll();
 
     QByteArray expected = part1 + part2;
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     expected.replace("\n", "\015\012");
 #endif
     QCOMPARE(data, expected);
@@ -2776,15 +2795,18 @@ void tst_QFile::appendAndRead()
 void tst_QFile::miscWithUncPathAsCurrentDir()
 {
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
-    QString current = QDir::currentPath();
-    const QString path = QLatin1String("//") + QtNetworkSettings::winServerName()
-        + QLatin1String("/testshare");
-    QVERIFY2(QDir::setCurrent(path), qPrintable(QDir::toNativeSeparators(path)));
-    QFile file("test.pri");
-    QVERIFY2(file.exists(), msgFileDoesNotExist(file.fileName()).constData());
-    QCOMPARE(int(file.size()), 34);
-    QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
-    QVERIFY(QDir::setCurrent(current));
+    const QString uncRoot = "//" + QtNetworkSettings::winServerName();
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QString current = QDir::currentPath();
+        const QString path = uncRoot + QLatin1String("/testshare");
+        QVERIFY2(QDir::setCurrent(path), qPrintable(QDir::toNativeSeparators(path)));
+        QFile file("test.pri");
+        QVERIFY2(file.exists(), msgFileDoesNotExist(file.fileName()).constData());
+        QCOMPARE(int(file.size()), 34);
+        QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
+        QVERIFY(QDir::setCurrent(current));
+    }
 #endif
 }
 
@@ -3138,7 +3160,7 @@ void tst_QFile::map()
     file.close();
 
 #if !defined(Q_OS_VXWORKS)
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
     if (::getuid() != 0)
         // root always has permissions
 #endif
