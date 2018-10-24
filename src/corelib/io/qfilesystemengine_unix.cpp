@@ -830,7 +830,7 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
             }
         }
     } else {
-        ret = QDir::cleanPath(QDir::currentPath() + QLatin1Char('/') + ret);
+        ret = QDir::currentPath() + QLatin1Char('/') + ret;
     }
 
     // The path should be absolute at this point.
@@ -845,6 +845,15 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
         // Force uppercase drive letters.
         ret[0] = ret.at(0).toUpper();
     }
+
+    // Although not documented, it is implied that the returned path contains no "." or ".."
+    // components (and this is important for backward compatibility), so clean it up.
+    // See https://bugreports.qt.io/browse/QTBUG-19995 for details.
+    const bool isDir = ret.endsWith('/');
+    ret = QDir::cleanPath(ret);
+    if (isDir)
+        ret += QLatin1Char('/');
+
     return QFileSystemEntry(ret, QFileSystemEntry::FromInternalPath());
 #else
     if (entry.isAbsolute() && entry.isClean())
