@@ -36,7 +36,7 @@
 #include <qdir.h>
 #include <qfileinfo.h>
 #include <qstorageinfo.h>
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -44,6 +44,9 @@
 #include <sys/types.h>
 #ifndef Q_OS_VXWORKS
 #include <pwd.h>
+#endif
+#ifdef Q_OS_OS2
+#include <grp.h>
 #endif
 #endif
 #ifdef Q_OS_WIN
@@ -386,12 +389,15 @@ void tst_QFileInfo::isDir_data()
 #endif
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
-    QTest::newRow("unc 1") << uncRoot << true;
-    QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
-    QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
-    QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
-    QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
-    QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc 1") << uncRoot << true;
+        QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
+        QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
+        QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
+        QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
+        QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    }
     QTest::newRow("unc 7") << uncRoot + "/testshare/adirthatshouldnotexist" << false;
 #endif
 }
@@ -429,10 +435,13 @@ void tst_QFileInfo::isRoot_data()
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
-    QTest::newRow("unc 1") << uncRoot << true;
-    QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
-    QTest::newRow("unc 3") << uncRoot + "/testshare" << false;
-    QTest::newRow("unc 4") << uncRoot + "/testshare/" << false;
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc 1") << uncRoot << true;
+        QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
+        QTest::newRow("unc 3") << uncRoot + "/testshare" << false;
+        QTest::newRow("unc 4") << uncRoot + "/testshare/" << false;
+    }
     QTest::newRow("unc 7") << "//ahostthatshouldnotexist" << false;
 #endif
 }
@@ -478,12 +487,15 @@ void tst_QFileInfo::exists_data()
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
     const QString uncRoot = QStringLiteral("//") + QtNetworkSettings::winServerName();
-    QTest::newRow("unc 1") << uncRoot << true;
-    QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
-    QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
-    QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
-    QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
-    QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    // Disable some UNC tests if the server is not accessible
+    if (QFile::exists(uncRoot)) {
+        QTest::newRow("unc 1") << uncRoot << true;
+        QTest::newRow("unc 2") << uncRoot + QLatin1Char('/') << true;
+        QTest::newRow("unc 3") << uncRoot + "/testshare" << true;
+        QTest::newRow("unc 4") << uncRoot + "/testshare/" << true;
+        QTest::newRow("unc 5") << uncRoot + "/testshare/tmp" << true;
+        QTest::newRow("unc 6") << uncRoot + "/testshare/tmp/" << true;
+    }
     QTest::newRow("unc 7") << uncRoot + "/testshare/adirthatshouldnotexist" << false;
     QTest::newRow("unc 8") << uncRoot + "/asharethatshouldnotexist" << false;
     QTest::newRow("unc 9") << "//ahostthatshouldnotexist" << false;
@@ -1080,6 +1092,8 @@ void tst_QFileInfo::fileTimes_data()
 {
     QTest::addColumn<QString>("fileName");
     QTest::newRow("simple") << QString::fromLatin1("simplefile.txt");
+#ifndef Q_OS_OS2
+    // OS/2 file names are limited to 260 chars in total and 256 per component, this is obviously too long.
     QTest::newRow( "longfile" ) << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
@@ -1090,6 +1104,7 @@ void tst_QFileInfo::fileTimes_data()
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName.txt")).absoluteFilePath();
+#endif
 }
 
 void tst_QFileInfo::fileTimes()
@@ -1110,6 +1125,11 @@ void tst_QFileInfo::fileTimes()
     fsClockSkew = 500;
 #endif
 
+#ifdef Q_OS_OS2
+    // OS/2 provides access times but timestamp granularity is always 2 seconds
+    bool noAccessTime = false;
+    fsClockSkew = sleepTime = 2000;
+#else
     // NFS clocks may be WAY out of sync
     if (qIsLikelyToBeNfs(fileName))
         QSKIP("This test doesn't work on NFS");
@@ -1130,6 +1150,7 @@ void tst_QFileInfo::fileTimes()
             }
         }
     }
+#endif
 
     if (QFile::exists(fileName)) {
         QVERIFY(QFile::remove(fileName));
@@ -1170,9 +1191,15 @@ void tst_QFileInfo::fileTimes()
     {
         QFileInfo fileInfo(fileName);
         metadataChangeTime = fileInfo.metadataChangeTime();
+#ifdef Q_OS_OS2
+        // OS/2 doesn't change any timestamp at all when file attributes change
+        QVERIFY2(metadataChangeTime == writeTime,
+                 datePairString(metadataChangeTime, writeTime));
+#else
         QVERIFY2(metadataChangeTime > beforeMetadataChange,
                  datePairString(metadataChangeTime, beforeMetadataChange));
         QVERIFY(metadataChangeTime >= writeTime); // not all filesystems can store both times
+#endif
         QCOMPARE(fileInfo.birthTime(), birthTime); // mustn't have changed
     }
 
@@ -1297,9 +1324,12 @@ void tst_QFileInfo::isHidden_data()
 {
     QTest::addColumn<QString>("path");
     QTest::addColumn<bool>("isHidden");
+#if !defined(Q_OS_OS2)
+    // On OS/2 some drives (e.g. bootable volumes) are reported as hidden...
     foreach (const QFileInfo& info, QDir::drives()) {
         QTest::newRow(qPrintable("drive." + info.path())) << info.path() << false;
     }
+#endif
 
 #if defined(Q_OS_DOSLIKE)
     QVERIFY(QDir("./hidden-directory").exists() || QDir().mkdir("./hidden-directory"));
@@ -1324,7 +1354,7 @@ void tst_QFileInfo::isHidden_data()
 #if defined(Q_OS_MAC)
     // /bin has the hidden attribute on OS X
     QTest::newRow("/bin/") << QString::fromLatin1("/bin/") << true;
-#elif !defined(Q_OS_WIN)
+#elif !defined(Q_OS_DOSLIKE)
     QTest::newRow("/bin/") << QString::fromLatin1("/bin/") << false;
 #endif
 
@@ -1332,6 +1362,11 @@ void tst_QFileInfo::isHidden_data()
     QTest::newRow("mac_etc") << QString::fromLatin1("/etc") << true;
     QTest::newRow("mac_private_etc") << QString::fromLatin1("/private/etc") << false;
     QTest::newRow("mac_Applications") << QString::fromLatin1("/Applications") << false;
+#endif
+
+#ifdef Q_OS_OS2
+    QTest::newRow("os2_boot") << QDir::rootPath() + QString::fromLatin1("/OS2BOOT") << true;
+    QTest::newRow("os2_config") << QDir::rootPath() + QString::fromLatin1("/config.sys") << false;
 #endif
 }
 
@@ -1341,6 +1376,7 @@ void tst_QFileInfo::isHidden()
     QFETCH(bool, isHidden);
     QFileInfo fi(path);
 
+    QVERIFY2(fi.exists(), msgDoesNotExist(fi.filePath()).constData());
     QCOMPARE(fi.isHidden(), isHidden);
 }
 
@@ -1612,7 +1648,7 @@ void tst_QFileInfo::isWritable()
 
 #if defined(Q_OS_DOSLIKE) && !defined(Q_OS_WINRT)
 #if defined(Q_OS_OS2)
-    QFileInfo fi("c:\\os2\\system\\swapper.dat");
+    QFileInfo fi(QDir::rootPath() + "\\OS2BOOT");
 #else
     QFileInfo fi("c:\\pagefile.sys");
 #endif
@@ -1828,7 +1864,7 @@ bool IsUserAdmin()
 void tst_QFileInfo::owner()
 {
     QString userName;
-#if defined(Q_OS_UNIX) && !defined(Q_OS_VXWORKS)
+#if defined(Q_OS_UNIXLIKE) && !defined(Q_OS_VXWORKS)
     {
         passwd *user = getpwuid(geteuid());
         QVERIFY(user);
@@ -1891,7 +1927,7 @@ void tst_QFileInfo::owner()
 void tst_QFileInfo::group()
 {
     QString expected;
-#if defined(Q_OS_UNIX) && !defined(Q_OS_VXWORKS)
+#if defined(Q_OS_UNIXLIKE) && !defined(Q_OS_VXWORKS)
     struct group *gr;
     gid_t gid = getegid();
 
