@@ -75,7 +75,11 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
     // We hold the lock, continue.
     fileHandle = fd;
 
-    return QLockFile::NoError;
+    QByteArray fileData = lockFileContents();
+    QLockFile::LockError error = QLockFile::NoError;
+    if (write(fd, fileData.constData(), fileData.size()) != fileData.size() || fsync(fd) != 0)
+        error = QLockFile::UnknownError; // partition full
+    return error;
 }
 
 bool QLockFilePrivate::removeStaleLock()
@@ -116,8 +120,27 @@ QString QLockFilePrivate::processNameByPid(qint64 pid)
         Q_ASSERT(pProcRec->RecType == QS_PROCESS);
 
         char path[CCHMAXPATH];
-        if (DosQueryModuleName(pProcRec->hMte, sizeof(path), path) == NO_ERROR)
-            name = QFile::decodeName(path);
+        arc = DosQueryModuleName(pProcRec->hMte, sizeof(path), path);
+        if (arc == NO_ERROR) {
+            // DosQueryModuleName returns the uppercased path, try to get the real case
+            // (to match QCoreApplication::applicationFilePath() and qAppName())
+            char path2[CCHMAXPATH];
+            if (_realrealpath(path, path2, sizeof(path2)))
+                name = QFile::decodeName(path2);
+            else
+                name = QFile::decodeName(path);
+            // Strip the path and extension (realpath slashes depend on -Z[no-]unix so check for both)
+            int i = name.lastIndexOf(QLatin1Char('/'));
+            if (i < 0)
+                i = name.lastIndexOf(QLatin1Char('\\'));
+            if (i >= 0)
+                name.remove(0, i + 1);
+            i = name.lastIndexOf(QLatin1Char('.'));
+            if (i >= 0)
+                name.truncate(i);
+        } else {
+            qWarning("DosQueryModuleName returned %ld", arc);
+        }
     } else {
         qWarning("DosQuerySysState returned %ld", arc);
     }
