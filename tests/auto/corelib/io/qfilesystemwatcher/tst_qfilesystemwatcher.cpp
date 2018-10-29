@@ -757,6 +757,11 @@ void tst_QFileSystemWatcher::signalsEmittedAfterFileMoved()
 
 void tst_QFileSystemWatcher::watchUnicodeCharacters()
 {
+#ifdef Q_OS_OS2
+    // There is no Unicode character that would exist in all 8-bit encodings.
+    QSKIP("OS/2 still uses 8-bit encodings");
+#endif
+
     QTemporaryDir temporaryDirectory(m_tempDirPattern);
     QVERIFY2(temporaryDirectory.isValid(), qPrintable(temporaryDirectory.errorString()));
 
