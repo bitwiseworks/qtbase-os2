@@ -329,7 +329,11 @@ void tst_QSaveFile::transactionalWriteErrorRenaming()
     QFile existingTargetFile(targetFile);
     QVERIFY2(existingTargetFile.open(QIODevice::WriteOnly), msgCannotOpen(existingTargetFile).constData());
     QCOMPARE(file.write("Target"), qint64(6));
+#ifndef Q_OS_OS2
+    // On OS/2, QFileSYstemEngine uses kLIBC rename which is implemented the POSIX way and ca
+    // easily rename r/o files. So, simply leave the file closed for rename to fail.
     existingTargetFile.close();
+#endif
     QVERIFY(existingTargetFile.setPermissions(QFile::ReadOwner));
     PermissionRestorer permissionRestorer(targetFile);
 #endif
