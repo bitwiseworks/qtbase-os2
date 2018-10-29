@@ -2001,7 +2001,7 @@ void QTest::ignoreMessage(QtMsgType type, const QRegularExpression &messagePatte
 /*! \internal
  */
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_DOSLIKE)
 static inline bool isWindowsBuildDirectory(const QString &dirName)
 {
     return dirName.compare(QLatin1String("Debug"), Qt::CaseInsensitive) == 0
@@ -2087,14 +2087,14 @@ QString QTest::qFindTestData(const QString& base, const char *file, int line, co
         if (binDirectory.exists(base)) {
             found = binDirectory.absoluteFilePath(base);
         }
-#ifdef Q_OS_WIN
+#if defined(Q_OS_DOSLIKE)
         // Windows: The executable is typically located in one of the
         // 'Release' or 'Debug' directories.
         else if (isWindowsBuildDirectory(binDirectory.dirName())
                  && binDirectory.cdUp() && binDirectory.exists(base)) {
             found = binDirectory.absoluteFilePath(base);
         }
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
         else if (QTestLog::verboseLevel() >= 2) {
             const QString candidate = QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QLatin1Char('/') + base);
             QTestLog::info(qPrintable(
