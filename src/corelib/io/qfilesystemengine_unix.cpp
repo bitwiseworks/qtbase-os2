@@ -854,7 +854,7 @@ QFileSystemEntry QFileSystemEngine::absoluteName(const QFileSystemEntry &entry)
     // Although not documented, it is implied that the returned path contains no "." or ".."
     // components (and this is important for backward compatibility), so clean it up.
     // See https://bugreports.qt.io/browse/QTBUG-19995 for details.
-    const bool isDir = ret.endsWith('/');
+    const bool isDir = ret.endsWith(QLatin1Char('/'));
     ret = QDir::cleanPath(ret);
     if (isDir)
         ret += QLatin1Char('/');
