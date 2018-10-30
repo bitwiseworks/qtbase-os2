@@ -281,7 +281,7 @@ static QStringList xdgDataDirs()
     if (xdgDataDirsEnv.isEmpty()) {
 #ifdef Q_OS_OS2
         dirs.append(QString::fromLatin1("/@unixroot/usr/local/share"));
-        dirs.append(QString::fromLatin1("/@unixroot//usr/share"));
+        dirs.append(QString::fromLatin1("/@unixroot/usr/share"));
 #else
         dirs.append(QString::fromLatin1("/usr/local/share"));
         dirs.append(QString::fromLatin1("/usr/share"));
