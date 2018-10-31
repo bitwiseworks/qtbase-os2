@@ -193,7 +193,7 @@ void tst_QTemporaryDir::fileName()
     QVERIFY(QDir(fileName).exists());
     // Get path to the temp dir, without the file name.
     QString absoluteFilePath = QFileInfo(fileName).absolutePath();
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     absoluteFilePath = absoluteFilePath.toLower();
     absoluteTempPath = absoluteTempPath.toLower();
 #endif
@@ -408,15 +408,20 @@ void tst_QTemporaryDir::QTBUG_4796_data()
     QTest::addColumn<QString>("suffix");
     QTest::addColumn<bool>("openResult");
 
+#ifndef Q_OS_OS2
+    // There is no Unicode character that would exist in all 8-bit encodings.
     QString unicode = QString::fromUtf8("\xc3\xa5\xc3\xa6\xc3\xb8");
+#endif
 
     QTest::newRow("<empty>") << QString() << QString() << true;
     QTest::newRow(".") << QString(".") << QString() << true;
     QTest::newRow("..") << QString("..") << QString() << true;
     QTest::newRow("blaXXXXXX") << QString("bla") << QString() << true;
     QTest::newRow("does-not-exist/qt_temp.XXXXXX") << QString("does-not-exist/qt_temp") << QString() << false;
+#ifndef Q_OS_OS2
     QTest::newRow("XXXXXX<unicode>") << QString() << unicode << true;
     QTest::newRow("<unicode>XXXXXX") << unicode << QString() << true;
+#endif
 }
 
 void tst_QTemporaryDir::QTBUG_4796() // unicode support
