@@ -1222,7 +1222,7 @@ void tst_QUrl::toLocalFile_data()
 #else
                             << QString();
 #endif
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     QTest::newRow("data5") << QString::fromLatin1("file:///c:/a.txt") << QString::fromLatin1("c:/a.txt");
 #else
     QTest::newRow("data5") << QString::fromLatin1("file:///c:/a.txt") << QString::fromLatin1("/c:/a.txt");
@@ -3111,7 +3111,7 @@ void tst_QUrl::fromUserInputWithCwd_data()
 
     // Existing files
     for (const char *fileName : {"file.txt", "file#a.txt", "file .txt", "file.txt "
-#ifndef Q_OS_WIN
+#ifndef Q_OS_DOSLIKE
             , "file:colon.txt"
 #endif
             }) {
@@ -3136,7 +3136,7 @@ void tst_QUrl::fromUserInputWithCwd_data()
     QTest::newRow("short-url") << "example.org" << base << QUrl("http://example.org") << QUrl::fromLocalFile(base + "/example.org");
     QTest::newRow("full-url") << "http://example.org" << base << QUrl("http://example.org") << QUrl("http://example.org");
     QTest::newRow("absolute") << "/doesnotexist.txt" << base << QUrl("file:///doesnotexist.txt") << QUrl("file:///doesnotexist.txt");
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     QTest::newRow("windows-absolute") << "c:/doesnotexist.txt" << base << QUrl("file:///c:/doesnotexist.txt") << QUrl("file:///c:/doesnotexist.txt");
 #endif
 
