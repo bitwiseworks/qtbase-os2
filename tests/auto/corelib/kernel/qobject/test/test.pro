@@ -1,4 +1,5 @@
 CONFIG += testcase console
+CONFIG -= debug_and_release_target
 TARGET = ../tst_qobject
 QT = core-private network testlib
 SOURCES = ../tst_qobject.cpp
