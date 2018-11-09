@@ -306,12 +306,12 @@ int QEventDispatcherOS2Private::processTimersAndSockets(int flags, int numSocket
     if ((flags & ActSockets) && !pendingNotifiers.isEmpty()) {
         QEvent event(QEvent::SockAct);
 
-        auto it = pendingNotifiers.begin();
-        while (it != pendingNotifiers.end()) {
+        while (!pendingNotifiers.isEmpty()) {
+            auto it = pendingNotifiers.begin();
             QSocketNotifier *notifier = *it;
+            pendingNotifiers.erase(it);
             QCoreApplication::sendEvent(notifier, &event);
             ++n_activated;
-            it = pendingNotifiers.erase(it);
         }
     }
 
