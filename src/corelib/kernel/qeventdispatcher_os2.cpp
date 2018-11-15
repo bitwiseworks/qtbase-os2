@@ -60,6 +60,7 @@
 #if 0
 # include <QDebug>
 # define TRACE(m) qDebug() << m
+# define V(v) #v << v
 #else
 # define TRACE(m) do {} while (0)
 #endif
@@ -136,8 +137,8 @@ public:
     void createMsgQueue();
     void destroyMsgQueue();
 
-    enum { ActTimers = 0x1, ActSockets = 0x2 };
-    int processTimersAndSockets(int flags = 0, int numSockets = -1);
+    void prepareForSelect();
+    int processTimersAndSockets(bool actSockets);
 
     void startThread();
     void stopThread();
@@ -151,7 +152,7 @@ public:
     QAtomicInt interrupt; // bool
 
     QList<QMSG> queuedUserInputEvents;
-    QList<QMSG> queuedSocketEvents;
+    int queuedSockets;
 
     QHash<int, QSocketNotifierSetOS2> socketNotifiers;
     QSet<QSocketNotifier *> pendingNotifiers;
@@ -165,12 +166,15 @@ public:
 
     enum {
         Selecting,
-        Waiting,
-        CancelWait,
+        Posted,
         Terminate,
     } threadState;
 
-    int maxfd;
+    union
+    {
+        int maxfd; // used Selecting state
+        int nsel; // used in Posted state
+    };
 
     static constexpr int SetSize = 3;
 
@@ -184,7 +188,7 @@ public:
 };
 
 QEventDispatcherOS2Private::QEventDispatcherOS2Private()
-    : hab(NULLHANDLE), hmq(NULLHANDLE), interrupt(false), tid(0), threadState(Terminate), maxfd(-1), timeout(nullptr)
+    : hab(NULLHANDLE), hmq(NULLHANDLE), interrupt(false), queuedSockets(0), tid(0), threadState(Terminate), maxfd(-1), timeout(nullptr)
 {
     if (WM_QT_TIMER_OR_SOCKET == 0)
         WM_QT_TIMER_OR_SOCKET = WinAddAtom(WinQuerySystemAtomTable(), "QEventDispatcherOS2:WM_QT_TIMER_OR_SOCKET");
@@ -237,73 +241,86 @@ void QEventDispatcherOS2Private::destroyMsgQueue()
     }
 }
 
-int QEventDispatcherOS2Private::processTimersAndSockets(int flags, int numSockets)
+// NOTE: Must be called from the mutex lock.
+void QEventDispatcherOS2Private::prepareForSelect()
 {
-    TRACE(flags << numSockets);
+    // Reset socket sets.
+    for (int i = 0; i < SetSize; ++i)
+        FD_ZERO(&fdsets[i].set);
+
+    maxfd = -1;
+
+    // Fill up socket sets with new data.
+    for (auto it = socketNotifiers.cbegin(); it != socketNotifiers.cend(); ++it) {
+        const QSocketNotifierSetOS2 &sn_set = it.value();
+        for (int i = 0; i < SetSize; ++i) {
+            QSocketNotifier *sn = sn_set.notifiers[fdsets[i].type];
+            // NOTE: ignore sockets that are already pending to avoid polluting the
+            // PM message queue with socket messages if the target window is not fast
+            // enough to process them. This will also ensure that this thread won't be
+            // spinning in a tight loop because of immediate select returns.
+            if (sn && !pendingNotifiers.contains(sn)) {
+                TRACE("SELECT" << V(sn->socket()) << V(sn->type()));
+                int sockfd = sn->socket();
+                FD_SET(sockfd, &fdsets[i].set);
+                // memorize the highest fd
+                if (maxfd < sockfd)
+                    maxfd = sockfd;
+            }
+        }
+    }
+
+    // Get the maximum time we can wait.
+    timeout = nullptr;
+    waitTime = { 0l, 0l };
+    timespec waitTimeTS = { 0l, 0l };
+    if (timerList.timerWait(waitTimeTS)) {
+        waitTime = timespecToTimeval(waitTimeTS);
+        timeout = &waitTime;
+    }
+}
+
+int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
+{
+    TRACE(V(actSockets));
 
     int n_activated = 0;
 
     // Activate timers first to get the correct new wait inteval for threadMain.
-    if ((flags & ActTimers) && !timerList.isEmpty())
+    if (!timerList.isEmpty())
         n_activated = timerList.activateTimers();
 
     // Exchange data with threadMain (note the mutex lock).
-    {
+    do {
         QMutexLocker locker(&mutex);
 
-        if (numSockets > 0) {
+        TRACE(V(threadState) << "maxfd/nsel" << maxfd);
+
+        if (threadState != Posted)
+            break;
+
+        if (nsel > 0) {
             // Find out which sockets have been reported and mark them as pending.
             for (auto it = socketNotifiers.cbegin(); it != socketNotifiers.cend(); ++it) {
                 const QSocketNotifierSetOS2 &sn_set = it.value();
                 for (int i = 0; i < SetSize; ++i) {
                     QSocketNotifier *sn = sn_set.notifiers[fdsets[i].type];
                     if (sn && FD_ISSET(sn->socket(), &fdsets[i].set) && !pendingNotifiers.contains(sn)) {
+                        TRACE("PENDING" << V(sn->socket()) << V(sn->type()));
                         pendingNotifiers << sn;
                     }
                 }
             }
         }
 
-        for (int i = 0; i < SetSize; ++i)
-            FD_ZERO(&fdsets[i].set);
+        prepareForSelect();
 
-        // notifyThread might use maxfd to notify threadMain so do it before updating
-        // it. This is OK because we are holding the mutex here so the thread will go on
-        // with the next cycle only after we are done anyway.
-        notifyThread();
+        // Inform the thread we have new data.
+        threadState = Selecting;
+        cond.wakeOne();
+    } while (0);
 
-        maxfd = -1;
-
-        // Fill up socket sets with new data.
-        for (auto it = socketNotifiers.cbegin(); it != socketNotifiers.cend(); ++it) {
-            const QSocketNotifierSetOS2 &sn_set = it.value();
-            for (int i = 0; i < SetSize; ++i) {
-                QSocketNotifier *sn = sn_set.notifiers[fdsets[i].type];
-                // NOTE: ignore sockets that are already pending to avoid polluting the
-                // PM message queue with socket messages if the target window is not fast
-                // enough to process them. This will also ensure that this thread won't be
-                // spinning in a tight loop because of immediate select returns.
-                if (sn && !pendingNotifiers.contains(sn)) {
-                    int sockfd = sn->socket();
-                    FD_SET(sockfd, &fdsets[i].set);
-                    // memorize the highest fd
-                    if (maxfd < sockfd)
-                        maxfd = sockfd;
-                }
-            }
-        }
-
-        // Get the maximum time we can wait.
-        timeout = nullptr;
-        waitTime = { 0l, 0l };
-        timespec waitTimeTS = { 0l, 0l };
-        if (timerList.timerWait(waitTimeTS)) {
-            waitTime = timespecToTimeval(waitTimeTS);
-            timeout = &waitTime;
-        }
-    }
-
-    if ((flags & ActSockets) && !pendingNotifiers.isEmpty()) {
+    if (actSockets && !pendingNotifiers.isEmpty()) {
         QEvent event(QEvent::SockAct);
 
         while (!pendingNotifiers.isEmpty()) {
@@ -315,7 +332,7 @@ int QEventDispatcherOS2Private::processTimersAndSockets(int flags, int numSocket
         }
     }
 
-    TRACE(n_activated);
+    TRACE(V(n_activated));
 
     return n_activated;
 }
@@ -332,9 +349,7 @@ void QEventDispatcherOS2Private::startThread()
 void QEventDispatcherOS2Private::stopThread()
 {
     if (tid != 0) {
-        QMutexLocker locker(&mutex);
         notifyThread(true);
-        locker.unlock();
 
         // wait for the thread to stop
         TID tid_os2 = tid;
@@ -348,20 +363,29 @@ void QEventDispatcherOS2Private::stopThread()
     }
 }
 
-// NOTE: Caller must hold the mutex.
 void QEventDispatcherOS2Private::notifyThread(bool terminate)
 {
-    if (tid == 0) {
+    QMutexLocker locker(&mutex);
+
+    TRACE(V(terminate) << V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
+
+    if (!terminate && tid == 0) {
         threadState = Selecting;
+        prepareForSelect();
         startThread();
     } else {
+        if (terminate)
+            threadState = Terminate;
+        else if (threadState == Posted)
+            return; // WM_QT_TIMER_OR_SOCKET will soon call processTimersAndSockets
+        else
+            Q_ASSERT(threadState == Selecting);
+
         if (threadState == Selecting && maxfd >= 0) {
             // Terminate select() execution.
-            threadState = terminate ? Terminate : CancelWait;
             ::so_cancel(maxfd);
         } else {
             // Terminate the idle or simple wait state.
-            threadState = terminate ? Terminate : Selecting ? CancelWait : Selecting;
             cond.wakeOne();
         }
     }
@@ -374,9 +398,11 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
     QMutexLocker locker(&d->mutex);
 
-    TRACE(d->threadState);
+    TRACE(V(d->threadState));
 
     while (d->threadState != Terminate) {
+        Q_ASSERT(d->threadState == Selecting);
+
         timeval *timeout = nullptr;
         timeval waitTime = { 0l, 0l };
         if (d->timeout) {
@@ -384,7 +410,7 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
             timeout = &waitTime;
         }
 
-        TRACE(timeout << waitTime.tv_sec << waitTime.tv_usec << d->maxfd);
+        TRACE(V(timeout) << V(waitTime.tv_sec) << V(waitTime.tv_usec) << V(d->maxfd));
 
         int maxfd = d->maxfd;
         int nsel = 0;
@@ -399,6 +425,8 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
             nsel = ::select(maxfd + 1, &rdSet, &wrSet, &exSet, timeout);
 
+            TRACE(V(nsel) << V(errno));
+
             if (nsel == -1 && errno == EINVAL) {
                 qWarning("QSocketNotifier: select() returned EINVAL, make sure that "
                          "the socket is not an OS/2 file handle.");
@@ -409,10 +437,13 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
             locker.relock();
 
-            // Copy the results back.
-            d->fdsets[0].set = rdSet;
-            d->fdsets[1].set = wrSet;
-            d->fdsets[2].set = exSet;
+            // Copy the select results back.
+            if (d->threadState != Terminate)
+            {
+                d->fdsets[0].set = rdSet;
+                d->fdsets[1].set = wrSet;
+                d->fdsets[2].set = exSet;
+            }
         } else {
             // No sockets, simply wait for the next timer.
             unsigned long msecs = timeout ?
@@ -421,16 +452,17 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
             d->cond.wait(locker.mutex(), msecs);
         }
 
-        TRACE(nsel << errno);
+        TRACE(V(d->threadState));
 
-        // Inform this dispatcher's event queue unless it's a cancel wait request.
-        if (d->threadState == CancelWait) {
-            d->threadState = Selecting;
-        } else if (d->threadState != Terminate) {
+        if (d->threadState != Terminate) {
+            // Store the overal result.
+            d->nsel = nsel;
+
+            // Inform this dispatcher's event queue we have some results.
             WinPostQueueMsg(d->hmq, WM_QT_TIMER_OR_SOCKET, MPFROMLONG(nsel), NULL);
 
             // Wait until we are given new data.
-            d->threadState = Waiting;
+            d->threadState = Posted;
             d->cond.wait(locker.mutex());
         }
     }
@@ -464,6 +496,8 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     QMSG waitMsg;
     bool haveWaitMsg = false;
 
+    TRACE(V(flags));
+
     do {
         QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
 
@@ -475,10 +509,13 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 // Process queued user input events.
                 haveMessage = true;
                 msg = d->queuedUserInputEvents.takeFirst();
-            } else if(!(flags & QEventLoop::ExcludeSocketNotifiers) && !d->queuedSocketEvents.isEmpty()) {
+            } else if(!(flags & QEventLoop::ExcludeSocketNotifiers) && d->queuedSockets) {
                 // Process queued socket events.
                 haveMessage = true;
-                msg = d->queuedSocketEvents.takeFirst();
+                memset(&msg, 0, sizeof(msg));
+                msg.msg = WM_QT_TIMER_OR_SOCKET;
+                msg.mp1 = MPFROMLONG(d->queuedSockets);
+                d->queuedSockets = 0;
             } else {
                 if (haveWaitMsg) {
                     haveMessage = true;
@@ -486,6 +523,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                     haveWaitMsg = false;
                 } else {
                     haveMessage = WinPeekMsg(d->hab, &msg, 0, 0, 0, PM_REMOVE) == TRUE;
+                    TRACE(V(haveMessage));
                 }
                 if (haveMessage && (flags & QEventLoop::ExcludeUserInputEvents) &&
                     (msg.msg == WM_CHAR ||
@@ -503,11 +541,11 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                     && (msg.msg == WM_QT_TIMER_OR_SOCKET && LONGFROMMP(msg.mp1))) {
                     // Queue socket events for later processing. Note that we need
                     // to call processTimersAndSockets anyway because of timers.
-                    d->queuedSocketEvents.append(msg);
+                    d->queuedSockets = LONGFROMMP(msg.mp1);
                 }
             }
             if (haveMessage) {
-                TRACE(hex << msg.msg);
+                TRACE(hex << V(msg.msg));
 
                 if (msg.msg == WM_QUIT) {
                     if (QCoreApplication::instance()) {
@@ -519,10 +557,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
                     if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
-                        int procFlags = QEventDispatcherOS2Private::ActTimers;
-                        if (!(flags & QEventLoop::ExcludeSocketNotifiers))
-                            procFlags |= QEventDispatcherOS2Private::ActSockets;
-                        d->processTimersAndSockets(procFlags, LONGFROMMP(msg.mp1));
+                        d->processTimersAndSockets(!(flags & QEventLoop::ExcludeSocketNotifiers));
                     } else {
                         WinDispatchMsg(d->hab, &msg);
                     }
@@ -546,6 +581,8 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
             emit awake();
         }
     } while (canWait);
+
+    TRACE(V(retVal));
 
     return retVal;
 }
@@ -573,7 +610,7 @@ void QEventDispatcherOS2::registerSocketNotifier(QSocketNotifier *notifier)
 
     Q_D(QEventDispatcherOS2);
 
-    TRACE(sockfd << type);
+    TRACE(V(sockfd) << V(type));
 
     QSocketNotifierSetOS2 &sn_set = d->socketNotifiers[sockfd];
 
@@ -583,7 +620,7 @@ void QEventDispatcherOS2::registerSocketNotifier(QSocketNotifier *notifier)
 
     sn_set.notifiers[type] = notifier;
 
-    d->processTimersAndSockets();
+    d->notifyThread();
 }
 
 void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
@@ -608,7 +645,7 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
 
     Q_D(QEventDispatcherOS2);
 
-    TRACE(sockfd << type);
+    TRACE(V(sockfd) << V(type));
 
     d->pendingNotifiers.remove(notifier);
 
@@ -632,7 +669,7 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
     if (sn_set.isEmpty())
         d->socketNotifiers.erase(i);
 
-    d->processTimersAndSockets();
+    d->notifyThread();
 }
 
 void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object)
@@ -649,11 +686,11 @@ void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType
 
     Q_D(QEventDispatcherOS2);
 
-    TRACE(timerId << interval << timerType << object);
+    TRACE(V(timerId) << V(interval) << V(timerType) << V(object));
 
     d->timerList.registerTimer(timerId, interval, timerType, object);
 
-    d->processTimersAndSockets();
+    d->notifyThread();
 }
 
 bool QEventDispatcherOS2::unregisterTimer(int timerId)
@@ -670,14 +707,14 @@ bool QEventDispatcherOS2::unregisterTimer(int timerId)
 
     Q_D(QEventDispatcherOS2);
 
-    TRACE(timerId);
+    TRACE(V(timerId));
 
     bool result = d->timerList.unregisterTimer(timerId);
 
     // Note that we only notify the AUX thread when there is nothing to wait
     // for, as otherwise it's harmless to wait for the next timer or socket.
     if (result && d->timerList.isEmpty() && d->socketNotifiers.isEmpty())
-        d->processTimersAndSockets();
+        d->notifyThread();
 
     return result;
 }
@@ -696,14 +733,14 @@ bool QEventDispatcherOS2::unregisterTimers(QObject *object)
 
     Q_D(QEventDispatcherOS2);
 
-    TRACE(object);
+    TRACE(V(object));
 
     bool result = d->timerList.unregisterTimers(object);
 
     // Note that we only notify the AUX thread when there is nothing to wait
     // for, as otherwise it's harmless to wait for the next timer or socket.
     if (result && d->timerList.isEmpty() && d->socketNotifiers.isEmpty())
-        d->processTimersAndSockets();
+        d->notifyThread();
 
     return result;
 }
