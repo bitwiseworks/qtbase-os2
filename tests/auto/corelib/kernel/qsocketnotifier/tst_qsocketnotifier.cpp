@@ -42,7 +42,7 @@
 #include <private/qnativesocketengine_winrt_p.h>
 #endif
 #define NATIVESOCKETENGINE QNativeSocketEngine
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include <private/qnet_unix_p.h>
 #include <sys/select.h>
 #endif
@@ -59,7 +59,7 @@ class tst_QSocketNotifier : public QObject
 private slots:
     void unexpectedDisconnection();
     void mixingWithTimers();
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     void posixSockets();
 #endif
     void asyncMultipleDatagram();
@@ -264,7 +264,7 @@ void tst_QSocketNotifier::mixingWithTimers()
 #endif // !Q_OS_WINRT
 }
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 // test only for posix
 void tst_QSocketNotifier::posixSockets()
 {
