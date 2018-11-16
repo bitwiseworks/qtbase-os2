@@ -140,9 +140,11 @@ public:
     void prepareForSelect();
     int processTimersAndSockets(bool actSockets);
 
-    void startThread();
-    void stopThread();
     void notifyThread(bool terminate = false);
+
+    bool needThread() const {
+        return socketNotifiers.count() || timerList.count() - timerList.zeroTimerCount();
+    }
 
     static void threadMain(void *arg);
 
@@ -228,12 +230,16 @@ void QEventDispatcherOS2Private::createMsgQueue()
             qWarning("QEventDispatcherOS2Private: WinCreateMsgQueue failed with 0x%08lX",
                      WinGetLastError(hab));
     }
+
+    TRACE(hex << V(hab) << V(hmq));
 }
 
 void QEventDispatcherOS2Private::destroyMsgQueue()
 {
+    TRACE(hex << V(hab) << V(hmq));
+
     if (hmq != NULLHANDLE) {
-        stopThread();
+        notifyThread(true);
         WinDestroyMsgQueue(hmq);
         WinTerminate(hab);
         hmq = NULLHANDLE;
@@ -337,32 +343,6 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
     return n_activated;
 }
 
-void QEventDispatcherOS2Private::startThread()
-{
-    if (tid == 0) {
-        tid = _beginthread(threadMain, nullptr, 0, this);
-        if (tid == -1)
-            qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
-    }
-}
-
-void QEventDispatcherOS2Private::stopThread()
-{
-    if (tid != 0) {
-        notifyThread(true);
-
-        // wait for the thread to stop
-        TID tid_os2 = tid;
-        APIRET arc = DosWaitThread(&tid_os2, DCWW_WAIT);
-        if (arc)
-            qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
-        else
-            Q_ASSERT(tid == 0);
-
-        tid = 0;
-    }
-}
-
 void QEventDispatcherOS2Private::notifyThread(bool terminate)
 {
     QMutexLocker locker(&mutex);
@@ -372,7 +352,9 @@ void QEventDispatcherOS2Private::notifyThread(bool terminate)
     if (!terminate && tid == 0) {
         threadState = Selecting;
         prepareForSelect();
-        startThread();
+        tid = _beginthread(threadMain, nullptr, 0, this);
+        if (tid == -1)
+            qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
     } else {
         if (terminate)
             threadState = Terminate;
@@ -387,6 +369,19 @@ void QEventDispatcherOS2Private::notifyThread(bool terminate)
         } else {
             // Terminate the idle or simple wait state.
             cond.wakeOne();
+        }
+
+        if (terminate) {
+            // wait for the thread to stop
+            locker.unlock();
+
+            TID tid_os2 = tid;
+            APIRET arc = DosWaitThread(&tid_os2, DCWW_WAIT);
+            if (arc)
+                qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
+            else
+                Q_ASSERT(tid == 0);
+            tid = 0;
         }
     }
 }
@@ -469,6 +464,8 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
     // Indicate that we're done.
     d->tid = 0;
+
+    TRACE("END");
 }
 
 QEventDispatcherOS2::QEventDispatcherOS2(QObject *parent)
@@ -499,6 +496,8 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     TRACE(V(flags));
 
     do {
+        bool haveTimersProcessed = false;
+
         QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
 
         while (!d->interrupt.load()) {
@@ -558,6 +557,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
                     if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
                         d->processTimersAndSockets(!(flags & QEventLoop::ExcludeSocketNotifiers));
+                        haveTimersProcessed = true;
                     } else {
                         WinDispatchMsg(d->hab, &msg);
                     }
@@ -568,6 +568,15 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
             }
             retVal = true;
         }
+
+        TRACE(V(d->timerList.zeroTimerCount()) << V(haveTimersProcessed));
+
+        // Zero timers should fire "as soon as all the events in the window system's event queue have
+        // been processed" and tests expect it to happen on each QCoreApplication::processEvents call.
+        // However, since our timers fire from a select thread asynchronously via WM_QT_TIMER_OR_SOCKET,
+        // this might not be the case. For this reason, activate them here if not already done so.
+        if (!haveTimersProcessed && d->timerList.zeroTimerCount())
+            d->timerList.activateTimers();
 
         // Still nothing - wait for message.
         canWait = (!retVal
@@ -669,7 +678,7 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
     if (sn_set.isEmpty())
         d->socketNotifiers.erase(i);
 
-    d->notifyThread();
+    d->notifyThread(!d->needThread());
 }
 
 void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object)
@@ -713,8 +722,8 @@ bool QEventDispatcherOS2::unregisterTimer(int timerId)
 
     // Note that we only notify the AUX thread when there is nothing to wait
     // for, as otherwise it's harmless to wait for the next timer or socket.
-    if (result && d->timerList.isEmpty() && d->socketNotifiers.isEmpty())
-        d->notifyThread();
+    if (result && !d->needThread())
+        d->notifyThread(true);
 
     return result;
 }
@@ -739,8 +748,8 @@ bool QEventDispatcherOS2::unregisterTimers(QObject *object)
 
     // Note that we only notify the AUX thread when there is nothing to wait
     // for, as otherwise it's harmless to wait for the next timer or socket.
-    if (result && d->timerList.isEmpty() && d->socketNotifiers.isEmpty())
-        d->notifyThread();
+    if (result && !d->needThread())
+        d->notifyThread(true);
 
     return result;
 }

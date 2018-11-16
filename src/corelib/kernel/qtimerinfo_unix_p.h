@@ -92,11 +92,19 @@ class Q_CORE_EXPORT QTimerInfoList : public QList<QTimerInfo*>
     // state variables used by activateTimers()
     QTimerInfo *firstTimerInfo;
 
+#ifdef Q_OS_OS2
+    uint zeroTimers;
+#endif
+
 public:
     QTimerInfoList();
 
     timespec currentTime;
     timespec updateCurrentTime();
+
+#ifdef Q_OS_OS2
+    uint zeroTimerCount() const { return zeroTimers; };
+#endif
 
     // must call updateCurrentTime() first!
     void repairTimersIfNeeded();

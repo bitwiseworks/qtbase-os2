@@ -84,6 +84,10 @@ QTimerInfoList::QTimerInfoList()
 #endif
 
     firstTimerInfo = 0;
+
+#ifdef Q_OS_OS2
+    zeroTimers = 0;
+#endif
 }
 
 timespec QTimerInfoList::updateCurrentTime()
@@ -493,6 +497,13 @@ void QTimerInfoList::registerTimer(int timerId, int interval, Qt::TimerType time
             ++t->timeout.tv_sec;
     }
 
+#ifdef Q_OS_OS2
+    if (t->interval == 0) {
+        ++zeroTimers;
+        Q_ASSERT(zeroTimers);
+    }
+#endif
+
     timerInsert(t);
 
 #ifdef QTIMERINFO_DEBUG
@@ -517,6 +528,12 @@ bool QTimerInfoList::unregisterTimer(int timerId)
                 firstTimerInfo = 0;
             if (t->activateRef)
                 *(t->activateRef) = 0;
+#ifdef Q_OS_OS2
+            if (t->interval == 0) {
+                Q_ASSERT(zeroTimers);
+                --zeroTimers;
+            }
+#endif
             delete t;
             return true;
         }
@@ -538,6 +555,12 @@ bool QTimerInfoList::unregisterTimers(QObject *object)
                 firstTimerInfo = 0;
             if (t->activateRef)
                 *(t->activateRef) = 0;
+#ifdef Q_OS_OS2
+            if (t->interval == 0) {
+                Q_ASSERT(zeroTimers);
+                --zeroTimers;
+            }
+#endif
             delete t;
             // move back one so that we don't skip the new current item
             --i;
