@@ -138,7 +138,7 @@ public:
     void destroyMsgQueue();
 
     void prepareForSelect();
-    int processTimersAndSockets(bool actSockets);
+    int processTimersAndSockets(bool actTimers, bool actSockets);
 
     void notifyThread(bool terminate = false);
 
@@ -250,11 +250,12 @@ void QEventDispatcherOS2Private::destroyMsgQueue()
 // NOTE: Must be called from the mutex lock.
 void QEventDispatcherOS2Private::prepareForSelect()
 {
-    // Reset socket sets.
-    for (int i = 0; i < SetSize; ++i)
-        FD_ZERO(&fdsets[i].set);
-
     maxfd = -1;
+
+    // Reset socket sets.
+    if (!socketNotifiers.isEmpty())
+        for (int i = 0; i < SetSize; ++i)
+            FD_ZERO(&fdsets[i].set);
 
     // Fill up socket sets with new data.
     for (auto it = socketNotifiers.cbegin(); it != socketNotifiers.cend(); ++it) {
@@ -286,17 +287,14 @@ void QEventDispatcherOS2Private::prepareForSelect()
     }
 }
 
-int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
+int QEventDispatcherOS2Private::processTimersAndSockets(bool actTimers, bool actSockets)
 {
-    TRACE(V(actSockets));
+    TRACE(V(actTimers) << V(actSockets));
 
-    int n_activated = 0;
-
-    // Activate timers first to get the correct new wait inteval for threadMain.
-    if (!timerList.isEmpty())
-        n_activated = timerList.activateTimers();
-
-    // Exchange data with threadMain (note the mutex lock).
+    // Exchange data with threadMain (note the mutex lock). It is important to
+    // do this before activating timers or sockets because their handlesr may
+    // enter a nested event loop and that would deadlock because of the select
+    // thread still waiting until the data is picked up by the below code.
     do {
         QMutexLocker locker(&mutex);
 
@@ -326,6 +324,11 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
         cond.wakeOne();
     } while (0);
 
+    int n_activated = 0;
+
+    if (actTimers && !timerList.isEmpty())
+        n_activated = timerList.activateTimers();
+
     if (actSockets && !pendingNotifiers.isEmpty()) {
         QEvent event(QEvent::SockAct);
 
@@ -349,12 +352,14 @@ void QEventDispatcherOS2Private::notifyThread(bool terminate)
 
     TRACE(V(terminate) << V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
 
-    if (!terminate && tid == 0) {
-        threadState = Selecting;
-        prepareForSelect();
-        tid = _beginthread(threadMain, nullptr, 0, this);
-        if (tid == -1)
-            qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
+    if (tid == 0) {
+        if (!terminate) {
+            threadState = Selecting;
+            prepareForSelect();
+            tid = _beginthread(threadMain, nullptr, 0, this);
+            if (tid == -1)
+                qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
+        }
     } else {
         if (terminate)
             threadState = Terminate;
@@ -556,7 +561,9 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
                     if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
-                        d->processTimersAndSockets(!(flags & QEventLoop::ExcludeSocketNotifiers));
+                        // Don't allow to process timers more than once per one processEvents
+                        // iteration (looks like the Qt code & tests assume that). See also below.
+                        d->processTimersAndSockets(!haveTimersProcessed, !(flags & QEventLoop::ExcludeSocketNotifiers));
                         haveTimersProcessed = true;
                     } else {
                         WinDispatchMsg(d->hab, &msg);
@@ -569,14 +576,16 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
             retVal = true;
         }
 
-        TRACE(V(d->timerList.zeroTimerCount()) << V(haveTimersProcessed));
+        TRACE(V(haveTimersProcessed) << V(d->timerList.zeroTimerCount()));
 
         // Zero timers should fire "as soon as all the events in the window system's event queue have
         // been processed" and tests expect it to happen on each QCoreApplication::processEvents call.
         // However, since our timers fire from a select thread asynchronously via WM_QT_TIMER_OR_SOCKET,
         // this might not be the case. For this reason, activate them here if not already done so.
-        if (!haveTimersProcessed && d->timerList.zeroTimerCount())
+        if (!haveTimersProcessed && d->timerList.zeroTimerCount()) {
             d->timerList.activateTimers();
+            retVal = true;
+        }
 
         // Still nothing - wait for message.
         canWait = (!retVal
@@ -699,7 +708,8 @@ void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType
 
     d->timerList.registerTimer(timerId, interval, timerType, object);
 
-    d->notifyThread();
+    if (d->needThread())
+        d->notifyThread();
 }
 
 bool QEventDispatcherOS2::unregisterTimer(int timerId)
