@@ -291,7 +291,7 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actTimers, bool act
 {
     TRACE(V(actTimers) << V(actSockets));
 
-    // Exchange data with threadMain (note the mutex lock). It is important to
+    // Get data from threadMain (note the mutex lock). It is important to
     // do this before activating timers or sockets because their handlesr may
     // enter a nested event loop and that would deadlock because of the select
     // thread still waiting until the data is picked up by the below code.
@@ -299,7 +299,6 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actTimers, bool act
         QMutexLocker locker(&mutex);
 
         TRACE(V(threadState) << "maxfd/nsel" << maxfd);
-
         if (threadState != Posted)
             break;
 
@@ -316,12 +315,6 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actTimers, bool act
                 }
             }
         }
-
-        prepareForSelect();
-
-        // Inform the thread we have new data.
-        threadState = Selecting;
-        cond.wakeOne();
     } while (0);
 
     int n_activated = 0;
@@ -340,6 +333,26 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actTimers, bool act
             ++n_activated;
         }
     }
+
+    // Send the new data to threadMain (under the lock too). It is important to
+    // do this after activating timers or sockets because this may lead to
+    // new timers/socket notifiers (or to deletion of the existing ones). Also,
+    // we do this here to ensure that threadMain doesn't select while some
+    // notifier is being activated (to avoid repeated notifications of the same
+    // event by letting the receiver properly process it first).
+    do {
+        QMutexLocker locker(&mutex);
+
+        TRACE(V(threadState) << "maxfd/nsel" << maxfd);
+        if (threadState != Posted)
+            break;
+
+        prepareForSelect();
+
+        // Inform the thread we have new data.
+        threadState = Selecting;
+        cond.wakeOne();
+    } while (0);
 
     TRACE(V(n_activated));
 
@@ -509,6 +522,10 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
         QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
 
+        // Start the select thread as needed.
+        if (d->needThread ())
+            d->notifyThread();
+
         while (!d->interrupt.load()) {
             QMSG msg;
             bool haveMessage;
@@ -558,9 +575,10 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 if (msg.msg == WM_QUIT) {
                     if (QCoreApplication::instance()) {
                         QCoreApplication::instance()->quit();
-                        return true;
+                        retVal = true;
                     }
-                    return false;
+                    retVal = false;
+                    goto end;
                 }
 
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
@@ -604,6 +622,12 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
         }
     } while (canWait);
 
+end:
+    // Terminate the select thread. This is necessary to guarantee that select
+    // is not run beyond the scope of processEvents and no new notifications are
+    // generated. In particular, tst_QSocketNotifier::posixSockets expects this.
+    d->notifyThread(true);
+
     TRACE(V(retVal));
 
     return retVal;
@@ -641,8 +665,6 @@ void QEventDispatcherOS2::registerSocketNotifier(QSocketNotifier *notifier)
                  Q_FUNC_INFO, sockfd, socketType(type));
 
     sn_set.notifiers[type] = notifier;
-
-    d->notifyThread();
 }
 
 void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
@@ -690,8 +712,6 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
 
     if (sn_set.isEmpty())
         d->socketNotifiers.erase(i);
-
-    d->notifyThread(!d->needThread());
 }
 
 void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object)
@@ -711,9 +731,6 @@ void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType
     TRACE(V(timerId) << V(interval) << V(timerType) << V(object));
 
     d->timerList.registerTimer(timerId, interval, timerType, object);
-
-    if (d->needThread())
-        d->notifyThread();
 }
 
 bool QEventDispatcherOS2::unregisterTimer(int timerId)
@@ -732,14 +749,7 @@ bool QEventDispatcherOS2::unregisterTimer(int timerId)
 
     TRACE(V(timerId));
 
-    bool result = d->timerList.unregisterTimer(timerId);
-
-    // Note that we only notify the AUX thread when there is nothing to wait
-    // for, as otherwise it's harmless to wait for the next timer or socket.
-    if (result && !d->needThread())
-        d->notifyThread(true);
-
-    return result;
+    return d->timerList.unregisterTimer(timerId);
 }
 
 bool QEventDispatcherOS2::unregisterTimers(QObject *object)
@@ -758,14 +768,7 @@ bool QEventDispatcherOS2::unregisterTimers(QObject *object)
 
     TRACE(V(object));
 
-    bool result = d->timerList.unregisterTimers(object);
-
-    // Note that we only notify the AUX thread when there is nothing to wait
-    // for, as otherwise it's harmless to wait for the next timer or socket.
-    if (result && !d->needThread())
-        d->notifyThread(true);
-
-    return result;
+    return d->timerList.unregisterTimers(object);
 }
 
 QList<QEventDispatcherOS2::TimerInfo>
