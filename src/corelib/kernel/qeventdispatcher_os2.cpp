@@ -361,18 +361,22 @@ void QEventDispatcherOS2Private::notifyThread(bool terminate)
                 qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
         }
     } else {
-        if (terminate)
-            threadState = Terminate;
-        else if (threadState == Posted)
+        if (threadState == Posted)
             return; // WM_QT_TIMER_OR_SOCKET will soon call processTimersAndSockets
         else
             Q_ASSERT(threadState == Selecting);
 
         if (threadState == Selecting && maxfd >= 0) {
             // Terminate select() execution.
-            ::so_cancel(maxfd);
+            if (terminate)
+                threadState = Terminate;
+            int rc = ::so_cancel(maxfd);
+            if (rc == -1)
+                qErrnoWarning(errno, "QEventDispatcherOS2Private: so_cancel failed");
         } else {
             // Terminate the idle or simple wait state.
+            if (terminate)
+                threadState = Terminate;
             cond.wakeOne();
         }
 
