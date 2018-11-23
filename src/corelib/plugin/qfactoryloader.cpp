@@ -111,7 +111,7 @@ void QFactoryLoader::update()
             continue;
 
         QStringList plugins = QDir(path).entryList(
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
                     QStringList(QStringLiteral("*.dll")),
 #endif
                     QDir::Files);
