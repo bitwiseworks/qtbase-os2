@@ -3,6 +3,7 @@ CONFIG += dll
 CONFIG -= staticlib
 SOURCES		= mylib.c
 TARGET = tst_qpluginloaderlib
+os2:TARGET_SHORT = tstpllib
 DESTDIR = ../bin
 winrt:include(../winrt.pri)
 QT = core

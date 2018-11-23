@@ -5,6 +5,7 @@ SOURCES       = theplugin.cpp
 # Use a predictable name for the plugin, no debug extension. Just like most apps do.
 #TARGET        = $$qtLibraryTarget(theplugin)
 TARGET        = theplugin
+os2:TARGET    = plugin
 DESTDIR       = ../bin
 winrt:include(../winrt.pri)
 QT = core

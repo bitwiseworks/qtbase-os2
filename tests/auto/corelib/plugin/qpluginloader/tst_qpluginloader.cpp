@@ -72,7 +72,7 @@
 # define SUFFIX         ".so"
 # define PREFIX         "lib"
 
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_DOSLIKE)
 # undef dll_VALID
 # define dll_VALID      true
 //# ifdef QT_NO_DEBUG
@@ -87,6 +87,15 @@
 # define so_VALID       true
 # define SUFFIX         ".so"
 # define PREFIX         "lib"
+#endif
+
+// OS/2 doesn't support DLL snames longer than 8 chars.
+#if defined(Q_OS_OS2)
+# define THEPLUGIN "plugin"
+# define TST_QPLUGINLOADERLIB "tstpllib"
+#else
+# define THEPLUGIN "theplugin"
+# define TST_QPLUGINLOADERLIB "tst_qpluginloaderlib"
 #endif
 
 static QString sys_qualifiedLibraryName(const QString &fileName)
@@ -131,7 +140,7 @@ void tst_QPluginLoader::cleanup()
     // so we report it only once.
     static bool failedAlready = false;
     if (!failedAlready) {
-        QLibrary lib(sys_qualifiedLibraryName("theplugin"));
+        QLibrary lib(sys_qualifiedLibraryName(THEPLUGIN));
         failedAlready = true;
         QVERIFY2(!lib.isLoaded(), "Plugin was leaked - will not check again");
         failedAlready = false;
@@ -157,7 +166,7 @@ void tst_QPluginLoader::errorString()
     QVERIFY(!unloaded);
     }
     {
-    QPluginLoader loader( sys_qualifiedLibraryName("tst_qpluginloaderlib"));     //not a plugin
+    QPluginLoader loader( sys_qualifiedLibraryName(TST_QPLUGINLOADERLIB));       //not a plugin
     bool loaded = loader.load();
     QVERIFY(loader.errorString() != unknown);
     QVERIFY(!loaded);
@@ -205,7 +214,7 @@ void tst_QPluginLoader::errorString()
 #endif
 
     {
-    QPluginLoader loader( sys_qualifiedLibraryName("theplugin"));     //a plugin
+    QPluginLoader loader( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
     QCOMPARE(loader.load(), true);
     QCOMPARE(loader.errorString(), unknown);
 
@@ -227,7 +236,7 @@ void tst_QPluginLoader::loadHints()
     QPluginLoader loader;
     QCOMPARE(loader.loadHints(), (QLibrary::LoadHints)0);   //Do not crash
     loader.setLoadHints(QLibrary::ResolveAllSymbolsHint);
-    loader.setFileName( sys_qualifiedLibraryName("theplugin"));     //a plugin
+    loader.setFileName( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
     QCOMPARE(loader.loadHints(), QLibrary::ResolveAllSymbolsHint);
 }
 
@@ -235,7 +244,7 @@ void tst_QPluginLoader::deleteinstanceOnUnload()
 {
     for (int pass = 0; pass < 2; ++pass) {
         QPluginLoader loader1;
-        loader1.setFileName( sys_qualifiedLibraryName("theplugin"));     //a plugin
+        loader1.setFileName( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
         if (pass == 0)
             loader1.load(); // not recommended, instance() should do the job.
         PluginInterface *instance1 = qobject_cast<PluginInterface*>(loader1.instance());
@@ -243,7 +252,7 @@ void tst_QPluginLoader::deleteinstanceOnUnload()
         QCOMPARE(instance1->pluginName(), QLatin1String("Plugin ok"));
 
         QPluginLoader loader2;
-        loader2.setFileName( sys_qualifiedLibraryName("theplugin"));     //a plugin
+        loader2.setFileName( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
         if (pass == 0)
             loader2.load(); // not recommended, instance() should do the job.
         PluginInterface *instance2 = qobject_cast<PluginInterface*>(loader2.instance());
@@ -392,7 +401,7 @@ void tst_QPluginLoader::relativePath()
     const QString binDir = QFINDTESTDATA("bin");
     QVERIFY(!binDir.isEmpty());
     QCoreApplication::addLibraryPath(binDir);
-    QPluginLoader loader("theplugin");
+    QPluginLoader loader(THEPLUGIN);
     loader.load(); // not recommended, instance() should do the job.
     PluginInterface *instance = qobject_cast<PluginInterface*>(loader.instance());
     QVERIFY(instance);
@@ -406,7 +415,7 @@ void tst_QPluginLoader::absolutePath()
     const QString binDir = QFINDTESTDATA("bin");
     QVERIFY(!binDir.isEmpty());
     QVERIFY(QDir::isAbsolutePath(binDir));
-    QPluginLoader loader(binDir + "/theplugin");
+    QPluginLoader loader(binDir + "/" THEPLUGIN);
     loader.load(); // not recommended, instance() should do the job.
     PluginInterface *instance = qobject_cast<PluginInterface*>(loader.instance());
     QVERIFY(instance);
@@ -417,7 +426,7 @@ void tst_QPluginLoader::absolutePath()
 void tst_QPluginLoader::reloadPlugin()
 {
     QPluginLoader loader;
-    loader.setFileName( sys_qualifiedLibraryName("theplugin"));     //a plugin
+    loader.setFileName( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
     loader.load(); // not recommended, instance() should do the job.
     PluginInterface *instance = qobject_cast<PluginInterface*>(loader.instance());
     QVERIFY(instance);
@@ -443,10 +452,10 @@ void tst_QPluginLoader::preloadedPlugin_data()
 {
     QTest::addColumn<bool>("doLoad");
     QTest::addColumn<QString>("libname");
-    QTest::newRow("create-plugin") << false << sys_qualifiedLibraryName("theplugin");
-    QTest::newRow("load-plugin") << true << sys_qualifiedLibraryName("theplugin");
-    QTest::newRow("create-non-plugin") << false << sys_qualifiedLibraryName("tst_qpluginloaderlib");
-    QTest::newRow("load-non-plugin") << true << sys_qualifiedLibraryName("tst_qpluginloaderlib");
+    QTest::newRow("create-plugin") << false << sys_qualifiedLibraryName(THEPLUGIN);
+    QTest::newRow("load-plugin") << true << sys_qualifiedLibraryName(THEPLUGIN);
+    QTest::newRow("create-non-plugin") << false << sys_qualifiedLibraryName(TST_QPLUGINLOADERLIB);
+    QTest::newRow("load-non-plugin") << true << sys_qualifiedLibraryName(TST_QPLUGINLOADERLIB);
 }
 
 void tst_QPluginLoader::preloadedPlugin()

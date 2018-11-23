@@ -5,7 +5,7 @@ qtConfig(private_tests): QT += core-private
 SOURCES = ../tst_qpluginloader.cpp ../fakeplugin.cpp
 HEADERS = ../theplugin/plugininterface.h
 
-win32 {
+win32|os2 {
     CONFIG(debug, debug|release) {
         TARGET = ../../debug/tst_qpluginloader
     } else {

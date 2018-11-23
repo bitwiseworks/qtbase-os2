@@ -73,7 +73,7 @@
 # define SUFFIX         ".a"
 # define PREFIX         "lib"
 
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_DOSLIKE)
 # undef dll_VALID
 # define dll_VALID      true
 # undef DLL_VALID
@@ -158,7 +158,7 @@ void tst_QLibrary::version()
     QFETCH( int, loadversion );
     QFETCH( int, resultversion );
 
-#if !defined(Q_OS_AIX) && !defined(Q_OS_WIN)
+#if !defined(Q_OS_AIX) && !defined(Q_OS_DOSLIKE)
     QString appDir = QCoreApplication::applicationDirPath();
     QLibrary library( appDir + QLatin1Char('/') + lib, loadversion );
     QVERIFY2(library.load(), qPrintable(library.errorString()));
@@ -189,10 +189,14 @@ void tst_QLibrary::load_data()
     QTest::newRow("ok (libmylib ver. 1)") << appDir + "/libmylib" <<true;
 #endif
 
-# if defined(Q_OS_WIN32)
+# if defined(Q_OS_DOSLIKE)
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/mylib.dll" << true;
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/mylib.dl2" << true;
+#  if defined(Q_OS_OS2)
+    QTest::newRow( "ok03 (with many dots)" ) << appDir + "/qt.mylib.dll" << true;
+#  else
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.dll" << true;
+#  endif
 # elif defined Q_OS_UNIX
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/libmylib" SUFFIX << true;
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/libmylib.so2" << true;
@@ -313,7 +317,7 @@ void tst_QLibrary::isLibrary_data()
     QTest::newRow("good (libmylib.so.1.0.0)") << QString("libmylib.so.1.0.0") << true;
 
     QTest::newRow("bad (libmylib.1.0.0.foo)") << QString("libmylib.1.0.0.foo") << false;
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_DOSLIKE)
     QTest::newRow("good (with many dots)" ) << "/system.qt.test.mylib.dll" << true;
 #endif
 }
@@ -343,6 +347,8 @@ void tst_QLibrary::errorString_data()
 #ifdef Q_OS_WIN
     QTest::newRow("bad load() with .dll suffix") << (int)Load << QString("nosuchlib.dll") << false << QString("Cannot load library nosuchlib.dll: The specified module could not be found.");
 //    QTest::newRow("bad unload") << (int)Unload << QString("nosuchlib.dll") << false << QString("QLibrary::unload_sys: Cannot unload nosuchlib.dll (The specified module could not be found.)");
+#elif defined Q_OS_OS2
+    QTest::newRow("bad load() with .dll suffix") << (int)Load << QString("nosuchlib.dll") << false << QString("Cannot load library nosuchlib.dll: \\(dlopen rc=2 extra=NOSUCHLIB\\)");
 #elif defined Q_OS_MAC
 #else
     QTest::newRow("load invalid file") << (int)Load << QFINDTESTDATA("library_path/invalid.so") << false << QString("Cannot load library.*");
@@ -401,10 +407,14 @@ void tst_QLibrary::loadHints_data()
     QString appDir = QCoreApplication::applicationDirPath();
 
     lh |= QLibrary::ResolveAllSymbolsHint;
-# if defined(Q_OS_WIN32) || defined(Q_OS_WINRT)
+# if defined(Q_OS_DOSLIKE) || defined(Q_OS_WINRT)
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/mylib.dll" << int(lh) << true;
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/mylib.dl2" << int(lh) << true;
+#  if defined(Q_OS_OS2)
+    QTest::newRow( "ok03 (with many dots)" ) << appDir + "/qt.mylib.dll" << int(lh) << true;
+#  else
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.dll" << int(lh) << true;
+#  endif
 # elif defined Q_OS_UNIX
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/libmylib" SUFFIX << int(lh) << true;
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/libmylib.so2" << int(lh) << true;
@@ -456,6 +466,9 @@ void tst_QLibrary::fileName_data()
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     QTest::newRow( "ok03" ) << "user32"
                             << "USER32.dll";
+#elif defined(Q_OS_OS2)
+    QTest::newRow( "ok03" ) << "doscall1"
+                            << "DOSCALL1.DLL";
 #endif
 }
 
@@ -467,7 +480,7 @@ void tst_QLibrary::fileName()
     QLibrary lib(libName);
     bool ok = lib.load();
     QVERIFY2(ok, qPrintable(lib.errorString()));
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     QCOMPARE(lib.fileName().toLower(), expectedFilename.toLower());
 #else
     QCOMPARE(lib.fileName(), expectedFilename);

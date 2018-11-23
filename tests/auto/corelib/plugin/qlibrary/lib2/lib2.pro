@@ -8,11 +8,12 @@ VERSION = 2
 QT = core
 
 win32-msvc: DEFINES += WIN32_MSVC
+os2: TARGET = qt.mylib
 
 # Force a copy of the library to have an extension that is non-standard.
 # We want to test if we can load a shared library with *any* filename...
 
-win32 {
+win32|os2 {
     CONFIG(debug, debug|release) {
         BUILD_FOLDER = debug
     } else {
@@ -24,9 +25,10 @@ win32 {
     contains(TEMPLATE,vc.*) {
         src = $(TargetPath)
     } else {
-        src = $(DESTDIR_TARGET)
+        os2:src = $(DESTDIR)$${QMAKE_DIR_SEP}$(TARGET)
+        else:src = $(DESTDIR_TARGET)
     }
-    files = $$BUILD_FOLDER$${QMAKE_DIR_SEP}mylib.dl2 $$BUILD_FOLDER$${QMAKE_DIR_SEP}system.qt.test.mylib.dll
+    !os2:files = $$BUILD_FOLDER$${QMAKE_DIR_SEP}mylib.dl2 $$BUILD_FOLDER$${QMAKE_DIR_SEP}system.qt.test.mylib.dll
 } else {
     src = $(DESTDIR)$(TARGET)
     files = libmylib.so2 system.qt.test.mylib.so

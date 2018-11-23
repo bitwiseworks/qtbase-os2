@@ -3,7 +3,7 @@ TARGET = ../tst_qlibrary
 QT = core testlib
 SOURCES = ../tst_qlibrary.cpp
 
-win32 {
+win32|os2 {
     CONFIG(debug, debug|release) {
         TARGET = ../../debug/tst_qlibrary
     } else {
