@@ -634,7 +634,7 @@ bool QLibraryPrivate::loadPlugin()
  */
 bool QLibrary::isLibrary(const QString &fileName)
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     return fileName.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive);
 #else // Generic Unix
     QString completeSuffix = QFileInfo(fileName).completeSuffix();
