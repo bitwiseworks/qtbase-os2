@@ -4,7 +4,7 @@ QT = core network testlib
 SOURCES = ../tst_qtextstream.cpp
 RESOURCES += ../qtextstream.qrc
 
-win32 {
+win32|os2 {
     CONFIG(debug, debug|release) {
         TARGET = ../../debug/tst_qtextstream
     } else {
