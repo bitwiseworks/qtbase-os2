@@ -8,7 +8,7 @@ SOURCES = ../tst_qlocale.cpp
 }
 
 TARGET = ../tst_qlocale
-win32 {
+win32|os2 {
     CONFIG(debug, debug|release) {
         TARGET = ../../debug/tst_qlocale
     } else {

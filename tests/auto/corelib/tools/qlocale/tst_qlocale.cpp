@@ -173,7 +173,7 @@ void tst_QLocale::initTestCase()
             qPrintable(QStringLiteral("Cannot find 'syslocaleapp' starting from ")
                        + QDir::toNativeSeparators(QDir::currentPath())));
     m_sysapp = syslocaleapp_dir + QStringLiteral("/syslocaleapp");
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     m_sysapp += QStringLiteral(".exe");
 #endif
     const QFileInfo fi(m_sysapp);
