@@ -120,7 +120,6 @@ static QVector<int> qt_adopted_thread_tids;
 static QVector<QThread *> qt_adopted_qthreads;
 static QBasicMutex qt_adopted_thread_watcher_mutex;
 static int qt_adopted_thread_watcher_tid = 0;
-static HEV qt_adopted_thread_wakeup = NULLHANDLE;
 
 /*!
     \internal
@@ -141,20 +140,11 @@ static void qt_watch_adopted_thread(const int adoptedTID, QThread *qthread)
 
     // Start watcher thread if it is not already running.
     if (qt_adopted_thread_watcher_tid == 0) {
-        APIRET arc = DosCreateEventSem(NULL, &qt_adopted_thread_wakeup,
-                                       DCE_AUTORESET, FALSE);
-        if (arc != NO_ERROR) {
-            qWarning("qt_watch_adopted_thread: DosCreateEventSem returned %lu", arc);
-            return;
-        }
-
         int tid = _beginthread(qt_adopted_thread_watcher_function, NULL, 0, NULL);
         if (tid == -1)
             qErrnoWarning(errno, "qt_watch_adopted_thread: _beginthread failed");
         else
             qt_adopted_thread_watcher_tid = tid;
-    } else {
-        DosPostEventSem(qt_adopted_thread_wakeup);
     }
 }
 
@@ -166,54 +156,50 @@ static void qt_watch_adopted_thread(const int adoptedTID, QThread *qthread)
 */
 static void qt_adopted_thread_watcher_function(void *)
 {
-    forever {
-        qt_adopted_thread_watcher_mutex.lock();
+    QMutexLocker lock(&qt_adopted_thread_watcher_mutex);
 
+    forever {
         if (qt_adopted_thread_tids.isEmpty()) {
             // our service is no longer necessary
             qt_adopted_thread_watcher_tid = 0;
-            DosCloseEventSem(qt_adopted_thread_wakeup);
-            qt_adopted_thread_wakeup = NULLHANDLE;
-            qt_adopted_thread_watcher_mutex.unlock();
             break;
         }
 
+        lock.unlock();
+
+        // Wait for any thread of this process
         APIRET arc;
-        int tid;
+        TID tid = 0;
+        qDosNI(arc = DosWaitThread((PTID)&tid, DCWW_WAIT));
 
-        for (int i = 0; i < qt_adopted_thread_tids.size();) {
-            tid = qt_adopted_thread_tids.at(i);
-            qDosNI(arc = DosWaitThread((PTID)&tid, DCWW_NOWAIT));
-            if (arc != ERROR_THREAD_NOT_TERMINATED) {
-                if (arc == NO_ERROR || arc == ERROR_INVALID_THREADID) {
-                    QThreadData *data = QThreadData::get2(qt_adopted_qthreads.at(i));
-                    qt_adopted_thread_watcher_mutex.unlock();
+        lock.relock();
 
-                    if (data->isAdopted) {
-                        QThread *thread = data->thread;
-                        Q_ASSERT(thread);
-                        QThreadPrivate *thread_p = static_cast<QThreadPrivate *>(QObjectPrivate::get(thread));
-                        Q_UNUSED(thread_p)
-                        Q_ASSERT(!thread_p->finished);
-                        thread_p->finish(thread);
-                    }
-                    data->deref();
+        if (arc == NO_ERROR) {
+            int i = qt_adopted_thread_tids.indexOf (tid);
+            if (i >= 0) {
+                QThreadData *data = QThreadData::get2(qt_adopted_qthreads.at(i));
 
-                    qt_adopted_thread_watcher_mutex.lock();
-                    qt_adopted_thread_tids.remove(i);
-                    qt_adopted_qthreads.remove(i);
-                    continue;
+                lock.unlock();
+
+                if (data->isAdopted) {
+                    QThread *thread = data->thread;
+                    Q_ASSERT(thread);
+                    QThreadPrivate *thread_p = static_cast<QThreadPrivate *>(QObjectPrivate::get(thread));
+                    Q_UNUSED(thread_p)
+                    Q_ASSERT(!thread_p->finished);
+                    thread_p->finish(thread);
                 }
-                qWarning("qt_adopted_thread_watcher_function: DosWaitThread returned %lu", arc);
+                data->deref();
+
+                lock.relock();
+
+                qt_adopted_thread_tids.remove(i);
+                qt_adopted_qthreads.remove(i);
             }
-            ++i;
-        }
-
-        qt_adopted_thread_watcher_mutex.unlock();
-
-        qDosNI(arc = DosWaitEventSem(qt_adopted_thread_wakeup, 300));
-        if (arc != NO_ERROR && arc != ERROR_TIMEOUT) {
-            qWarning("qt_adopted_thread_watcher_function: DosWaitEventSem returned %lu", arc);
+        } else {
+            // Should never fail.
+            qWarning("qt_adopted_thread_watcher_function: DosWaitThread returned %lu", arc);
+            break;
         }
     }
 
