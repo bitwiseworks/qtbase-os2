@@ -93,7 +93,7 @@ class Q_CORE_EXPORT QTimerInfoList : public QList<QTimerInfo*>
     QTimerInfo *firstTimerInfo;
 
 #ifdef Q_OS_OS2
-    uint zeroTimers;
+    int zeroTimers;
 #endif
 
 public:
@@ -103,7 +103,7 @@ public:
     timespec updateCurrentTime();
 
 #ifdef Q_OS_OS2
-    uint zeroTimerCount() const { return zeroTimers; };
+    int zeroTimerCount() const { return zeroTimers; };
 #endif
 
     // must call updateCurrentTime() first!
