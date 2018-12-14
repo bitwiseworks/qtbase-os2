@@ -94,7 +94,7 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
     int maxlen = CCHMAXPATH - ns.length();
     if (result.length() > maxlen)
         result = result.right(maxlen);
-    return result;
+    return ns + result;
 #else
     return QDir::tempPath() + QLatin1Char('/') + result;
 #endif

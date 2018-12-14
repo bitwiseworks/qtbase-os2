@@ -39,6 +39,8 @@
 **
 ****************************************************************************/
 
+//#define QSYSTEMSEMAPHORE_DEBUG
+
 #include "qsystemsemaphore.h"
 #include "qsystemsemaphore_p.h"
 #include "qcoreapplication.h"
@@ -69,13 +71,18 @@ void QSystemSemaphorePrivate::setErrorString(APIRET arc, const QString &function
         error = QSystemSemaphore::PermissionDenied;
         errorString = QCoreApplication::translate("QSystemSemaphore", "%1: permission denied").arg(function);
         break;
+    case ERROR_INVALID_NAME:
+        error = QSystemSemaphore::KeyError;
+        errorString = QCoreApplication::translate("QSystemSemaphore", "%1: invalid key name").arg(function);
+        break;
     default:
         errorString = QCoreApplication::translate("QSystemSemaphore", "%1: unknown error %2").arg(function).arg(arc);
         error = QSystemSemaphore::UnknownError;
-#if defined QSYSTEMSEMAPHORE_DEBUG
-        qDebug() << errorString << "key" << key;
-#endif
     }
+
+#if defined QSYSTEMSEMAPHORE_DEBUG
+    qDebug() << errorString << "arc" << arc << "key" << key << "fileName" << fileName;
+#endif
 }
 
 void QSystemSemaphorePrivate::handle(QSystemSemaphore::AccessMode)
@@ -93,35 +100,44 @@ void QSystemSemaphorePrivate::handle(QSystemSemaphore::AccessMode)
             arc = DosOpenEventSem(name, &semaphore);
             if (arc == ERROR_SEM_NOT_FOUND) {
 #if defined QSYSTEMSEMAPHORE_DEBUG
-                qDebug("QSystemSemaphore::handle: creating a new sem...", arc);
+                qDebug("QSystemSemaphore::handle: creating a new sem [%s] (%d)...", name.data(), initialValue);
 #endif
-                arc = DosCreateEventSem(name, &semaphore, DC_SEM_SHARED, TRUE);
+                if (initialValue < 0) {
+                    arc = ERROR_NOT_ENOUGH_MEMORY; // cause OutOfResources
+                    break;
+                }
+                arc = DosCreateEventSem(name, &semaphore, DC_SEM_SHARED, FALSE);
                 if (arc == ERROR_DUPLICATE_NAME) {
                     // The other process was faster, try to open it again
                     continue;
                 }
                 if (arc == NO_ERROR) {
-                    // Set the initial resource count (it's created as posted, so one less)
-                    ULONG count = initialValue - 1;
-                    while (count-- && (arc == NO_ERROR || arc == ERROR_ALREADY_POSTED))
+                    // Set the initial resource count
+                    ULONG count = initialValue;
+                    for (; count && (arc == NO_ERROR || arc == ERROR_ALREADY_POSTED); --count)
                         arc = DosPostEventSem(semaphore);
                     if (!count)
                         arc = NO_ERROR;
                 }
-                break;
             }
-        }
-        if (arc != NO_ERROR)
-            setErrorString(arc, QLatin1String("QSystemSemaphore::handle"));
 #if defined QSYSTEMSEMAPHORE_DEBUG
-            qDebug("QSystemSemaphore::handle: Dos[Open|Create|Post]EventSem failed with %ld", arc);
+            else
+                qDebug("QSystemSemaphore::handle: using existing sem [%s] (%d)...", name.data(), initialValue);
 #endif
+            break;
+        }
+        if (arc != NO_ERROR) {
+            setErrorString(arc, QLatin1String("QSystemSemaphore::handle"));
+        }
     }
 }
 
 void QSystemSemaphorePrivate::cleanHandle()
 {
     if (semaphore != NULLHANDLE) {
+#if defined QSYSTEMSEMAPHORE_DEBUG
+        qDebug("QSystemSemaphore::closeHandler: closing the sem [%s]...", fileName.toLocal8Bit().data());
+#endif
         APIRET arc = DosCloseEventSem(semaphore);
         Q_UNUSED(arc);
 #if defined QSYSTEMSEMAPHORE_DEBUG
@@ -137,16 +153,17 @@ bool QSystemSemaphorePrivate::modifySemaphore(int count)
     if (semaphore == NULLHANDLE)
         return false;
 
+#if defined QSYSTEMSEMAPHORE_DEBUG
+     qDebug("QSystemSemaphore::modifySemaphore: sem [%s] count %d", fileName.toLocal8Bit().data(), count);
+#endif
+
     if (count > 0) {
         // Set the requested resource count
         APIRET arc = NO_ERROR;
-        while (count-- && (arc == NO_ERROR || arc == ERROR_ALREADY_POSTED))
+        for (; count && (arc == NO_ERROR || arc == ERROR_ALREADY_POSTED); --count)
             arc = DosPostEventSem(semaphore);
         if (count) {
             setErrorString(arc, QLatin1String("QSystemSemaphore::modifySemaphore"));
-#if defined QSYSTEMSEMAPHORE_DEBUG
-            qDebug("QSystemSemaphore::modifySemaphore DosPostEventSem failed with %ld", arc);
-#endif
             return false;
         }
     } else {
@@ -175,9 +192,6 @@ bool QSystemSemaphorePrivate::modifySemaphore(int count)
             }
             if (arc != NO_ERROR) {
                 setErrorString(arc, QLatin1String("QSystemSemaphore::modifySemaphore"));
-#if defined QSYSTEMSEMAPHORE_DEBUG
-                qDebug("QSystemSemaphore::modifySemaphore: Dos[Wait|Reset|Post]EventSem failed with %ld", arc);
-#endif
                 return false;
             }
         }
