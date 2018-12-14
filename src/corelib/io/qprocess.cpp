@@ -1018,7 +1018,8 @@ bool QProcessPrivate::tryReadFromChannel(Channel *channel)
 {
     Q_Q(QProcess);
 #ifdef Q_OS_OS2
-    if (channel->pipe.server == INVALID_HPIPE)
+    // Note: server handle may be valid in Pipe/Sink mode (see openChannel).
+    if (channel->pipe.server == INVALID_HPIPE || channel->type != Channel::Normal)
         return false;
 #else
     if (channel->pipe[0] == INVALID_Q_PIPE)
@@ -2031,8 +2032,11 @@ qint64 QProcess::writeData(const char *data, qint64 len)
            data, qt_prettyDebug(data, len, 16).constData(), len, len);
 #endif
 #if defined(Q_OS_OS2)
-    // try to write some bytes (there may be space in the pipe)
-    d->_q_notified(QProcessPrivate::CanWrite);
+    // Try to write some bytes (there may be space in the pipe). Asyncronously,
+    // so that a subsequent waitForBytesWritten call could succeed. This is
+    // also required by tst_QProcess::waitForBytesWrittenInABytesWrittenSlot.
+    QMetaObject::invokeMethod(this, "_q_notified", Qt::QueuedConnection,
+                              Q_ARG(int, QProcessPrivate::CanWrite));
 #endif
     return len;
 }

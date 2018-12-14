@@ -423,6 +423,7 @@ void QProcessManager::run()
         if (instance->deathFlag.testAndSetRelaxed(1, 0)) {
             DEBUG(() << "child death signaled");
             for (QProcess *proc : processes) {
+                DEBUG(() << "pid" << proc->d_func()->pid << "waitMode" << hex << proc->d_func()->waitMode);
                 if (proc->d_func()->waitMode) {
                     DosPostEventSem(proc->d_func()->waitSem);
                 } else {
@@ -493,7 +494,7 @@ void QProcessManager::run()
 
             QProcess *proc = processes[procKey];
             Q_ASSERT(proc);
-            DEBUG(("  process %p", proc));
+            DEBUG(("  process %p pid %d type %d", proc, proc->d_func()->pid, type));
 
             int flags = 0;
             switch(type) {
@@ -531,7 +532,7 @@ void QProcessManager::run()
 
 void QProcessPrivate::init()
 {
-    waitMode = false;
+    waitMode = 0;
     waitSem = NULLHANDLE;
 
     procKey = QProcessManager::InvalidProcKey;
@@ -627,7 +628,6 @@ bool QProcessPrivate::createPipe(PipeType type, Channel::Pipe &pipe,
 void QProcessPrivate::destroyPipe(Channel::Pipe &pipe)
 {
     pipe.bytes = 0;
-    pipe.result = false;
     pipe.signaled = false;
 
     pipe.closePending = false;
@@ -659,6 +659,8 @@ void QProcessPrivate::closeChannel(Channel *channel)
 */
 bool QProcessPrivate::openChannel(Channel &channel)
 {
+    DEBUG(() << "type" << channel.type);
+
     PipeType type;
 
     if (&channel == &stdinChannel) {
@@ -687,17 +689,19 @@ bool QProcessPrivate::openChannel(Channel &channel)
     } else if (channel.type == Channel::Redirect) {
         // we're redirecting the channel to/from a file
         QByteArray fname = QFile::encodeName(channel.file);
+        DEBUG(() << "fname" << fname);
 
         APIRET rc;
         if (&channel == &stdinChannel) {
             // try to open in read-only mode
             ULONG action = 0;
             rc = DosOpen(fname, &channel.pipe.client, &action, 0, FILE_NORMAL, FILE_OPEN,
-                         OPEN_ACCESS_READONLY | OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
+                         OPEN_ACCESS_READONLY | OPEN_SHARE_DENYNONE | OPEN_FLAGS_NOINHERIT, (PEAOP2)NULL);
 
             if (rc == NO_ERROR)
                 return true; // success
 
+            DEBUG(() << "DosOpen rc" << rc);
             setErrorAndEmit(QProcess::FailedToStart,
                             QProcess::tr("Could not open input redirection for reading"));
         } else {
@@ -718,6 +722,7 @@ bool QProcessPrivate::openChannel(Channel &channel)
             if (rc == NO_ERROR)
                 return true; // success
 
+            DEBUG(() << "DosOpen rc" << rc);
             setErrorAndEmit(QProcess::FailedToStart,
                             QProcess::tr("Could not open output redirection for writing"));
         }
@@ -1244,6 +1249,8 @@ void QProcessPrivate::startProcess()
 
     this->pid = Q_PID(pid);
 
+    DEBUG(() << "pid" << pid);
+
     // close the client ends inherited by the started process (it's necessary to
     // make sure that the started process owns the only handle to the client end
     // and when it closes this handle the other party will notice it and e.g.
@@ -1385,6 +1392,9 @@ bool QProcessPrivate::writeToStdin()
         setErrorAndEmit(QProcess::WriteError);
         return false;
     }
+
+    lock.unlock();
+
     writeBuffer.free(actual);
     if (!emittedBytesWritten && actual != 0) {
         emittedBytesWritten = true;
@@ -1464,7 +1474,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
     const char *condStr = cond == WaitReadyRead ? "ReadyRead" :
                           cond == WaitBytesWritten ? "BytesWritten" :
                           cond == WaitFinished ? "Finished" : "???";
-    DEBUG(("%s, %d", condStr, msecs));
+    DEBUG(("pid %d, %s, %d", pid, condStr, msecs));
 #endif
 
     QTime stopWatch;
@@ -1474,87 +1484,45 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
     bool ret = false;
 
     ensureWaitSem();
-    waitMode = true;
+    waitMode = WaitMode;
+
+    int notifyResult = 0;
 
     // QProcessManager::run() could post a method invocation before noticing we
     // entered waitMode, process it now to avoid an endless hang in wait state
     // due to the absense of the notification via the semaphore
-    bool firstTime = true;
     QCoreApplication::sendPostedEvents(q, QEvent::MetaCall);
     if (!QCoreApplication::instance()) {
-        // however, if there is no QApplication, _q_notified() won't be called
+        // however, if there is no Q*Application, _q_notified() won't be called
         // by the above, only removed from the queue. So we need a manual call.
-        firstTime = false;
+        notifyResult = _q_notified(CanAll);
+    } else {
+        // When waitMode is non-zero, _q_notify accumulates its return values in it for us.
+        notifyResult = waitMode;
     }
 
     forever {
-        if (firstTime) {
-            firstTime = false;
-        } else {
-            // check all conditions upon the signal from QProcessManager::run()
-            _q_notified(CanAll);
-        }
-
         bool done = false;
 
-        switch (cond)
-        {
-            case WaitReadyRead: {
-                // check if there was a _q_canReadStandardOutput/Error() signal
-                // that got something from the pipe
-                if (currentReadChannel == QProcess::StandardOutput &&
-                    stdoutChannel.pipe.signaled) {
-                    ret = stdoutChannel.pipe.result;
-                    done = true;
-                    break;
-                }
-                if (currentReadChannel == QProcess::StandardError &&
-                    stderrChannel.pipe.signaled) {
-                    ret = stderrChannel.pipe.result;
-                    done = true;
-                    break;
-                }
+        if (notifyResult & CanDie) {
+            done = true;
+            ret = cond == WaitFinished;
+            break;
+        }
 
-                // check if there was a _q_processDied() signal
-                if (dying || processState == QProcess::NotRunning) {
-                    done = true;
-                    break;
-                }
-
+        if (cond == WaitReadyRead) {
+            if ((currentReadChannel == QProcess::StandardOutput && (notifyResult & CanReadStdOut)) ||
+                (currentReadChannel == QProcess::StandardError && (notifyResult & CanReadStdErr))) {
+                done = ret = true;
                 break;
             }
-
-            case WaitBytesWritten: {
-                // check if there was a _q_canWrite() signal that wrote
-                // something to the pipe
-                if (stdinChannel.pipe.signaled) {
-                    ret = stdinChannel.pipe.result;
-                    done = true;
-                    break;
-                }
-
-                // check if there was a _q_processDied() signal
-                if (dying || processState == QProcess::NotRunning) {
-                    done = true;
-                    break;
-                }
-
-                if (writeBuffer.isEmpty()) {
-                    done = true;
-                    break;
-                }
-
+        } else if (cond == WaitBytesWritten) {
+            if (notifyResult & CanWrite) {
+                done = ret = true;
                 break;
             }
-
-            case WaitFinished: {
-                // check if there was a _q_processDied() signal
-                if (dying || processState == QProcess::NotRunning) {
-                    ret = true;
-                    done = true;
-                    break;
-                }
-
+            if (writeBuffer.isEmpty()) {
+                done = true;
                 break;
             }
         }
@@ -1569,6 +1537,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
 
         // wait for the new signals
         int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
+        DEBUG(() << "timeout" << timeout);
         qDosNI(arc = DosWaitEventSem(waitSem, (ULONG)timeout));
 
         if (arc == ERROR_TIMEOUT) {
@@ -1578,9 +1547,12 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
             Q_ASSERT(arc == NO_ERROR);
             break;
         }
+
+        // check all conditions upon the signal from QProcessManager::run()
+        notifyResult = _q_notified(CanAll);
     }
 
-    waitMode = false;
+    waitMode = 0;
 
     ULONG postCnt = 0;
     arc = DosResetEventSem(waitSem, &postCnt);
@@ -1626,6 +1598,9 @@ void QProcessPrivate::findExitCode()
 
 bool QProcessPrivate::waitForDeadChild()
 {
+    DEBUG(() << "pid" << pid);
+    Q_ASSERT(pid != 0);
+
     // check if our process is dead
     int exitStatus;
     pid_t waitResult = waitpid(pid, &exitStatus, WNOHANG);
@@ -1643,9 +1618,11 @@ bool QProcessPrivate::waitForDeadChild()
     return false;
 }
 
-void QProcessPrivate::_q_notified(int flags)
+int QProcessPrivate::_q_notified(int flags)
 {
-    DEBUG(("flags %x", flags));
+    DEBUG(() << "flags" << hex << flags << "waitMode" << hex << waitMode << dec << "pid" << pid);
+
+    int ret = 0;
 
     // note: in all read cases below, we look for the number of bytes actually
     // available to sort out (ignore) outdated notifications from
@@ -1657,14 +1634,15 @@ void QProcessPrivate::_q_notified(int flags)
     // _q_notified() call of the same type in the event queue; we need to
     // gracefully handle them all (they may inform about separate payloads)
 
-    if (flags & CanReadStdOut) {
+    if ((flags & CanReadStdOut) && stdoutChannel.type != Channel::PipeSource) {
         Q_ASSERT(!stdoutChannel.pipe.signaled || waitMode);
         bool closed = false;
         qint64 bytes = bytesAvailableFromPipe(stdoutChannel.pipe.server, &closed);
         if (bytes || closed) {
             stdoutChannel.pipe.bytes = bytes;
             stdoutChannel.pipe.signaled = true;
-            stdoutChannel.pipe.result = _q_canReadStandardOutput();
+            if (_q_canReadStandardOutput())
+                ret |= CanReadStdOut;
             if (closed && bytes) {
                 // ask _q_canReadStandardOutput() to close the pipe by setting
                 // bytes to 0 (only if not already done by the previous call)
@@ -1682,14 +1660,15 @@ void QProcessPrivate::_q_notified(int flags)
         }
     }
 
-    if (flags & CanReadStdErr) {
+    if ((flags & CanReadStdErr) && processChannelMode != QProcess::MergedChannels) {
         Q_ASSERT(!stderrChannel.pipe.signaled || waitMode);
         bool closed = false;
         qint64 bytes = bytesAvailableFromPipe(stderrChannel.pipe.server, &closed);
         if (bytes || closed) {
             stderrChannel.pipe.bytes = bytes;
             stderrChannel.pipe.signaled = true;
-            stderrChannel.pipe.result = _q_canReadStandardError();
+            if (_q_canReadStandardError())
+                ret |= CanReadStdErr;
             if (closed && bytes) {
                 // ask _q_canReadStandardError() to close the pipe by setting
                 // bytes to 0 (only if not already done by the previous call)
@@ -1707,10 +1686,11 @@ void QProcessPrivate::_q_notified(int flags)
         }
     }
 
-    if (flags & CanWrite) {
+    if ((flags & CanWrite) && stdinChannel.type != Channel::PipeSink) {
         if (stdinChannel.pipe.bytes) {
             stdinChannel.pipe.signaled = true;
-            stdinChannel.pipe.result = _q_canWrite();
+            if (_q_canWrite())
+                ret |= CanWrite;
             if (!waitMode) {
                 // reset the signaled flag
                 stdinChannel.pipe.signaled = false;
@@ -1719,8 +1699,20 @@ void QProcessPrivate::_q_notified(int flags)
     }
 
     if (flags & CanDie) {
-        _q_processDied();
+        // Note: don't deliver _q_processDied if the process is already dead.
+        if (dying || processState == QProcess::NotRunning) {
+            ret |= CanDie;
+        } else {
+            if (_q_processDied())
+                ret |= CanDie;
+        }
     }
+
+    if (waitMode)
+        waitMode |= ret;
+
+    DEBUG(() << "ret" << hex << ret << "waitMode" << hex << waitMode);
+    return ret;
 }
 
 bool QProcessPrivate::startDetached(qint64 *pid)

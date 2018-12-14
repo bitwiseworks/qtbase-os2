@@ -298,12 +298,11 @@ public:
 #ifdef Q_OS_OS2
         struct Pipe {
             Pipe() : server(INVALID_HPIPE), client(INVALID_HFILE), closePending(false),
-                signaled(false), result(false), bytes(0) {}
+                signaled(false), bytes(0) {}
             HPIPE server;
             HFILE client;
             bool closePending : 1;
             bool signaled: 1;
-            bool result : 1;
             qint64 bytes;
         };
         Pipe pipe;
@@ -326,7 +325,7 @@ public:
     bool _q_startupNotification();
     bool _q_processDied();
 #if defined(Q_OS_OS2)
-    void _q_notified(int flags);
+    int _q_notified(int flags);
 #endif
 
     QProcess::ProcessChannelMode processChannelMode;
@@ -411,8 +410,8 @@ public:
     bool crashed;
 
 #ifdef Q_OS_OS2
-    enum { CanReadStdOut = 1, CanReadStdErr = 2, CanWrite = 4, CanDie = 8, CanAll = 0x0F };
-    bool waitMode : 1;
+    enum { CanReadStdOut = 1, CanReadStdErr = 2, CanWrite = 4, CanDie = 8, CanAll = 0x0F, WaitMode = 0x80 };
+    int waitMode;
     HEV waitSem;
     // NOTE: order of pointers in pipes[] must match order of values in PipeType
     Channel::Pipe *pipes[3] = { &stdinChannel.pipe, &stdoutChannel.pipe, &stderrChannel.pipe };
