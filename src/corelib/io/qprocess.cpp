@@ -2674,6 +2674,8 @@ QString QProcess::nullDevice()
 {
 #ifdef Q_OS_WIN
     return QStringLiteral("\\\\.\\NUL");
+#elif defined(Q_OS_OS2)
+    return QStringLiteral("NUL");
 #elif defined(_PATH_DEVNULL)
     return QStringLiteral(_PATH_DEVNULL);
 #else
