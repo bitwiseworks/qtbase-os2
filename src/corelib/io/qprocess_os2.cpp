@@ -1409,16 +1409,20 @@ bool QProcessPrivate::writeToStdin()
 
 void QProcessPrivate::terminateProcess()
 {
-    DEBUG(());
+    DEBUG(() << "pid" << pid);
     if (pid) {
+        // First, try to Close the main window if there is one. This is the
+        // safest approach as it will give the app an opportunity to save its
+        // data via a normal route (and also to refuse to close).
         HSWITCH hswitch = WinQuerySwitchHandle(NULLHANDLE, pid);
+        DEBUG(() << "hswitch" << hex << hswitch);
         if (hswitch != NULLHANDLE) {
             SWCNTRL swcntrl;
             memset(&swcntrl, 0, sizeof(swcntrl));
             APIRET rc = WinQuerySwitchEntry(hswitch,  &swcntrl);
             // WinQuerySwitchEntry will return a switch entry of the parent
             // process if the specfied one doesn't have a separate session
-            // (running a plain CMD.EXE is an example); ignore this case.
+            // (e.g. it's a related console app); ignore this case.
             if (rc == NO_ERROR && swcntrl.idProcess == pid)
             {
                 // first, ensure that the Close action is enabled in the main frame
@@ -1432,6 +1436,22 @@ void QProcessPrivate::terminateProcess()
                 WinPostMsg(swcntrl.hwnd, WM_SYSCOMMAND,
                            MPFROM2SHORT(SC_CLOSE, CMDSRC_OTHER),
                            MPFROMLONG(FALSE));
+                DEBUG(("Posted SC_CLOSE to main window's system menu"));
+                return;
+            }
+        }
+
+        // Then, try to locate the message queue and post a quit message there.
+        // Not as safe as the above (not all apps will handle WM_QUIT to save
+        // their data) but better than killing. Note that we don't know which
+        // thread runs the main message loop so post to each one we find.
+        for (ULONG tid = 1; tid <= 255; ++tid) {
+            if (DosVerifyPidTid(pid, tid) == NO_ERROR) {
+                HMQ hmq = WinQueueFromID(NULLHANDLE, pid, tid);
+                if (hmq != NULLHANDLE) {
+                    WinPostQueueMsg(hmq, WM_QUIT, NULLHANDLE, NULLHANDLE);
+                    DEBUG(("Posted WM_QUIT to message queue of thread %ld", tid));
+                }
             }
         }
     }
@@ -1439,7 +1459,7 @@ void QProcessPrivate::terminateProcess()
 
 void QProcessPrivate::killProcess()
 {
-    DEBUG(());
+    DEBUG(() << "pid" << pid);
     if (pid)
         DosKillProcess(DKP_PROCESS, pid);
 }
