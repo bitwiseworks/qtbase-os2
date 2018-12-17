@@ -95,6 +95,9 @@ QT_END_NAMESPACE
 
 QT_BEGIN_NAMESPACE
 
+// defined in qcoreapplication.cpp
+extern QString qAppFileName();
+
 #if QT_CONFIG(process)
 
 // NOTE: Copied over from qprocess_unix.cpp.
@@ -945,7 +948,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             // morphing from VIO to PM which doesn't cancel the fact that we
             // are VIO from the OS/2 loader's POV.
             ULONG flags;
-            arc = DosQueryAppType(QFile::encodeName(QCoreApplication::applicationFilePath()), &flags);
+            arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
             if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
                 // we are originally not the PM application and thus DosExecPgm()
                 // won't be able to start PM applications directly (note that the

@@ -2213,6 +2213,23 @@ QString QCoreApplication::applicationDirPath()
     return d->cachedApplicationDirPath;
 }
 
+#ifdef Q_OS_OS2
+Q_CORE_EXPORT QString qAppFileName()
+{
+    char appPath[PATH_MAX + 1];
+    if (_execname(appPath, sizeof(appPath)) == 0) {
+        // _execname returns the uppercased path, try to get the real case
+        char *path = appPath;
+        char realAppPath[PATH_MAX + 1];
+        if (_realrealpath(appPath, realAppPath, sizeof(realAppPath)))
+            path = realAppPath;
+        return QFile::decodeName(path);
+    }
+
+    return QString();
+}
+#endif
+
 /*!
     Returns the file path of the application executable.
 
@@ -2249,7 +2266,7 @@ QString QCoreApplication::applicationFilePath()
     if (QCoreApplicationPrivate::cachedApplicationFilePath)
         return *QCoreApplicationPrivate::cachedApplicationFilePath;
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     QCoreApplicationPrivate::setApplicationFilePath(QFileInfo(qAppFileName()).filePath());
     return *QCoreApplicationPrivate::cachedApplicationFilePath;
 #elif defined(Q_OS_MAC)
@@ -2260,17 +2277,6 @@ QString QCoreApplication::applicationFilePath()
             QCoreApplicationPrivate::setApplicationFilePath(fi.canonicalFilePath());
             return *QCoreApplicationPrivate::cachedApplicationFilePath;
         }
-    }
-#elif defined(Q_OS_OS2)
-    char appPath[PATH_MAX + 1];
-    if (_execname(appPath, sizeof(appPath)) == 0) {
-        // _execname returns the uppercased path, try to get the real case
-        char *path = appPath;
-        char realAppPath[PATH_MAX + 1];
-        if (_realrealpath(appPath, realAppPath, sizeof(realAppPath)))
-            path = realAppPath;
-        QCoreApplicationPrivate::setApplicationFilePath(QFileInfo(QFile::decodeName(path)).canonicalFilePath());
-        return *QCoreApplicationPrivate::cachedApplicationFilePath;
     }
 #endif
 #if defined( Q_OS_UNIX )
