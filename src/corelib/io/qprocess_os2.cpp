@@ -45,6 +45,8 @@
 
 #include <emx/umalloc.h> // for _lmalloc()
 
+#include <libcx/spawn2.h>
+
 #if defined QPROCESS_DEBUG
 #include "qdebug.h"
 #include "qstring.h"
@@ -832,14 +834,15 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         envv = environ;
     }
 
-    // Set the working directory if it's non-empty
-    QString curDir;
+    // Prepare the working directory if it's non-empty
+    const char *workDirPtr = NULL;
+    QByteArray workDir;
     if (!workingDirectory.isEmpty()) {
-        curDir = QDir::currentPath();
-        QDir::setCurrent(workingDirectory);
+        workDir = QFile::encodeName(workingDirectory);
+        workDirPtr = workDir;
     }
 
-    DEBUG(("workdir is \"%s\"", qPrintable(QDir::currentPath())));
+    DEBUG(() << "curdir" << QDir::currentPath() << "workingDirectory" << workingDirectory);
 
     // try to find the executable
     QByteArray fullProgramName(CCHMAXPATH * 2, 0);
@@ -854,7 +857,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         // don't do it because it a) doesn't search the current dir if no path
         // info is given; b) doesn't resolve /@unixroot (and symlinks) to a real
         // OS/2 path  and we might need it for the DosStartSession case.
-        APIRET arc;
+        APIRET arc = ERROR_LF_GENERAL_FAILURE;
         QFileInfo programInfo(program);
         QStringList knownExts;
         knownExts << QLatin1String("exe") << QLatin1String("cmd")
@@ -883,9 +886,15 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
                 if (hasPath) {
                     arc = DosSearchPath(0, path, name, fullProgramName.data(), fullProgramName.size());
                 } else {
-                    arc = DosSearchPath(SEARCH_IGNORENETERRS | SEARCH_ENVIRONMENT |
-                                        SEARCH_CUR_DIRECTORY, "PATH",
-                                        name, fullProgramName.data(), fullProgramName.size());
+                    ULONG flags = SEARCH_IGNORENETERRS | SEARCH_ENVIRONMENT;
+                    // First, search in the working directory.
+                    if (workDirPtr)
+                        arc = DosSearchPath(0, workDirPtr, name, fullProgramName.data(), fullProgramName.size());
+                    else
+                        flags |= SEARCH_CUR_DIRECTORY;
+                    // Then, in the environment.
+                    if (arc != NO_ERROR)
+                        arc = DosSearchPath(flags, "PATH", name, fullProgramName.data(), fullProgramName.size());
                 }
 
                 if (arc == NO_ERROR) {
@@ -1052,9 +1061,9 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             data.ObjectBuffer = 0;
             data.ObjectBuffLen = 0;
 
-            ULONG ulSid, ulPidDummy;
+            ULONG ulSid = 0, ulPidDummy = 0;
             arc = DosStartSession(&data, &ulSid, &ulPidDummy);
-            DEBUG(("DosStartSession() returned %ld", arc));
+            DEBUG(("DosStartSession() returned %ld (sid %ld, pid %ld)", arc, ulSid, ulPidDummy));
             // Note: for SSF_RELATED_INDEPENDENT, PID of the started process is
             // unknown, return 0 to indicate this
             if (arc == NO_ERROR)
@@ -1069,10 +1078,10 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             ::free(pgmNameLow);
 #endif
         } else {
-            pid = spawnve(mode, programReal, const_cast<char * const *>(argvReal), envv);
+            pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, NULL);
         }
 
-        DEBUG(("pid %d", pid));
+        DEBUG(("started pid %d", pid));
 
         if (prependedLibPath) {
             // restore BEGINLIBPATH
@@ -1089,9 +1098,6 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             delete [] envv[i];
         delete [] envv;
     }
-
-    // restore the current directory
-    QDir::setCurrent(curDir);
 
     return pid;
 }
@@ -1241,7 +1247,7 @@ void QProcessPrivate::startProcess()
             setErrorAndEmit(QProcess::FailedToStart,
                             QProcess::tr("Resource error: %1").arg(qt_error_string(errno)));
         } else {
-            DEBUG(("spawnvpe failed: %s", qPrintable(qt_error_string(errno))));
+            DEBUG(("spawn2 failed: %s", qPrintable(qt_error_string(errno))));
             setErrorAndEmit(QProcess::FailedToStart, qt_error_string(errno));
         }
         QProcessManager::removeProcess(procKey);
