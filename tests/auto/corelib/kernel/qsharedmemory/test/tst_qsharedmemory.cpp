@@ -182,7 +182,7 @@ void tst_QSharedMemory::cleanup()
 QString tst_QSharedMemory::helperBinary()
 {
     QString binary = QStringLiteral("helperbinary");
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     binary += QStringLiteral(".exe");
 #endif
     return QFINDTESTDATA(binary);
@@ -190,7 +190,7 @@ QString tst_QSharedMemory::helperBinary()
 
 int tst_QSharedMemory::remove(const QString &key)
 {
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     Q_UNUSED(key);
     return 0;
 #else
@@ -232,7 +232,7 @@ int tst_QSharedMemory::remove(const QString &key)
 #endif // QT_POSIX_IPC
 
     return QFile::remove(fileName);
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
 }
 
 /*!
@@ -578,8 +578,12 @@ void tst_QSharedMemory::simpleProducerConsumer()
     char *put = (char*)producer.data();
     char *get = (char*)consumer.data();
     // On Windows CE you always have ReadWrite access. Thus
-    // ViewMapOfFile returns the same pointer
+    // ViewMapOfFile returns the same pointer. On OS/2 there is no concept
+    // of local mappings at all, so the pointer is the same even across
+    // processes.
+#ifndef Q_OS_OS2
     QVERIFY(put != get);
+#endif
     for (int i = 0; i < size; ++i) {
         put[i] = 'Q';
         QCOMPARE(get[i], 'Q');
