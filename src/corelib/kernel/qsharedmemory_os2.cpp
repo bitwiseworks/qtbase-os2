@@ -39,6 +39,8 @@
 **
 ****************************************************************************/
 
+//#define QSHAREDMEMORY_DEBUG
+
 #include "qsharedmemory.h"
 #include "qsharedmemory_p.h"
 #include "qsystemsemaphore.h"
@@ -82,13 +84,18 @@ void QSharedMemoryPrivate::setErrorString(APIRET arc, QLatin1String function)
         error = QSharedMemory::PermissionDenied;
         errorString = QSharedMemory::tr("%1: permission denied").arg(function);
         break;
+    case ERROR_INVALID_NAME:
+        error = QSharedMemory::KeyError;
+        errorString = QSharedMemory::tr("%1: invalid key name").arg(function);
+        break;
     default:
         errorString = QSharedMemory::tr("%1: unknown error %2").arg(function).arg(arc);
         error = QSharedMemory::UnknownError;
-#if defined QSHAREDMEMORY_DEBUG
-        qDebug() << errorString << "key" << key;
-#endif
     }
+
+#if defined QSHAREDMEMORY_DEBUG
+    qDebug() << errorString << "arc" << arc << "key" << key << "fileName" << nativeKey;
+#endif
 }
 
 bool QSharedMemoryPrivate::cleanHandle()
@@ -107,12 +114,9 @@ bool QSharedMemoryPrivate::cleanHandle()
 
 bool QSharedMemoryPrivate::create(int size)
 {
-    const QLatin1String function("QSharedMemory::create");
-    if (nativeKey.isEmpty()) {
-        error = QSharedMemory::KeyError;
-        errorString = QSharedMemory::tr("%1: key error").arg(function);
-        return false;
-    }
+#if defined QSHAREDMEMORY_DEBUG
+    qDebug() << "size" << size << "nativeKey" << nativeKey;
+#endif
 
     ULONG flags = PAG_READ | PAG_WRITE | PAG_COMMIT;
     APIRET arc = DosAllocSharedMem(&memory, QFile::encodeName(nativeKey), size, flags | OBJ_ANY);
@@ -120,9 +124,13 @@ bool QSharedMemoryPrivate::create(int size)
         arc = DosAllocSharedMem(&memory, QFile::encodeName(nativeKey), size, flags);
 
     if (arc != NO_ERROR) {
-        setErrorString(arc, function);
+        setErrorString(arc, QLatin1String("QSharedMemory::create"));
         return false;
     }
+
+#if defined QSHAREDMEMORY_DEBUG
+    qDebug() << "memory" << memory;
+#endif
 
     this->size = size;
     return true;
@@ -130,6 +138,10 @@ bool QSharedMemoryPrivate::create(int size)
 
 bool QSharedMemoryPrivate::attach(QSharedMemory::AccessMode mode)
 {
+#if defined QSHAREDMEMORY_DEBUG
+    qDebug() << "mode" << mode << "nativeKey" << nativeKey << "memory" << memory;
+#endif
+
     ULONG flags = PAG_READ;
     if (mode == QSharedMemory::ReadWrite)
         flags |= PAG_WRITE;
