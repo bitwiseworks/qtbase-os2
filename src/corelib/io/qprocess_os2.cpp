@@ -293,19 +293,19 @@ USHORT QProcessManager::addProcess(QProcess *process)
     // attach the semahpore to the pipes of the process
     APIRET arc = NO_ERROR;
     if (d->stdinChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stdinChannel.pipe.server != INVALID_HPIPE) {
+        d->stdinChannel.pipe.server != INVALID_HFILE) {
         arc = DosSetNPipeSem(d->stdinChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::InPipe));
     }
     if (arc == NO_ERROR &&
         d->stdoutChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stdoutChannel.pipe.server != INVALID_HPIPE) {
+        d->stdoutChannel.pipe.server != INVALID_HFILE) {
         arc = DosSetNPipeSem(d->stdoutChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::OutPipe));
     }
     if (arc == NO_ERROR &&
         d->stderrChannel.type == QProcessPrivate::Channel::Normal &&
-        d->stderrChannel.pipe.server != INVALID_HPIPE) {
+        d->stderrChannel.pipe.server != INVALID_HFILE) {
         arc = DosSetNPipeSem(d->stderrChannel.pipe.server, (HSEM)instance->eventSem,
                              toPipeKey(procKey, QProcessPrivate::ErrPipe));
     }
@@ -621,7 +621,7 @@ bool QProcessPrivate::createPipe(PipeType type, Channel::Pipe &pipe,
 
     if (arc != NO_ERROR) {
         qWarning("QProcessPrivate::createPipe: %s(%s) returned %lu",
-                 pipe.server == INVALID_HPIPE ? "DosCreateNPipe" : "DosOpen",
+                 pipe.server == INVALID_HFILE ? "DosCreateNPipe" : "DosOpen",
                  pathBuf, arc);
         setErrorAndEmit(QProcess::FailedToStart,
                         QProcess::tr("Resource error: %1").arg(QSystemError::os2String(arc)));
@@ -638,18 +638,28 @@ void QProcessPrivate::destroyPipe(Channel::Pipe &pipe)
     pipe.closePending = false;
 
     if (pipe.client != INVALID_HFILE) {
-        DosClose(pipe.client);
-        pipe.client = INVALID_HFILE;
+        closeHandle(pipe.client);
     }
-    if (pipe.server != INVALID_HPIPE) {
+    if (pipe.server != INVALID_HFILE) {
         // Note: We do not call DosDisConnectNPipe() as this is not necessary
         // and will only cause DosRead() on the other side to return
         // ERROR_PIPE_NOT_CONNECTED that will be interpreted by LIBC read() and
         // fread() as an error (ferror() will return true) and some programs
         // don't like it (e.g. 7z, rar32 when reading data from stdin).
-        DosClose(pipe.server);
-        pipe.server = INVALID_HPIPE;
+        closeHandle(pipe.server);
     }
+}
+
+void QProcessPrivate::closeHandle(HFILE &handle)
+{
+    if (handle != INVALID_HFILE) {
+        // Use LIBC close to let it free resources if this handle was imported
+        // by spawn2. This should always succeed and call DosClose but fallback
+        // to it just in case.
+        if (close(handle) == -1)
+            DosClose(handle);
+    }
+    handle = INVALID_HFILE;
 }
 
 void QProcessPrivate::closeChannel(Channel *channel)
@@ -745,7 +755,7 @@ bool QProcessPrivate::openChannel(Channel &channel)
             Q_ASSERT(&channel == &stdoutChannel);
             Q_ASSERT(channel.process->stdinChannel.process == this &&
                      channel.process->stdinChannel.type == Channel::PipeSink);
-            if (channel.process->stdinChannel.pipe.server != INVALID_HPIPE) {
+            if (channel.process->stdinChannel.pipe.server != INVALID_HFILE) {
                 // the other process has already started and became the server
             } else {
                 // note: InPipe, since the type is relative to the other side
@@ -757,7 +767,7 @@ bool QProcessPrivate::openChannel(Channel &channel)
             Q_ASSERT(&channel == &stdinChannel);
             Q_ASSERT(channel.process->stdoutChannel.process == this &&
                      channel.process->stdoutChannel.type == Channel::PipeSource);
-            if (channel.process->stdoutChannel.pipe.server != INVALID_HPIPE) {
+            if (channel.process->stdoutChannel.pipe.server != INVALID_HFILE) {
                 // the other process has already started and became the server
             } else {
                 // note: OutPipe, since the type is relative to the other side
@@ -771,7 +781,8 @@ bool QProcessPrivate::openChannel(Channel &channel)
 
 static int qt_startProcess(const QString &program, const QStringList &arguments,
                            const QString &workingDirectory,
-                           const QStringList *environment, bool detached = false)
+                           const QStringList *environment, int stdfds[3],
+                           bool detached = false)
 {
     int mode = detached ? P_SESSION : P_NOWAIT;
 
@@ -986,6 +997,9 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             DEBUG((" arg[%d] \"%s\"",
                    i, qPrintable(QFile::decodeName(argvReal[i]))));
         }
+
+        // Redirect qDebug output to a file as spawn2 temporarily changes stdout/sterr.
+        QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
 #endif
 
         // finally, start the thing (note that due to the incorrect definiton of
@@ -1078,8 +1092,12 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             ::free(pgmNameLow);
 #endif
         } else {
-            pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, NULL);
+            pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, stdfds);
         }
+
+#if defined(QPROCESS_DEBUG)
+        qInstallMessageHandler(oldMsgHandler);
+#endif
 
         DEBUG(("started pid %d", pid));
 
@@ -1135,109 +1153,54 @@ void QProcessPrivate::startProcess()
 
     int rc = 0;
 
-    QString error;
-    int tmpStdin = -1, tmpStdout = -1, tmpStderr = -1;
-    int realStdin = fileno(stdin), realStdout = fileno(stdout),
-        realStderr = fileno(stderr);
+    int stdfds[3] = {0};
 
-#if defined(QPROCESS_DEBUG)
-    // Redirect qDebug output to a file as we temporarily change stdout/sterr below.
-    QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
-#endif
-
-    do {
-        // save & copy the stdin handle
-        if (inputChannelMode != QProcess::ForwardedInputChannel) {
-            if ((rc = tmpStdin = dup(realStdin)) != -1) {
-                HFILE handle = stdinChannel.pipe.client;
-                if (stdinChannel.type == Channel::PipeSink) {
-                    // process -> process redirection
-                    if (stdinChannel.pipe.server != INVALID_HPIPE) {
-                        // we are the server
-                        handle = (HFILE)stdinChannel.pipe.server;
-                    } else {
-                        // we are the client, use the server's variable
-                        handle = stdinChannel.process->stdoutChannel.pipe.client;
-                    }
-                    Q_ASSERT(handle != INVALID_HFILE);
-                }
-                Q_ASSERT(_imphandle(handle) != -1);
-                rc = dup2(_imphandle(handle), realStdin);
-            }
-            if (rc == -1) {
-                DEBUG(("dup/dup2 for stdin failed with %d (%s)", errno, strerror(errno)));
-                break;
+    if (inputChannelMode != QProcess::ForwardedInputChannel) {
+        HFILE handle = stdinChannel.pipe.client;
+        if (stdinChannel.type == Channel::PipeSink) {
+            // process -> process redirection
+            if (stdinChannel.pipe.server != INVALID_HFILE) {
+                // we are the server
+                handle = stdinChannel.pipe.server;
+            } else {
+                // we are the client, use the server's variable
+                handle = stdinChannel.process->stdoutChannel.pipe.client;
             }
         }
-        // save & copy the stdout and stderr handles if asked to
-        if (processChannelMode != QProcess::ForwardedChannels) {
-            if (processChannelMode != QProcess::ForwardedOutputChannel) {
-                // save & copy the stdout handle
-                if ((rc = tmpStdout = dup(realStdout)) != -1) {
-                    HFILE handle = stdoutChannel.pipe.client;
-                    if (stdoutChannel.type == Channel::PipeSource) {
-                        // process -> process redirection
-                        if (stdoutChannel.pipe.server != INVALID_HPIPE) {
-                            // we are the server
-                            handle = (HFILE)stdoutChannel.pipe.server;
-                        } else {
-                            // we are the client, use the server's variable
-                            handle = stdoutChannel.process->stdinChannel.pipe.client;
-                        }
-                        Q_ASSERT(handle != INVALID_HFILE);
-                    }
-                    Q_ASSERT(_imphandle(handle) != -1);
-                    rc = dup2(_imphandle(handle), realStdout);
-                }
-                if (rc == -1) {
-                    DEBUG(("dup/dup2 for stdout failed with %d (%s)", errno, strerror(errno)));
-                    break;
+        Q_ASSERT(handle != INVALID_HFILE);
+        stdfds[0] = handle;
+    }
+    if (processChannelMode != QProcess::ForwardedChannels) {
+        if (processChannelMode != QProcess::ForwardedOutputChannel) {
+            HFILE handle = stdoutChannel.pipe.client;
+            if (stdoutChannel.type == Channel::PipeSource) {
+                // process -> process redirection
+                if (stdoutChannel.pipe.server != INVALID_HFILE) {
+                    // we are the server
+                    handle = stdoutChannel.pipe.server;
+                } else {
+                    // we are the client, use the server's variable
+                    handle = stdoutChannel.process->stdinChannel.pipe.client;
                 }
             }
-            // save & copy the stderr handle
-            if (processChannelMode != QProcess::ForwardedErrorChannel) {
-                if ((rc = tmpStderr = dup(realStderr)) != -1) {
-                    // merge stdout and stderr if asked to
-                    if (processChannelMode == QProcess::MergedChannels) {
-                        rc = dup2(realStdout, realStderr);
-                    } else {
-                        HFILE handle = stderrChannel.pipe.client;
-                        Q_ASSERT(_imphandle(handle) != -1);
-                        rc = dup2(_imphandle(handle), realStderr);
-                    }
-                }
-                if (rc == -1) {
-                    DEBUG(("dup/dup2 for stderr failed with %d (%s)", errno, strerror(errno)));
-                    break;
-                }
+            Q_ASSERT(handle != INVALID_HFILE);
+            stdfds[1] = handle;
+        }
+        if (processChannelMode != QProcess::ForwardedErrorChannel) {
+            if (processChannelMode == QProcess::MergedChannels) {
+                stdfds[2] = 1;
+            } else {
+                Q_ASSERT(stderrChannel.pipe.client != INVALID_HFILE);
+                stdfds[2] = stderrChannel.pipe.client;
             }
         }
-
-    } while (false);
+    }
 
     int pid = -1;
     if (rc != -1) {
         QStringList env = environment.toStringList();
-        pid = qt_startProcess(program, arguments, workingDirectory, &env);
+        pid = qt_startProcess(program, arguments, workingDirectory, &env, stdfds);
     }
-
-    // cancel STDIN/OUT/ERR redirections
-    if (tmpStdin != -1) {
-        dup2(tmpStdin, realStdin);
-        close(tmpStdin);
-    }
-    if (tmpStdout != -1) {
-        dup2(tmpStdout, realStdout);
-        close(tmpStdout);
-    }
-    if ( tmpStderr != -1) {
-        dup2(tmpStderr, realStderr);
-        close(tmpStderr);
-    }
-
-#if defined(QPROCESS_DEBUG)
-    qInstallMessageHandler(oldMsgHandler);
-#endif
 
     if (rc == -1 || pid == -1) {
         // Cleanup, report error and return
@@ -1267,37 +1230,32 @@ void QProcessPrivate::startProcess()
 
     if (stdinChannel.type == Channel::PipeSink) {
         // process -> process redirection
-        if (stdinChannel.pipe.server != INVALID_HPIPE) {
+        if (stdinChannel.pipe.server != INVALID_HFILE) {
             // we are the server, leave the handle for the other party
         } else {
             // we are the client, close the handle
-            DosClose(stdinChannel.process->stdoutChannel.pipe.client);
-            stdinChannel.process->stdoutChannel.pipe.client = INVALID_HFILE;
+            closeHandle(stdinChannel.process->stdoutChannel.pipe.client);
         }
     } else {
         if (stdinChannel.pipe.client != INVALID_HFILE) {
-            DosClose(stdinChannel.pipe.client);
-            stdinChannel.pipe.client = INVALID_HFILE;
+            closeHandle(stdinChannel.pipe.client);
         }
     }
     if (stdoutChannel.type == Channel::PipeSource) {
         // process -> process redirection
-        if (stdoutChannel.pipe.server != INVALID_HPIPE) {
+        if (stdoutChannel.pipe.server != INVALID_HFILE) {
             // we are the server, leave the handle for the other party
         } else {
             // we are the client, close the handle
-            DosClose(stdoutChannel.process->stdinChannel.pipe.client);
-            stdoutChannel.process->stdinChannel.pipe.client = INVALID_HFILE;
+            closeHandle(stdoutChannel.process->stdinChannel.pipe.client);
         }
     } else {
         if (stdoutChannel.pipe.client != INVALID_HFILE) {
-            DosClose(stdoutChannel.pipe.client);
-            stdoutChannel.pipe.client = INVALID_HFILE;
+            closeHandle(stdoutChannel.pipe.client);
         }
     }
     if (stderrChannel.pipe.client != INVALID_HFILE) {
-        DosClose(stderrChannel.pipe.client);
-        stderrChannel.pipe.client = INVALID_HFILE;
+        closeHandle(stderrChannel.pipe.client);
     }
 
     // give the process a chance to start ...
@@ -1314,10 +1272,10 @@ bool QProcessPrivate::processStarted(QString * /*errorMessage*/)
 }
 
 // static
-qint64 QProcessPrivate::bytesAvailableFromPipe(HPIPE hpipe, bool *closed)
+qint64 QProcessPrivate::bytesAvailableFromPipe(HFILE hpipe, bool *closed)
 {
     qint64 bytes = 0;
-    if (hpipe != INVALID_HPIPE) {
+    if (hpipe != INVALID_HFILE) {
         ULONG state, dummy;
         AVAILDATA avail;
         APIRET arc = DosPeekNPipe(hpipe, 0, 0, &dummy, &avail, &state);
@@ -1333,7 +1291,7 @@ qint64 QProcessPrivate::bytesAvailableFromPipe(HPIPE hpipe, bool *closed)
 
 qint64 QProcessPrivate::bytesAvailableInChannel(const Channel *channel) const
 {
-    Q_ASSERT(channel->pipe.server != INVALID_HPIPE);
+    Q_ASSERT(channel->pipe.server != INVALID_HFILE);
     qint64 bytes = 0;
     if (!dying) {
         Q_ASSERT(channel->pipe.signaled);
@@ -1455,7 +1413,7 @@ void QProcessPrivate::terminateProcess()
             if (DosVerifyPidTid(pid, tid) == NO_ERROR) {
                 HMQ hmq = WinQueueFromID(NULLHANDLE, pid, tid);
                 if (hmq != NULLHANDLE) {
-                    WinPostQueueMsg(hmq, WM_QUIT, NULLHANDLE, NULLHANDLE);
+                    WinPostQueueMsg(hmq, WM_QUIT, NULL, NULL);
                     DEBUG(("Posted WM_QUIT to message queue of thread %ld", tid));
                 }
             }
@@ -1748,7 +1706,7 @@ bool QProcessPrivate::startDetached(qint64 *pid)
 {
     QStringList env = environment.toStringList();
     int startedPid = qt_startProcess(program, arguments, workingDirectory,
-                                     &env, true /* detached */);
+                                     &env, NULL, true /* detached */);
 
     if (startedPid == -1)
         return false;

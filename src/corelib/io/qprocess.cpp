@@ -1019,7 +1019,7 @@ bool QProcessPrivate::tryReadFromChannel(Channel *channel)
     Q_Q(QProcess);
 #ifdef Q_OS_OS2
     // Note: server handle may be valid in Pipe/Sink mode (see openChannel).
-    if (channel->pipe.server == INVALID_HPIPE || channel->type != Channel::Normal)
+    if (channel->pipe.server == INVALID_HFILE || channel->type != Channel::Normal)
         return false;
 #else
     if (channel->pipe[0] == INVALID_Q_PIPE)

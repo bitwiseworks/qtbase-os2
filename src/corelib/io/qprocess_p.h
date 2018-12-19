@@ -71,7 +71,6 @@ typedef HANDLE Q_PIPE;
 #define INVALID_Q_PIPE INVALID_HANDLE_VALUE
 #elif defined(Q_OS_OS2)
 #include "QtCore/qt_os2.h"
-#define INVALID_HPIPE HPIPE(~0)
 #define INVALID_HFILE HFILE(~0)
 #else
 typedef int Q_PIPE;
@@ -297,9 +296,9 @@ public:
 #endif
 #ifdef Q_OS_OS2
         struct Pipe {
-            Pipe() : server(INVALID_HPIPE), client(INVALID_HFILE), closePending(false),
+            Pipe() : server(INVALID_HFILE), client(INVALID_HFILE), closePending(false),
                 signaled(false), bytes(0) {}
-            HPIPE server;
+            HFILE server;
             HFILE client;
             bool closePending : 1;
             bool signaled: 1;
@@ -360,6 +359,7 @@ public:
     enum PipeType { InPipe = 0, OutPipe = 1, ErrPipe = 2 };
     bool createPipe(PipeType type, Channel::Pipe &pipe, const char *name = 0);
     void destroyPipe(Channel::Pipe &pipe);
+    void closeHandle(HFILE &handle);
 #else
     Q_PIPE childStartedPipe[2];
     void destroyPipe(Q_PIPE pipe[2]);
