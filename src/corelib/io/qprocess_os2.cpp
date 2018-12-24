@@ -786,21 +786,35 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
                            const QStringList *environment, int stdfds[3],
                            int spawnFlags, bool detached = false)
 {
-    // Create argument list with right number of elements (one extra is for
-    // the program name and one for the terminating 0). We also reserve 3
-    // elements in front of the array for a posssible command processor call
-    // insertion.
-    const char **argvBase = new const char *[arguments.count() + 2 + 3];
-
-    // Don't use leading elements by default
-    const char **argv = argvBase + 3;
-    // Set the final argument to 0
-    argv[arguments.count() + 1] = 0;
+    // Don't go further if we got an empty program name: a file with such a name
+    // cannot exist on OS/2 (and many QFileInfo funcs are undefined for this
+    // case0 - simply return ENOENT to the caller.
+    if (program.isEmpty()) {
+        errno = ENOENT;
+        return -1;
+    }
 
     // Encode the program name.
     QByteArray programName = QFile::encodeName(program);
 
-    // Add the program name to the argument list.
+    // Try to find the executable (_path2 will set ENOENT etc when appropriate).
+    QByteArray fullProgramName(CCHMAXPATH * 2, 0);
+    if (_path2(programName, ".exe;.cmd;.bat", /* in order of CMD.EXE's precedence */
+               fullProgramName.data(), fullProgramName.size()) == -1)
+        return -1;
+
+    DEBUG(("found \"%s\" for \"%s\"",
+           qPrintable(QFile::decodeName(fullProgramName)),
+           qPrintable(QFile::decodeName(programName))));
+
+    // Create an argument list with the right number of elements (one extra is for
+    // the program name and one for the terminating 0).
+    const char **argv = new const char *[arguments.count() + 2];
+
+    // Set the final argument to 0
+    argv[arguments.count() + 1] = 0;
+
+    // Add the program name to the argument list (as given, by convention).
     argv[0] = programName.data();
 
     // Add every argument to the list
@@ -855,175 +869,96 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
 
     DEBUG(() << "curdir" << QDir::currentPath() << "workingDirectory" << workingDirectory);
 
-    // try to find the executable
-    QByteArray fullProgramName(CCHMAXPATH * 2, 0);
-    int rc = -1;
-    errno = ENOENT;
+    // Add the program's dir to BEGINLIBPATH to make sure the DLLs are
+    // serached there first (no, the OS/2 loader does't do it itself).
+    QFileInfo fullProgramInfo(QFile::decodeName(fullProgramName));
+    QString fullPath = QDir::toNativeSeparators(fullProgramInfo.absolutePath());
 
-    // don't go further if we got an empty program name: a file with such a name
-    // cannot exist on OS/2 and many QFileInfo funcs are undefined for this case
-    // (and we will simply return ENOENT to the caller if so)
-    if (!programName.isEmpty()) {
-        // While it's tempting to use a nice kLIBC _path2 function here, we
-        // don't do it because it a) doesn't search the current dir if no path
-        // info is given; b) doesn't resolve /@unixroot (and symlinks) to a real
-        // OS/2 path  and we might need it for the DosStartSession case.
-        APIRET arc = ERROR_LF_GENERAL_FAILURE;
-        QFileInfo programInfo(program);
-        QStringList knownExts;
-        knownExts << QLatin1String("exe") << QLatin1String("cmd")
-                  << QLatin1String("bat"); // in order of CMD.EXE's precedence
-        QDir dir = programInfo.dir();
-        bool hasPath = dir.path() != QLatin1String(".");
-        QByteArray path;
-        // Use canonicalPath to resolve /@unixroot and symlinks if program has
-        // path information. If canonicalPath returns an empty string, this
-        // means "path not found", so we will stay with ENOENT in such a case.
-        if (!hasPath ||
-            !(path = QFile::encodeName(QDir::toNativeSeparators(dir.canonicalPath()))).isEmpty()) {
-            // run through all known exe extensions (+ no extension case)
-            for (int i = 0; i <= knownExts.size(); ++i) {
-                QByteArray name;
-                if (i == 0) {
-                    // no extension case, only if a known extension is already there
-                    if (knownExts.contains(programInfo.suffix(), Qt::CaseInsensitive))
-                        name = QFile::encodeName(programInfo.fileName());
-                    else
-                        continue;
-                } else {
-                    name = QFile::encodeName(programInfo.fileName() +
-                                             QLatin1String(".") + knownExts[i-1]);
-                }
-                if (hasPath) {
-                    arc = DosSearchPath(0, path, name, fullProgramName.data(), fullProgramName.size());
-                } else {
-                    ULONG flags = SEARCH_IGNORENETERRS | SEARCH_ENVIRONMENT;
-                    // First, search in the working directory.
-                    if (workDirPtr)
-                        arc = DosSearchPath(0, workDirPtr, name, fullProgramName.data(), fullProgramName.size());
-                    else
-                        flags |= SEARCH_CUR_DIRECTORY;
-                    // Then, in the environment.
-                    if (arc != NO_ERROR)
-                        arc = DosSearchPath(flags, "PATH", name, fullProgramName.data(), fullProgramName.size());
-                }
+    APIRET arc;
+    QStringList paths;
+    char libPathBuf[4096]; // @todo isn't it too small?
+    bool prependedLibPath = false;
 
-                if (arc == NO_ERROR) {
-                    rc = 0;
-                    break;
-                }
-                if (arc != ERROR_FILE_NOT_FOUND && arc != ERROR_PATH_NOT_FOUND) {
-                    qWarning("qt_startProcess: DosSearchPath(%s) returned %lu",
-                             qPrintable(QFile::decodeName(name)), arc);
-                    break;
-                }
+    arc = DosQueryExtLIBPATH(libPathBuf, BEGIN_LIBPATH);
+    Q_ASSERT(arc == NO_ERROR);
+    if (arc == NO_ERROR) {
+        QString path = QFile::decodeName(libPathBuf);
+        paths = path.split(QLatin1Char(';'), QString::SkipEmptyParts);
+        if (paths.contains(fullPath, Qt::CaseInsensitive)) {
+            DEBUG(("\"%s\" is already in BEGINLIBPATH",
+                   qPrintable(fullPath)));
+        } else {
+            DEBUG(("prepending \"%s\" to BEGINLIBPATH",
+                   qPrintable(fullPath)));
+            prependedLibPath = true;
+            QByteArray newLibPath = libPathBuf;
+            newLibPath.prepend(';').prepend(QFile::encodeName(fullPath));
+            DosSetExtLIBPATH(newLibPath, BEGIN_LIBPATH);
+        }
+    }
+
+    int mode = P_NOWAIT;
+
+    if (detached) {
+        mode = P_SESSION | P_UNRELATED;
+    } else {
+        // Get the application type of our program (note that we cannot use
+        // DosGetInfoBlocks/PIB because it could be overwritten there by e.g.
+        // morphing from VIO to PM which doesn't cancel the fact that we
+        // are VIO from the OS/2 loader's POV.
+        ULONG flags;
+        arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
+        if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
+            // We are originally not the PM application and thus DosExecPgm()
+            // won't be able to start PM applications directly (note that the
+            // other way around it works although undocumented). Check what
+            // the target program is.
+            arc = DosQueryAppType(fullProgramName, &flags);
+            if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
+                // it's PM, we have to use P_SESSION
+                mode = P_SESSION;
             }
         }
     }
 
-    DEBUG(("found \"%s\" for \"%s\"",
-           qPrintable(QFile::decodeName(fullProgramName)),
-           qPrintable(QFile::decodeName(programName))));
+    // Use P_PM if requested (note that it's a mode, not a mode flag)
+    if ((spawnFlags & P_2_MODE_MASK) == P_PM) {
+        mode &= ~P_2_MODE_MASK;
+        mode |= P_PM;
+    }
 
-    int pid = -1;
-
-    if (rc != -1) {
-        // add the program's dir to BEGINLIBPATH to make sure the DLLs are
-        // serached there first (no, the OS/2 loader does't do it itself)
-        QFileInfo fullProgramInfo(QFile::decodeName(fullProgramName));
-        QString fullPath = QDir::toNativeSeparators(fullProgramInfo.absolutePath());
-
-        APIRET arc;
-        QStringList paths;
-        char libPathBuf[4096]; // @todo isn't it too small?
-        bool prependedLibPath = false;
-
-        arc = DosQueryExtLIBPATH(libPathBuf, BEGIN_LIBPATH);
-        Q_ASSERT(arc == NO_ERROR);
-        if (arc == NO_ERROR) {
-            QString path = QFile::decodeName(libPathBuf);
-            paths = path.split(QLatin1Char(';'), QString::SkipEmptyParts);
-            if (paths.contains(fullPath, Qt::CaseInsensitive)) {
-                DEBUG(("\"%s\" is already in BEGINLIBPATH",
-                       qPrintable(fullPath)));
-            } else {
-                DEBUG(("prepending \"%s\" to BEGINLIBPATH",
-                       qPrintable(fullPath)));
-                prependedLibPath = true;
-                QByteArray newLibPath = libPathBuf;
-                newLibPath.prepend(';').prepend(QFile::encodeName(fullPath));
-                DosSetExtLIBPATH(newLibPath, BEGIN_LIBPATH);
-            }
-        }
-
-        const char *programReal = fullProgramName.data();
-        const char **argvReal = argv;
-
-        int mode = P_NOWAIT;
-
-        if (detached) {
-            mode = P_SESSION | P_UNRELATED;
-        } else {
-            // get the application type of our program (note that we cannot use
-            // DosGetInfoBlocks/PIB because it could be overwritten there by e.g.
-            // morphing from VIO to PM which doesn't cancel the fact that we
-            // are VIO from the OS/2 loader's POV.
-            ULONG flags;
-            arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
-            if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
-                // we are originally not the PM application and thus DosExecPgm()
-                // won't be able to start PM applications directly (note that the
-                // other way around it works although undocumented). Check what
-                // the target program is.
-                arc = DosQueryAppType(fullProgramName, &flags);
-                if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
-                    // it's PM, we have to use P_SESSION
-                    mode = P_SESSION;
-                }
-            }
-        }
-
-        // Use P_PM if requested (note that it's a mode, not a mode flag)
-        if ((spawnFlags & P_2_MODE_MASK) == P_PM) {
-            mode &= ~P_2_MODE_MASK;
-            mode |= P_PM;
-        }
-
-        // Take other spawn2 flags into account (except the mode setting)
-        mode |= (spawnFlags & ~P_2_MODE_MASK);
+    // Take other spawn2 flags into account (except the mode setting)
+    mode |= (spawnFlags & ~P_2_MODE_MASK);
 
 #if defined(QPROCESS_DEBUG)
-        DEBUG(("executable \"%s\"",
-               qPrintable(QFile::decodeName(programReal))));
-        for (int i = 0; argvReal[i]; ++i) {
-            DEBUG((" arg[%d] \"%s\"",
-                   i, qPrintable(QFile::decodeName(argvReal[i]))));
-        }
-        DEBUG(("mode 0x%x (spawnFlags 0x%x)", mode, spawnFlags));
+    DEBUG(("executable \"%s\"", qPrintable(QFile::decodeName(fullProgramName))));
+    for (int i = 0; argv[i]; ++i) {
+        DEBUG((" arg[%d] \"%s\"", i, qPrintable(QFile::decodeName(argv[i]))));
+    }
+    DEBUG(("mode 0x%x (spawnFlags 0x%x)", mode, spawnFlags));
 
-        // Redirect qDebug output to a file as spawn2 temporarily changes stdout/sterr.
-        QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
+    // Redirect qDebug output to a file as spawn2 temporarily changes stdout/sterr.
+    QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
 #endif
 
-        // Finally, start the thing
-        pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, stdfds);
+    // Finally, start the thing
+    int pid = spawn2(mode, fullProgramName, argv, workDirPtr, envv, stdfds);
 
 #if defined(QPROCESS_DEBUG)
-        qInstallMessageHandler(oldMsgHandler);
+    qInstallMessageHandler(oldMsgHandler);
 #endif
 
-        DEBUG(("started pid %d", pid));
+    DEBUG(("started pid %d", pid));
 
-        if (prependedLibPath) {
-            // restore BEGINLIBPATH
-            DosSetExtLIBPATH(libPathBuf, BEGIN_LIBPATH);
-        }
+    if (prependedLibPath) {
+        // restore BEGINLIBPATH
+        DosSetExtLIBPATH(libPathBuf, BEGIN_LIBPATH);
     }
 
     // Clean up duplicated memory.
     for (int i = 1 /* 0 is programName */; i <= arguments.count(); ++i)
         delete [] argv[i];
-    delete [] argvBase;
+    delete [] argv;
     if (envv != environ) {
         for (int i = 0; i < envc; ++i)
             delete [] envv[i];
