@@ -542,6 +542,8 @@ void QProcessPrivate::init()
 
     procKey = QProcessManager::InvalidProcKey;
 
+    spawnFlags = 0;
+
     QProcessManager::addRef();
 }
 
@@ -782,10 +784,8 @@ bool QProcessPrivate::openChannel(Channel &channel)
 static int qt_startProcess(const QString &program, const QStringList &arguments,
                            const QString &workingDirectory,
                            const QStringList *environment, int stdfds[3],
-                           bool detached = false)
+                           int spawnFlags, bool detached = false)
 {
-    int mode = detached ? P_SESSION : P_NOWAIT;
-
     // Create argument list with right number of elements (one extra is for
     // the program name and one for the terminating 0). We also reserve 3
     // elements in front of the array for a posssible command processor call
@@ -959,9 +959,10 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         const char *programReal = fullProgramName.data();
         const char **argvReal = argv;
 
-        if (mode == P_SESSION) {
-            // @todo P_SESSION isn't supported by kLIBC atm, use DosStartSession
-            // below
+        int mode = P_NOWAIT;
+
+        if (detached) {
+            mode = P_SESSION | P_UNRELATED;
         } else {
             // get the application type of our program (note that we cannot use
             // DosGetInfoBlocks/PIB because it could be overwritten there by e.g.
@@ -976,19 +977,20 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
                 // the target program is.
                 arc = DosQueryAppType(fullProgramName, &flags);
                 if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
-                    // its PM, we need a proxy
-                    // @todo use P_SESSION once it's implemented in kLIBC!
-                    // @todo check if FS VIO apps need a proxy
-                    programReal = ::getenv("COMSPEC"); // returns static!
-                    if (programReal == 0)
-                        programReal = "cmd.exe";
-                    argvReal = argvBase + 1;
-                    argvReal[0] = programReal;
-                    argvReal[1] = "/c";
-                    argv[0] = fullProgramName.data();
+                    // it's PM, we have to use P_SESSION
+                    mode = P_SESSION;
                 }
             }
         }
+
+        // Use P_PM if requested (note that it's a mode, not a mode flag)
+        if ((spawnFlags & P_2_MODE_MASK) == P_PM) {
+            mode &= ~P_2_MODE_MASK;
+            mode |= P_PM;
+        }
+
+        // Take other spawn2 flags into account (except the mode setting)
+        mode |= (spawnFlags & ~P_2_MODE_MASK);
 
 #if defined(QPROCESS_DEBUG)
         DEBUG(("executable \"%s\"",
@@ -997,103 +999,14 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
             DEBUG((" arg[%d] \"%s\"",
                    i, qPrintable(QFile::decodeName(argvReal[i]))));
         }
+        DEBUG(("mode 0x%x (spawnFlags 0x%x)", mode, spawnFlags));
 
         // Redirect qDebug output to a file as spawn2 temporarily changes stdout/sterr.
         QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
 #endif
 
-        // finally, start the thing (note that due to the incorrect definiton of
-        // spawnve we have to perform a pointless cast; the devinition for the
-        // 3rd and 4th arg should be: char const * const *)
-        if (mode == P_SESSION) {
-            // @todo P_SESSION isn't supported by kLIBC atm, use DosStartSession
-            bool needCmd = false;
-            int dot = fullProgramName.lastIndexOf('.');
-            Q_ASSERT(dot > 0);
-            if (dot > 0)
-                needCmd = qstricmp(fullProgramName.data() + dot, ".cmd") == 0 ||
-                          qstricmp(fullProgramName.data() + dot, ".bat") == 0;
-
-            QByteArray args;
-            for (const QString &arg : arguments) {
-                if (!args.isEmpty())
-                    args += ' ';
-                if (!arg.isEmpty())
-                    args += '"' + QFile::encodeName(arg) + '"';
-            }
-            if (needCmd) {
-                args.prepend("\" ");
-                args.prepend(programReal);
-                args.prepend("/C \"");
-                programReal = ::getenv("COMSPEC"); // returns static!
-                if (programReal == 0)
-                    programReal = "cmd.exe";
-             }
-
-            QByteArray env;
-            if (envv != environ)
-                for (char **e = envv; *e; ++e) {
-                    env += *e;
-                    env += '\0';
-                }
-
-#if defined(__INNOTEK_LIBC__)
-            // make sure we store arguments in the low memory for
-            // DosStartSession() as it cannot work with high memory
-            PSZ pgmNameLow = (PSZ)::_lmalloc(::strlen(programReal) + 1);
-            ::strcpy(pgmNameLow, programReal);
-            PSZ argsLow = (PSZ)::_lmalloc(args.size() + 1);
-            ::memcpy(argsLow, args, args.size() + 1);
-            PSZ envLow = 0;
-            if (!env.isEmpty()) {
-                envLow = (PSZ)::_lmalloc(env.size() + 1);
-                ::memcpy(envLow, env, env.size() + 1);
-            }
-#else
-            PSZ pgmNameLow = (PSZ)programReal;
-            PSZ argsLow = args.data();
-            PSZ envLow = env.isEmpty() ? 0 : env.data();
-#endif
-
-            STARTDATA data;
-            data.Length = sizeof(data);
-            data.Related = SSF_RELATED_INDEPENDENT;
-            data.FgBg = SSF_FGBG_FORE;
-            data.TraceOpt = SSF_TRACEOPT_NONE;
-            data.PgmTitle = 0;
-            data.PgmName = pgmNameLow;
-            data.PgmInputs = argsLow;
-            data.TermQ = 0;
-            data.Environment = envLow;
-            data.InheritOpt = SSF_INHERTOPT_PARENT;
-            data.SessionType = SSF_TYPE_DEFAULT;
-            data.IconFile = 0;
-            data.PgmHandle = 0;
-            data.PgmControl = SSF_CONTROL_VISIBLE;
-            data.InitXPos = data.InitYPos = data.InitXSize = data.InitYSize = 0;
-            data.Reserved = 0;
-            data.ObjectBuffer = 0;
-            data.ObjectBuffLen = 0;
-
-            ULONG ulSid = 0, ulPidDummy = 0;
-            arc = DosStartSession(&data, &ulSid, &ulPidDummy);
-            DEBUG(("DosStartSession() returned %ld (sid %ld, pid %ld)", arc, ulSid, ulPidDummy));
-            // Note: for SSF_RELATED_INDEPENDENT, PID of the started process is
-            // unknown, return 0 to indicate this
-            if (arc == NO_ERROR)
-                pid = 0;
-            else
-                pid = -1;
-
-#if defined(__INNOTEK_LIBC__)
-            if (envLow)
-                ::free(envLow);
-            ::free(argsLow);
-            ::free(pgmNameLow);
-#endif
-        } else {
-            pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, stdfds);
-        }
+        // Finally, start the thing
+        pid = spawn2(mode, programReal, argvReal, workDirPtr, envv, stdfds);
 
 #if defined(QPROCESS_DEBUG)
         qInstallMessageHandler(oldMsgHandler);
@@ -1199,7 +1112,7 @@ void QProcessPrivate::startProcess()
     int pid = -1;
     if (rc != -1) {
         QStringList env = environment.toStringList();
-        pid = qt_startProcess(program, arguments, workingDirectory, &env, stdfds);
+        pid = qt_startProcess(program, arguments, workingDirectory, &env, stdfds, spawnFlags);
     }
 
     if (rc == -1 || pid == -1) {
@@ -1597,11 +1510,8 @@ bool QProcessPrivate::waitForDeadChild()
         DEBUG(() << "dead with exitCode" << exitCode << ", crashed?" << crashed);
         return true;
     }
-#if defined QPROCESS_DEBUG
-    DEBUG(() << "not dead!");
-    if (waitResult == -1)
-        DEBUG(() << strerror(errno));
-#endif
+
+    DEBUG(() << "not dead!" << waitResult << "errno" << errno << strerror(errno));
     return false;
 }
 
@@ -1704,9 +1614,48 @@ int QProcessPrivate::_q_notified(int flags)
 
 bool QProcessPrivate::startDetached(qint64 *pid)
 {
+    if ((stdinChannel.type == Channel::Redirect && !openChannel(stdinChannel))
+            || (stdoutChannel.type == Channel::Redirect && !openChannel(stdoutChannel))
+            || (stderrChannel.type == Channel::Redirect && !openChannel(stderrChannel))) {
+        closeChannel(&stdinChannel);
+        closeChannel(&stdoutChannel);
+        closeChannel(&stderrChannel);
+        return false;
+    }
+
+    int stdfds[3] = {0};
+
+    if (stdinChannel.type == Channel::Redirect) {
+        HFILE handle = stdinChannel.pipe.client;
+        Q_ASSERT(handle != INVALID_HFILE);
+        stdfds[0] = handle;
+    }
+    if (stdoutChannel.type == Channel::Redirect) {
+        HFILE handle = stdoutChannel.pipe.client;
+        Q_ASSERT(handle != INVALID_HFILE);
+        stdfds[1] = handle;
+    }
+    if (stderrChannel.type == Channel::Redirect) {
+        HFILE handle = stderrChannel.pipe.client;
+        Q_ASSERT(handle != INVALID_HFILE);
+        stdfds[2] = handle;
+    }
+
     QStringList env = environment.toStringList();
     int startedPid = qt_startProcess(program, arguments, workingDirectory,
-                                     &env, NULL, true /* detached */);
+                                     &env, stdfds, spawnFlags, true /* detached */);
+
+    DEBUG(() << "startedPid" << startedPid);
+
+    if (stdinChannel.pipe.client != INVALID_HFILE) {
+        closeHandle(stdinChannel.pipe.client);
+    }
+    if (stdoutChannel.pipe.client != INVALID_HFILE) {
+        closeHandle(stdoutChannel.pipe.client);
+    }
+    if (stderrChannel.pipe.client != INVALID_HFILE) {
+        closeHandle(stderrChannel.pipe.client);
+    }
 
     if (startedPid == -1)
         return false;

@@ -45,6 +45,9 @@
 #if defined(Q_OS_WIN)
 #include <qtimer.h>
 #endif
+#if defined(Q_OS_OS2)
+#include <libcx/spawn2.h>
+#endif
 #if defined QPROCESS_DEBUG
 #include <qstring.h>
 #include <ctype.h>
@@ -1631,6 +1634,124 @@ void QProcess::setCreateProcessArgumentsModifier(CreateProcessArgumentModifier m
 
 #endif
 
+
+#if defined(Q_OS_OS2) || defined(Q_CLANG_QDOC)
+
+/*!
+    \since 5.11
+
+    Returns true if this process instance is set up for thread-safe behavior
+    when starting the program.
+
+    \note This function is available only on the OS/2 platform.
+
+    \sa setThreadSafe()
+*/
+bool QProcess::threadSafe() const
+{
+    Q_D(const QProcess);
+    return d->spawnFlags & P_2_THREADSAFE;
+}
+
+/*!
+    \since 5.11
+
+    Enables or disables thread-safe mode of operation when launching a
+    subprocess.
+
+    On OS/2, the native system API for starting new processes is not
+    thread-safe. This API does not allow to specify a working directory or
+    standard I/O handles for the new process — these properties are always
+    inherited from the parent (starting) process. They are process-wide
+    properties, so there is no way to change them in a thread-safe manner. In
+    order to overcome this limitation, Qt uses a special extension function
+    spawn2 to start a new subprocess. This extension is capable of launching
+    processes in a completely thread-safe way using a special intermediate
+    wrapper process. This process exists as long as the target subprocess runs.
+
+    Setting \a threadSafe to \c true enables this thread-safe mode for all
+    subsequent start() and startDetached() operations. Note that enabling this
+    mode doubles the number of subprocesses because a wrapper is needed for
+    each started process. Since processes are rather expensive system
+    resources, this thread-safe mode is disabled by default. You should only
+    enable it when you really need thread safety. If you always start new
+    processes from one thread and do not change the current directory or
+    perform any standard I/O on any other thread, you don't need to enable this
+    mode.
+
+    \note Enabling thread-safe mode is also necessary if you want to receive a
+    process identifier of the detached subprocess in startDetached() calls that
+    support it. If thread-safe mode is disabled, these calls will always return
+    0 as a process identifier.
+
+    \note This function is available only on the OS/2 platform.
+
+    \sa threadSafe()
+    \sa startDetached(qint64 *pid)
+    \sa startDetached(const QString &program, const QStringList &arguments,
+                      const QString &workingDirectory, qint64 *pid)
+*/
+void QProcess::setThreadSafe(bool threadSafe)
+{
+    Q_D(QProcess);
+    if (threadSafe)
+        d->spawnFlags |= P_2_THREADSAFE;
+    else
+        d->spawnFlags &= ~P_2_THREADSAFE;
+}
+
+/*!
+    \since 5.11
+
+    Returns the additional native spawn flags for the program.
+
+    \note This function is available only on the OS/2 platform.
+
+    \sa setSpawnFlags()
+*/
+int QProcess::spawnFlags() const
+{
+    Q_D(const QProcess);
+    return d->spawnFlags & ~P_2_THREADSAFE;
+}
+
+/*!
+    \since 5.11
+
+    Sets the additional native spawn flags for the program.
+
+    OS/2 supports a number of processes flavors (a windowed console process or
+    a GUI process, a fullscreen process) and a number of attributes for these
+    flavors. However, there is no cross-platform API in QProcessfor for
+    scpecifying a flavor and its attributes. This method covers this need. A
+    value provided in \a flags is logically OR-ed with the flags internally set
+    by QProcess itself.
+
+    Refer to the documentation of LIBC \c spawn() and LIBCx \c spawn2() calls
+    in to order to learn how to use these flags. Note that any mode setting
+    other than \c P_PM and most flags are mode-dependent. Keep in mind that
+    QProcess uses \c P_NOWAIT to start regular subprocesses and a combination
+    of \c P_SESSION and \c P_UNRELATED to start detached processes. Also note
+    that calling \c setThreadSafe(true) implicitly adds \c P_2_THREADSAFE to
+    spawn flags when starting a subprocess, so this flag is completely ignored
+    by this method if it is given in \a flags (and is not returned by
+    spawnFlags()).
+
+    By default, no additional spawn flags are set.
+
+    \note This function is available only on the OS/2 platform.
+
+    \sa spawnFlags()
+*/
+void QProcess::setSpawnFlags(int flags)
+{
+    Q_D(QProcess);
+    d->spawnFlags = (flags & ~P_2_THREADSAFE) | (d->spawnFlags & P_2_THREADSAFE);
+}
+
+#endif
+
+
 /*!
     If QProcess has been assigned a working directory, this function returns
     the working directory that the QProcess will enter before the program has
@@ -2184,6 +2305,10 @@ void QProcess::start(OpenMode mode)
     \endlist
     All other properties of the QProcess object are ignored.
 
+    \note Due to system limitations, under OS/2, zero is always returned in
+    *\a pid on success. If you need an actual process identifier, you should
+    enable thread-safe mode with setThreadSafe().
+
     \sa start()
     \sa startDetached(const QString &program, const QStringList &arguments,
                       const QString &workingDirectory, qint64 *pid)
@@ -2552,6 +2677,10 @@ int QProcess::execute(const QString &command)
 
     If the function is successful then *\a pid is set to the process
     identifier of the started process.
+
+    \note Due to system limitations, under OS/2, zero is always returned in
+    *\a pid on success. If you need an actual process identifier, you should
+    enable thread-safe mode with setThreadSafe().
 
     \sa start()
 */
