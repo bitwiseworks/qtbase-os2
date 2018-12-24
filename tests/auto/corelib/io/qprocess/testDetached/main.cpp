@@ -33,7 +33,7 @@
 
 #include <stdio.h>
 
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
 #include <sys/types.h>
 #include <unistd.h>
 #elif defined(Q_OS_WIN)
@@ -44,7 +44,7 @@ static void writeStuff(QFile &f)
 {
     f.write(QDir::currentPath().toUtf8());
     f.putChar('\n');
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
     f.write(QByteArray::number(quint64(getpid())));
 #elif defined(Q_OS_WIN)
     f.write(QByteArray::number(quint64(GetCurrentProcessId())));

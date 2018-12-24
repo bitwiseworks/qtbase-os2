@@ -1133,6 +1133,12 @@ protected:
         exitCode = 90210;
 
         QProcess process;
+#ifdef Q_OS_OS2
+        // On OS/2, the native process start API is not thread-safe. Making it so
+        // is expensive (requires an intermediate wrapper process) and hence is
+        // off by default. Turn it on.
+        process.setThreadSafe(true);
+#endif
         connect(&process, static_cast<QProcessFinishedSignal1>(&QProcess::finished),
                 this, &TestThread::catchExitCode, Qt::DirectConnection);
 
@@ -2108,6 +2114,10 @@ void tst_QProcess::detachedProcessParameters()
     int modifierCalls = 0;
     process.setCreateProcessArgumentsModifier(
         [&modifierCalls] (QProcess::CreateProcessArguments *) { modifierCalls++; });
+#endif
+#ifdef Q_OS_OS2
+    // We need this in order to receive the actual PID from startDetached.
+    process.setThreadSafe(true);
 #endif
     QStringList args(infoFile.fileName());
     if (!outChannel.isEmpty()) {
