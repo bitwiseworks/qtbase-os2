@@ -416,7 +416,7 @@ public:
     // NOTE: order of pointers in pipes[] must match order of values in PipeType
     Channel::Pipe *pipes[3] = { &stdinChannel.pipe, &stdoutChannel.pipe, &stderrChannel.pipe };
     USHORT procKey;
-    int spawnFlags;
+    bool threadSafe;
 #endif
 
     bool waitForStarted(int msecs = 30000);

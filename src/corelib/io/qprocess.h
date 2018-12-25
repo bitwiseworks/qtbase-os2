@@ -216,8 +216,6 @@ public:
 #if defined(Q_OS_OS2) || defined(Q_CLANG_QDOC)
     bool threadSafe() const;
     void setThreadSafe(bool threadSafe);
-    int spawnFlags() const;
-    void setSpawnFlags(int flags);
 #endif // Q_OS_OS2 || Q_CLANG_QDOC
 
     QString workingDirectory() const;

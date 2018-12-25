@@ -45,9 +45,6 @@
 #if defined(Q_OS_WIN)
 #include <qtimer.h>
 #endif
-#if defined(Q_OS_OS2)
-#include <libcx/spawn2.h>
-#endif
 #if defined QPROCESS_DEBUG
 #include <qstring.h>
 #include <ctype.h>
@@ -1650,7 +1647,7 @@ void QProcess::setCreateProcessArgumentsModifier(CreateProcessArgumentModifier m
 bool QProcess::threadSafe() const
 {
     Q_D(const QProcess);
-    return d->spawnFlags & P_2_THREADSAFE;
+    return d->threadSafe;
 }
 
 /*!
@@ -1694,59 +1691,7 @@ bool QProcess::threadSafe() const
 void QProcess::setThreadSafe(bool threadSafe)
 {
     Q_D(QProcess);
-    if (threadSafe)
-        d->spawnFlags |= P_2_THREADSAFE;
-    else
-        d->spawnFlags &= ~P_2_THREADSAFE;
-}
-
-/*!
-    \since 5.11
-
-    Returns the additional native spawn flags for the program.
-
-    \note This function is available only on the OS/2 platform.
-
-    \sa setSpawnFlags()
-*/
-int QProcess::spawnFlags() const
-{
-    Q_D(const QProcess);
-    return d->spawnFlags & ~P_2_THREADSAFE;
-}
-
-/*!
-    \since 5.11
-
-    Sets the additional native spawn flags for the program.
-
-    OS/2 supports a number of processes flavors (a windowed console process or
-    a GUI process, a fullscreen process) and a number of attributes for these
-    flavors. However, there is no cross-platform API in QProcessfor for
-    scpecifying a flavor and its attributes. This method covers this need. A
-    value provided in \a flags is logically OR-ed with the flags internally set
-    by QProcess itself.
-
-    Refer to the documentation of LIBC \c spawn() and LIBCx \c spawn2() calls
-    in to order to learn how to use these flags. Note that any mode setting
-    other than \c P_PM and most flags are mode-dependent. Keep in mind that
-    QProcess uses \c P_NOWAIT to start regular subprocesses and a combination
-    of \c P_SESSION and \c P_UNRELATED to start detached processes. Also note
-    that calling \c setThreadSafe(true) implicitly adds \c P_2_THREADSAFE to
-    spawn flags when starting a subprocess, so this flag is completely ignored
-    by this method if it is given in \a flags (and is not returned by
-    spawnFlags()).
-
-    By default, no additional spawn flags are set.
-
-    \note This function is available only on the OS/2 platform.
-
-    \sa spawnFlags()
-*/
-void QProcess::setSpawnFlags(int flags)
-{
-    Q_D(QProcess);
-    d->spawnFlags = (flags & ~P_2_THREADSAFE) | (d->spawnFlags & P_2_THREADSAFE);
+    d->threadSafe = threadSafe;
 }
 
 #endif

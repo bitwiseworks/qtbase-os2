@@ -542,7 +542,7 @@ void QProcessPrivate::init()
 
     procKey = QProcessManager::InvalidProcKey;
 
-    spawnFlags = 0;
+    threadSafe = false;
 
     QProcessManager::addRef();
 }
@@ -784,7 +784,7 @@ bool QProcessPrivate::openChannel(Channel &channel)
 static int qt_startProcess(const QString &program, const QStringList &arguments,
                            const QString &workingDirectory,
                            const QStringList *environment, int stdfds[3],
-                           int spawnFlags, bool detached = false)
+                           bool threadSafe, bool detached = false)
 {
     // Don't go further if we got an empty program name: a file with such a name
     // cannot exist on OS/2 (and many QFileInfo funcs are undefined for this
@@ -897,45 +897,38 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
         }
     }
 
-    int mode = P_NOWAIT;
+    int mode = detached ? P_SESSION : P_NOWAIT;
 
-    if (detached) {
-        mode = P_SESSION | P_UNRELATED;
-    } else {
-        // Get the application type of our program (note that we cannot use
-        // DosGetInfoBlocks/PIB because it could be overwritten there by e.g.
-        // morphing from VIO to PM which doesn't cancel the fact that we
-        // are VIO from the OS/2 loader's POV.
-        ULONG flags;
-        arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
-        if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
-            // We are originally not the PM application and thus DosExecPgm()
-            // won't be able to start PM applications directly (note that the
-            // other way around it works although undocumented). Check what
-            // the target program is.
-            arc = DosQueryAppType(fullProgramName, &flags);
-            if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
-                // it's PM, we have to use P_SESSION
-                mode = P_SESSION;
-            }
+    // Get the application type of our program (note that we cannot use
+    // DosGetInfoBlocks/PIB because it could be overwritten there by e.g.
+    // morphing from VIO to PM which doesn't cancel the fact that we
+    // are VIO from the OS/2 loader's POV.
+    ULONG flags;
+    arc = DosQueryAppType(QFile::encodeName(qAppFileName()), &flags);
+    if (arc == NO_ERROR && (flags & 0x7) != FAPPTYP_WINDOWAPI) {
+        // We are originally not the PM application and thus DosExecPgm()
+        // won't be able to start PM applications directly (note that the
+        // other way around it works although undocumented). Check what
+        // the target program is.
+        arc = DosQueryAppType(fullProgramName, &flags);
+        if (arc == NO_ERROR && (flags & 0x7) == FAPPTYP_WINDOWAPI) {
+            // it's PM, we have to use P_PM (almost the same as P_SESSION)
+            mode = P_PM;
         }
     }
 
-    // Use P_PM if requested (note that it's a mode, not a mode flag)
-    if ((spawnFlags & P_2_MODE_MASK) == P_PM) {
-        mode &= ~P_2_MODE_MASK;
-        mode |= P_PM;
-    }
-
-    // Take other spawn2 flags into account (except the mode setting)
-    mode |= (spawnFlags & ~P_2_MODE_MASK);
+    // NOTE: After detecting the application type which may override mode!
+    if (detached)
+        mode |= P_UNRELATED;
+    if (threadSafe)
+        mode |= P_2_THREADSAFE;
 
 #if defined(QPROCESS_DEBUG)
     DEBUG(("executable \"%s\"", qPrintable(QFile::decodeName(fullProgramName))));
     for (int i = 0; argv[i]; ++i) {
         DEBUG((" arg[%d] \"%s\"", i, qPrintable(QFile::decodeName(argv[i]))));
     }
-    DEBUG(("mode 0x%x (spawnFlags 0x%x)", mode, spawnFlags));
+    DEBUG(("mode 0x%x (threadSafe %d)", mode, threadSafe));
 
     // Redirect qDebug output to a file as spawn2 temporarily changes stdout/sterr.
     QtMessageHandler oldMsgHandler = qInstallMessageHandler(msgHandler);
@@ -948,7 +941,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
     qInstallMessageHandler(oldMsgHandler);
 #endif
 
-    DEBUG(("started pid %d", pid));
+    DEBUG(("started pid %d errno %d", pid, errno));
 
     if (prependedLibPath) {
         // restore BEGINLIBPATH
@@ -1047,7 +1040,7 @@ void QProcessPrivate::startProcess()
     int pid = -1;
     if (rc != -1) {
         QStringList env = environment.toStringList();
-        pid = qt_startProcess(program, arguments, workingDirectory, &env, stdfds, spawnFlags);
+        pid = qt_startProcess(program, arguments, workingDirectory, &env, stdfds, threadSafe);
     }
 
     if (rc == -1 || pid == -1) {
@@ -1439,7 +1432,7 @@ bool QProcessPrivate::waitForDeadChild()
     // check if our process is dead
     int exitStatus;
     pid_t waitResult = waitpid(pid, &exitStatus, WNOHANG);
-    if (waitResult > 0) {
+    if (waitResult == (pid_t)pid) {
         crashed = !WIFEXITED(exitStatus);
         exitCode = WEXITSTATUS(exitStatus);
         DEBUG(() << "dead with exitCode" << exitCode << ", crashed?" << crashed);
@@ -1578,7 +1571,7 @@ bool QProcessPrivate::startDetached(qint64 *pid)
 
     QStringList env = environment.toStringList();
     int startedPid = qt_startProcess(program, arguments, workingDirectory,
-                                     &env, stdfds, spawnFlags, true /* detached */);
+                                     &env, stdfds, threadSafe, true /* detached */);
 
     DEBUG(() << "startedPid" << startedPid);
 
