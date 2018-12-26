@@ -890,7 +890,7 @@ void tst_qmessagehandler::setMessagePattern()
             "[warning] qWarning\n"
             "[critical] qCritical\n"
             "[warning] qDebug with category\n";
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     output.replace("\r\n", "\n");
 #endif
     QCOMPARE(QString::fromLatin1(output), QString::fromLatin1(expected));
