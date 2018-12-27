@@ -28,7 +28,8 @@ win32|os2 {
         os2:src = $(DESTDIR)$${QMAKE_DIR_SEP}$(TARGET)
         else:src = $(DESTDIR_TARGET)
     }
-    !os2:files = $$BUILD_FOLDER$${QMAKE_DIR_SEP}mylib.dl2 $$BUILD_FOLDER$${QMAKE_DIR_SEP}system.qt.test.mylib.dll
+    files = $$BUILD_FOLDER$${QMAKE_DIR_SEP}mylib.dl2
+    !os2:files += $$BUILD_FOLDER$${QMAKE_DIR_SEP}system.qt.test.mylib.dll
 } else {
     src = $(DESTDIR)$(TARGET)
     files = libmylib.so2 system.qt.test.mylib.so
