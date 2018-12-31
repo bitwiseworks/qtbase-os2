@@ -15,7 +15,7 @@ load(qt_helper_lib)
 DEFINES += HAVE_CONFIG_H
 
 # platform/compiler specific definitions
-uikit|qnx|winrt: DEFINES += PCRE2_DISABLE_JIT
+uikit|qnx|winrt|os2: DEFINES += PCRE2_DISABLE_JIT
 win32:contains(QT_ARCH, "arm"): DEFINES += PCRE2_DISABLE_JIT
 win32:contains(QT_ARCH, "arm64"): DEFINES += PCRE2_DISABLE_JIT
 
