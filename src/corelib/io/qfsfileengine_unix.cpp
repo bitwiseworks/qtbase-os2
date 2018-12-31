@@ -59,6 +59,11 @@
 #if !defined(QWS) && defined(Q_OS_MAC)
 # include <private/qcore_mac_p.h>
 #endif
+#if defined(Q_OS_OS2)
+// INCL_DOSDEVIOCTL can't go to qt_os2.h because of ALT conflicting with Qt::ALT in qnamespace.h!
+#define INCL_DOSDEVIOCTL
+#include <qt_os2.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -415,9 +420,37 @@ QString QFSFileEngine::tempPath()
 
 QFileInfoList QFSFileEngine::drives()
 {
+#if defined(Q_OS_OS2)
+    QFileInfoList ret;
+
+    ULONG driveBits, dummy;
+    DosQueryCurrentDisk(&dummy, &driveBits);
+    driveBits &= 0x3ffffff;
+
+    char driveName[4] = "A:/";
+
+    while (driveBits) {
+        if (driveName[0] < 'C') {
+            // hide non-existent floppies
+            BIOSPARAMETERBLOCK  bpb;
+            UCHAR               ioc[2] = { 0, UCHAR(driveName[0] - 'A') };
+            if (DosDevIOCtl((HFILE)-1, IOCTL_DISK, DSK_GETDEVICEPARAMS,
+                            ioc, 2, NULL, &bpb, sizeof(bpb), NULL) != 0) {
+                driveBits &= ~1;
+            }
+        }
+        if (driveBits & 1)
+            ret.append(QString::fromLatin1(driveName).toUpper());
+        driveName[0]++;
+        driveBits = driveBits >> 1;
+    }
+
+    return ret;
+#else
     QFileInfoList ret;
     ret.append(QFileInfo(rootPath()));
     return ret;
+#endif
 }
 
 bool QFSFileEnginePrivate::doStat(QFileSystemMetaData::MetaDataFlags flags) const
