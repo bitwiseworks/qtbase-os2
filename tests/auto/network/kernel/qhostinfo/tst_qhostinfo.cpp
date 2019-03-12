@@ -65,9 +65,12 @@
 #include "private/qhostinfo_p.h"
 
 #include <sys/types.h>
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
 #  include <sys/socket.h>
 #  include <netdb.h>
+#endif
+#if defined(Q_OS_OS2)
+#  include <libcx/net.h>
 #endif
 
 #include "../../../network-settings.h"
