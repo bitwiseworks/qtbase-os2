@@ -15,6 +15,12 @@ unix {
     HEADERS += \
         qunixeventdispatcher_qpa_p.h \
         qgenericunixeventdispatcher_p.h
+} os2 {
+    SOURCES += \
+        qos2guieventdispatcher.cpp
+
+    HEADERS += \
+        qos2guieventdispatcher_p.h
 } else {
     SOURCES += \
         qwindowsguieventdispatcher.cpp
