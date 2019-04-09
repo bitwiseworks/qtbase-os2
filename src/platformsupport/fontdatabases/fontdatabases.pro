@@ -15,7 +15,7 @@ qtConfig(freetype) {
     include($$PWD/freetype/freetype.pri)
 }
 
-unix {
+unix|os2 {
     include($$PWD/genericunix/genericunix.pri)
     qtConfig(fontconfig) {
         include($$PWD/fontconfig/fontconfig.pri)
