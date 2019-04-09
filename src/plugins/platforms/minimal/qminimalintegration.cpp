@@ -65,8 +65,10 @@
 #include <QtFontDatabaseSupport/private/qfontengine_ft_p.h>
 #endif
 
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_DOSLIKE)
 #include <QtEventDispatcherSupport/private/qgenericunixeventdispatcher_p.h>
+#elif defined(Q_OS_OS2)
+#include <QtCore/private/qeventdispatcher_os2_p.h>
 #elif defined(Q_OS_WINRT)
 #include <QtCore/private/qeventdispatcher_winrt_p.h>
 #else
@@ -187,12 +189,14 @@ QPlatformBackingStore *QMinimalIntegration::createPlatformBackingStore(QWindow *
 
 QAbstractEventDispatcher *QMinimalIntegration::createEventDispatcher() const
 {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN)
 #ifndef Q_OS_WINRT
     return new QEventDispatcherWin32;
 #else // !Q_OS_WINRT
     return new QEventDispatcherWinRT;
 #endif // Q_OS_WINRT
+#elif defined(Q_OS_OS2)
+    return new QEventDispatcherOS2;
 #else
     return createUnixEventDispatcher();
 #endif
