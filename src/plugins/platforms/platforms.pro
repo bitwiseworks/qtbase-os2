@@ -17,6 +17,8 @@ osx: SUBDIRS += cocoa
 win32:!winrt: SUBDIRS += windows
 winrt: SUBDIRS += winrt
 
+os2: SUBDIRS += os2
+
 qtConfig(direct2d) {
     SUBDIRS += direct2d
 }
