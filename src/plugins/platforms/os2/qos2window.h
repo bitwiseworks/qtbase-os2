@@ -40,6 +40,8 @@
 #ifndef QOS2WINDOW_H
 #define QOS2WINDOW_H
 
+#include "qos2context.h"
+
 #include <qpa/qplatformwindow.h>
 
 QT_BEGIN_NAMESPACE
@@ -47,6 +49,11 @@ QT_BEGIN_NAMESPACE
 class QOS2Window : public QPlatformWindow
 {
 public:
+    enum Flags
+    {
+        Active = 0x1
+    };
+
     explicit QOS2Window(QWindow *window);
     virtual ~QOS2Window();
 
@@ -66,6 +73,31 @@ public:
     void setWindowTitle(const QString &title) override;
 
     void propagateSizeHints() override;
+
+    inline bool testFlag(unsigned f) const { return (mFlags & f) != 0; }
+    inline void setFlag(unsigned f) { mFlags |= f; }
+    inline void clearFlag(unsigned f) { mFlags &= ~f; }
+
+    inline HWND hwndFrame() const { return mHwndFrame; }
+    inline HWND hwnd() const { return mHwnd; }
+
+    inline HWND mainHwnd() const { return mHwndFrame ? mHwndFrame : mHwnd; }
+
+    HPS acquirePs();
+    void releasePs(HPS hps);
+
+    void handleWmActivate(MPARAM mp1);
+    void handleWmPaint();
+    void handleSizeMove();
+
+private:
+    unsigned mFlags = 0;
+
+    HWND mHwnd = NULLHANDLE;
+    HPS mHps = NULLHANDLE;
+
+    HWND mHwndFrame = NULLHANDLE;
+    QMargins mFrameMargins;
 };
 
 QT_END_NAMESPACE

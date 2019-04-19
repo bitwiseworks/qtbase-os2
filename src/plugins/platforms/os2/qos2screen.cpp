@@ -39,12 +39,44 @@
 
 #include "qos2screen.h"
 
+// OS/2 has only one screen.
+QOS2Screen *QOS2Screen::sInstance = nullptr;
+
 QOS2Screen::QOS2Screen()
 {
+    if (sInstance)
+        qFatal("There may be only one instance of QOS2Screen");
+
+    sInstance = this;
+
+    mHps = WinGetScreenPS(HWND_DESKTOP);
+    Q_ASSERT(mHps);
+
+    mWidth = WinQuerySysValue(HWND_DESKTOP, SV_CXSCREEN);
+    mHeight = WinQuerySysValue(HWND_DESKTOP, SV_CYSCREEN);
+
+    // Query the native color format of the display (# of planes, bit count).
+    LONG buf[2];
+    BOOL brc = GpiQueryDeviceBitmapFormats(mHps, 2, buf);
+    Q_ASSERT(brc);
+    mDepth = buf[0] * buf[1];
+
+    switch (mDepth) {
+    case 32: mFormat = QImage::Format_RGB32; break;
+    case 24: mFormat = QImage::Format_RGB888; break;
+    case 16: mFormat = QImage::Format_RGB16; break;
+    case 15: mFormat = QImage::Format_RGB555; break;
+    case 8: mFormat = QImage::Format_Indexed8; break;
+    case 1: mFormat = QImage::Format_MonoLSB; break;
+    default: break;
+    }
+
+    qCInfo(lcQpaWindows) << "Screen size:" << mWidth << "x" <<  mHeight << "x" << mDepth << "format" << mFormat;
 }
 
 QOS2Screen::~QOS2Screen()
 {
+    WinReleasePS(mHps);
 }
 
 QPixmap QOS2Screen::grabWindow(WId /*winId*/, int /*x*/, int /*y*/, int /*width*/, int /*height*/) const
@@ -54,17 +86,17 @@ QPixmap QOS2Screen::grabWindow(WId /*winId*/, int /*x*/, int /*y*/, int /*width*
 
 QRect QOS2Screen::geometry() const
 {
-    return QRect();
+    return QRect(0, 0, mWidth, mHeight);
 }
 
 int QOS2Screen::depth() const
 {
-    return 0;
+    return mDepth;
 }
 
 QImage::Format QOS2Screen::format() const
 {
-    return QImage::Format_Invalid;
+    return mFormat;
 }
 
 QPlatformCursor *QOS2Screen::cursor() const

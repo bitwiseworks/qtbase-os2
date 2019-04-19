@@ -37,31 +37,17 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2INTEGRATION_H
-#define QOS2INTEGRATION_H
-
-#include <qpa/qplatformintegration.h>
+#include "qos2context.h"
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Integration : public QPlatformIntegration
-{
-public:
-    explicit QOS2Integration(const QStringList &paramList);
-    virtual ~QOS2Integration();
+// Note about logging rules: QtCriticalMsg is used for critical messages,
+// QtWarningMsg - for important diagnostic messages, QtInfoMsg - for detailed
+// logging of function calls, QtDebugMsg - for extremely verbose logging (like
+// PM message flow).
 
-    bool hasCapability(QPlatformIntegration::Capability cap) const override;
-
-    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
-    QAbstractEventDispatcher *createEventDispatcher() const override;
-
-    QPlatformFontDatabase *fontDatabase() const override;
-
-private:
-    mutable QPlatformFontDatabase *mFontDatabase = nullptr;
-};
+Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcQpaBackingStore, "qt.qpa.backingstore", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcQpaEvents, "qt.qpa.events", QtWarningMsg)
 
 QT_END_NAMESPACE
-
-#endif

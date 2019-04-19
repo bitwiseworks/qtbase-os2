@@ -37,31 +37,41 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2INTEGRATION_H
-#define QOS2INTEGRATION_H
+#ifndef QOS2CONTEXT_H
+#define QOS2CONTEXT_H
 
-#include <qpa/qplatformintegration.h>
+#define OS2EMX_PLAIN_CHAR
+#include <QtCore/qt_os2.h>
+
+#include <QtCore/QLoggingCategory>
+#include <QtCore/QRect>
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Integration : public QPlatformIntegration
+class QOS2Window;
+
+Q_DECLARE_LOGGING_CATEGORY(lcQpaWindows)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaBackingStore)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaEvents)
+
+#define DV(var) #var << var
+
+namespace QOS2
 {
-public:
-    explicit QOS2Integration(const QStringList &paramList);
-    virtual ~QOS2Integration();
 
-    bool hasCapability(QPlatformIntegration::Capability cap) const override;
+inline QRect ToQRect(const RECTL &rcl, int parentHeight)
+{
+    // Flip y coordinate.
+    return QRect(QPoint(rcl.xLeft, parentHeight - rcl.yTop),
+                 QPoint(rcl.xRight - 1, parentHeight - (rcl.yBottom + 1)));
+}
 
-    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
-    QAbstractEventDispatcher *createEventDispatcher() const override;
+} // namespace QOS2Context
 
-    QPlatformFontDatabase *fontDatabase() const override;
-
-private:
-    mutable QPlatformFontDatabase *mFontDatabase = nullptr;
-};
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug d, const QOS2Window *window);
+#endif
 
 QT_END_NAMESPACE
 
-#endif
+#endif // QOS2CONTEXT_H

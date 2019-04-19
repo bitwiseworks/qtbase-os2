@@ -39,7 +39,20 @@
 
 #include "qos2integration.h"
 
+#include "qos2backingstore.h"
+#include "qos2screen.h"
+#include "qos2window.h"
+
+#include <qpa/qwindowsysteminterface.h>
+
 #include <QtEventDispatcherSupport/private/qos2guieventdispatcher_p.h>
+
+#include <QtFontDatabaseSupport/private/qfreetypefontdatabase_p.h>
+#if QT_CONFIG(fontconfig)
+#  include <QtFontDatabaseSupport/private/qgenericunixfontdatabase_p.h>
+#else
+#  include <qpa/qplatformfontdatabase.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -49,32 +62,54 @@ QT_BEGIN_NAMESPACE
     \internal
 */
 
-QOS2Integration::QOS2Integration(const QStringList &/*paramList*/)
+QOS2Integration::QOS2Integration(const QStringList &paramList)
 {
+    Q_UNUSED(paramList);
+
+    // Make sure WM_PAINT/WM_SIZE etc. are handled synchronously.
+    QWindowSystemInterface::setSynchronousWindowSystemEvents(true);
+
+    // Notify the system about the primary (and the only) screen.
+    screenAdded(new QOS2Screen());
 }
 
 QOS2Integration::~QOS2Integration()
 {
 }
 
-bool QOS2Integration::hasCapability(QPlatformIntegration::Capability /*cap*/) const
+bool QOS2Integration::hasCapability(QPlatformIntegration::Capability cap) const
 {
-    return false;
+    return QPlatformIntegration::hasCapability(cap);
 }
 
-QPlatformWindow *QOS2Integration::createPlatformWindow(QWindow */*window*/) const
+QPlatformWindow *QOS2Integration::createPlatformWindow(QWindow *window) const
 {
-    return nullptr;
+    QPlatformWindow *w = new QOS2Window(window);
+    w->requestActivateWindow();
+    return w;
 }
 
-QPlatformBackingStore *QOS2Integration::createPlatformBackingStore(QWindow */*window*/) const
+QPlatformBackingStore *QOS2Integration::createPlatformBackingStore(QWindow *window) const
 {
-    return nullptr;
+    return new QOS2BackingStore(window);
 }
 
 QAbstractEventDispatcher * QOS2Integration::createEventDispatcher() const
 {
     return new QOS2GuiEventDispatcher;
+}
+
+QPlatformFontDatabase *QOS2Integration::fontDatabase() const
+{
+    if (!mFontDatabase) {
+#if QT_CONFIG(fontconfig)
+        mFontDatabase = new QGenericUnixFontDatabase;
+#else
+        mFontDatabase = QPlatformIntegration::fontDatabase();
+#endif
+    }
+
+    return mFontDatabase;
 }
 
 QT_END_NAMESPACE

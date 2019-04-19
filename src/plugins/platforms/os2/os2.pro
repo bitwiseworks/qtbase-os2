@@ -7,6 +7,7 @@ QT += \
 SOURCES = \
     main.cpp \
     qos2backingstore.cpp \
+    qos2context.cpp \
     qos2cursor.cpp \
     qos2integration.cpp \
     qos2screen.cpp \
@@ -14,7 +15,8 @@ SOURCES = \
 
 HEADERS = \
     qos2backingstore.h \
-    qos2cursor.cpp \
+    qos2context.h \
+    qos2cursor.h \
     qos2integration.h \
     qos2screen.h \
     qos2window.h

@@ -42,6 +42,8 @@
 
 #include <qpa/qplatformbackingstore.h>
 
+#include <QtGui/QImage>
+
 QT_BEGIN_NAMESPACE
 
 class QOS2BackingStore : public QPlatformBackingStore
@@ -53,6 +55,9 @@ public:
     QPaintDevice *paintDevice() override;
     void flush(QWindow *window, const QRegion &region, const QPoint &offset) override;
     void resize(const QSize &size, const QRegion &staticContents) override;
+
+private:
+    QImage mImage;
 };
 
 QT_END_NAMESPACE

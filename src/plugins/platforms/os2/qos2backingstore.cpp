@@ -37,13 +37,22 @@
 **
 ****************************************************************************/
 
+#include "qos2context.h"
+
 #include "qos2backingstore.h"
+#include "qos2screen.h"
+#include "qos2window.h"
 
 QT_BEGIN_NAMESPACE
+
+namespace {
+const bool lcQpaBackingStoreDebug = lcQpaBackingStore().isDebugEnabled();
+} // unnamed namespace
 
 QOS2BackingStore::QOS2BackingStore(QWindow *window)
     : QPlatformBackingStore(window)
 {
+    qCInfo(lcQpaBackingStore) << DV(window);
 }
 
 QOS2BackingStore::~QOS2BackingStore()
@@ -52,15 +61,83 @@ QOS2BackingStore::~QOS2BackingStore()
 
 QPaintDevice *QOS2BackingStore::paintDevice()
 {
-    return nullptr;
+    return &mImage;
 }
 
-void QOS2BackingStore::flush(QWindow */*window*/, const QRegion &/*region*/, const QPoint &/*offset*/)
+void QOS2BackingStore::flush(QWindow *window, const QRegion &region, const QPoint &offset)
 {
+    QOS2Window *os2window = static_cast<QOS2Window *>(window->handle());
+    Q_ASSERT(os2window);
+
+    HPS hps = os2window->acquirePs();
+    QRect br = region.boundingRect();
+    QRect wr = os2window->geometry();
+
+    qCInfo(lcQpaBackingStore) << window << region << offset << os2window << hex << DV(hps);
+    qCInfo(lcQpaBackingStore) << mImage;
+
+    // Use the reflection + transformation matrix to flip the y axis. This is
+    // proven to be much faster than manual image flipping on the real video
+    // hardware as it probably involves some hardware acceleration in the video
+    // driver.
+
+    MATRIXLF m;
+    m.fxM11 = MAKEFIXED(1, 0);
+    m.fxM12 = 0;
+    m.lM13 = 0;
+    m.fxM21 = 0;
+    m.fxM22 = MAKEFIXED(-1, 0);
+    m.lM23 = 0;
+    m.lM31 = 0;
+    m.lM32 = wr.height() - 1;
+    GpiSetDefaultViewMatrix(hps, 8, &m, TRANSFORM_REPLACE);
+
+    br.translate(offset);
+
+    // Make sure br doesn't exceed the backing storage size (it may happen
+    // during resize & move due to the different event order).
+    br = br.intersected(QRect(0, 0, mImage.width(), mImage.height()));
+
+    // Note: remove offset from wbr because the window's HPS has a proper
+    // origin already that includes this offset (which is in fact a position of
+    // the window relative to its top-level parent).
+    QRect wbr = br.translated(-offset);
+
+    BITMAPINFOHEADER2 bmh;
+    memset(&bmh, 0, sizeof(BITMAPINFOHEADER2));
+    bmh.cbFix = sizeof(BITMAPINFOHEADER2);
+    bmh.cPlanes = 1;
+    bmh.cBitCount = QOS2Screen::Depth();
+    bmh.cx = mImage.width();
+    bmh.cy = mImage.height();
+
+    // Note: target is inclusive-inclusive, source is inclusive-exclusive
+    POINTL ptls[] = { { wbr.left(), wbr.top() },
+                      { wbr.right(), wbr.bottom() },
+                      { br.left(), br.top() },
+                      { br.right() + 1, br.bottom() + 1 } };
+
+    GpiDrawBits(hps, (PVOID)mImage.bits(), (PBITMAPINFO2)&bmh, 4, ptls, ROP_SRCCOPY, BBO_IGNORE);
+
+    os2window->releasePs(hps);
+
+    // Write image for debug purposes.
+    if (Q_UNLIKELY(lcQpaBackingStoreDebug)) {
+        static int n = 0;
+        const QString fileName = QString::asprintf("hwnd_%08lx_%d.png", os2window->hwnd(), n++);
+        mImage.save(fileName);
+        qCInfo(lcQpaBackingStore) << "Wrote" << mImage.size() << fileName;
+    }
 }
 
-void QOS2BackingStore::resize(const QSize &/*size*/, const QRegion &/*staticContents*/)
+void QOS2BackingStore::resize(const QSize &size, const QRegion &staticContents)
 {
+    qCInfo(lcQpaBackingStore) << size << staticContents;
+
+    if (mImage.size() != size) {
+        QImage::Format format = QOS2Screen::Format();
+        mImage = QImage(size, format);
+    }
 }
 
 QT_END_NAMESPACE

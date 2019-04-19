@@ -40,6 +40,8 @@
 #ifndef QOS2SCREEN_H
 #define QOS2SCREEN_H
 
+#include "qos2context.h"
+
 #include <qpa/qplatformscreen.h>
 
 QT_BEGIN_NAMESPACE
@@ -57,6 +59,23 @@ public:
     QImage::Format format() const override;
 
     QPlatformCursor *cursor() const override;
+
+    // Fast getters
+    static int Width() { return sInstance->mWidth; }
+    static int Height() { return sInstance->mHeight; };
+    static int Depth() { return sInstance->mDepth; };
+    static QImage::Format Format() { return sInstance->mFormat; };
+
+    static QOS2Screen *Instance() { return sInstance; }
+
+private:
+    HPS mHps = NULLHANDLE;
+    int mWidth = 0;
+    int mHeight = 0;
+    int mDepth = 0;
+    QImage::Format mFormat = QImage::Format_Invalid;
+
+    static QOS2Screen *sInstance;
 };
 
 QT_END_NAMESPACE
