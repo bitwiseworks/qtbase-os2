@@ -69,12 +69,15 @@ QOS2Integration::QOS2Integration(const QStringList &paramList)
     // Make sure WM_PAINT/WM_SIZE etc. are handled synchronously.
     QWindowSystemInterface::setSynchronousWindowSystemEvents(true);
 
-    // Notify the system about the primary (and the only) screen.
-    screenAdded(new QOS2Screen());
+    // Create and notify the system about the primary (and the only) screen.
+    mScreen = new QOS2Screen();
+    screenAdded(mScreen);
 }
 
 QOS2Integration::~QOS2Integration()
 {
+    destroyScreen(mScreen);
+    delete mFontDatabase;
 }
 
 bool QOS2Integration::hasCapability(QPlatformIntegration::Capability cap) const
@@ -103,7 +106,7 @@ QPlatformFontDatabase *QOS2Integration::fontDatabase() const
 {
     if (!mFontDatabase) {
 #if QT_CONFIG(fontconfig)
-        mFontDatabase = new QGenericUnixFontDatabase;
+        const_cast <QPlatformFontDatabase * &> (mFontDatabase) = new QGenericUnixFontDatabase;
 #else
         mFontDatabase = QPlatformIntegration::fontDatabase();
 #endif

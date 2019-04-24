@@ -59,7 +59,8 @@ public:
     QPlatformFontDatabase *fontDatabase() const override;
 
 private:
-    mutable QPlatformFontDatabase *mFontDatabase = nullptr;
+    QPlatformScreen *mScreen = nullptr;
+    QPlatformFontDatabase *mFontDatabase = nullptr;
 };
 
 QT_END_NAMESPACE
