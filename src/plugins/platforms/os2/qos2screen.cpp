@@ -49,17 +49,20 @@ QOS2Screen::QOS2Screen()
 
     sInstance = this;
 
-    mHps = WinGetScreenPS(HWND_DESKTOP);
-    Q_ASSERT(mHps);
-
     mWidth = WinQuerySysValue(HWND_DESKTOP, SV_CXSCREEN);
     mHeight = WinQuerySysValue(HWND_DESKTOP, SV_CYSCREEN);
+    Q_ASSERT(mWidth && mHeight);
+
+    HPS hps = WinGetScreenPS(HWND_DESKTOP);
+    Q_ASSERT(hps);
 
     // Query the native color format of the display (# of planes, bit count).
     LONG buf[2];
-    BOOL brc = GpiQueryDeviceBitmapFormats(mHps, 2, buf);
+    BOOL brc = GpiQueryDeviceBitmapFormats(hps, 2, buf);
     Q_ASSERT(brc);
     mDepth = buf[0] * buf[1];
+
+    WinReleasePS(hps);
 
     switch (mDepth) {
     case 32: mFormat = QImage::Format_RGB32; break;
@@ -76,7 +79,7 @@ QOS2Screen::QOS2Screen()
 
 QOS2Screen::~QOS2Screen()
 {
-    WinReleasePS(mHps);
+    qCInfo(lcQpaWindows);
 }
 
 QPixmap QOS2Screen::grabWindow(WId /*winId*/, int /*x*/, int /*y*/, int /*width*/, int /*height*/) const

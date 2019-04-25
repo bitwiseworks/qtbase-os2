@@ -69,7 +69,6 @@ public:
     static QOS2Screen *Instance() { return sInstance; }
 
 private:
-    HPS mHps = NULLHANDLE;
     int mWidth = 0;
     int mHeight = 0;
     int mDepth = 0;
