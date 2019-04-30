@@ -1,4 +1,5 @@
 TARGET     = QtConcurrent
+TARGET_SHORT = QtCncr
 QT         = core-private
 CONFIG    += exceptions
 
