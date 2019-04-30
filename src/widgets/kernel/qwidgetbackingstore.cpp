@@ -247,7 +247,7 @@ void QWidgetBackingStore::showYellowThing(QWidget *widget, const QRegion &toBePa
     if (pe)
         pe->setSystemClip(QRegion());
 
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIXLIKE)
     ::usleep(1000 * msec);
 #endif
 #endif // !Q_OS_WIN

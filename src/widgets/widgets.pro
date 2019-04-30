@@ -1,4 +1,5 @@
 TARGET     = QtWidgets
+TARGET_SHORT = QtWdgt
 QT = core-private gui-private
 MODULE_CONFIG = uic
 
