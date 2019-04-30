@@ -48,7 +48,7 @@
 #include "qprinterinfo.h"
 #include <QtGui/qpagelayout.h>
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #include "private/qcore_unix_p.h" // overrides QT_OPEN
 #endif
 

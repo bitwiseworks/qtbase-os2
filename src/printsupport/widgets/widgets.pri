@@ -3,7 +3,7 @@ qtConfig(printpreviewwidget) {
     SOURCES += widgets/qprintpreviewwidget.cpp
 }
 
-unix:!darwin:qtConfig(cupsjobwidget) {
+unix|os2:!darwin:qtConfig(cupsjobwidget) {
     HEADERS += widgets/qcupsjobwidget_p.h
     SOURCES += widgets/qcupsjobwidget.cpp
     FORMS += widgets/qcupsjobwidget.ui

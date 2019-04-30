@@ -1,4 +1,5 @@
 TARGET     = QtPrintSupport
+TARGET_SHORT = QtPrnt
 QT = core-private gui-private widgets-private
 
 DEFINES   += QT_NO_USING_NAMESPACE QT_NO_FOREACH

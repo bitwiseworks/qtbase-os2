@@ -943,7 +943,7 @@ void QPrintDialog::accept()
 
 */
 
-#if defined (Q_OS_UNIX)
+#if defined (Q_OS_UNIXLIKE)
 
 /*! \internal
 */
@@ -1692,7 +1692,7 @@ void QPPDOptionsEditor::setModelData(QWidget *editor, QAbstractItemModel *model,
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif // QT_CONFIG(cups)
-#endif // defined (Q_OS_UNIX)
+#endif // defined (Q_OS_UNIXLIKE)
 
 QT_END_NAMESPACE
 

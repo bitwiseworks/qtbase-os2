@@ -21,7 +21,7 @@ qtConfig(printdialog) {
                    dialogs/qprintdialog_win.cpp
     }
 
-    unix:!darwin {
+    unix|os2:!darwin {
         INCLUDEPATH += $$QT_SOURCE_TREE/src/plugins/printsupport/cups
         HEADERS += dialogs/qpagesetupdialog_unix_p.h
         SOURCES += dialogs/qprintdialog_unix.cpp \
