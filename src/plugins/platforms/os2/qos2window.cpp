@@ -183,7 +183,7 @@ QOS2Window::QOS2Window(QWindow *window)
     LONG x = rect.x(), y = rect.y(), cx = rect.width(), cy = rect.height();
 
     // Flip y coordinate.
-    y = (parent ? parent->height() : QOS2Screen::Height()) - (y + cy);
+    y = (isTopLevel ? QOS2Screen::Height() : parent->height()) - (y + cy);
 
     // Fix top level window flags in case only the type flags are passed (taken from qwindowswindow.cpp).
     if (isTopLevel) {
