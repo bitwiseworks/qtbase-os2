@@ -435,7 +435,7 @@ void QOS2Window::handleWmActivate(MPARAM mp1)
 
 void QOS2Window::handleWmPaint()
 {
-    qCInfo(lcQpaEvents);
+    qCDebug(lcQpaEvents);
 
     RECTL rcl;
     mHps = WinBeginPaint(mHwnd, NULLHANDLE, &rcl);
@@ -462,8 +462,13 @@ void QOS2Window::handleSizeMove()
     QRect oldGeo = geometry();
     qCInfo(lcQpaEvents) << DV(oldGeo) << DV(newGeo);
 
-    if (oldGeo != newGeo)
+    if (oldGeo != newGeo) {
+        // If QWindow::handle is nullptr (e.g. when this call originates from our ctor), call
+        // QPlatformWindow::setGeometry manually (see QWindowSystemInterface::handleGeometryChange).
+        if (Q_UNLIKELY(!window()->handle()))
+            QPlatformWindow::setGeometry(newGeo);
         QWindowSystemInterface::handleGeometryChange(window(), newGeo);
+    }
 }
 
 #ifndef QT_NO_DEBUG_STREAM
