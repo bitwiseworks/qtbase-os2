@@ -46,7 +46,10 @@
 QT_BEGIN_NAMESPACE
 
 namespace {
+
+const bool lcQpaBackingStoreInfo = lcQpaBackingStore().isInfoEnabled();
 const bool lcQpaBackingStoreDebug = lcQpaBackingStore().isDebugEnabled();
+
 } // unnamed namespace
 
 QOS2BackingStore::QOS2BackingStore(QWindow *window)
@@ -74,7 +77,6 @@ void QOS2BackingStore::flush(QWindow *window, const QRegion &region, const QPoin
     QRect wr = os2window->geometry();
 
     qCInfo(lcQpaBackingStore) << window << region << offset << os2window << hex << DV(hps);
-    qCInfo(lcQpaBackingStore) << mImage;
 
     // Use the reflection + transformation matrix to flip the y axis. This is
     // proven to be much faster than manual image flipping on the real video
@@ -119,25 +121,33 @@ void QOS2BackingStore::flush(QWindow *window, const QRegion &region, const QPoin
 
     GpiDrawBits(hps, (PVOID)mImage.bits(), (PBITMAPINFO2)&bmh, 4, ptls, ROP_SRCCOPY, BBO_IGNORE);
 
+    if (Q_UNLIKELY(lcQpaBackingStoreInfo)) {
+        // Display a flashing red rectangle around the update rect for debug purposes.
+        RECTL rcl = { wbr.left(), wr.height() - wbr.bottom() - 1, wbr.right() + 1, wr.height() - wbr.top() };
+        WinDrawBorder(hps, &rcl, 1, 1, CLR_RED, CLR_BACKGROUND, DB_PATCOPY);
+        DosSleep(50);
+        GpiDrawBits(hps, (PVOID)mImage.bits(), (PBITMAPINFO2)&bmh, 4, ptls, ROP_SRCCOPY, BBO_IGNORE);
+    }
+
     os2window->releasePs(hps);
 
-    // Write image for debug purposes.
     if (Q_UNLIKELY(lcQpaBackingStoreDebug)) {
+        // Write the image for debug purposes.
         static int n = 0;
         const QString fileName = QString::asprintf("hwnd_%08lx_%d.png", os2window->hwnd(), n++);
         mImage.save(fileName);
-        qCInfo(lcQpaBackingStore) << "Wrote" << mImage.size() << fileName;
+        qCDebug(lcQpaBackingStore) << "Wrote" << mImage.size() << fileName;
     }
 }
 
 void QOS2BackingStore::resize(const QSize &size, const QRegion &staticContents)
 {
-    qCInfo(lcQpaBackingStore) << size << staticContents;
-
     if (mImage.size() != size) {
         QImage::Format format = QOS2Screen::Format();
         mImage = QImage(size, format);
     }
+
+    qCInfo(lcQpaBackingStore) << size << staticContents << mImage;
 }
 
 QT_END_NAMESPACE
