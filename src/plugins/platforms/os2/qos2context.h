@@ -67,6 +67,12 @@ inline QRect ToQRect(const RECTL &rcl, int parentHeight)
                  QPoint(rcl.xRight - 1, parentHeight - (rcl.yBottom + 1)));
 }
 
+inline QPoint ToQPoint(const POINTL &ptl, int parentHeight)
+{
+    // Flip y coordinate.
+    return QPoint(ptl.x, parentHeight - (ptl.y + 1));
+}
+
 } // namespace QOS2Context
 
 #ifndef QT_NO_DEBUG_STREAM

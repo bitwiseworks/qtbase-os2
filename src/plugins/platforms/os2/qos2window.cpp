@@ -118,16 +118,24 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     // WinData_QOS2Window is null during widnow creation, ignore this case for now.
     if (that) {
         Q_ASSERT(that->hwnd() == hwnd);
-        switch (msg) {
-        case WM_ACTIVATE: that->handleWmActivate(mp1); return 0;
-        case WM_PAINT: that->handleWmPaint(); return 0;
-        case WM_WINDOWPOSCHANGED: {
-            // Handle size/move changes if not already done in QtFrameProc.
-            if (!that->hwndFrame() || that->hwndFrame() == that->hwnd())
-                that->handleSizeMove();
-            break;
-        }
-        default: break;
+        if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) {
+            that->handleMouse(msg, mp1, mp2);
+            // NOTE: pass mouse events to WinDefWindowProc to cause window activation on click etc.
+        } else {
+            switch (msg) {
+            case WM_ACTIVATE: that->handleWmActivate(mp1); return 0;
+            case WM_PAINT: that->handleWmPaint(); return 0;
+            case WM_WINDOWPOSCHANGED: {
+                // Handle size/move changes if not already done in QtFrameProc.
+                if (!that->hwndFrame() || that->hwndFrame() == that->hwnd())
+                    that->handleSizeMove();
+                break;
+            }
+            case WM_VSCROLL:
+            case WM_HSCROLL:
+                that->handleWheel(msg, mp1, mp2); return 0;
+            default: break;
+            }
         }
     }
 
@@ -493,6 +501,158 @@ void QOS2Window::handleSizeMove()
             QPlatformWindow::setGeometry(newGeo);
         QWindowSystemInterface::handleGeometryChange(window(), newGeo);
     }
+}
+
+void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    // Get window coordinates.
+    const POINTS & pts = * reinterpret_cast<PPOINTS>(&mp1);
+    POINTL ptl = { pts.x, pts.y };
+    const QPoint localPos = QOS2::ToQPoint(ptl, geometry().height());
+
+    // Get screen coordinates.
+    WinMapWindowPoints(mHwnd, HWND_DESKTOP, &ptl, 1);
+    const QPoint globalPos = QOS2::ToQPoint(ptl, QOS2Screen::Height());
+
+    Qt::MouseButton button;
+    QEvent::Type type;
+
+    // Get button and message type.
+    switch (msg) {
+    case WM_BUTTON1DOWN:
+    case WM_BUTTON1DBLCLK:
+        button = Qt::LeftButton;
+        type = QEvent::MouseButtonPress;
+        break;
+    case WM_BUTTON2DOWN:
+    case WM_BUTTON2DBLCLK:
+        button = Qt::RightButton;
+        type = QEvent::MouseButtonPress;
+        break;
+    case WM_BUTTON3DOWN:
+    case WM_BUTTON3DBLCLK:
+        button = Qt::MidButton;
+        type = QEvent::MouseButtonPress;
+        break;
+    case WM_BUTTON1UP:
+        button = Qt::LeftButton;
+        type = QEvent::MouseButtonRelease;
+        break;
+    case WM_BUTTON2UP:
+        button = Qt::RightButton;
+        type = QEvent::MouseButtonRelease;
+        break;
+    case WM_BUTTON3UP:
+        button = Qt::MidButton;
+        type = QEvent::MouseButtonRelease;
+        break;
+    case WM_MOUSEMOVE:
+        button = Qt::NoButton;
+        type = QEvent::MouseMove;
+        break;
+    default:
+        Q_ASSERT (false);
+        button = Qt::NoButton;
+        type = QEvent::None;
+    }
+
+    Qt::MouseButtons buttons;
+
+    // Get other button state.
+    if (WinGetKeyState(HWND_DESKTOP, VK_BUTTON1) & 0x8000)
+        buttons |= Qt::LeftButton;
+    if (WinGetKeyState(HWND_DESKTOP, VK_BUTTON2) & 0x8000)
+        buttons |= Qt::RightButton;
+    if (WinGetKeyState(HWND_DESKTOP, VK_BUTTON3) & 0x8000)
+        buttons |= Qt::MidButton;
+
+    Qt::KeyboardModifiers modifiers;
+    USHORT flags = SHORT2FROMMP(mp2);
+
+    // Get key modifiers.
+    if (flags & KC_SHIFT)
+        modifiers |= Qt::ShiftModifier;
+    if (flags & KC_CTRL)
+        modifiers |= Qt::ControlModifier;
+    if (flags & KC_ALT)
+        modifiers |= Qt::AltModifier;
+
+    qCDebug(lcQpaEvents) << hex << DV (msg) << DV (flags) << dec << DV (pts.x) << DV (pts.y)
+                         << DV (globalPos) << DV (localPos)
+                         << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
+
+    QWindowSystemInterface::handleMouseEvent(window(), localPos, globalPos,
+                                             buttons, button, type, modifiers, Qt::MouseEventNotSynthesized);
+}
+
+void QOS2Window::handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    enum { WHEEL_DELTA = 120 };
+
+    POINTL ptl;
+    WinQueryMsgPos(NULLHANDLE, &ptl);
+
+    // Consume duplicate wheel events sent by the AMouse driver to emulate multiline scrolls. We
+    // need this since currently Qt (QScrollBar, for instance) maintains the number of lines to
+    // scroll per wheel rotation (including the special handling of CTRL and SHIFT modifiers) on
+    // its own and doesn't have a setting to tell it to be aware of system settings for the mouse
+    // wheel. If we had processed events as they are, we would get a confusing behavior (too many
+    // lines scrolled etc.).
+    {
+        QMSG wheelMsg;
+        while (WinPeekMsg(0, &wheelMsg, mHwnd, msg, msg, PM_NOREMOVE)) {
+            // PM BUG: ptl contains SHORT coordinates although fields are LONG.
+            wheelMsg.ptl.x = (short) wheelMsg.ptl.x;
+            wheelMsg.ptl.y = (short) wheelMsg.ptl.y;
+            if (wheelMsg.mp1 != mp1 ||
+                wheelMsg.mp2 != mp2 ||
+                wheelMsg.ptl.x != ptl.x ||
+                wheelMsg.ptl.y != ptl.y)
+                break;
+            WinPeekMsg(NULLHANDLE, &wheelMsg, mHwnd, msg, msg, PM_REMOVE);
+        }
+    }
+
+    // Get screen coordinates.
+    const QPoint globalPos = QOS2::ToQPoint(ptl, QOS2Screen::Height());
+
+    // Get window coordinates.
+    WinMapWindowPoints(HWND_DESKTOP, mHwnd, &ptl, 1);
+    const QPoint localPos = QOS2::ToQPoint(ptl, geometry().height());
+
+    int delta;
+
+    // Get wheel delta.
+    switch (SHORT2FROMMP(mp2)) {
+        case SB_LINEUP:
+        case SB_PAGEUP:
+            delta = WHEEL_DELTA;
+            break;
+        case SB_LINEDOWN:
+        case SB_PAGEDOWN:
+            delta = -WHEEL_DELTA;
+            break;
+        default:
+            return;
+    }
+
+    Qt::KeyboardModifiers modifiers;
+
+    // Get key modifiers.
+    if (WinGetKeyState(HWND_DESKTOP, VK_SHIFT ) & 0x8000)
+        modifiers |= Qt::ShiftModifier;
+    if ((WinGetKeyState(HWND_DESKTOP, VK_ALT) & 0x8000))
+        modifiers |= Qt::AltModifier;
+    if (WinGetKeyState(HWND_DESKTOP, VK_CTRL) & 0x8000)
+        modifiers |= Qt::ControlModifier;
+
+    // Alt inverts scroll orientation (Qt/Win32 behavior)
+    const QPoint point = (msg == WM_VSCROLL || modifiers & Qt::AltModifier) ? QPoint(0, delta) : QPoint(delta, 0);
+
+    qCDebug(lcQpaEvents) << hex << DV (msg) << DV (mp2) << dec << DV (ptl.x) << DV (ptl.y)
+                         << DV (globalPos) << DV (localPos) << DV (point) << DV (modifiers);
+
+    QWindowSystemInterface::handleWheelEvent(window(), localPos, globalPos, QPoint(), point, modifiers);
 }
 
 #ifndef QT_NO_DEBUG_STREAM

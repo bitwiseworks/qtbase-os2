@@ -65,6 +65,16 @@ LONG APIENTRY WinQueryClipRegion(HWND hwnd, HRGN hrgnClip);
 
 BOOL APIENTRY WinSetClipRegion(HWND hwnd, HRGN hrgnClip);
 
+// Sent to a hwnd when the mouse pointer enters its rectangle
+// (mp1 = hwnd that is entered, mp2 = hwnd that is left).
+// FID_CLIENT also receives enter messages of its WC_FRAME.
+#define WM_MOUSEENTER 0x41E
+
+// Sent to a hwnd when the mouse pointer leaves its recrangle
+// (mp1 = hwnd that is left, mp2 = hwnd that is entered).
+// FID_CLIENT also receives leave messages of its WC_FRAME.
+#define WM_MOUSELEAVE 0x41F
+
 #ifdef __cplusplus
 }
 #endif

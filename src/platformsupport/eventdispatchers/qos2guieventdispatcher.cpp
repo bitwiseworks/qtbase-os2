@@ -120,8 +120,8 @@ messageDebugEntries[] = {
     {WM_MOUSEMOVE, "WM_MOUSEMOVE", true},
     {WM_HITTEST, "WM_HITTEST", false},
     {WM_DRAWCLIPBOARD, "WM_DRAWCLIPBOARD", true},
-    {0x41E, "WM_MOUSEENTER", true},
-    {0x41F, "WM_MOUSELEAVE", true},
+    {WM_MOUSEENTER, "WM_MOUSEENTER", true},
+    {WM_MOUSELEAVE, "WM_MOUSELEAVE", true},
 };
 
 static inline const MessageDebugEntry *messageDebugEntry(ULONG msg)

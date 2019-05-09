@@ -89,6 +89,8 @@ public:
     void handleWmActivate(MPARAM mp1);
     void handleWmPaint();
     void handleSizeMove();
+    void handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2);
+    void handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2);
 
 private:
     unsigned mFlags = 0;
