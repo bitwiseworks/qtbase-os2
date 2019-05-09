@@ -223,7 +223,7 @@ QOS2Window::QOS2Window(QWindow *window)
 
     if (isTopLevel && !isPopup) {
         ULONG frameStyle = 0;
-        ULONG frameFlags = type == Qt::Window ? FCF_TASKLIST : 0;
+        ULONG frameFlags = 0;
 
         if ((type == Qt::Window || isDialog || isTool)) {
             if (!(flags & Qt::FramelessWindowHint)) {
@@ -363,7 +363,27 @@ void QOS2Window::setGeometry(const QRect &rect)
 {
     qCInfo(lcQpaWindows) << DV(rect);
 
-    QPlatformWindow::setGeometry(rect);
+    // Note: Don't call QPlatformWindow::setGeometry - it will be called indirectly from
+    // #handleSizeMove in response to WM_SIZE and/or WM_MOVE.
+
+    LONG x = rect.x(), y = rect.y(), cx = rect.width(), cy = rect.height();
+
+    if (mHwndFrame) {
+        if (!mFrameMargins.isNull()) {
+            // Account for the frame strut.
+            x -= mFrameMargins.left();
+            y -= mFrameMargins.top();
+            cx += mFrameMargins.left() + mFrameMargins.right();
+            cy += mFrameMargins.top() + mFrameMargins.bottom();
+        }
+        // Flip y coordinate.
+        y = QOS2Screen::Height() - (y + cy);
+    } else {
+        // Flip y coordinate.
+        y = window()->parent()->height() - (y + cy);
+    }
+
+    WinSetWindowPos(mHwndFrame, NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
 }
 
 QMargins QOS2Window::frameMargins() const
@@ -374,6 +394,48 @@ QMargins QOS2Window::frameMargins() const
 void QOS2Window::setVisible(bool visible)
 {
     qCInfo(lcQpaWindows) << DV(visible);
+
+    if (visible) {
+        if (mHwndFrame) {
+            // Lazily create a window list list entry when appropriate.
+            Qt::WindowType type = window()->type();
+            if (type != Qt::Popup &&
+                type != Qt::ToolTip &&
+                type != Qt::Tool &&
+                (type != Qt::Dialog || !window()->parent()) &&
+                (type != Qt::SplashScreen ||
+                 (window()->flags() & Qt::WindowTitleHint))
+            ) {
+                if (!mSwEntry) {
+                    // lazily create a new window list entry
+                    PID pid;
+                    WinQueryWindowProcess(mHwndFrame, &pid, NULL);
+                    SWCNTRL swc;
+                    memset(&swc, 0, sizeof(SWCNTRL));
+                    swc.hwnd = mHwndFrame;
+                    swc.idProcess = pid;
+                    swc.uchVisibility = SWL_VISIBLE;
+                    swc.fbJump = SWL_JUMPABLE;
+                    WinQueryWindowText(mHwndFrame, sizeof(swc.szSwtitle), swc.szSwtitle);
+                    mSwEntry = WinAddSwitchEntry(&swc);
+                } else {
+                    SWCNTRL swc;
+                    WinQuerySwitchEntry(mSwEntry, &swc);
+                    swc.uchVisibility = SWL_VISIBLE;
+                    WinChangeSwitchEntry(mSwEntry, &swc);
+                }
+            }
+        }
+    } else {
+        if (mHwndFrame) {
+            if (mSwEntry) {
+                SWCNTRL swc;
+                WinQuerySwitchEntry(mSwEntry, &swc);
+                swc.uchVisibility = SWL_INVISIBLE;
+                WinChangeSwitchEntry(mSwEntry, &swc);
+            }
+        }
+    }
 
     WinShowWindow(mainHwnd(), visible);
 }
@@ -414,6 +476,35 @@ void QOS2Window::setWindowFlags(Qt::WindowFlags flags)
 void QOS2Window::setWindowTitle(const QString &title)
 {
     qCInfo(lcQpaWindows) << DV(title);
+
+    if (mHwndFrame) {
+        QByteArray title8bit = title.toLocal8Bit();
+        WinSetWindowText(mHwndFrame, title8bit);
+
+        if (mSwEntry) {
+            SWCNTRL swc;
+            WinQuerySwitchEntry(mSwEntry, &swc);
+            strncpy(swc.szSwtitle, title8bit, sizeof(swc.szSwtitle)-1);
+            swc.szSwtitle[sizeof(swc.szSwtitle)-1] = 0;
+            WinChangeSwitchEntry(mSwEntry, &swc);
+        }
+    }
+}
+
+void QOS2Window::raise()
+{
+    qCInfo(lcQpaWindows);
+
+    if (window()->type() == Qt::Popup || !(window()->flags() & Qt::WindowStaysOnBottomHint))
+        WinSetWindowPos(mainHwnd(), HWND_TOP, 0, 0, 0, 0, SWP_ZORDER);
+}
+
+void QOS2Window::lower()
+{
+    qCInfo(lcQpaWindows);
+
+    if (!(window()->flags() & Qt::WindowStaysOnTopHint))
+        WinSetWindowPos(mainHwnd(), HWND_BOTTOM, 0, 0, 0, 0, SWP_ZORDER);
 }
 
 void QOS2Window::propagateSizeHints()

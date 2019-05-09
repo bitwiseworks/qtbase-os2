@@ -72,6 +72,9 @@ public:
 
     void setWindowTitle(const QString &title) override;
 
+    void raise() override;
+    void lower() override;
+
     void propagateSizeHints() override;
 
     inline bool testFlag(unsigned f) const { return (mFlags & f) != 0; }
@@ -100,6 +103,7 @@ private:
 
     HWND mHwndFrame = NULLHANDLE;
     QMargins mFrameMargins;
+    HSWITCH mSwEntry = NULLHANDLE;
 };
 
 QT_END_NAMESPACE
