@@ -49,5 +49,6 @@ QT_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaBackingStore, "qt.qpa.backingstore", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaEvents, "qt.qpa.events", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcQpaMessages, "qt.qpa.messages", QtWarningMsg)
 
 QT_END_NAMESPACE

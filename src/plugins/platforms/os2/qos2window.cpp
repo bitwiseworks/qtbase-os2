@@ -47,7 +47,7 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace  {
+namespace {
 
 enum {
     DefaultWindowWidth = 160,
@@ -56,18 +56,18 @@ enum {
 
 enum {
     WinData_QOS2Window = QWL_USER,
-    WinDataSize = QWL_USER + 4, // Must always be the last!
+    WinDataSize = WinData_QOS2Window + 4, // Must always be last_value + 4!
 };
 
-PFNWP QtOldFrameProc = nullptr;
+const bool lcQpaMessagesDebug = lcQpaMessages().isDebugEnabled();
 
-const bool lcQpaEventsDebug = lcQpaEvents().isDebugEnabled();
+PFNWP QtOldFrameProc = nullptr;
 
 MRESULT EXPENTRY QtFrameProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 {
     // NOTE: PM keeps bombing WC_FRAME with WM_QUERYICON every 0.5s for no reason, ignore it.
-    if (Q_UNLIKELY(lcQpaEventsDebug) && msg != WM_QUERYICON)
-        qCInfo(lcQpaEvents, "MESSAGE: hwnd %08lX msg %s (%04lX) mp1 0x%08lX mp2 0x%08lX",
+    if (Q_UNLIKELY(lcQpaMessagesDebug) && msg != WM_QUERYICON)
+        qCDebug(lcQpaMessages, "MESSAGE: hwnd %08lX msg %s (%04lX) mp1 0x%08lX mp2 0x%08lX",
                 hwnd, QOS2GuiEventDispatcher::messageName(msg), msg, (ULONG)mp1, (ULONG)mp2);
 
     QOS2Window *that = nullptr;
@@ -108,8 +108,8 @@ MRESULT EXPENTRY QtFrameProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
 MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 {
-    if (Q_UNLIKELY(lcQpaEventsDebug))
-        qCInfo(lcQpaEvents, "MESSAGE: hwnd %08lX msg %s (%04lX) mp1 0x%08lX mp2 0x%08lX",
+    if (Q_UNLIKELY(lcQpaMessagesDebug))
+        qCDebug(lcQpaMessages, "MESSAGE: hwnd %08lX msg %s (%04lX) mp1 0x%08lX mp2 0x%08lX",
                 hwnd, QOS2GuiEventDispatcher::messageName(msg), msg, (ULONG)mp1, (ULONG)mp2);
 
     // Get the QOS2Window pointer.
@@ -341,6 +341,11 @@ QOS2Window::QOS2Window(QWindow *window)
 
 QOS2Window::~QOS2Window()
 {
+    qCInfo(lcQpaWindows) << hex << DV(mHwndFrame) << DV(mHwnd);
+
+    // Deassociate mHwnd window from the instnace (we don't need any messages after this point).
+    WinSetWindowPtr(mHwnd, WinData_QOS2Window, nullptr);
+
     // Only destroy top-level windows; children will be implicitly destroyed by their parents.
     if (mHwndFrame != NULLHANDLE)
         WinDestroyWindow(mHwndFrame);
