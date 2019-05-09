@@ -440,15 +440,34 @@ void QOS2Window::handleWmActivate(MPARAM mp1)
 
 void QOS2Window::handleWmPaint()
 {
-    qCDebug(lcQpaEvents);
+    // NOTE. Below we don't use WinBeginPaint because it returns a HPS with a pre-set clip region
+    // which includes only paint requests coming from WinInvalidateRegion. Since Qt implements its
+    // own paint request mechanism, such paint requests don't end in this clip region and would
+    // therefore be clipped out leading to outdated content. We could include them by calling
+    // WinInvalidateRegion in a QEvent::UpdateRequest handler or even now passing it the current Qt
+    // update region for this window available through qt_dirtyRegion (as we used to do in Qt4)
+    // but this looks like an overkill taking a possible region complexity into account and the
+    // need to flip the y coordinate. Given that QOS2BackingStore will blit only what needs to be
+    // updated from the Qt point of view, it's simpler (and faster) to just get an unclipped HPS
+    // and let it go (after adding the WM_PAINT update rect to the Qt update region via expose).
 
     RECTL rcl;
-    mHps = WinBeginPaint(mHwnd, NULLHANDLE, &rcl);
+    WinQueryUpdateRect(mHwnd, &rcl);
 
-    QWindowSystemInterface::handleExposeEvent(window(), QRegion(QOS2::ToQRect(rcl, geometry().height())));
+    mHps = WinGetPS(mHwnd);
 
-    WinEndPaint(mHps);
+    QRect updateRect = QOS2::ToQRect(rcl, geometry().height());
+
+    qCDebug(lcQpaEvents) << updateRect <<  QOS2::ToQRect(rcl, geometry().height());
+
+    QWindowSystemInterface::handleExposeEvent(window(), QRegion(updateRect));
+
+    WinReleasePS(mHps);
     mHps = NULLHANDLE;
+
+    // Validate the window to confirm that we served this WM_PAINT request (otherwise it'll keep
+    // coming). Using nullptr as PRECTL is undocumented but works assuming the whole window area.
+    WinValidateRect(mHwnd, nullptr, FALSE);
 }
 
 void QOS2Window::handleSizeMove()
@@ -465,7 +484,7 @@ void QOS2Window::handleSizeMove()
     }
 
     QRect oldGeo = geometry();
-    qCInfo(lcQpaEvents) << DV(oldGeo) << DV(newGeo);
+    qCDebug(lcQpaEvents) << DV(oldGeo) << DV(newGeo);
 
     if (oldGeo != newGeo) {
         // If QWindow::handle is nullptr (e.g. when this call originates from our ctor), call
