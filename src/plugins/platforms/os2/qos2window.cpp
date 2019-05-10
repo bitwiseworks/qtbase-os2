@@ -597,8 +597,7 @@ void QOS2Window::handleSizeMove()
 void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
     // Get window coordinates.
-    const POINTS & pts = * reinterpret_cast<PPOINTS>(&mp1);
-    POINTL ptl = { pts.x, pts.y };
+    POINTL ptl = { SHORT1FROMMP(mp1), SHORT2FROMMP(mp1) };
     const QPoint localPos = QOS2::ToQPoint(ptl, geometry().height());
 
     // Get screen coordinates.
@@ -668,7 +667,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     if (flags & KC_ALT)
         modifiers |= Qt::AltModifier;
 
-    qCDebug(lcQpaEvents) << hex << DV (msg) << DV (flags) << dec << DV (pts.x) << DV (pts.y)
+    qCDebug(lcQpaEvents) << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
                          << DV (globalPos) << DV (localPos)
                          << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
 
