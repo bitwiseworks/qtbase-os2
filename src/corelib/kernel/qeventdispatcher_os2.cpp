@@ -640,6 +640,9 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 } else if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
                     retVal = true;
                     break;
+                } else if (msg.msg == WM_SEM1) {
+                    // This is a handled wakeUp request, just ignore it.
+                    break;
                 }
 
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
@@ -856,7 +859,7 @@ int QEventDispatcherOS2::remainingTime(int timerId)
 void QEventDispatcherOS2::wakeUp()
 {
     Q_D(QEventDispatcherOS2);
-    WinPostQueueMsg(d->hmq, WM_NULL, 0, 0);
+    WinPostQueueMsg(d->hmq, WM_SEM1, 0, 0);
 }
 
 void QEventDispatcherOS2::interrupt()
