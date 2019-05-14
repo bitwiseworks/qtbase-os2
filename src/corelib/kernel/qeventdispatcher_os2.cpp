@@ -57,19 +57,20 @@
 
 #include "private/qthread_p.h"
 
-#if 0
-# include <QDebug>
-# define TRACE(m) qDebug() << m
-# define V(v) #v << v
-#else
-# define TRACE(m) do {} while (0)
-#endif
+#include "qloggingcategory.h"
 
 QT_BEGIN_NAMESPACE
 
+Q_LOGGING_CATEGORY(lcCoreEvents, "qt.core.events", QtWarningMsg)
+
+// This should speed things up a bit when logging is disabled.
+static const bool lcCoreEventsDebug = lcCoreEvents().isDebugEnabled();
+#define TRACE(m) do { if (Q_UNLIKELY(lcCoreEventsDebug)) qCDebug(lcCoreEvents) << m; } while(0)
+#define V(v) #v << v
+
 extern uint qGlobalPostedEventsCount();
 
-ULONG WM_QT_TIMER_OR_SOCKET = 0;
+static ULONG WM_QT_TIMER_OR_SOCKET = 0;
 
 // NOTE: Socket and timer handling is largely borrowed from qeventdispatcher_unix*.
 
