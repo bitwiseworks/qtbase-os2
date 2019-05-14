@@ -352,9 +352,8 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
 bool QEventDispatcherOS2Private::startThread()
 {
     // NOTE: We support nested start/stop of the select thread (with the help
-    // of threadUsage), however this is not currently used in Qt itself.
-    // Theoretically, this should be only possible if the Qt event loop is
-    // somehow entered from a native message handler.
+    // of threadUsage) for cases when the Qt event loop is entered from a native
+    // message handler (a dialog in response to a mouse click etc).
 
     if (!socketNotifiers.count() && timerList.count() == timerList.zeroTimerCount())
         return false;
@@ -363,9 +362,11 @@ bool QEventDispatcherOS2Private::startThread()
 
     TRACE(V(tid) << V(threadState) << V(threadUsage) << "maxfd/nsel" << maxfd);
 
-    Q_ASSERT(tid == -1 || threadState == Posted);
-
-    prepareForSelect();
+    if (tid == -1 || threadState == Posted) {
+        if (threadState == Posted)
+            fetchFromSelect();
+        prepareForSelect();
+    }
 
     if (tid == -1) {
         tid = _beginthread(threadMain, nullptr, 0, this);
@@ -418,7 +419,7 @@ void QEventDispatcherOS2Private::stopThread()
         Q_ASSERT(threadState == Posted);
 
         // Make sure there is no unhandled WM_QT_TIMER_OR_SOCKET in the queue
-        // (we will run timer and socket activation anyway).
+        // (we will run timer and socket activation anyway once return from here).
         QMSG msg;
         WinPeekMsg(hab, &msg, 0, WM_QT_TIMER_OR_SOCKET, WM_QT_TIMER_OR_SOCKET, PM_REMOVE);
 
@@ -442,7 +443,8 @@ void QEventDispatcherOS2Private::stopThread()
         tid = -1;
     }
 
-    fetchFromSelect();
+    if (tid == -1 || threadState == Posted)
+      fetchFromSelect();
 }
 
 // static
@@ -670,7 +672,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     // Stop the select thread. This is necessary to guarantee that select is
     // not run beyond the scope of processEvents and no new notifications are
     // generated. In particular, tst_QSocketNotifier::posixSockets expects this.
-    // Also, the Qt code (& tests) als seems to assume that timers are not
+    // Also, the Qt code (& tests) seems to assume that timers are not
     // processed more than once per a processEvents iteration.
     if (startedThread)
         d->stopThread();
