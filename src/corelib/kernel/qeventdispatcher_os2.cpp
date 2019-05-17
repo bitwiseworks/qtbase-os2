@@ -63,14 +63,15 @@ QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(lcCoreEvents, "qt.core.events", QtWarningMsg)
 
+#define WM_QT_TIMER_OR_SOCKET WM_SEM3
+#define WM_QT_WAKEUP WM_SEM4
+
 // This should speed things up a bit when logging is disabled.
 static const bool lcCoreEventsDebug = lcCoreEvents().isDebugEnabled();
 #define TRACE(m) do { if (Q_UNLIKELY(lcCoreEventsDebug)) qCDebug(lcCoreEvents) << m; } while(0)
 #define V(v) #v << v
 
 extern uint qGlobalPostedEventsCount();
-
-static ULONG WM_QT_TIMER_OR_SOCKET = 0;
 
 // NOTE: Socket and timer handling is largely borrowed from qeventdispatcher_unix*.
 
@@ -140,45 +141,83 @@ public:
 
     void fetchFromSelect();
     void prepareForSelect();
-    int processTimersAndSockets(bool actSockets);
+    int processTimersAndSockets();
 
-    bool startThread();
+    void startThread();
     void stopThread();
+
+    inline void maybeStartThread() {
+        if (!socketNotifiers.isEmpty() || timerList.count() > timerList.zeroTimerCount())
+            startThread();
+    }
+
+    inline void maybeStopThread() {
+        if (tid != -1 && socketNotifiers.isEmpty() && timerList.count() == timerList.zeroTimerCount())
+            stopThread();
+    }
+
+    inline void maybeStopOrCancelThread() {
+        if (tid != -1) {
+            if (socketNotifiers.isEmpty() && timerList.count() == timerList.zeroTimerCount())
+                stopThread();
+            else
+                startThread();
+        }
+    }
 
     static void threadMain(void *arg);
 
     HAB hab;
     HMQ hmq;
 
+    // Auxiliary object window to process WM_U_SEM_SELECT and WM_U_SEM_TIMER messages.
+    // We need a dedicated window along with processing these messages directly in
+    // QEventLoop::processEvents() to make sure they are processed even if the
+    // current message loop is not run by Qt. This happens when a native modal
+    // dialog is shown or when a top-level Qt widget is being moved or resized
+    // using the mouse, or when a Qt-based DLL plugin is used by a non-Qt
+    // application.
+    class AuxWnd : public QPMObjectWindow
+    {
+    public:
+        AuxWnd(QEventDispatcherOS2Private &that) : QPMObjectWindow(true /*deferred*/), d(that) {}
+        MRESULT message(ULONG msg, MPARAM mp1, MPARAM mp2);
+    private:
+        QEventDispatcherOS2Private &d;
+    } auxWnd;
+
     QAtomicInt interrupt; // bool
 
     QList<QMSG> queuedUserInputEvents;
-    bool queuedSockets;
+    bool queuedSockets : 1;
 
     QHash<int, QSocketNotifierSetOS2> socketNotifiers;
     QSet<QSocketNotifier *> pendingNotifiers;
 
     QTimerInfoList timerList;
+    bool processedTimers : 1;
+
+    QEventLoop::ProcessEventsFlags flags;
 
     QWaitCondition cond;
 
-    mutable QMutex mutex; // guards access to further variables
-
     int tid;
 
+    mutable QMutex mutex; // guards access to further variables
+
     enum {
+        Starting,
         Selecting,
         Canceling,
-        Posted,
+        Waiting,
+        Terminating,
     } threadState;
 
     union
     {
         int maxfd; // used Selecting state
-        int nsel; // used in Posted state
+        int nsel; // used in Waiting state
     };
-
-    uint threadUsage;
 
     static constexpr int SetSize = 3;
 
@@ -191,13 +230,42 @@ public:
     timeval waitTime;
 };
 
-QEventDispatcherOS2Private::QEventDispatcherOS2Private()
-    : hab(NULLHANDLE), hmq(NULLHANDLE), interrupt(false), queuedSockets(false)
-    , tid(-1), threadState(Posted), maxfd(-1), threadUsage(0), timeout(nullptr)
+MRESULT QEventDispatcherOS2Private::AuxWnd::message(ULONG msg, MPARAM /*mp1*/, MPARAM /*mp2*/)
 {
-    if (WM_QT_TIMER_OR_SOCKET == 0)
-        WM_QT_TIMER_OR_SOCKET = WinAddAtom(WinQuerySystemAtomTable(), "QEventDispatcherOS2:WM_QT_TIMER_OR_SOCKET");
+    // NOTE: Implementing socket thread synchronization (and data exchange) via a PM message
+    // guarantees that select is not run outside the scope of processEvents (the select thread will
+    // be sleeping until WM_QT_TIMER_OR_SOCKET gets processed either by processEvents or by the
+    // native PM message loop). If there is no select running, there are no new timer/socket events
+    // being sent. This seems to be expected by Qt and, in particular,
+    // tst_QSocketNotifier::posixSockets depends on this.
 
+    if (msg == WM_QT_TIMER_OR_SOCKET) {
+        // Must get a lock to make sure the select thread has entered the wait state.
+        QMutexLocker locker(&d.mutex);
+
+        TRACE(V(d.tid) << V(d.threadState) << "maxfd/nsel" << d.maxfd);
+        Q_ASSERT(d.threadState == Waiting);
+
+        d.fetchFromSelect();
+
+        // It's important to let select thread go again before calling processTimersAndSockets
+        // because events it sends may enter a nested event loop depending on timers/sockets.
+        d.prepareForSelect();
+
+        // Release the lock before processTimersAndSockets to avoid deadlocks in cases when events
+        // sent by it cause timer/socket creation/removal (which also needs this lock).
+        locker.unlock();
+
+        d.processTimersAndSockets();
+    }
+
+    return 0;
+}
+
+QEventDispatcherOS2Private::QEventDispatcherOS2Private()
+    : hab(NULLHANDLE), hmq(NULLHANDLE), auxWnd(*this), interrupt(false), queuedSockets(false), processedTimers(false)
+    , flags(0), tid(-1), threadState(Terminating), maxfd(-1), timeout(nullptr)
+{
     fdsets[0].type = QSocketNotifier::Read;
     fdsets[1].type = QSocketNotifier::Write;
     fdsets[2].type = QSocketNotifier::Exception;
@@ -239,9 +307,13 @@ void QEventDispatcherOS2Private::createMsgQueue()
 
 void QEventDispatcherOS2Private::destroyMsgQueue()
 {
-    TRACE(hex << V(hab) << V(hmq) << V(tid) << V(threadState) << V(threadUsage));
+    TRACE(hex << V(hab) << V(hmq) << V(tid) << V(threadState));
 
-    Q_ASSERT(tid == -1);
+    if (tid != -1)
+        stopThread();
+
+    if (auxWnd.hwnd() != NULLHANDLE)
+        auxWnd.destroy();
 
     if (hmq != NULLHANDLE) {
         WinDestroyMsgQueue(hmq);
@@ -255,8 +327,7 @@ void QEventDispatcherOS2Private::destroyMsgQueue()
 void QEventDispatcherOS2Private::fetchFromSelect()
 {
     TRACE(V(threadState) << "maxfd/nsel" << maxfd);
-
-    Q_ASSERT(threadState == Posted);
+    Q_ASSERT(threadState == Waiting);
 
     if (nsel > 0) {
         // Find out which sockets have been reported and mark them as pending.
@@ -279,8 +350,7 @@ void QEventDispatcherOS2Private::fetchFromSelect()
 void QEventDispatcherOS2Private::prepareForSelect()
 {
     TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
-
-    Q_ASSERT(tid == -1 || threadState == Posted);
+    Q_ASSERT(threadState == Starting || threadState == Waiting);
 
     // Check that fetchFromSelect has been called so we don't overwrite the previous results.
     Q_ASSERT(maxfd == -1);
@@ -319,21 +389,23 @@ void QEventDispatcherOS2Private::prepareForSelect()
         timeout = &waitTime;
     }
 
-    // Inform the thread we have new data.
-    if (tid != -1)
+    // Inform the select thread we have new data.
+    if (threadState == Waiting)
         cond.wakeOne();
 }
 
-int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
+int QEventDispatcherOS2Private::processTimersAndSockets()
 {
-    TRACE(V(actSockets));
+    TRACE("exclude sockets" << !!(flags & QEventLoop::ExcludeSocketNotifiers));
 
     int n_activated = 0;
+
+    processedTimers = true;
 
     if (!timerList.isEmpty())
         n_activated = timerList.activateTimers();
 
-    if (actSockets && !pendingNotifiers.isEmpty()) {
+    if (!(flags & QEventLoop::ExcludeSocketNotifiers) && !pendingNotifiers.isEmpty()) {
         QEvent event(QEvent::SockAct);
 
         while (!pendingNotifiers.isEmpty()) {
@@ -350,102 +422,92 @@ int QEventDispatcherOS2Private::processTimersAndSockets(bool actSockets)
     return n_activated;
 }
 
-bool QEventDispatcherOS2Private::startThread()
+void QEventDispatcherOS2Private::startThread()
 {
-    // NOTE: We support nested start/stop of the select thread (with the help
-    // of threadUsage) for cases when the Qt event loop is entered from a native
-    // message handler (a dialog in response to a mouse click etc).
-
-    if (!socketNotifiers.count() && timerList.count() == timerList.zeroTimerCount())
-        return false;
+    Q_ASSERT(!socketNotifiers.isEmpty() || timerList.count() > timerList.zeroTimerCount());
 
     QMutexLocker locker(&mutex);
 
-    TRACE(V(tid) << V(threadState) << V(threadUsage) << "maxfd/nsel" << maxfd);
+    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
 
-    if (tid == -1 || threadState == Posted) {
-        if (threadState == Posted)
-            fetchFromSelect();
-        prepareForSelect();
-    }
-
-    if (tid == -1) {
-        tid = _beginthread(threadMain, nullptr, 0, this);
+    if (tid == -1 || threadState == Starting) {
         if (tid == -1) {
-            qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
-            return false;
+            // No thread, start it now.
+            if (auxWnd.hwnd() == NULLHANDLE)
+                auxWnd.create();
+            tid = _beginthread(threadMain, nullptr, 0, this);
+            if (tid == -1) {
+                qErrnoWarning(errno, "QEventDispatcherOS2Private: _beginthread failed");
+                return;
+            }
+            threadState = Starting;
+        } else {
+            // It's there but didn't start working yet, just let prepareForSelect update the data.
+            maxfd = -1;
         }
-        Q_ASSERT(!threadUsage);
-        threadUsage = 1;
+        prepareForSelect();
     } else {
-        ++threadUsage;
-        Q_ASSERT(threadUsage >= 2);
+        if (threadState == Selecting) {
+            // Cancel the current job to force Waiting state transition to pick up new data.
+            threadState = Canceling;
+            if (maxfd >= 0) {
+                // Terminate select() execution.
+                int rc = ::so_cancel(maxfd);
+                if (rc == -1)
+                    qErrnoWarning(errno, "QEventDispatcherOS2Private: so_cancel failed");
+            } else {
+                // Terminate the simple wait state.
+                cond.wakeOne();
+            }
+        }
     }
-
-    return true;
 }
 
 void QEventDispatcherOS2Private::stopThread()
 {
     QMutexLocker locker(&mutex);
 
-    TRACE(V(tid) << V(threadState) << V(threadUsage) << "maxfd/nsel" << maxfd);
-
-    Q_ASSERT(tid != -1);
-
-    Q_ASSERT(threadUsage);
-    --threadUsage;
+    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
+    Q_ASSERT(tid != -1 && threadState != Terminating);
 
     if (threadState == Selecting) {
-        threadState = Canceling;
+        // Terminate the current job.
+        threadState = Terminating;
         if (maxfd >= 0) {
             // Terminate select() execution.
             int rc = ::so_cancel(maxfd);
             if (rc == -1)
                 qErrnoWarning(errno, "QEventDispatcherOS2Private: so_cancel failed");
         } else {
-            // Terminate the simple wait state.
+            // Terminate the simple timer wait state.
             cond.wakeOne();
-        }
-        if (threadUsage) {
-            // Wait for the thread to go to Posted state.
-            locker.unlock();
-
-            QMSG msg;
-            WinGetMsg(hab, &msg, 0, WM_QT_TIMER_OR_SOCKET, WM_QT_TIMER_OR_SOCKET);
-
-            locker.relock();
         }
     } else {
-        Q_ASSERT(threadState == Posted);
-
-        // Make sure there is no unhandled WM_QT_TIMER_OR_SOCKET in the queue
-        // (we will run timer and socket activation anyway once return from here).
-        QMSG msg;
-        WinPeekMsg(hab, &msg, 0, WM_QT_TIMER_OR_SOCKET, WM_QT_TIMER_OR_SOCKET, PM_REMOVE);
-
-        if (!threadUsage) {
-            // Terminate the Posted wait state.
+        if (threadState == Waiting) {
+            // Terminate the wait for new data state.
+            threadState = Terminating;
             cond.wakeOne();
+        } else {
+            Q_ASSERT(threadState == Starting || threadState == Canceling);
+            threadState = Terminating;
         }
     }
 
-    if (!threadUsage) {
-        // Wait for the thread to stop.
-        locker.unlock();
+    locker.unlock();
 
-        TID tid_os2 = tid;
-        APIRET arc = DosWaitThread(&tid_os2, DCWW_WAIT);
-        if (arc)
-            qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
+    // Wait for the thread to stop.
+    TID tid_os2 = tid;
+    APIRET arc = DosWaitThread(&tid_os2, DCWW_WAIT);
+    if (arc)
+        qWarning("QEventDispatcherOS2Private: DosWaitThread failed with %ld", arc);
 
-        locker.relock();
+    // The stop request may arrive before WM_QT_TIMER_OR_SOCKET gets a chance to be processed.
+    // Remove it to ensire it's not processed when the select thread is not in Waiting state.
+    // Note: no need to do it in a loop because it's a cumulative message.
+    QMSG msg;
+    WinPeekMsg(hab, &msg, 0, WM_QT_TIMER_OR_SOCKET, WM_QT_TIMER_OR_SOCKET, PM_REMOVE);
 
-        tid = -1;
-    }
-
-    if (tid == -1 || threadState == Posted)
-      fetchFromSelect();
+    tid = -1;
 }
 
 // static
@@ -455,9 +517,9 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
     QMutexLocker locker(&d->mutex);
 
-    TRACE(V(d->threadState) << V(d->threadUsage));
+    TRACE(V(d->threadState));
 
-    while (d->threadUsage) {
+    while (d->threadState != Terminating) {
         d->threadState = Selecting;
 
         timeval *timeout = nullptr;
@@ -501,10 +563,11 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
 
                 locker.relock();
 
-                // Only stopThread is allowed to cancel, ignore all other requests
-                // (e.g. so_cancel from the previous stopThread happening after select
-                // which will inevitably immmediately break the next select).
-                if (nsel == -1 && err == EINTR && d->threadState != Canceling)
+                // Check for the cancel request. Note that if so_cancel was called after we
+                // returned from select, it will be remembered and immediately interrupt any
+                // subsequent select which is unwanted and should be ignored. We detect this
+                // situation using explicit state checks.
+                if (nsel == -1 && err == EINTR && d->threadState != Canceling && d->threadState != Terminating)
                     continue;
 
                 break;
@@ -519,26 +582,29 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
             }
         } else {
             // No sockets, simply wait for the next timer.
-            unsigned long msecs = timeout ?
-                timeout->tv_sec * 1000ul + timeout->tv_usec / 1000ul : ULONG_MAX;
-
-            d->cond.wait(locker.mutex(), msecs);
+            Q_ASSERT(timeout);
+            if (timeout) {
+                unsigned long msecs = timeout->tv_sec * 1000ul + timeout->tv_usec / 1000ul;
+                d->cond.wait(locker.mutex(), msecs);
+            }
         }
 
         // Store the overall result.
         d->nsel = nsel;
 
-        TRACE(V(d->threadState) << V(d->threadUsage));
+        TRACE(V(d->threadState) << V(d->nsel));
 
-        d->threadState = Posted;
-
-        if (d->threadUsage) {
-            WinPostQueueMsg(d->hmq, WM_QT_TIMER_OR_SOCKET, NULL, NULL);
-
+        if (d->threadState != Terminating) {
+            // Inform the event dispatcher we have sockets or timers.
+            d->threadState = Waiting;
+            WinPostMsg(d->auxWnd.hwnd(), WM_QT_TIMER_OR_SOCKET, NULL, NULL);
             // Wait until we are given new data.
             d->cond.wait(locker.mutex());
         }
     }
+
+    // Reset maxfd to its initial state.
+    d->maxfd = -1;
 
     TRACE("END");
 }
@@ -568,16 +634,15 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     QMSG waitMsg;
     bool haveWaitMsg = false;
 
-    bool startedThread = false;
-
     TRACE(V(flags));
 
+    // Memorize new flags for window procs called by WinDispatchMsg and for processTimersAndSockets.
+    QEventLoop::ProcessEventsFlags oldFlags = d->flags;
+    d->flags = flags;
+
+    d->processedTimers = false;
+
     QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
-
-    // Start the select thread.
-    startedThread = d->startThread();
-
-    TRACE(V(startedThread));
 
     do {
         bool quit = false;
@@ -626,7 +691,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 }
             }
             if (haveMessage) {
-                TRACE(hex << V(msg.msg));
+                TRACE(hex << V(msg.msg) << "status" << WinQueryQueueStatus(HWND_DESKTOP));
 
                 if (msg.msg == WM_QUIT) {
                     if (QCoreApplication::instance()) {
@@ -637,16 +702,19 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                     }
                     quit = true;
                     break;
-                } else if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
-                    retVal = true;
-                    break;
-                } else if (msg.msg == WM_SEM1) {
+                } else if (msg.msg == WM_QT_WAKEUP) {
                     // This is a handled wakeUp request, just ignore it.
                     break;
                 }
 
                 if (!filterNativeEvent(QByteArrayLiteral("os2_generic_QMSG"), &msg, 0)) {
                     WinDispatchMsg(d->hab, &msg);
+                    // Qt (and tst_QTimer::timerFiresOnlyOncePerProcessEvents) requires that timers
+                    // are run only once per processEvents invocation.
+                    if (msg.msg == WM_QT_TIMER_OR_SOCKET) {
+                        retVal = true;
+                        break;
+                    }
                 }
             } else {
                 // Nothing todo, so break.
@@ -673,16 +741,13 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
         }
     } while (canWait);
 
-    // Stop the select thread. This is necessary to guarantee that select is
-    // not run beyond the scope of processEvents and no new notifications are
-    // generated. In particular, tst_QSocketNotifier::posixSockets expects this.
-    // Also, the Qt code (& tests) seems to assume that timers are not
-    // processed more than once per a processEvents iteration.
-    if (startedThread)
-        d->stopThread();
-
-    if (d->processTimersAndSockets(!(flags & QEventLoop::ExcludeSocketNotifiers)))
+    // Qt (and tst_QTimer::timerFiresOnlyOncePerProcessEvents) requires that timers
+    // are run only once per processEvents invocation.
+    if (!d->processedTimers && d->processTimersAndSockets())
         retVal = true;
+
+    // Restore previous flags.
+    d->flags = oldFlags;
 
     TRACE(V(retVal));
 
@@ -721,6 +786,8 @@ void QEventDispatcherOS2::registerSocketNotifier(QSocketNotifier *notifier)
                  Q_FUNC_INFO, sockfd, socketType(type));
 
     sn_set.notifiers[type] = notifier;
+
+    d->maybeStartThread();
 }
 
 void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
@@ -768,6 +835,11 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
 
     if (sn_set.isEmpty())
         d->socketNotifiers.erase(i);
+
+    // Note: Not maybeStopThread since if there are still some sockets, we need to poke the select
+    // thread instead of doing nothing - to let it pick up the new fd set (otherwise it will most
+    // likely abort with ENOTSOCK due to a closed file handle).
+    d->maybeStopOrCancelThread();
 }
 
 void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object)
@@ -787,6 +859,8 @@ void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType
     TRACE(V(timerId) << V(interval) << V(timerType) << V(object));
 
     d->timerList.registerTimer(timerId, interval, timerType, object);
+
+    d->maybeStartThread();
 }
 
 bool QEventDispatcherOS2::unregisterTimer(int timerId)
@@ -805,7 +879,13 @@ bool QEventDispatcherOS2::unregisterTimer(int timerId)
 
     TRACE(V(timerId));
 
-    return d->timerList.unregisterTimer(timerId);
+    bool ok = d->timerList.unregisterTimer(timerId);
+
+    // Note: Not maybeStopOrCancelThread since no need to interrupt the wait as only the existing
+    // timers ones will be fired anyway.
+    d->maybeStopThread();
+
+    return ok;
 }
 
 bool QEventDispatcherOS2::unregisterTimers(QObject *object)
@@ -824,7 +904,13 @@ bool QEventDispatcherOS2::unregisterTimers(QObject *object)
 
     TRACE(V(object));
 
-    return d->timerList.unregisterTimers(object);
+    bool ok = d->timerList.unregisterTimers(object);
+
+    // Note: Not maybeStopOrCancelThread since no need to interrupt the wait as only the existing
+    // timers ones will be fired anyway.
+    d->maybeStopThread();
+
+    return ok;
 }
 
 QList<QEventDispatcherOS2::TimerInfo>
@@ -859,7 +945,7 @@ int QEventDispatcherOS2::remainingTime(int timerId)
 void QEventDispatcherOS2::wakeUp()
 {
     Q_D(QEventDispatcherOS2);
-    WinPostQueueMsg(d->hmq, WM_SEM1, 0, 0);
+    WinPostQueueMsg(d->hmq, WM_QT_WAKEUP, 0, 0);
 }
 
 void QEventDispatcherOS2::interrupt()
@@ -884,5 +970,166 @@ void QEventDispatcherOS2::closingDown()
     Q_D(QEventDispatcherOS2);
     d->destroyMsgQueue();
 }
+
+/*****************************************************************************
+  Auxiliary object window class for dedicated message processing.
+ *****************************************************************************/
+
+/*!
+    \class QPMObjectWindow
+
+    The QPMObjectWindow class is an auxiliary class for dedicated message
+    processing. Its functionality is based on PM object windows. Once an
+    instance of this class is created, PM window messages can be sent or posted
+    to it using send() or post() methods. Subclasses should implement the
+    message() method to process sent or posted messages. The hwnd() method is
+    used whenever a PM window handle of this object window is necessary to be
+    passed as a HWND argument to other calls and/or messages.
+
+    Instances of this class may be created only on the main GUI thread or on a
+    thread that has created a PM message queue and runs the PM message loop
+    \b itself. If you create an instance on a thread other than main, make sure
+    you destroy it before destroying the thread's message queue.
+
+    \note WM_CREATE and WM_DESTROY messages are processed internally and not
+    delivered do the message() method. Instead, you can use the constructor and
+    the destructor of the subclass, respectively.
+
+    \note This class is OS/2 specific and not available in Qt for other
+    platforms!
+*/
+
+/*!
+    Constructs a new object window for the current thread.
+    If \a deferred is \c false, this method calls create() to create a PM object
+    window. Otherwise, you must call create() yourself before this object window
+    is able to process messages.
+*/
+QPMObjectWindow::QPMObjectWindow(bool deferred /* = false */) :
+    w(NULLHANDLE)
+{
+    if (!deferred)
+        create();
+}
+
+/*!
+    Destroys this object window.
+    This method calls destroy() to free the PM object window.
+*/
+QPMObjectWindow::~QPMObjectWindow()
+{
+    destroy();
+}
+
+/*!
+    Creates a PM object window.
+    Returns \c true on success or \c false otherwise.
+    The method does nothing but returns \c false if the window has been already
+    created. The handle of the successfully created object window can be
+    obtained using the hwnd() method.
+
+    \note Must be called on the same thread that cosnstructed this instance.
+*/
+bool QPMObjectWindow::create()
+{
+    if (w != NULLHANDLE)
+        return false;
+
+    static const char *ClassName = "Qt5.ObjectWindow";
+    static bool classRegistered = FALSE;
+
+    if (!classRegistered) {
+        WinRegisterClass(0, ClassName, windowProc, 0, QWL_USER + sizeof(PVOID));
+        classRegistered = true;
+    }
+
+    w = WinCreateWindow(HWND_OBJECT, ClassName,
+                        NULL, 0, 0, 0, 0, 0, NULLHANDLE,
+                        HWND_BOTTOM, 0, this, nullptr);
+    if (w == NULLHANDLE)
+        qFatal("WinCreateWindow failed with 0x%08lX", WinGetLastError(0));
+
+    return w != NULLHANDLE;
+}
+
+/*!
+    Destroys the PM object window.
+    Returns \c TRUE on success or \c FALSE otherwise.
+    The method does nothing but returns \c FALSE  if the window has been
+    already destroyed (or never created).
+
+    \note Must be called on the same thread that cosnstructed this instance.
+*/
+bool QPMObjectWindow::destroy()
+{
+    if (w == NULLHANDLE)
+        return false;
+
+    HWND h = w;
+    w = NULLHANDLE; // tell windowProc() we're unsafe
+    WinDestroyWindow(h);
+
+    return true;
+}
+
+//static
+MRESULT EXPENTRY QPMObjectWindow::windowProc(HWND hwnd, ULONG msg,
+                                             MPARAM mp1, MPARAM mp2)
+{
+    if (msg == WM_CREATE) {
+        QPMObjectWindow *that = static_cast<QPMObjectWindow *>(mp1);
+        if (!that)
+            return (MRESULT) TRUE;
+        WinSetWindowPtr(hwnd, QWL_USER, that);
+        return (MRESULT) FALSE;
+    }
+
+    QPMObjectWindow *that =
+        static_cast<QPMObjectWindow *>(WinQueryWindowPtr(hwnd, QWL_USER));
+    Q_ASSERT(that);
+
+    // Note: before WinCreateWindow() returns to the constructor or after the
+    // destructor has been called, w is 0. We use this to determine that the
+    // object is in the unsafe state (VTBL is not yet initialized or has been
+    // already uninitialized), so message() points to never-never land.
+    if (!that || !that->w)
+        return (MRESULT) FALSE;
+
+    return that->message(msg, mp1, mp2);
+}
+
+/*!
+    \fn QPMObjectWindow::hwnd() const
+
+    Returns a handle of the object window created by create(). Returns 0 if
+    create() was never called or if the creation attempt failed.
+*/
+
+/*!
+    \fn QPMObjectWindow::send(ULONG msg, MPARAM mp1, MPARAM mp2) const
+
+    Synchronously sends a message \a msg with the given parameters \a mp1 and
+    \a mp2 to this window handle and returns a reply from the message() function.
+
+    \note Must be called on the same thread that cosnstructed this instance.
+*/
+
+/*!
+    \fn QPMObjectWindow::post(ULONG msg, MPARAM mp1, MPARAM mp2) const
+
+    Asynchronously posts a message \a msg with the given parameters \a mp1 and
+    \a mp2 to this window handle. Returns \c true on success and \c false
+    otherwise.
+
+    \note Can be called on any thread.
+*/
+
+/*!
+    \fn QPMObjectWindow::message(ULONG msg, MPARAM mp1, MPARAM mp2)
+
+    This method is called whenever a message \a msg with parameters \a mp1 and
+    \a mp2 is received by this object window. Every subclass should implement
+    this method to do actual message processing.
+*/
 
 QT_END_NAMESPACE

@@ -54,6 +54,7 @@
 //
 
 #include "QtCore/qabstracteventdispatcher.h"
+#include "QtCore/qt_os2.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -89,6 +90,32 @@ public:
 
     void startingUp();
     void closingDown();
+};
+
+class Q_CORE_EXPORT QPMObjectWindow
+{
+public:
+    QPMObjectWindow(bool deferred = false);
+    virtual ~QPMObjectWindow();
+
+    bool create();
+    bool destroy();
+    HWND hwnd() const { return w; }
+
+    MRESULT send(ULONG msg, MPARAM mp1, MPARAM mp2) const {
+        return WinSendMsg(w, msg, mp1, mp2);
+    }
+
+    bool post(ULONG msg, MPARAM mp1, MPARAM mp2) const {
+        return WinPostMsg(w, msg, mp1, mp2);
+    }
+
+    virtual MRESULT message(ULONG msg, MPARAM mp1, MPARAM mp2) = 0;
+
+private:
+    static MRESULT EXPENTRY windowProc(HWND, ULONG, MPARAM, MPARAM);
+
+    HWND w;
 };
 
 QT_END_NAMESPACE
