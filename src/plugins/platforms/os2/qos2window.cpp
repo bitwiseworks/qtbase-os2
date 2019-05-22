@@ -45,6 +45,8 @@
 #include <QtGui/QGuiApplication>
 #include <QtEventDispatcherSupport/private/qos2guieventdispatcher_p.h>
 
+#include <private/qwindow_p.h>
+
 QT_BEGIN_NAMESPACE
 
 namespace {
@@ -371,8 +373,13 @@ void QOS2Window::setGeometry(const QRect &rect)
     if (mHwndFrame) {
         if (!mFrameMargins.isNull()) {
             // Account for the frame strut.
-            x -= mFrameMargins.left();
-            y -= mFrameMargins.top();
+            if (qt_window_private(const_cast<QWindow *>(window()))->positionPolicy == QWindowPrivate::WindowFrameInclusive) {
+                // This means it is a call from QWindow::setFramePosition() and
+                // the coordinates include the frame (size is still the contents rectangle).
+            } else {
+                x -= mFrameMargins.left();
+                y -= mFrameMargins.top();
+            }
             cx += mFrameMargins.left() + mFrameMargins.right();
             cy += mFrameMargins.top() + mFrameMargins.bottom();
         }
