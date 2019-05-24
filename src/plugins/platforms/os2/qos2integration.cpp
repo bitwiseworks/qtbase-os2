@@ -40,6 +40,7 @@
 #include "qos2integration.h"
 
 #include "qos2backingstore.h"
+#include "qos2keymapper.h"
 #include "qos2screen.h"
 #include "qos2window.h"
 
@@ -62,8 +63,13 @@ QT_BEGIN_NAMESPACE
     \internal
 */
 
+QOS2Integration * QOS2Integration::sInstance = nullptr;
+
 QOS2Integration::QOS2Integration(const QStringList &paramList)
 {
+    Q_ASSERT(sInstance == nullptr);
+    sInstance = this;
+
     Q_UNUSED(paramList);
 
     // Make sure WM_PAINT/WM_SIZE etc. are handled synchronously.
@@ -72,12 +78,18 @@ QOS2Integration::QOS2Integration(const QStringList &paramList)
     // Create and notify the system about the primary (and the only) screen.
     mScreen = new QOS2Screen();
     screenAdded(mScreen);
+
+    mKeyMapper = new QOS2KeyMapper();
 }
 
 QOS2Integration::~QOS2Integration()
 {
+    delete mKeyMapper;
+
     destroyScreen(mScreen);
     delete mFontDatabase;
+
+    sInstance = nullptr;
 }
 
 bool QOS2Integration::hasCapability(QPlatformIntegration::Capability cap) const
@@ -113,6 +125,16 @@ QPlatformFontDatabase *QOS2Integration::fontDatabase() const
     }
 
     return mFontDatabase;
+}
+
+Qt::KeyboardModifiers QOS2Integration::queryKeyboardModifiers() const
+{
+    return mKeyMapper->queryKeyboardModifiers();
+}
+
+QList<int> QOS2Integration::possibleKeys(const QKeyEvent *e) const
+{
+    return mKeyMapper->possibleKeys(e);
 }
 
 QT_END_NAMESPACE

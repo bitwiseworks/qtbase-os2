@@ -38,6 +38,8 @@
 ****************************************************************************/
 
 #include "qos2window.h"
+#include "qos2integration.h"
+#include "qos2keymapper.h"
 #include "qos2screen.h"
 
 #include <qpa/qwindowsysteminterface.h>
@@ -136,6 +138,9 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             case WM_VSCROLL:
             case WM_HSCROLL:
                 that->handleWheel(msg, mp1, mp2); return 0;
+            case WM_CHAR:
+                if (that->handleWmChar(mp1, mp2)) return (MRESULT)TRUE;
+                break;
             default: break;
             }
         }
@@ -664,15 +669,18 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
         buttons |= Qt::MidButton;
 
     Qt::KeyboardModifiers modifiers;
-    USHORT flags = SHORT2FROMMP(mp2);
+    const USHORT flags = SHORT2FROMMP(mp2);
+    const int extraKeyState = QOS2Integration::instance()->keyMapper ()->extraKeyState ();
 
     // Get key modifiers.
     if (flags & KC_SHIFT)
         modifiers |= Qt::ShiftModifier;
     if (flags & KC_CTRL)
         modifiers |= Qt::ControlModifier;
-    if (flags & KC_ALT)
+    if ((flags & KC_ALT) || (extraKeyState & Qt::AltModifier))
         modifiers |= Qt::AltModifier;
+    if (extraKeyState & Qt::MetaModifier)
+        modifiers |= Qt::MetaModifier;
 
     qCDebug(lcQpaEvents) << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
                          << DV (globalPos) << DV (localPos)
@@ -734,14 +742,17 @@ void QOS2Window::handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2)
     }
 
     Qt::KeyboardModifiers modifiers;
+    const int extraKeyState = QOS2Integration::instance()->keyMapper ()->extraKeyState ();
 
     // Get key modifiers.
     if (WinGetKeyState(HWND_DESKTOP, VK_SHIFT ) & 0x8000)
         modifiers |= Qt::ShiftModifier;
-    if ((WinGetKeyState(HWND_DESKTOP, VK_ALT) & 0x8000))
+    if ((WinGetKeyState(HWND_DESKTOP, VK_ALT) & 0x8000) || (extraKeyState & Qt::AltModifier))
         modifiers |= Qt::AltModifier;
     if (WinGetKeyState(HWND_DESKTOP, VK_CTRL) & 0x8000)
         modifiers |= Qt::ControlModifier;
+    if (extraKeyState & Qt::MetaModifier)
+        modifiers |= Qt::MetaModifier;
 
     // Alt inverts scroll orientation (Qt/Win32 behavior)
     const QPoint point = (msg == WM_VSCROLL || modifiers & Qt::AltModifier) ? QPoint(0, delta) : QPoint(delta, 0);
@@ -750,6 +761,18 @@ void QOS2Window::handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2)
                          << DV (globalPos) << DV (localPos) << DV (point) << DV (modifiers);
 
     QWindowSystemInterface::handleWheelEvent(window(), localPos, globalPos, QPoint(), point, modifiers);
+}
+
+bool QOS2Window::handleWmChar(MPARAM mp1, MPARAM mp2)
+{
+    CHRMSG chm;
+
+    ((PMPARAM)&chm)[0] = mp1;
+    ((PMPARAM)&chm)[1] = mp2;
+
+    qCDebug(lcQpaEvents) << hex << DV(chm.fs) << DV(chm.scancode) << DV(chm.vkey) << DV(chm.chr) << dec << DV(chm.cRepeat);
+
+    return QOS2Integration::instance()->keyMapper()->translateKeyEvent(this, mHwnd, chm);
 }
 
 #ifndef QT_NO_DEBUG_STREAM

@@ -1,4 +1,4 @@
-/****************************************************************************
+/***************************************************************************
 **
 ** Copyright (C) 2019 bww bitwise works GmbH.
 ** Contact: https://www.qt.io/licensing/
@@ -37,45 +37,57 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2INTEGRATION_H
-#define QOS2INTEGRATION_H
+#ifndef QOS2KEYMAPPER_H
+#define QOS2KEYMAPPER_H
 
-#include <qpa/qplatformintegration.h>
+#include "qos2context.h"
 
 QT_BEGIN_NAMESPACE
 
-class QOS2KeyMapper;
+class QKeyEvent;
+class QOS2Window;
 
-class QOS2Integration : public QPlatformIntegration
+/*
+    An OS/2 KeyboardLayoutItem has 8 possible states meaningful for Qt:
+        1. Unmodified
+        2. Shift
+        3. Control
+        4. Control + Shift
+        5. Alt
+        6. Alt + Shift
+        7. Alt + Control
+        8. Alt + Control + Shift
+*/
+struct KeyboardLayoutItem {
+    int qtKey[8][2];    // Can be any Qt::Key_<foo>, or unicode character.
+                        // The second index is for national keyboard layouts.
+    ULONG layoutIds[2]; // Latin layout ID + National layout ID.
+    enum { QtKeySize = sizeof(qtKey) / sizeof(qtKey[0]) };
+};
+
+class QOS2KeyMapper
 {
+    Q_DISABLE_COPY(QOS2KeyMapper)
+
 public:
-    explicit QOS2Integration(const QStringList &paramList);
-    virtual ~QOS2Integration();
+    explicit QOS2KeyMapper();
 
-    bool hasCapability(QPlatformIntegration::Capability cap) const override;
+    bool translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm);
 
-    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
-    QAbstractEventDispatcher *createEventDispatcher() const override;
+    int extraKeyState() const { return mExtraKeyState; }
 
-    QPlatformFontDatabase *fontDatabase() const override;
-
-    Qt::KeyboardModifiers queryKeyboardModifiers() const override;
-    QList<int> possibleKeys(const QKeyEvent *e) const override;
-
-    // OS/2 specifics
-
-    QOS2KeyMapper *keyMapper() const { return mKeyMapper; }
-
-    static QOS2Integration *instance() { return sInstance; }
+    Qt::KeyboardModifiers queryKeyboardModifiers();
+    QList<int> possibleKeys(const QKeyEvent *e) const;
 
 private:
-    QPlatformScreen *mScreen = nullptr;
-    QPlatformFontDatabase *mFontDatabase = nullptr;
+    void updateKeyMap(HWND hwnd, CHRMSG &chm);
 
-    QOS2KeyMapper *mKeyMapper = nullptr;
+    // State holder for LWIN/RWIN and ALTGr keys
+    // (ALTGr is also necessary since OS/2 doesn't report ALTGr as KC_ALT)
+    int mExtraKeyState = 0;
 
-    static QOS2Integration * sInstance;
+    static constexpr const size_t NumKeyboardLayoutItems = 256;
+    KeyboardLayoutItem mKeyLayout[NumKeyboardLayoutItems];
 };
 
 QT_END_NAMESPACE
