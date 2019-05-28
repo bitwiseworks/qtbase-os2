@@ -790,7 +790,7 @@ void QOS2KeyMapper::updateKeyMap(HWND hwnd, CHRMSG &chm)
 
     if (Q_UNLIKELY(lcQpaEventsDebug) && layoutsChanged) {
         qCDebug(lcQpaEvents, "scancode 0x%02x (layoutIds: %ld, %ld)", chm.scancode,
-                mKeyLayout[chm.scancode].layoutIds[0], mKeyLayout[chm.scancode].layoutIds[0]);
+                mKeyLayout[chm.scancode].layoutIds[0], mKeyLayout[chm.scancode].layoutIds[1]);
         for (int i = 0; i < KeyboardLayoutItem::QtKeySize; ++i) {
             qCDebug(lcQpaEvents, "    [%d] (0x%04x, '%lc') (0x%04x, '%lc')", i,
                     mKeyLayout[chm.scancode].qtKey[i][0],
