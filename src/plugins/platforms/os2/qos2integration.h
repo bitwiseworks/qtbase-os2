@@ -60,8 +60,13 @@ public:
 
     QPlatformFontDatabase *fontDatabase() const override;
 
+    QStringList themeNames() const override;
+    QPlatformTheme *createPlatformTheme(const QString &name) const override;
+
     Qt::KeyboardModifiers queryKeyboardModifiers() const override;
     QList<int> possibleKeys(const QKeyEvent *e) const override;
+
+    void beep() const override;
 
     // OS/2 specifics
 

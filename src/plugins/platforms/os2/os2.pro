@@ -12,6 +12,7 @@ SOURCES = \
     qos2integration.cpp \
     qos2keymapper.cpp \
     qos2screen.cpp \
+    qos2theme.cpp \
     qos2window.cpp
 
 HEADERS = \
@@ -21,6 +22,7 @@ HEADERS = \
     qos2integration.h \
     qos2keymapper.h \
     qos2screen.h \
+    qos2theme.h \
     qos2window.h
 
 OTHER_FILES += os2.json

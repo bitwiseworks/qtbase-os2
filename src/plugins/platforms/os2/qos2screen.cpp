@@ -62,6 +62,14 @@ QOS2Screen::QOS2Screen()
     Q_ASSERT(brc);
     mDepth = buf[0] * buf[1];
 
+    HDC hdc = GpiQueryDevice(hps);
+
+    DevQueryCaps(hdc, CAPS_HORIZONTAL_FONT_RES, 2, buf);
+    mDpi = QDpi(buf[0], buf[1]);
+
+    DevQueryCaps(hdc, CAPS_HORIZONTAL_RESOLUTION, 2, buf);
+    mPhysicalSize = QSizeF(mWidth * 1000 / buf[0], mHeight * 1000 / buf[1]);
+
     WinReleasePS(hps);
 
     switch (mDepth) {
@@ -74,7 +82,8 @@ QOS2Screen::QOS2Screen()
     default: break;
     }
 
-    qCInfo(lcQpaWindows) << "Screen size:" << mWidth << "x" <<  mHeight << "x" << mDepth << "format" << mFormat;
+    qCInfo(lcQpaWindows) << "Screen size:" << mWidth << "x" <<  mHeight << "x" << mDepth << "format" << mFormat
+                         << "dpi" << mDpi << "physical" << mPhysicalSize;
 }
 
 QOS2Screen::~QOS2Screen()
@@ -100,6 +109,16 @@ int QOS2Screen::depth() const
 QImage::Format QOS2Screen::format() const
 {
     return mFormat;
+}
+
+QSizeF QOS2Screen::physicalSize() const
+{
+    return mPhysicalSize;
+}
+
+QDpi QOS2Screen::logicalDpi() const
+{
+    return mDpi;
 }
 
 QPlatformCursor *QOS2Screen::cursor() const

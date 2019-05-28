@@ -37,52 +37,35 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2SCREEN_H
-#define QOS2SCREEN_H
+#ifndef QOS2STHEME_H
+#define QOS2THEME_H
 
-#include "qos2context.h"
-
-#include <qpa/qplatformscreen.h>
+#include <qpa/qplatformtheme.h>
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Screen : public QPlatformScreen
+class QOS2Theme : public QPlatformTheme
 {
 public:
-    QOS2Screen();
-    ~QOS2Screen();
+    QOS2Theme();
+    ~QOS2Theme();
 
-    QPixmap grabWindow(WId window, int x, int y, int width, int height) const override;
+    const QPalette *palette(Palette type = SystemPalette) const override { return mPalettes[type]; }
+    const QFont *font(Font type = SystemFont) const override { return mFonts[type]; }
 
-    QRect geometry() const override;
-    int depth() const override;
-    QImage::Format format() const override;
-
-    QSizeF physicalSize() const override;
-    QDpi logicalDpi() const override;
-
-    QPlatformCursor *cursor() const override;
-
-    // Fast getters
-    static int Width() { return sInstance->mWidth; }
-    static int Height() { return sInstance->mHeight; };
-    static int Depth() { return sInstance->mDepth; };
-    static QImage::Format Format() { return sInstance->mFormat; };
-
-    static QOS2Screen *Instance() { return sInstance; }
+    static const char *name() { return "os2"; }
 
 private:
-    int mWidth = 0;
-    int mHeight = 0;
-    int mDepth = 0;
-    QImage::Format mFormat = QImage::Format_Invalid;
+    void refresh() { refreshPalettes(); refreshFonts(); }
+    void clearPalettes();
+    void refreshPalettes();
+    void clearFonts();
+    void refreshFonts();
 
-    QSizeF mPhysicalSize;
-    QDpi mDpi;
-
-    static QOS2Screen *sInstance;
+    QPalette *mPalettes[NPalettes];
+    QFont *mFonts[NFonts];
 };
 
 QT_END_NAMESPACE
 
-#endif
+#endif // QOS2THEME_H

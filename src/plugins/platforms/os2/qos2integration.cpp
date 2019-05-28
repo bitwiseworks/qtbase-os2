@@ -42,6 +42,7 @@
 #include "qos2backingstore.h"
 #include "qos2keymapper.h"
 #include "qos2screen.h"
+#include "qos2theme.h"
 #include "qos2window.h"
 
 #include <qpa/qwindowsysteminterface.h>
@@ -127,6 +128,18 @@ QPlatformFontDatabase *QOS2Integration::fontDatabase() const
     return mFontDatabase;
 }
 
+QStringList QOS2Integration::themeNames() const
+{
+    return QStringList(QLatin1String(QOS2Theme::name()));
+}
+
+QPlatformTheme *QOS2Integration::createPlatformTheme(const QString &name) const
+{
+    if (name == QLatin1String(QOS2Theme::name()))
+        return new QOS2Theme;
+    return QPlatformIntegration::createPlatformTheme(name);
+}
+
 Qt::KeyboardModifiers QOS2Integration::queryKeyboardModifiers() const
 {
     return mKeyMapper->queryKeyboardModifiers();
@@ -135,6 +148,11 @@ Qt::KeyboardModifiers QOS2Integration::queryKeyboardModifiers() const
 QList<int> QOS2Integration::possibleKeys(const QKeyEvent *e) const
 {
     return mKeyMapper->possibleKeys(e);
+}
+
+void QOS2Integration::beep() const
+{
+    WinAlarm(HWND_DESKTOP, WA_WARNING); // For QApplication
 }
 
 QT_END_NAMESPACE
