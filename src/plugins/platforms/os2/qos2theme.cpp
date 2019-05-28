@@ -44,6 +44,8 @@
 
 #include "qos2context.h"
 
+#include <qpa/qplatformdialoghelper.h>
+
 #include <QtGui/QGuiApplication>
 #include <QtGui/QColor>
 #include <QtGui/QFont>
@@ -170,6 +172,25 @@ QOS2Theme::~QOS2Theme()
 {
     clearPalettes();
     clearFonts();
+}
+
+QVariant QOS2Theme::themeHint(QPlatformTheme::ThemeHint hint) const
+{
+    switch (hint) {
+    case UseFullScreenForPopupMenu:
+        return QVariant(true);
+    case DialogButtonBoxLayout:
+        return QVariant(QPlatformDialogHelper::WinLayout);
+    case StyleNames:
+        return QVariant(QStringList(QStringLiteral("windows")));
+    case KeyboardScheme:
+        return QVariant(int(WindowsKeyboardScheme));
+    case ContextMenuOnMouseRelease:
+        return QVariant(true);
+    default:
+        break;
+    }
+    return QPlatformTheme::themeHint(hint);
 }
 
 void QOS2Theme::clearPalettes()

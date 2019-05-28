@@ -140,6 +140,23 @@ QPlatformTheme *QOS2Integration::createPlatformTheme(const QString &name) const
     return QPlatformIntegration::createPlatformTheme(name);
 }
 
+QVariant QOS2Integration::styleHint(QPlatformIntegration::StyleHint hint) const
+{
+    switch (hint) {
+    case QPlatformIntegration::CursorFlashTime:
+        if (const LONG timeMS = WinQuerySysValue(HWND_DESKTOP, SV_CURSORRATE))
+            return QVariant(timeMS > 0 ? int(timeMS) * 2 : 0);
+        break;
+    case QPlatformIntegration::MouseDoubleClickInterval:
+        if (const LONG ms = WinQuerySysValue(HWND_DESKTOP, SV_DBLCLKTIME))
+            return QVariant(int(ms));
+        break;
+    default:
+        break;
+    }
+    return QPlatformIntegration::styleHint(hint);
+}
+
 Qt::KeyboardModifiers QOS2Integration::queryKeyboardModifiers() const
 {
     return mKeyMapper->queryKeyboardModifiers();

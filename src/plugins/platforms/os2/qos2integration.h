@@ -63,6 +63,8 @@ public:
     QStringList themeNames() const override;
     QPlatformTheme *createPlatformTheme(const QString &name) const override;
 
+    QVariant styleHint(StyleHint hint) const override;
+
     Qt::KeyboardModifiers queryKeyboardModifiers() const override;
     QList<int> possibleKeys(const QKeyEvent *e) const override;
 

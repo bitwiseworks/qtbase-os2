@@ -50,6 +50,7 @@ public:
     QOS2Theme();
     ~QOS2Theme();
 
+    QVariant themeHint(ThemeHint hint) const override;
     const QPalette *palette(Palette type = SystemPalette) const override { return mPalettes[type]; }
     const QFont *font(Font type = SystemFont) const override { return mFonts[type]; }
 
