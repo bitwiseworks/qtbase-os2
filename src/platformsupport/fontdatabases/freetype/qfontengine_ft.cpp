@@ -1070,7 +1070,7 @@ QFontEngineFT::Glyph *QFontEngineFT::loadGlyph(QGlyphSet *set, uint glyph,
                      || matrix.xy != 0
                      || matrix.yx != 0;
 
-    if (transform || (format != Format_Mono && !isScalableBitmap()))
+    if (transform || (format != Format_Mono && !embeddedbitmap && !isScalableBitmap()))
         load_flags |= FT_LOAD_NO_BITMAP;
 
     FT_Error err = FT_Load_Glyph(face, glyph, load_flags);

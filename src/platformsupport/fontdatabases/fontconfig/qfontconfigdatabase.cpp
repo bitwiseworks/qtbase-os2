@@ -988,6 +988,12 @@ void QFontconfigDatabase::setupFontEngine(QFontEngineFT *engine, const QFontDef 
         } else
             format = QFontEngine::Format_Mono;
 
+#if defined(FC_EMBEDDED_BITMAP)
+        FcBool embededbitmap;
+        if (FcPatternGetBool(match, FC_EMBEDDED_BITMAP, 0, &embededbitmap) == FcResultMatch)
+            engine->embeddedbitmap = embededbitmap;
+#endif
+
         FcPatternDestroy(match);
     } else
         format = antialias ? QFontEngine::Format_A8 : QFontEngine::Format_Mono;
