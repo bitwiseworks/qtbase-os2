@@ -89,6 +89,7 @@ public:
     HPS acquirePs();
     void releasePs(HPS hps);
 
+    void handleWmClose();
     void handleWmActivate(MPARAM mp1);
     void handleWmPaint();
     void handleSizeMove();

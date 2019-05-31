@@ -127,6 +127,7 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             // NOTE: pass mouse events to WinDefWindowProc to cause window activation on click etc.
         } else {
             switch (msg) {
+            case WM_CLOSE: that->handleWmClose(); return 0;
             case WM_ACTIVATE: that->handleWmActivate(mp1); return 0;
             case WM_PAINT: that->handleWmPaint(); return 0;
             case WM_WINDOWPOSCHANGED: {
@@ -537,6 +538,13 @@ void QOS2Window::releasePs(HPS hps)
         return;
 
     WinReleasePS(hps);
+}
+
+void QOS2Window::handleWmClose()
+{
+    qCInfo(lcQpaEvents);
+
+    QWindowSystemInterface::handleCloseEvent(window());
 }
 
 void QOS2Window::handleWmActivate(MPARAM mp1)
