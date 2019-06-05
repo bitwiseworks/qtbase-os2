@@ -51,7 +51,8 @@ class QOS2Window : public QPlatformWindow
 public:
     enum Flags
     {
-        Active = 0x1
+        Active = 0x1,
+        AutoMouseCapture = 0x2,
     };
 
     explicit QOS2Window(QWindow *window);
@@ -74,6 +75,11 @@ public:
 
     void raise() override;
     void lower() override;
+
+    bool setMouseGrabEnabled(bool grab) override;
+    bool hasMouseCapture() const { return WinQueryCapture(HWND_DESKTOP) == mHwnd; }
+
+    void windowEvent(QEvent *event) override;
 
     void propagateSizeHints() override;
 

@@ -359,6 +359,9 @@ QOS2Window::~QOS2Window()
 {
     qCInfo(lcQpaWindows) << hex << DV(mHwndFrame) << DV(mHwnd);
 
+    if (hasMouseCapture())
+        setMouseGrabEnabled(false);
+
     // Deassociate mHwnd window from the instnace (we don't need any messages after this point).
     WinSetWindowPtr(mHwnd, WinData_QOS2Window, nullptr);
 
@@ -440,6 +443,8 @@ void QOS2Window::setVisible(bool visible)
             }
         }
     } else {
+        if (hasMouseCapture())
+            setMouseGrabEnabled(false);
         if (mHwndFrame) {
             if (mSwEntry) {
                 SWCNTRL swc;
@@ -518,6 +523,40 @@ void QOS2Window::lower()
 
     if (!(window()->flags() & Qt::WindowStaysOnTopHint))
         WinSetWindowPos(mainHwnd(), HWND_BOTTOM, 0, 0, 0, 0, SWP_ZORDER);
+}
+
+bool QOS2Window::setMouseGrabEnabled(bool grab)
+{
+    qCInfo(lcQpaWindows) << grab;
+
+    if (!WinIsWindowVisible(mainHwnd ()) && grab) {
+        qWarning("%s: Not setting mouse grab for invisible window %s/'%s'",
+                 __FUNCTION__, window()->metaObject()->className(),
+                 qPrintable(window()->objectName()));
+        return false;
+    }
+
+    // Override autocapture on explicit grab or on grab release.
+    clearFlag(AutoMouseCapture);
+
+    if (hasMouseCapture() == grab)
+        return true;
+
+    return WinSetCapture(HWND_DESKTOP, grab ? mHwnd : NULLHANDLE);
+}
+
+void QOS2Window::windowEvent(QEvent *event)
+{
+    qCInfo(lcQpaWindows) << event;
+
+    switch (event->type()) {
+    case QEvent::WindowBlocked: // Blocked by another modal window.
+        if (hasMouseCapture())
+            setMouseGrabEnabled(false);
+        break;
+    default:
+        break;
+    }
 }
 
 void QOS2Window::propagateSizeHints()
@@ -693,6 +732,17 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     qCDebug(lcQpaEvents) << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
                          << DV (globalPos) << DV (localPos)
                          << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
+
+    // Qt expects the platform plugin to capture the mouse on
+    // any button press until release.
+    if (type == QEvent::MouseButtonPress && !hasMouseCapture()) {
+        qCInfo(lcQpaEvents) << this << "Setting automatic mouse capture for" << window();
+        setMouseGrabEnabled(true);
+        setFlag(AutoMouseCapture); // Important: after #setMouseGrabEnabled.
+    } else if (type == QEvent::MouseButtonRelease && hasMouseCapture() && testFlag(AutoMouseCapture)) {
+        qCInfo(lcQpaEvents) << this << "Releasing automatic mouse capture for" << window();
+        setMouseGrabEnabled(false);
+    }
 
     QWindowSystemInterface::handleMouseEvent(window(), localPos, globalPos,
                                              buttons, button, type, modifiers, Qt::MouseEventNotSynthesized);
