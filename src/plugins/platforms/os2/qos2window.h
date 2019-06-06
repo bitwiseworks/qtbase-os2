@@ -53,6 +53,7 @@ public:
     {
         Active = 0x1,
         AutoMouseCapture = 0x2,
+        BlockedByModal = 0x4,
     };
 
     explicit QOS2Window(QWindow *window);
@@ -98,6 +99,7 @@ public:
     void handleWmClose();
     void handleWmActivate(MPARAM mp1);
     void handleWmPaint();
+    void handleWmAdjustWindowPos(MPARAM mp1);
     void handleSizeMove();
     void handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2);
     void handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2);
