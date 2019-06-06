@@ -423,17 +423,16 @@ void QOS2Window::setVisible(bool visible)
 
     if (visible) {
         if (mHwndFrame) {
-            // Lazily create a window list list entry when appropriate.
+            // Lazily create a window list entry when appropriate.
             Qt::WindowType type = window()->type();
             if (type != Qt::Popup &&
                 type != Qt::ToolTip &&
                 type != Qt::Tool &&
-                (type != Qt::Dialog || !window()->parent()) &&
+                (type != Qt::Dialog || !window()->transientParent()) &&
                 (type != Qt::SplashScreen ||
                  (window()->flags() & Qt::WindowTitleHint))
             ) {
                 if (!mSwEntry) {
-                    // lazily create a new window list entry
                     PID pid;
                     WinQueryWindowProcess(mHwndFrame, &pid, NULL);
                     SWCNTRL swc;
