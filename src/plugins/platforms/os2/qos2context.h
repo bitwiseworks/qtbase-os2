@@ -49,6 +49,7 @@
 QT_BEGIN_NAMESPACE
 
 class QOS2Window;
+class QWindow;
 
 Q_DECLARE_LOGGING_CATEGORY(lcQpaWindows)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaBackingStore)
@@ -62,7 +63,7 @@ namespace QOS2
 
 inline QRect ToQRect(const RECTL &rcl, int parentHeight)
 {
-    // Flip y coordinate.
+    // Flip y coordinate (RECTL is inclusive-exclusive).
     return QRect(QPoint(rcl.xLeft, parentHeight - rcl.yTop),
                  QPoint(rcl.xRight - 1, parentHeight - (rcl.yBottom + 1)));
 }
@@ -73,7 +74,22 @@ inline QPoint ToQPoint(const POINTL &ptl, int parentHeight)
     return QPoint(ptl.x, parentHeight - (ptl.y + 1));
 }
 
-} // namespace QOS2Context
+inline RECTL ToRECTL(const QRect &rect, int parentHeight)
+{
+    // Flip y coordinate (RECTL is inclusive-exclusive).
+    return RECTL { rect.left(), parentHeight - (rect.bottom() + 1),
+                   rect.right() + 1, parentHeight - rect.top() };
+}
+
+inline POINTL ToPOINTL(const QPoint &point, int parentHeight)
+{
+    // Flip y coordinate.
+    return POINTL { point.x(), parentHeight - (point.y() + 1) };
+}
+
+QWindow *WindowAt(const QPoint &screenPos);
+
+} // namespace QOS2
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug d, const QOS2Window *window);

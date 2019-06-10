@@ -129,8 +129,14 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     // WinData_QOS2Window is null during widnow creation, ignore this case for now.
     if (that) {
         Q_ASSERT(that->hwnd() == hwnd);
-        if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) {
-            that->handleMouse(msg, mp1, mp2);
+        if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || msg == WM_MOUSELEAVE) {
+            if (msg == WM_MOUSELEAVE && hwnd != (HWND)mp1) {
+                // This must be a LEAVE message (mp1 = hwndFrom, mp2 = hwndTo) from one of the
+                // frame controls forwarded by WC_FRAME to FID_CLIENT. Ignore it as it doesn't
+                // actually belong to the given hwnd.
+            } else {
+                that->handleMouse(msg, mp1, mp2);
+            }
             // NOTE: pass mouse events to WinDefWindowProc to cause window activation on click etc.
         } else {
             switch (msg) {
@@ -158,6 +164,11 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 }
 
 } // unnamed namespace
+
+QHash<HWND, QOS2Window *> QOS2Window::sKnownWindows;
+QPointer<QWindow> QOS2Window::sWindowUnderMouse;
+QPointer<QWindow> QOS2Window::sTrackedWindow;
+QWindow *QOS2Window::sPreviousCaptureWindow = nullptr;
 
 QOS2Window::QOS2Window(QWindow *window)
     : QPlatformWindow(window)
@@ -321,7 +332,13 @@ QOS2Window::QOS2Window(QWindow *window)
 
     qCInfo(lcQpaWindows) << hex << DV(mHwndFrame) << DV(mHwnd);
 
+    // Associate mHwnd with this instance.
+    sKnownWindows.insert(mHwnd, this);
+
     if (mHwndFrame && mHwndFrame != mHwnd) {
+        // Associate mFrameHwnd with this instance.
+        sKnownWindows.insert(mHwndFrame, this);
+
         // Position the frame window first time to have the client window
         // resized and grab frame margins (we don't trust SV_CXSIZEBORDER et al
         // as the actual frame size depends on many factors).
@@ -371,6 +388,13 @@ QOS2Window::~QOS2Window()
 
     if (hasMouseCapture())
         setMouseGrabEnabled(false);
+
+    setKeyboardGrabEnabled(false);
+
+    // Dessociate mHwnd and mHwndFrame from this instance.
+    sKnownWindows.remove(mHwnd);
+    if (mHwndFrame != NULLHANDLE && mHwndFrame != mHwnd)
+        sKnownWindows.remove(mHwndFrame);
 
     // Deassociate mHwnd window from the instnace (we don't need any messages after this point).
     WinSetWindowPtr(mHwnd, WinData_QOS2Window, nullptr);
@@ -714,6 +738,27 @@ void QOS2Window::handleSizeMove()
 
 void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
+    QWindow *window = QOS2Window::window();
+
+    if (msg == WM_MOUSELEAVE) {
+        qCInfo(lcQpaEvents) << "WM_MOUSELEAVE for" << window
+                            << "previous window under mouse" << sWindowUnderMouse
+                            << "tracked window" << sTrackedWindow;
+
+        // When moving out of a window, WM_MOUSEMOVE within the moved-to window is received first,
+        // so if TrackedWindow is not the window here, it means the cursor has left the
+        // application.
+        if (window == sTrackedWindow) {
+            QWindow *leaveTarget = sWindowUnderMouse ? sWindowUnderMouse : sTrackedWindow;
+            qCInfo(lcQpaEvents) << "Generating leave for" << leaveTarget;
+            QWindowSystemInterface::handleLeaveEvent(leaveTarget);
+            sTrackedWindow = nullptr;
+            sWindowUnderMouse = nullptr;
+        }
+
+        return;
+    }
+
     // Get window coordinates.
     POINTL ptl = { SHORT1FROMMP(mp1), SHORT2FROMMP(mp1) };
     const QPoint localPos = QOS2::ToQPoint(ptl, geometry().height());
@@ -795,16 +840,76 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     // Qt expects the platform plugin to capture the mouse on
     // any button press until release.
     if (type == QEvent::MouseButtonPress && !hasMouseCapture()) {
-        qCInfo(lcQpaEvents) << this << "Setting automatic mouse capture for" << window();
+        qCInfo(lcQpaEvents) << this << "Setting automatic mouse capture for" << window;
         setMouseGrabEnabled(true);
         setFlag(AutoMouseCapture); // Important: after #setMouseGrabEnabled.
     } else if (type == QEvent::MouseButtonRelease && hasMouseCapture() && testFlag(AutoMouseCapture)) {
-        qCInfo(lcQpaEvents) << this << "Releasing automatic mouse capture for" << window();
+        qCInfo(lcQpaEvents) << this << "Releasing automatic mouse capture for" << window;
         setMouseGrabEnabled(false);
     }
 
-    QWindowSystemInterface::handleMouseEvent(window(), localPos, globalPos,
+    QWindow *currentWindowUnderMouse = hasMouseCapture() ? QOS2::WindowAt(globalPos) : window;
+    while (currentWindowUnderMouse && currentWindowUnderMouse->flags() & Qt::WindowTransparentForInput)
+        currentWindowUnderMouse = currentWindowUnderMouse->parent();
+    if (!currentWindowUnderMouse) {
+        const QRect clientRect(QPoint(0, 0), window->size());
+        if (clientRect.contains(localPos))
+            currentWindowUnderMouse = window;
+    }
+
+    const bool hasCapture = hasMouseCapture();
+    const bool currentNotCapturing = hasCapture && currentWindowUnderMouse != window;
+
+    // Enter new window: track to generate leave event.
+    // If there is an active capture, only track if the current window is capturing,
+    // so we don't get extra leave when cursor leaves the application.
+    if (window != sTrackedWindow && !currentNotCapturing) {
+        sTrackedWindow = window;
+    }
+
+    // No enter or leave events are sent as long as there is an autocapturing window.
+    if (!hasCapture || !testFlag(AutoMouseCapture)) {
+        // Leave is needed if:
+        // 1) There is no capture and we move from a window to another window.
+        //    Note: Leaving the application entirely is handled in WM_MOUSELEAVE case.
+        // 2) There is capture and we move out of the capturing window.
+        // 3) There is a new capture and we were over another window.
+        if ((sWindowUnderMouse && sWindowUnderMouse != currentWindowUnderMouse
+                && (!hasCapture || window == sWindowUnderMouse))
+            || (hasCapture && sPreviousCaptureWindow != window && sWindowUnderMouse
+                && sWindowUnderMouse != window)) {
+            qCInfo(lcQpaEvents) << "Generating synthetic leave for" << sWindowUnderMouse;
+            QWindowSystemInterface::handleLeaveEvent(sWindowUnderMouse);
+            if (currentNotCapturing) {
+                // Clear tracking if capturing and current window is not the capturing window
+                // to avoid leave when mouse actually leaves the application.
+                sTrackedWindow = nullptr;
+            }
+        }
+        // Enter is needed if:
+        // 1) There is no capture and we move to a new window.
+        // 2) There is capture and we move into the capturing window.
+        // 3) The capture just ended and we are over non-capturing window.
+        if ((currentWindowUnderMouse && sWindowUnderMouse != currentWindowUnderMouse
+                && (!hasCapture || currentWindowUnderMouse == window))
+            || (sPreviousCaptureWindow && window != sPreviousCaptureWindow && currentWindowUnderMouse
+                && currentWindowUnderMouse != sPreviousCaptureWindow)) {
+            QPoint localPos;
+            qCInfo(lcQpaEvents) << "Generating enter for" << currentWindowUnderMouse;
+            if (QOS2Window *platformWindow = static_cast<QOS2Window *>(currentWindowUnderMouse->handle())) {
+                localPos = platformWindow->mapFromGlobal(globalPos);
+            }
+            QWindowSystemInterface::handleEnterEvent(currentWindowUnderMouse, localPos, globalPos);
+        }
+        // We need to track WindowUnderMouse separately from TrackedWindow, as
+        // PM will not trigger WM_MOUSELEAVE for leaving window when mouse capture is set.
+        sWindowUnderMouse = currentWindowUnderMouse;
+    }
+
+    QWindowSystemInterface::handleMouseEvent(window, localPos, globalPos,
                                              buttons, button, type, modifiers, Qt::MouseEventNotSynthesized);
+
+    sPreviousCaptureWindow = hasCapture ? window : nullptr;
 }
 
 void QOS2Window::handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2)

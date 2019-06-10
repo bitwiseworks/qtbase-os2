@@ -38,6 +38,8 @@
 ****************************************************************************/
 
 #include "qos2context.h"
+#include "qos2screen.h"
+#include "qos2window.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -50,5 +52,24 @@ Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaBackingStore, "qt.qpa.backingstore", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaEvents, "qt.qpa.events", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaMessages, "qt.qpa.messages", QtWarningMsg)
+
+namespace QOS2
+{
+
+QWindow *WindowAt(const QPoint &screenPos)
+{
+    POINTL ptl = ToPOINTL(screenPos, QOS2Screen::Height());
+    HWND hwnd = WinWindowFromPoint(HWND_DESKTOP, &ptl, TRUE);
+    if (hwnd == NULLHANDLE || hwnd == HWND_DESKTOP)
+        return nullptr;
+
+    QOS2Window *os2window = QOS2Window::PlatformWindow(hwnd);
+    if (os2window)
+        return os2window->window();
+
+    return nullptr;
+}
+
+} // namespace QOS2
 
 QT_END_NAMESPACE

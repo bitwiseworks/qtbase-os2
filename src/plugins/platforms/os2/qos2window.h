@@ -44,6 +44,8 @@
 
 #include <qpa/qplatformwindow.h>
 
+#include <QtCore/QPointer>
+
 QT_BEGIN_NAMESPACE
 
 class QOS2Window : public QPlatformWindow
@@ -106,6 +108,8 @@ public:
     void handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2);
     bool handleWmChar(MPARAM mp1, MPARAM mp2);
 
+    static QOS2Window *PlatformWindow(HWND hwnd) { return sKnownWindows.value(hwnd); }
+
 private:
     unsigned mFlags = 0;
 
@@ -115,6 +119,12 @@ private:
     HWND mHwndFrame = NULLHANDLE;
     QMargins mFrameMargins;
     HSWITCH mSwEntry = NULLHANDLE;
+
+    static QHash<HWND, QOS2Window *> sKnownWindows;
+
+    static QPointer<QWindow> sWindowUnderMouse;
+    static QPointer<QWindow> sTrackedWindow;
+    static QWindow *sPreviousCaptureWindow;
 };
 
 QT_END_NAMESPACE
