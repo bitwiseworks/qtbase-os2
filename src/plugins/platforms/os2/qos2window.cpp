@@ -534,6 +534,22 @@ void QOS2Window::lower()
         WinSetWindowPos(mainHwnd(), HWND_BOTTOM, 0, 0, 0, 0, SWP_ZORDER);
 }
 
+bool QOS2Window::setKeyboardGrabEnabled(bool grab)
+{
+    qCInfo(lcQpaWindows) << this << grab;
+
+    QOS2KeyMapper *keyMapper = QOS2Integration::instance()->keyMapper();
+
+    if (grab) {
+        keyMapper->setKeyGrabber(window());
+    } else {
+        if (keyMapper->keyGrabber() == window())
+            keyMapper->setKeyGrabber(nullptr);
+    }
+
+    return true;
+}
+
 bool QOS2Window::setMouseGrabEnabled(bool grab)
 {
     qCInfo(lcQpaWindows) << this << grab;
@@ -760,7 +776,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
 
     Qt::KeyboardModifiers modifiers;
     const USHORT flags = SHORT2FROMMP(mp2);
-    const int extraKeyState = QOS2Integration::instance()->keyMapper ()->extraKeyState ();
+    const int extraKeyState = QOS2Integration::instance()->keyMapper()->extraKeyState();
 
     // Get key modifiers.
     if (flags & KC_SHIFT)

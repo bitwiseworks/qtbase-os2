@@ -302,7 +302,7 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
     bool k0 = false;
     bool k1 = false;
 
-    QWindow *receiver = /* TODO m_keyGrabber ? m_keyGrabber : */ window->window();
+    QWindow *receiver = mKeyGrabber ? mKeyGrabber : window->window();
 
     // We combine the flags from the message with the raw chr value and pass
     // them as QKeyEvent::nativeModifiers(). Together with chr.vkey passed as

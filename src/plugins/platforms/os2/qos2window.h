@@ -77,6 +77,7 @@ public:
     void raise() override;
     void lower() override;
 
+    bool setKeyboardGrabEnabled(bool grab) override;
     bool setMouseGrabEnabled(bool grab) override;
     bool hasMouseCapture() const { return WinQueryCapture(HWND_DESKTOP) == mHwnd; }
 

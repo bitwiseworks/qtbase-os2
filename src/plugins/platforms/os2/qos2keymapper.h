@@ -46,6 +46,7 @@ QT_BEGIN_NAMESPACE
 
 class QKeyEvent;
 class QOS2Window;
+class QWindow;
 
 /*
     An OS/2 KeyboardLayoutItem has 8 possible states meaningful for Qt:
@@ -76,6 +77,9 @@ public:
 
     int extraKeyState() const { return mExtraKeyState; }
 
+    QWindow *keyGrabber() const { return mKeyGrabber; }
+    void setKeyGrabber(QWindow *w) { mKeyGrabber = w; }
+
     Qt::KeyboardModifiers queryKeyboardModifiers();
     QList<int> possibleKeys(const QKeyEvent *e) const;
 
@@ -88,6 +92,8 @@ private:
 
     static constexpr const size_t NumKeyboardLayoutItems = 256;
     KeyboardLayoutItem mKeyLayout[NumKeyboardLayoutItems];
+
+    QWindow *mKeyGrabber = nullptr;
 };
 
 QT_END_NAMESPACE
