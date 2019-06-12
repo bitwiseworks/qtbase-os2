@@ -256,7 +256,7 @@ void QUrlModel::addUrls(const QList<QUrl> &list, int row, bool move)
 
         for (int j = 0; move && j < rowCount(); ++j) {
             QString local = index(j, 0).data(UrlRole).toUrl().toLocalFile();
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
             const Qt::CaseSensitivity cs = Qt::CaseInsensitive;
 #else
             const Qt::CaseSensitivity cs = Qt::CaseSensitive;

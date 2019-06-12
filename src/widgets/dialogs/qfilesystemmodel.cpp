@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include "qplatformdefs.h"
+
 #include "qfilesystemmodel_p.h"
 #include "qfilesystemmodel.h"
 #include <qlocale.h>
@@ -376,7 +378,7 @@ QFileSystemModelPrivate::QFileSystemNode *QFileSystemModelPrivate::node(const QS
     // ### TODO can we use bool QAbstractFileEngine::caseSensitive() const?
     QStringList pathElements = absolutePath.split(QLatin1Char('/'), QString::SkipEmptyParts);
     if ((pathElements.isEmpty())
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_DOSLIKE)
         && QDir::fromNativeSeparators(longPath) != QLatin1String("/")
 #endif
         )
@@ -385,7 +387,7 @@ QFileSystemModelPrivate::QFileSystemNode *QFileSystemModelPrivate::node(const QS
     QString elementPath;
     QChar separator = QLatin1Char('/');
     QString trailingSeparator;
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     if (absolutePath.startsWith(QLatin1String("//"))) { // UNC path
         QString host = QLatin1String("\\\\") + pathElements.constFirst();
         if (absolutePath == QDir::fromNativeSeparators(host))
@@ -436,8 +438,8 @@ QFileSystemModelPrivate::QFileSystemNode *QFileSystemModelPrivate::node(const QS
         elementPath.append(element);
         if (i == pathElements.count() - 1)
             elementPath.append(trailingSeparator);
-#ifdef Q_OS_WIN
-        // On Windows, "filename    " and "filename" are equivalent and
+#ifdef Q_OS_DOSLIKE
+        // On Windows and OS/2, "filename    " and "filename" are equivalent and
         // "filename  .  " and "filename" are equivalent
         // "filename......." and "filename" are equivalent Task #133928
         // whereas "filename  .txt" is still "filename  .txt"
@@ -836,7 +838,7 @@ QString QFileSystemModelPrivate::name(const QModelIndex &index) const
 */
 QString QFileSystemModelPrivate::displayName(const QModelIndex &index) const
 {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     QFileSystemNode *dirNode = node(index);
     if (!dirNode->volumeName.isNull())
         return dirNode->volumeName + QLatin1String(" (") + name(index) + QLatin1Char(')');
@@ -1304,7 +1306,7 @@ QString QFileSystemModelPrivate::filePath(const QModelIndex &index) const
         idx = idx.parent();
     }
     QString fullPath = QDir::fromNativeSeparators(path.join(QDir::separator()));
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_DOSLIKE)
     if ((fullPath.length() > 2) && fullPath[0] == QLatin1Char('/') && fullPath[1] == QLatin1Char('/'))
         fullPath = fullPath.mid(1);
 #else
@@ -1362,7 +1364,7 @@ QFile::Permissions QFileSystemModel::permissions(const QModelIndex &index) const
 QModelIndex QFileSystemModel::setRootPath(const QString &newPath)
 {
     Q_D(QFileSystemModel);
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
 #ifdef Q_OS_WIN32
     QString longNewPath = qt_GetLongPathName(newPath);
 #else
@@ -1705,6 +1707,13 @@ QFileSystemModelPrivate::QFileSystemNode* QFileSystemModelPrivate::addNode(QFile
                 name, MAX_PATH + 1, NULL, 0, NULL, NULL, 0);
         if (success && name[0])
             node->volumeName = QString::fromWCharArray(name);
+    }
+#elif defined(Q_OS_OS2)
+    //The parentNode is "" so we are listing the drives
+    if (parentNode->fileName.isEmpty()) {
+        char * volname = _getvol(fileName.at(0).toLatin1());
+        if (volname)
+            node->volumeName = QFile::decodeName(volname);
     }
 #endif
     Q_ASSERT(!parentNode->children.contains(fileName));

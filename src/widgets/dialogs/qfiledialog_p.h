@@ -178,7 +178,7 @@ public:
 
     static inline QString toInternal(const QString &path)
     {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
         QString n(path);
         n.replace(QLatin1Char('\\'), QLatin1Char('/'));
         return n;

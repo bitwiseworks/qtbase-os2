@@ -66,12 +66,12 @@ Q_AUTOTEST_EXPORT bool qt_test_isFetchedRoot()
 static QString translateDriveName(const QFileInfo &drive)
 {
     QString driveName = drive.absoluteFilePath();
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     if (driveName.startsWith(QLatin1Char('/'))) // UNC host
         return drive.fileName();
     if (driveName.endsWith(QLatin1Char('/')))
         driveName.chop(1);
-#endif // Q_OS_WIN
+#endif // Q_OS_DOSLIKE
     return driveName;
 }
 
