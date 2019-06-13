@@ -3232,8 +3232,13 @@ void QFileDialogPrivate::_q_goHome()
 void QFileDialogPrivate::_q_pathChanged(const QString &newPath)
 {
     Q_Q(QFileDialog);
-    QDir dir(model->rootDirectory());
-    qFileDialogUi->toParentButton->setEnabled(dir.exists());
+    if (newPath.isEmpty()) {
+        // It's a virtual "all drives" case, makes no sense to QDir it (that would spit a warning).
+        qFileDialogUi->toParentButton->setEnabled(false);
+    } else {
+        QDir dir(model->rootDirectory());
+        qFileDialogUi->toParentButton->setEnabled(dir.exists());
+    }
     qFileDialogUi->sidebar->selectUrl(QUrl::fromLocalFile(newPath));
     q->setHistory(qFileDialogUi->lookInCombo->history());
 
