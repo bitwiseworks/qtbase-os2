@@ -840,8 +840,13 @@ QString QFileSystemModelPrivate::displayName(const QModelIndex &index) const
 {
 #if defined(Q_OS_DOSLIKE)
     QFileSystemNode *dirNode = node(index);
+#if defined(Q_OS_OS2)
+    if (!dirNode->volumeName.isEmpty())
+        return name(index) + QLatin1String(" [") + dirNode->volumeName + QLatin1Char(']');
+#else
     if (!dirNode->volumeName.isNull())
         return dirNode->volumeName + QLatin1String(" (") + name(index) + QLatin1Char(')');
+#endif
 #endif
     return name(index);
 }
@@ -1711,9 +1716,16 @@ QFileSystemModelPrivate::QFileSystemNode* QFileSystemModelPrivate::addNode(QFile
 #elif defined(Q_OS_OS2)
     //The parentNode is "" so we are listing the drives
     if (parentNode->fileName.isEmpty()) {
-        char * volname = _getvol(fileName.at(0).toLatin1());
-        if (volname)
-            node->volumeName = QFile::decodeName(volname);
+        // Drives with no media are reported as not existing by QFileSystemEngine.
+        if (node->fileInfo().exists()) {
+            char *volname = _getvol(fileName.at(0).toLatin1());
+            if (volname)
+                node->volumeName = QFile::decodeName(volname);
+            else
+                node->volumeName = QString();
+        } else {
+            node->volumeName = QFileSystemModel::tr("<no media>", "No removable media in drive");
+        }
     }
 #endif
     Q_ASSERT(!parentNode->children.contains(fileName));
