@@ -1035,6 +1035,11 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
     const QByteArray nativeFilePath = entry.nativeFilePath();
     int entryErrno = 0; // innocent until proven otherwise
 
+#if defined(Q_OS_OS2)
+    // Drive roots require special handling: don't check for links and account for removable media.
+    bool isDriveRoot = entry.isDriveRoot();
+#endif
+
     // first, we may try lstat(2). Possible outcomes:
     //  - success and is a symlink: filesystem entry exists, but we need stat(2)
     //    -> statResult = -1;
@@ -1053,7 +1058,11 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
         struct statx statxBuffer;
     };
     int statResult = -1;
+#if defined(Q_OS_OS2)
+    if (!isDriveRoot && (what & QFileSystemMetaData::LinkType)) {
+#else
     if (what & QFileSystemMetaData::LinkType) {
+#endif
         mode_t mode = 0;
         statResult = qt_lstatx(nativeFilePath, &statxBuffer);
         if (statResult == -ENOSYS) {
@@ -1091,12 +1100,28 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
     }
 
     // second, we try a regular stat(2)
+#if defined(Q_OS_OS2)
+    if (isDriveRoot || (statResult == -1 && (what & QFileSystemMetaData::PosixStatFlags))) {
+#else
     if (statResult == -1 && (what & QFileSystemMetaData::PosixStatFlags)) {
+#endif
         if (entryErrno == 0 && statResult == -1) {
             data.entryFlags &= ~QFileSystemMetaData::PosixStatFlags;
             statResult = qt_statx(nativeFilePath, &statxBuffer);
             if (statResult == -ENOSYS) {
                 // use stat(2)
+#if defined(Q_OS_OS2)
+                // Calling stat on a drive with no media inserted will cause unnecessary noise and
+                // significant delays. Detect this and avoid stat. It seems that the simplest (and
+                // fastest) way to do so is just to query FSINFO on such a drive.
+                if (isDriveRoot) {
+                    FSINFO fsinfo;
+                    APIRET arc = DosQueryFSInfo (nativeFilePath.at(0) - 'A' + 1, FSIL_VOLSER, &fsinfo, sizeof (fsinfo));
+                    if (arc != NO_ERROR)
+                        statResult = -EIO;
+                }
+                if (statResult != -EIO)
+#endif
                 statResult = QT_STAT(nativeFilePath, &statBuffer);
                 if (statResult == 0)
                     data.fillFromStatBuf(statBuffer);
@@ -1119,6 +1144,22 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
         // reset the mask
         data.knownFlagsMask |= QFileSystemMetaData::PosixStatFlags
             | QFileSystemMetaData::ExistsAttribute;
+
+#if defined(Q_OS_OS2)
+        if (isDriveRoot) {
+            // Drive root is never a link.
+            if (what & QFileSystemMetaData::LinkType) {
+                data.entryFlags &= ~QFileSystemMetaData::LinkType;
+                data.knownFlagsMask |= QFileSystemMetaData::LinkType;
+            }
+            if (statResult == -EIO) {
+                // Treat the drive with no media as a directory but don't mark it as existing to
+                // prevents some users (e.g. QFileDialog) from "entering" such a drive.
+                data.entryFlags |= QFileSystemMetaData::DirectoryType;
+            }
+            return true;
+        }
+#endif
     }
 
     // third, we try access(2)
