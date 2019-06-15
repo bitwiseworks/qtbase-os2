@@ -511,6 +511,8 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
             code = 0;
     }
 
+    qCDebug(lcQpaEvents) << "FOCUS object" << QGuiApplication::focusObject() << "window" << QGuiApplication::focusWindow();
+
     // Note: code and/or chm.scancode may be zero here. We cannot ignore such
     // events because, for example, all non-ASCII letters have zero virtual
     // codes, and DBCS characters entered via IME have both zero virtual codes
@@ -568,6 +570,7 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
         if (rec) {
             Q_ASSERT(!code || code == rec->code);
             if (rec->code < Qt::Key_Shift || rec->code > Qt::Key_ScrollLock) {
+                qCDebug(lcQpaEvents) << "KEY REPEAT" << DV(receiver) << DV(rec->code) << Qt::KeyboardModifiers(state) << DV(rec->text);
                 k0 = QWindowSystemInterface::handleExtendedKeyEvent(receiver, QEvent::KeyRelease, rec->code,
                                                                     Qt::KeyboardModifier(state), chm.scancode, chm.vkey, nativeMods,
                                                                     rec->text, true);
@@ -636,6 +639,7 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
                 }
             }
             KeyRecorder.storeKey(chm.scancode, code, state, text);
+            qCDebug(lcQpaEvents) << "KEY PRESS" << DV(receiver) << DV(code) << Qt::KeyboardModifiers(state) << DV(text);
             k0 = QWindowSystemInterface::handleExtendedKeyEvent(receiver, QEvent::KeyPress, code,
                                                                 Qt::KeyboardModifier(state), chm.scancode, chm.vkey, nativeMods,
                                                                 text, false);
@@ -651,6 +655,7 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
         if (!rec) {
             // Someone ate the key down event
         } else {
+            qCDebug(lcQpaEvents) << "KEY RELEASE" <<  DV(receiver) << DV(rec->code) << Qt::KeyboardModifiers(state) << DV(rec->text);
             k0 = QWindowSystemInterface::handleExtendedKeyEvent(receiver, QEvent::KeyRelease, rec->code,
                                                                 Qt::KeyboardModifier(state), chm.scancode, chm.vkey, nativeMods,
                                                                 rec->text, false);

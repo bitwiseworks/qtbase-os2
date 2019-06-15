@@ -101,6 +101,7 @@ public:
 
     void handleWmClose();
     void handleWmActivate(MPARAM mp1);
+    void handleWmSetFocus(MPARAM mp1, MPARAM mp2);
     void handleWmPaint();
     void handleWmAdjustWindowPos(MPARAM mp1);
     void handleSizeMove();

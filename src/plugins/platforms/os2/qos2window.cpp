@@ -141,7 +141,8 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         } else {
             switch (msg) {
             case WM_CLOSE: that->handleWmClose(); return 0;
-            case WM_ACTIVATE: that->handleWmActivate(mp1); return 0;
+            case WM_ACTIVATE: that->handleWmActivate(mp1); break;
+            case WM_SETFOCUS: that->handleWmSetFocus(mp1, mp2); break;
             case WM_PAINT: that->handleWmPaint(); return 0;
             case WM_WINDOWPOSCHANGED: {
                 // Handle size/move changes if not already done in QtFrameProc.
@@ -161,6 +162,13 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     }
 
     return WinDefWindowProc(hwnd, msg, mp1, mp2);
+}
+
+inline bool TestShowWithoutActivating(const QWindow *window)
+{
+    // QWidget-attribute Qt::WA_ShowWithoutActivating .
+    const QVariant showWithoutActivating = window->property("_q_showWithoutActivating");
+    return showWithoutActivating.isValid() && showWithoutActivating.toBool();
 }
 
 } // unnamed namespace
@@ -445,16 +453,24 @@ void QOS2Window::setVisible(bool visible)
 {
     qCInfo(lcQpaWindows) << this << DV(visible);
 
+    const QWindow *window = this->window();
+    const Qt::WindowFlags flags = window->flags();
+    const Qt::WindowType type = window->type();
+
+    ULONG fl = 0;
+
     if (visible) {
+        fl = SWP_SHOW;
         if (mHwndFrame) {
+            if (!(type == Qt::Popup || type == Qt::ToolTip || type == Qt::Tool || TestShowWithoutActivating(window)))
+                fl |= SWP_ACTIVATE;
             // Lazily create a window list entry when appropriate.
-            Qt::WindowType type = window()->type();
             if (type != Qt::Popup &&
                 type != Qt::ToolTip &&
                 type != Qt::Tool &&
-                (type != Qt::Dialog || !window()->transientParent()) &&
+                (type != Qt::Dialog || !window->transientParent()) &&
                 (type != Qt::SplashScreen ||
-                 (window()->flags() & Qt::WindowTitleHint))
+                 (flags & Qt::WindowTitleHint))
             ) {
                 if (!mSwEntry) {
                     PID pid;
@@ -476,9 +492,11 @@ void QOS2Window::setVisible(bool visible)
             }
         }
     } else {
+        fl = SWP_HIDE;
         if (hasMouseCapture())
             setMouseGrabEnabled(false);
         if (mHwndFrame) {
+            fl |= SWP_DEACTIVATE;
             if (mSwEntry) {
                 SWCNTRL swc;
                 WinQuerySwitchEntry(mSwEntry, &swc);
@@ -488,7 +506,7 @@ void QOS2Window::setVisible(bool visible)
         }
     }
 
-    WinShowWindow(mainHwnd(), visible);
+    WinSetWindowPos(mainHwnd(), NULLHANDLE, 0, 0, 0, 0, fl);
 }
 
 bool QOS2Window::isExposed() const
@@ -651,6 +669,20 @@ void QOS2Window::handleWmActivate(MPARAM mp1)
         clearFlag(Active);
 }
 
+void QOS2Window::handleWmSetFocus(MPARAM mp1, MPARAM mp2)
+{
+    HWND hwnd = (HWND)mp1;
+    bool gotFocus = SHORT1FROMMP(mp2);
+
+    QWindow *nextActiveWindow = 0;
+    if (gotFocus)
+        nextActiveWindow = window();
+
+    qCInfo(lcQpaEvents) << this << hex << DV(hwnd) << DV(gotFocus) << DV(nextActiveWindow);
+
+    QWindowSystemInterface::handleWindowActivated(nextActiveWindow);
+}
+
 void QOS2Window::handleWmPaint()
 {
     // NOTE. Below we don't use WinBeginPaint because it returns a HPS with a pre-set clip region
@@ -738,7 +770,7 @@ void QOS2Window::handleSizeMove()
 
 void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
-    QWindow *window = QOS2Window::window();
+    QWindow *window = this->window();
 
     if (msg == WM_MOUSELEAVE) {
         qCInfo(lcQpaEvents) << "WM_MOUSELEAVE for" << window
