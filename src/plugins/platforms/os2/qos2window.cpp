@@ -156,12 +156,71 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             case WM_CHAR:
                 if (that->handleWmChar(mp1, mp2)) return (MRESULT)TRUE;
                 break;
+            case WM_TRANSLATEACCEL: return (MRESULT)that->handleWmTranslateAccel(mp1, mp2);
             default: break;
             }
         }
     }
 
     return WinDefWindowProc(hwnd, msg, mp1, mp2);
+}
+
+PFNWP QtOldSysMenuProc;
+
+MRESULT EXPENTRY QtSysMenuProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    if (msg == WM_MENUEND) {
+        // The pull-down menu is closed, always dismiss the system menu itself.
+        WinPostMsg(hwnd, MM_ENDMENUMODE, MPFROMSHORT(TRUE), 0);
+    }
+    return QtOldSysMenuProc(hwnd, msg, mp1, mp2);
+}
+
+void RemoveSysMenuAccels(HWND hwndFrame)
+{
+    HWND sysMenu = WinWindowFromID(hwndFrame, FID_SYSMENU);
+    if (!sysMenu)
+        return;
+
+    SHORT subId = SHORT1FROMMR(WinSendMsg(sysMenu, MM_ITEMIDFROMPOSITION, 0, 0));
+    if (subId != MIT_ERROR) {
+        MENUITEM item;
+        WinSendMsg(sysMenu, MM_QUERYITEM, MPFROM2SHORT(subId, FALSE), MPFROMP(&item));
+        HWND subMenu = item.hwndSubMenu;
+        if (subMenu) {
+            USHORT cnt = SHORT1FROMMR(WinSendMsg(subMenu, MM_QUERYITEMCOUNT, 0, 0));
+            for (int i = 0; i < cnt; i++) {
+                USHORT id = SHORT1FROMMR(WinSendMsg(subMenu, MM_ITEMIDFROMPOSITION, MPFROMSHORT(i), 0));
+                if (id == SC_TASKMANAGER || id == SC_CLOSE) {
+                    // Accels for these entries always work in Qt, skip them.
+                    // Should be in sync with QOS2Window::handleWmTranslateAccel.
+                    continue;
+                }
+                USHORT len = SHORT1FROMMR(WinSendMsg(subMenu, MM_QUERYITEMTEXTLENGTH, MPFROMSHORT(id), 0));
+                if (len++) {
+                    char *text = new char[len];
+                    WinSendMsg(subMenu, MM_QUERYITEMTEXT, MPFROM2SHORT(id, len), MPFROMP(text));
+                    char *tab = strrchr(text, '\t');
+                    if (tab) {
+                        *tab = 0;
+                        WinSendMsg(subMenu, MM_SETITEMTEXT, MPFROMSHORT(id), MPFROMP(text));
+                    }
+                    delete[] text;
+                }
+            }
+
+            // Sublclass the system menu to leave the menu mode completely when the user presses
+            // the ESC key. by default, pressing ESC while the pull-down menu is showing brings us
+            // to the menu bar, which is confusing in the case of the system menu, because there is
+            // only one item on the menu bar, and we cannot see that it is active when the frame
+            // window has an icon.
+            PFNWP oldProc = WinSubclassWindow(sysMenu, QtSysMenuProc);
+
+            // Set QtOldSysMenuProc only once: it must be the same for all FID_SYSMENU windows.
+            if (!QtOldSysMenuProc)
+                QtOldSysMenuProc = oldProc;
+        }
+    }
 }
 
 inline bool TestShowWithoutActivating(const QWindow *window)
@@ -314,6 +373,8 @@ QOS2Window::QOS2Window(QWindow *window)
         // Remember QtOldFrameProc only once: it's the same for all WC_FRAME windows.
         if (!QtOldFrameProc)
             QtOldFrameProc = oldProc;
+
+        RemoveSysMenuAccels(mHwndFrame);
 
         // Create the client window.
         qCInfo(lcQpaWindows) << "Creating FID_CLIENT" << className << hex << DV(style);
@@ -1027,6 +1088,30 @@ bool QOS2Window::handleWmChar(MPARAM mp1, MPARAM mp2)
     qCDebug(lcQpaEvents) << this << hex << DV(chm.fs) << DV(chm.scancode) << DV(chm.vkey) << DV(chm.chr) << dec << DV(chm.cRepeat);
 
     return QOS2Integration::instance()->keyMapper()->translateKeyEvent(this, mHwnd, chm);
+}
+
+bool QOS2Window::handleWmTranslateAccel(MPARAM mp1, MPARAM mp2)
+{
+    if (mHwndFrame) {
+        MRESULT mrc = WinDefWindowProc(mHwnd, WM_TRANSLATEACCEL, mp1, mp2);
+        if (mrc) {
+            QMSG &qmsg = *(QMSG*)mp1;
+            if (qmsg.msg == WM_SYSCOMMAND && WinWindowFromID(mHwndFrame, FID_SYSMENU)) {
+                switch (SHORT1FROMMP(qmsg.mp1)) {
+                    // Should be in sync with RemoveSysMenuAccels.
+                    case SC_CLOSE:
+                    case SC_TASKMANAGER:
+                        return (MRESULT)TRUE;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    // Return FALSE in all other cases to let Qt process keystrokes that are in the system-wide
+    // frame accelerator table.
+    return false;
 }
 
 #ifndef QT_NO_DEBUG_STREAM

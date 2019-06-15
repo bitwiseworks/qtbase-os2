@@ -108,6 +108,7 @@ public:
     void handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2);
     void handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2);
     bool handleWmChar(MPARAM mp1, MPARAM mp2);
+    bool handleWmTranslateAccel(MPARAM mp1, MPARAM mp2);
 
     static QOS2Window *PlatformWindow(HWND hwnd) { return sKnownWindows.value(hwnd); }
 
