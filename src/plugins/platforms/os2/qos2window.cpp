@@ -101,15 +101,10 @@ MRESULT EXPENTRY QtFrameProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
     if (that) {
         switch (msg) {
-        case WM_WINDOWPOSCHANGED: {
-            // QtOldFrameProc has already resized FID_CLIENT here, inform
-            // QOS2Window. We prefer this to individual WM_SIZE/WM_MOVE to
-            // compress simultaneous changes into one Qt-level notification.
-            PSWP pswp = (PSWP)PVOIDFROMMP(mp1);
-            if (pswp->fl & (SWP_SIZE | SWP_MOVE))
-                that->handleSizeMove();
-            break;
-        }
+        // QtOldFrameProc has already resized FID_CLIENT here, inform QOS2Window. We prefer this to
+        // individual WM_SIZE/WM_MOVE to compress simultaneous changes into one Qt notification.
+        // Note that our class doesn't have CS_MOVE, so we don't get move events in QtWindowProc.
+        case WM_WINDOWPOSCHANGED: that->handleWmWindowPosChanged(mp1); break;
         default: break;
         }
     }
@@ -129,6 +124,8 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     // WinData_QOS2Window is null during widnow creation, ignore this case for now.
     if (that) {
         Q_ASSERT(that->hwnd() == hwnd);
+        const bool hasNoFrame = !that->hwndFrame() || that->hwndFrame() == that->hwnd();
+
         if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || msg == WM_MOUSELEAVE) {
             if (msg == WM_MOUSELEAVE && hwnd != (HWND)mp1) {
                 // This must be a LEAVE message (mp1 = hwndFrom, mp2 = hwndTo) from one of the
@@ -143,12 +140,15 @@ MRESULT EXPENTRY QtWindowProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             case WM_CLOSE: that->handleWmClose(); return 0;
             case WM_ACTIVATE: that->handleWmActivate(mp1); break;
             case WM_SETFOCUS: that->handleWmSetFocus(mp1, mp2); break;
-            case WM_PAINT: that->handleWmPaint(); return 0;
-            case WM_WINDOWPOSCHANGED: {
-                // Handle size/move changes if not already done in QtFrameProc.
-                if (!that->hwndFrame() || that->hwndFrame() == that->hwnd())
-                    that->handleSizeMove();
-                break;
+            case WM_PAINT: if (that->handleWmPaint()) return 0; else break;
+            // Handle size/move changes if not already done in QtFrameProc.
+            case WM_WINDOWPOSCHANGED: if (hasNoFrame) that->handleWmWindowPosChanged(mp1); break;
+            case WM_MINMAXFRAME: that->handleWmMinMaxFrame(mp1); break;
+            case WM_CALCVALIDRECTS: {
+                // We must always return this value here to cause PM to reposition
+                // our children accordingly (othwerwise we would have to do it
+                // ourselves to keep them top-left aligned).
+                return (MRESULT)(CVR_ALIGNLEFT | CVR_ALIGNTOP);
             }
             case WM_VSCROLL:
             case WM_HSCROLL:
@@ -473,12 +473,30 @@ QOS2Window::~QOS2Window()
         WinDestroyWindow(mHwndFrame);
 }
 
+void QOS2Window::initialize()
+{
+    qCInfo(lcQpaWindows) << this;
+
+    setFlag(InInit);
+
+    QWindow *w = window();
+    setWindowState(w->windowStates());
+
+    clearFlag(InInit);
+}
+
 void QOS2Window::setGeometry(const QRect &rect)
 {
-    qCInfo(lcQpaWindows) << this << DV(rect);
+    // NOTE: See comments in #setWindowState.
+
+    QWindow *w = window();
+
+    const Qt::WindowStates state = w->windowStates ();
+
+    qCInfo(lcQpaWindows) << this << DV(rect) << DV(state) << DV(isExposed()) << DV(w->isVisible());
 
     // Note: Don't call QPlatformWindow::setGeometry - it will be called indirectly from
-    // #handleSizeMove in response to WM_SIZE and/or WM_MOVE.
+    // #handleWmWindowPosChanged in response to WM_SIZE and/or WM_MOVE.
 
     LONG x = rect.x(), y = rect.y(), cx = rect.width(), cy = rect.height();
 
@@ -502,7 +520,15 @@ void QOS2Window::setGeometry(const QRect &rect)
         y = window()->parent()->height() - (y + cy);
     }
 
-    WinSetWindowPos(mHwndFrame, NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
+    // If the window is minimized, change its normal geometry (see also #handleWmWindowPosChanged).
+    if (mHwndFrame && (state & Qt::WindowMinimized)) {
+        WinSetWindowUShort(mHwndFrame, QWS_XRESTORE, x);
+        WinSetWindowUShort(mHwndFrame, QWS_YRESTORE, y);
+        WinSetWindowUShort(mHwndFrame, QWS_CXRESTORE, cx);
+        WinSetWindowUShort(mHwndFrame, QWS_CYRESTORE, cy);
+    } else {
+        WinSetWindowPos(mHwndFrame, NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
+    }
 }
 
 QMargins QOS2Window::frameMargins() const
@@ -512,19 +538,24 @@ QMargins QOS2Window::frameMargins() const
 
 void QOS2Window::setVisible(bool visible)
 {
-    qCInfo(lcQpaWindows) << this << DV(visible);
+    // NOTE: See comments in #setWindowState.
 
     const QWindow *window = this->window();
     const Qt::WindowFlags flags = window->flags();
     const Qt::WindowType type = window->type();
+    const Qt::WindowStates state = window->windowStates();
+
+    qCInfo(lcQpaWindows) << this << DV(visible) << DV(state) << DV(isExposed()) << DV(window->isVisible());
 
     ULONG fl = 0;
 
     if (visible) {
         fl = SWP_SHOW;
         if (mHwndFrame) {
-            if (!(type == Qt::Popup || type == Qt::ToolTip || type == Qt::Tool || TestShowWithoutActivating(window)))
+            if (!(type == Qt::Popup || type == Qt::ToolTip || type == Qt::Tool ||
+                  TestShowWithoutActivating(window) || state & Qt::WindowMinimized))
                 fl |= SWP_ACTIVATE;
+
             // Lazily create a window list entry when appropriate.
             if (type != Qt::Popup &&
                 type != Qt::ToolTip &&
@@ -572,7 +603,10 @@ void QOS2Window::setVisible(bool visible)
 
 bool QOS2Window::isExposed() const
 {
-    return WinIsWindowShowing(mainHwnd());
+    // NOTE: WinIsWindowShowing(mHwndFrame) will return FALSE when in fullscreen, don't use it.
+    // NOTE 2: Treat minimized windows as obscure from Qt POV (see also #handleWmWindowPosChanged).
+
+    return WinIsWindowShowing(mHwnd) && !(window()->windowStates() & Qt::WindowMinimized);
 }
 
 bool QOS2Window::isActive() const
@@ -595,7 +629,123 @@ void QOS2Window::requestActivateWindow()
 
 void QOS2Window::setWindowState(Qt::WindowStates state)
 {
-    qCInfo(lcQpaWindows) << this << DV(state);
+    // Window state change logic is as follows, in a lousy attempt to match Qt docs (which are very
+    // uncertain in this regard) and possibly other platforms (that may differ):
+    //
+    // 1. Minimized state overrides everything (but can coexist with any state).
+    // 2. FullScreen overrides Maximized (but can coexist with it).
+    // 3. Maximized (obviously) overrides normal state (and cancels Fullscreen when comes from PM).
+    // 4. Removing Minimized restores to what's left (FullScreen, Maximized or normal).
+    // 5. Removing FullScreen restores to what's left (Maximized or normal) unless there is also Minimized.
+    // 6. Removing Maximized restores to normal unless there is also Minimized or FullScreen.
+    // 7. Restoring using PM sysmenu always restores to normal state.
+    // 8. Moving/resizing a Maximized/FullScreen window doesn't cancel these states, and vice versa
+    //    (this is how PM behaves as opposed e.g. to macOS).
+    // 9. Moving a Minimized window programmatically from Qt doesn't change its actual position but
+    //    changes its normal geometry (for later restoring).
+
+    QWindow *w = window();
+
+    const Qt::WindowStates oldState = testFlag(InInit) ? Qt::WindowNoState : w->windowStates ();
+
+    qCInfo(lcQpaWindows) << this << DV(oldState) << DV(state) << DV(isExposed()) << DV(w->isVisible());
+
+    if (oldState == state)
+        return;
+
+    if (!mHwndFrame)
+        return;
+
+    auto stateChange = oldState ^ state;
+
+    ULONG fl = 0;
+    bool enterFS = false;
+    bool leaveFS = false;
+
+    if (stateChange & Qt::WindowMinimized) {
+        if (oldState & Qt::WindowFullScreen)
+            leaveFS = true;
+        if (state & Qt::WindowMinimized) {
+            fl = SWP_MINIMIZE;
+        } else if (state & Qt::WindowFullScreen) {
+            leaveFS = false;
+            enterFS = true;
+        } else if (state & Qt::WindowMaximized) {
+            fl = SWP_MAXIMIZE;
+        } else if (!leaveFS) {
+            fl = SWP_RESTORE;
+        }
+    } else if (!(state & Qt::WindowMinimized)) {
+        if (stateChange & Qt::WindowFullScreen) {
+            if (state & Qt::WindowFullScreen) {
+                enterFS = true;
+            } else {
+                leaveFS = true;
+                if (state & Qt::WindowMaximized) {
+                    fl |= SWP_MAXIMIZE;
+                }
+            }
+        } else if (!(state & Qt::WindowFullScreen)) {
+            if (stateChange & Qt::WindowMaximized) {
+                if (state & Qt::WindowMaximized) {
+                    fl = SWP_MAXIMIZE;
+                } else {
+                    fl = SWP_RESTORE;
+                }
+            }
+        }
+    }
+
+    qCInfo(lcQpaWindows) << this << hex << DV(fl) << DV(enterFS) << DV(leaveFS);
+
+    if (!fl && !enterFS && !leaveFS)
+        return; // Nothing to do.
+
+    setFlag(InSetWindowState);
+
+    if (enterFS) {
+        // Remember the normal geometry (use real window flags to detect min/max state because we
+        // may get here before the window is initially shown, so Qt flags can't be trusted).
+        SWP swp;
+        WinQueryWindowPos(mHwndFrame, &swp);
+        if (swp.fl & (SWP_MINIMIZE | SWP_MAXIMIZE)) {
+            normX = WinQueryWindowUShort(mHwndFrame, QWS_XRESTORE);
+            normY = WinQueryWindowUShort(mHwndFrame, QWS_YRESTORE);
+            normCX = WinQueryWindowUShort(mHwndFrame, QWS_CXRESTORE);
+            normCY = WinQueryWindowUShort(mHwndFrame, QWS_CYRESTORE);
+        } else {
+            normX = swp.x;
+            normY = swp.y;
+            normCX = swp.cx;
+            normCY = swp.cy;
+        }
+        qCInfo(lcQpaWindows) << this << "save normal geo" << normX << normY << normCX << normCY;
+
+        fl = SWP_RESTORE | SWP_MOVE | SWP_SIZE; // SWP_RESTORE to cancel a possible min/max in PM
+        QRect r = QOS2Screen::Instance()->geometry().marginsAdded(mFrameMargins);
+        RECTL rcl = QOS2::ToRECTL(r, QOS2Screen::Height());
+        WinSetWindowPos(mHwndFrame, NULLHANDLE, rcl.xLeft, rcl.yBottom,
+                        rcl.xRight - rcl.xLeft, rcl.yTop - rcl.yBottom, fl);
+    } else {
+        if (leaveFS)
+            qCInfo(lcQpaWindows) << this << "restore normal geo" << normX << normY << normCX << normCY;
+
+        if (leaveFS && !fl) {
+            fl = SWP_RESTORE | SWP_MOVE | SWP_SIZE; // SWP_RESTORE to cancel a possible min/max in PM
+            WinSetWindowPos(mHwndFrame, NULLHANDLE, normX, normY, normCX, normCY, fl);
+        } else {
+            WinSetWindowPos(mHwndFrame, 0, 0, 0, 0, 0, fl);
+            if (leaveFS && fl & (SWP_MAXIMIZE | SWP_MINIMIZE) ) {
+                // Fix the normal geo in PM after min/max (which'd put fullscreen geo there).
+                WinSetWindowUShort(mHwndFrame, QWS_XRESTORE, normX);
+                WinSetWindowUShort(mHwndFrame, QWS_YRESTORE, normY);
+                WinSetWindowUShort(mHwndFrame, QWS_CXRESTORE, normCX);
+                WinSetWindowUShort(mHwndFrame, QWS_CYRESTORE, normCY);
+            }
+        }
+    }
+
+    clearFlag(InSetWindowState);
 }
 
 void QOS2Window::setWindowFlags(Qt::WindowFlags flags)
@@ -744,8 +894,12 @@ void QOS2Window::handleWmSetFocus(MPARAM mp1, MPARAM mp2)
     QWindowSystemInterface::handleWindowActivated(nextActiveWindow);
 }
 
-void QOS2Window::handleWmPaint()
+bool QOS2Window::handleWmPaint()
 {
+    // Ignore WP_PAINT during minimized, see #handleWmWindowPosChanged.
+    if (window()->windowState() & Qt::WindowMinimized)
+        return false;
+
     // NOTE. Below we don't use WinBeginPaint because it returns a HPS with a pre-set clip region
     // which includes only paint requests coming from WinInvalidateRegion. Since Qt implements its
     // own paint request mechanism, such paint requests don't end in this clip region and would
@@ -757,14 +911,14 @@ void QOS2Window::handleWmPaint()
     // updated from the Qt point of view, it's simpler (and faster) to just get an unclipped HPS
     // and let it go (after adding the WM_PAINT update rect to the Qt update region via expose).
 
-    RECTL rcl;
+    RECTL rcl = { 0, 0, 0, 0 };
     WinQueryUpdateRect(mHwnd, &rcl);
 
     mHps = WinGetPS(mHwnd);
 
     QRect updateRect = QOS2::ToQRect(rcl, geometry().height());
 
-    qCDebug(lcQpaEvents) << this << updateRect <<  QOS2::ToQRect(rcl, geometry().height());
+    qCDebug(lcQpaEvents) << this << updateRect << DV(isExposed()) << DV(window()->isVisible());
 
     QWindowSystemInterface::handleExposeEvent(window(), QRegion(updateRect));
 
@@ -774,6 +928,8 @@ void QOS2Window::handleWmPaint()
     // Validate the window to confirm that we served this WM_PAINT request (otherwise it'll keep
     // coming). Using nullptr as PRECTL is undocumented but works assuming the whole window area.
     WinValidateRect(mHwnd, nullptr, FALSE);
+
+    return true;
 }
 
 void QOS2Window::handleWmAdjustWindowPos(MPARAM mp1)
@@ -804,11 +960,24 @@ void QOS2Window::handleWmAdjustWindowPos(MPARAM mp1)
     }
 }
 
-void QOS2Window::handleSizeMove()
+void QOS2Window::handleWmWindowPosChanged(MPARAM mp1)
 {
+    PSWP pswp =(PSWP)mp1;
+
+    // NOTE: When the window is minimized, PM resizes it to 40x50 and then positions it depending
+    // on WPS settings for dealing with minimized windows, e.g. puts it completely off-screen to
+    // a point -32000,-32000. It still then issues WM_PAINT requests for such a window which,
+    // together with weird size and position, will confuse Qt in many cases since it expects
+    // minimized windows to not change their size/position and not redraw themselves bt but be
+    // obscure instead. Emulate this behavior by ignoring move/reisize events for them.
+
+    if (!(pswp->fl & (SWP_SIZE | SWP_MOVE)) || (pswp->fl & SWP_MINIMIZE))
+        return;
+
     QRect newGeo;
 
-    RECTL rcl;
+    // Don't use PSWP coordinates, they may belong to the frame window (i.e. include the frame).
+    RECTL rcl = { 0, 0, 0, 0 };
     WinQueryWindowRect(mHwnd, &rcl);
 
     if (rcl.xRight > rcl.xLeft && rcl.yTop > rcl.yBottom) {
@@ -818,7 +987,8 @@ void QOS2Window::handleSizeMove()
     }
 
     QRect oldGeo = geometry();
-    qCDebug(lcQpaEvents) << this << DV(oldGeo) << DV(newGeo);
+    qCDebug(lcQpaEvents) << this << hex << pswp->fl << dec << DV(oldGeo) << DV(newGeo)
+                         << DV(isExposed()) << DV(window()->isVisible());
 
     if (oldGeo != newGeo) {
         // If QWindow::handle is nullptr (e.g. when this call originates from our ctor), call
@@ -826,6 +996,54 @@ void QOS2Window::handleSizeMove()
         if (Q_UNLIKELY(!window()->handle()))
             QPlatformWindow::setGeometry(newGeo);
         QWindowSystemInterface::handleGeometryChange(window(), newGeo);
+    }
+}
+
+void QOS2Window::handleWmMinMaxFrame(MPARAM mp1)
+{
+    // NOTE: See comments in #setWindowState. Note that PM is smart enough to restore from
+    // Minimized to Maximized if it was so when minimizing. It seems to track this transition and
+    // uses a special value of SWP::fl = 0x1880 in WM_ADJUSTWINDOWPOS (i.e. with SWP_MAXIMIZE and
+    // SWP_RESTORE both set) to distinguish from a regular SWP_RESTORE. This won't work for Qt's
+    // FullScreen since PM knows nowthing about it and will always act as if SWP_RESTORE is given.
+    // If we ever want support for it, we should (carefully) move this code to WM_ADJUSTWINDOWPOS.
+    // But it kind of makes sense to cancel FullScreen with Minimized when it comes from PM.
+
+    if (!mHwndFrame)
+        return;
+
+    PSWP pswp = (PSWP)mp1;
+
+    QWindow *w = window();
+
+    const Qt::WindowStates oldState = w->windowStates();
+
+    qCInfo(lcQpaEvents) << this << hex << pswp->fl << DV(oldState) << testFlag(InSetWindowState);
+
+    if (!testFlag(InSetWindowState)) {
+        if (pswp->fl & (SWP_MINIMIZE | SWP_MAXIMIZE)) {
+            if (oldState & Qt::WindowFullScreen) {
+                // Make SWP_RESTORE go to the normal geo instead of fullscreen.
+                qCInfo(lcQpaEvents) << this << "restore normal geo" << normX << normY << normCX << normCY;
+                WinSetWindowUShort(mHwndFrame, QWS_XRESTORE, normX);
+                WinSetWindowUShort(mHwndFrame, QWS_YRESTORE, normY);
+                WinSetWindowUShort(mHwndFrame, QWS_CXRESTORE, normCX);
+                WinSetWindowUShort(mHwndFrame, QWS_CYRESTORE, normCY);
+            }
+            if (pswp->fl & SWP_MINIMIZE)
+                QWindowSystemInterface::handleWindowStateChanged(w, Qt::WindowMinimized);
+            else
+                QWindowSystemInterface::handleWindowStateChanged(w, Qt::WindowMaximized);
+        } else if (pswp->fl & SWP_RESTORE) {
+            QWindowSystemInterface::handleWindowStateChanged(w, Qt::WindowNoState);
+        }
+    }
+
+    if (pswp->fl & SWP_MINIMIZE) {
+        // Inform that the window is obscure from the Qt POV (see also #handleWmWindowPosChanged).
+        // Note that there's no need to do the opposite on un-minimize since PM will send a
+        // WM_PAINT in such a case which will cause a proper expose event.
+        QWindowSystemInterface::handleExposeEvent(w, QRegion());
     }
 }
 
@@ -926,9 +1144,11 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     if (extraKeyState & Qt::MetaModifier)
         modifiers |= Qt::MetaModifier;
 
-    qCDebug(lcQpaEvents) << this << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
-                         << DV (globalPos) << DV (localPos)
-                         << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
+    // MouseMove are REALLY annoying and not worth it (there is lcQpaMessages for low-level PM flow).
+    if (type != QEvent::MouseMove)
+        qCDebug(lcQpaEvents) << this << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
+                             << DV (globalPos) << DV (localPos)
+                             << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
 
     // Qt expects the platform plugin to capture the mouse on
     // any button press until release.

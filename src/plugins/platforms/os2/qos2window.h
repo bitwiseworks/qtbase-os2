@@ -56,10 +56,14 @@ public:
         Active = 0x1,
         AutoMouseCapture = 0x2,
         BlockedByModal = 0x4,
+        InInit = 0x8,
+        InSetWindowState = 0x10,
     };
 
     explicit QOS2Window(QWindow *window);
     virtual ~QOS2Window();
+
+    void initialize() override;
 
     void setGeometry(const QRect &rect) override;
     QMargins frameMargins() const override;
@@ -102,9 +106,10 @@ public:
     void handleWmClose();
     void handleWmActivate(MPARAM mp1);
     void handleWmSetFocus(MPARAM mp1, MPARAM mp2);
-    void handleWmPaint();
+    bool handleWmPaint();
     void handleWmAdjustWindowPos(MPARAM mp1);
-    void handleSizeMove();
+    void handleWmWindowPosChanged(MPARAM mp1);
+    void handleWmMinMaxFrame(MPARAM mp1);
     void handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2);
     void handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2);
     bool handleWmChar(MPARAM mp1, MPARAM mp2);
@@ -121,6 +126,7 @@ private:
     HWND mHwndFrame = NULLHANDLE;
     QMargins mFrameMargins;
     HSWITCH mSwEntry = NULLHANDLE;
+    USHORT normX = 0, normY = 0, normCX = 0, normCY = 0;
 
     static QHash<HWND, QOS2Window *> sKnownWindows;
 
