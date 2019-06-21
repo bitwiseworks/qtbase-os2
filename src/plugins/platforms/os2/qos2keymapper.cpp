@@ -526,6 +526,13 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
     //
     // This seems to be acceptable.
 
+    // Note 2: Some events will lead to cases when there is no code and no text - one example is
+    // a lid open event on Asus K75j that generates KC_SCANCODE with scancode set to 0x68 and
+    // char set to 0xEF00. There is no Key_ constant for such an event so there is nothing to
+    // translate it to in the above switch. It makes no sense to report such events to Qt as
+    // they carry no information at all and may confuse applications (e.g. tests/manual/windowflags
+    // that crashes in such a case). So we completely ignore them in the KEYDOWN code.
+
     // KEYDOWN -----------------------------------------------------------------
     if (!(chm.fs & KC_KEYUP)) {
         // Get the last record of this key press, so we can validate the current state
@@ -638,11 +645,17 @@ bool QOS2KeyMapper::translateKeyEvent(QOS2Window *window, HWND hwnd, CHRMSG &chm
                     text = QChar(ascii);
                 }
             }
-            KeyRecorder.storeKey(chm.scancode, code, state, text);
-            qCDebug(lcQpaEvents) << "KEY PRESS" << DV(receiver) << DV(code) << Qt::KeyboardModifiers(state) << DV(text);
-            k0 = QWindowSystemInterface::handleExtendedKeyEvent(receiver, QEvent::KeyPress, code,
+            if (!code && text.isEmpty()) {
+                // We don't have any code or text here, meaning that this event is basically about
+                // nothing, ignore it completely.
+                qCDebug(lcQpaEvents) << "KEY EMPTY";
+            } else {
+                KeyRecorder.storeKey(chm.scancode, code, state, text);
+                qCDebug(lcQpaEvents) << "KEY PRESS" << DV(receiver) << DV(code) << Qt::KeyboardModifiers(state) << DV(text);
+                k0 = QWindowSystemInterface::handleExtendedKeyEvent(receiver, QEvent::KeyPress, code,
                                                                 Qt::KeyboardModifier(state), chm.scancode, chm.vkey, nativeMods,
                                                                 text, false);
+            }
         }
     }
     // KEYUP -------------------------------------------------------------------
