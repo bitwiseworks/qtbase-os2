@@ -6,6 +6,7 @@ INCLUDEPATH  += ../../app
 HEADERS       = extrafiltersplugin.h
 SOURCES       = extrafiltersplugin.cpp
 TARGET        = $$qtLibraryTarget(pnp_extrafilters)
+os2:TARGET_SHORT = $$qtLibraryTarget(pnp_ef)
 DESTDIR       = ../../plugins
 
 #! [0]

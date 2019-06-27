@@ -1024,6 +1024,10 @@ void tst_QApplication::libraryPaths_qt_plugin_path_2()
     QByteArray validPath = "C:\\windows";
     QByteArray nonExistentPath = "Z:\\nonexistent";
     QByteArray pluginPath = validPath + ';' + nonExistentPath;
+#elif defined(Q_OS_OS2)
+    QByteArray validPath = "C:\\OS2";
+    QByteArray nonExistentPath = "Z:\\nonexistent";
+    QByteArray pluginPath = validPath + ';' + nonExistentPath;
 #endif
 
     {

@@ -100,6 +100,25 @@ void NativeMutexUnlock(NativeMutexType *mutex)
 {
     LeaveCriticalSection(mutex);
 }
+#elif defined(Q_OS_OS2)
+#include <qt_os2.h>
+typedef HMTX NativeMutexType;
+void NativeMutexInitialize(NativeMutexType *mutex)
+{
+    DosCreateMutexSem(NULL, mutex, 0, FALSE);
+}
+void NativeMutexDestroy(NativeMutexType *mutex)
+{
+    DosCloseMutexSem(*mutex);
+}
+void NativeMutexLock(NativeMutexType *mutex)
+{
+    DosRequestMutexSem(*mutex, SEM_INDEFINITE_WAIT);
+}
+void NativeMutexUnlock(NativeMutexType *mutex)
+{
+    DosReleaseMutexSem(*mutex);
+}
 #endif
 
 class tst_QMutex : public QObject

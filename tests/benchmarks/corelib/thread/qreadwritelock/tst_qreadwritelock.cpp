@@ -104,8 +104,10 @@ void tst_QReadWriteLock::uncontended_data()
         << FunctionPtrHolder(testUncontended<QReadWriteLock, QReadLocker>);
     QTest::newRow("QReadWriteLock, write")
         << FunctionPtrHolder(testUncontended<QReadWriteLock, QWriteLocker>);
+#if defined(__GNUC__) && defined(_GLIBCXX_HAS_GTHREADS)
     QTest::newRow("std::mutex") << FunctionPtrHolder(
         testUncontended<std::mutex, LockerWrapper<std::unique_lock<std::mutex>>>);
+#endif
 #if defined __cpp_lib_shared_timed_mutex
     QTest::newRow("std::shared_timed_mutex, read") << FunctionPtrHolder(
         testUncontended<std::shared_timed_mutex,
@@ -164,8 +166,10 @@ void tst_QReadWriteLock::readOnly_data()
     QTest::newRow("nothing") << FunctionPtrHolder(testReadOnly<int, FakeLock>);
     QTest::newRow("QMutex") << FunctionPtrHolder(testReadOnly<QMutex, QMutexLocker>);
     QTest::newRow("QReadWriteLock") << FunctionPtrHolder(testReadOnly<QReadWriteLock, QReadLocker>);
+#if defined(__GNUC__) && defined(_GLIBCXX_HAS_GTHREADS)
     QTest::newRow("std::mutex") << FunctionPtrHolder(
         testReadOnly<std::mutex, LockerWrapper<std::unique_lock<std::mutex>>>);
+#endif
 #if defined __cpp_lib_shared_timed_mutex
     QTest::newRow("std::shared_timed_mutex") << FunctionPtrHolder(
         testReadOnly<std::shared_timed_mutex,
