@@ -5,7 +5,7 @@ SOURCES    = stylewindow.cpp \
              main.cpp
 
 TARGET     = styleplugin
-win32 {
+win32|os2 {
     debug:DESTDIR = ../debug/
     release:DESTDIR = ../release/
 } else {

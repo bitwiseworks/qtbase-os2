@@ -7,8 +7,9 @@ HEADERS     = simplestyle.h \
 SOURCES     = simplestyle.cpp \
               simplestyleplugin.cpp
 TARGET      = simplestyleplugin
+os2:TARGET_SHORT = ssplug
 #! [0]
-win32 {
+win32|os2 {
     CONFIG(debug, release|debug):DESTDIR = ../debug/styles/
     CONFIG(release, release|debug):DESTDIR = ../release/styles/
 } else {

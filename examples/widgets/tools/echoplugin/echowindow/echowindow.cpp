@@ -102,7 +102,7 @@ void EchoWindow::createGUI()
 bool EchoWindow::loadPlugin()
 {
     QDir pluginsDir(qApp->applicationDirPath());
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     if (pluginsDir.dirName().toLower() == "debug" || pluginsDir.dirName().toLower() == "release")
         pluginsDir.cdUp();
 #elif defined(Q_OS_MAC)

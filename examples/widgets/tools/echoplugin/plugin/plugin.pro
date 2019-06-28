@@ -6,6 +6,7 @@ INCLUDEPATH    += ../echowindow
 HEADERS         = echoplugin.h
 SOURCES         = echoplugin.cpp
 TARGET          = $$qtLibraryTarget(echoplugin)
+os2:TARGET_SHORT = $$qtLibraryTarget(eplg)
 DESTDIR         = ../plugins
 #! [0]
 
