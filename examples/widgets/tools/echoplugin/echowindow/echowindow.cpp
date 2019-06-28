@@ -60,9 +60,9 @@ EchoWindow::EchoWindow()
     setWindowTitle("Echo Plugin Example");
 
     if (!loadPlugin()) {
-        QMessageBox::information(this, "Error", "Could not load the plugin");
         lineEdit->setEnabled(false);
         button->setEnabled(false);
+        QMessageBox::information(this, "Error", "Could not load the plugin");
     }
 }
 //! [0]
