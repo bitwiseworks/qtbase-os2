@@ -37,8 +37,7 @@
 **
 ****************************************************************************/
 
-#define _EMX_SOURCE // for strupr
-#include <string.h>
+#include "qplatformdefs.h" // for strupr
 
 #include "qos2theme.h"
 
