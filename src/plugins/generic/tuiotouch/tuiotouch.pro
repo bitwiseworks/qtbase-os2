@@ -1,4 +1,5 @@
 TARGET = qtuiotouchplugin
+os2:TARGET_SHORT = qtuiotp
 
 QT += \
     core-private \

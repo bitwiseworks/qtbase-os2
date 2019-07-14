@@ -1,4 +1,5 @@
 TARGET = qgenericbearer
+os2:TARGET_SHORT = qgbear
 
 QT = core-private network-private
 

@@ -812,7 +812,7 @@
         },
         "reduce_exports": {
             "label": "Reduce amount of exported symbols",
-            "condition": "!config.win32 && tests.reduce_exports",
+            "condition": "!config.win32 && !config.os2 && tests.reduce_exports",
             "output": [
                 "privateFeature",
                 "publicQtConfig",
@@ -821,7 +821,7 @@
         },
         "reduce_relocations": {
             "label": "Reduce amount of relocations",
-            "condition": "!config.win32 && tests.reduce_relocations",
+            "condition": "!config.win32 && !config.os2 && tests.reduce_relocations",
             "output": [
                 "privateFeature",
                 "publicQtConfig",

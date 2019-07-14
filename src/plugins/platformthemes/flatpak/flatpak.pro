@@ -1,4 +1,5 @@
 TARGET = qflatpak
+os2:TARGET_SHORT = qflatpk
 
 PLUGIN_TYPE = platformthemes
 PLUGIN_EXTENDS = -

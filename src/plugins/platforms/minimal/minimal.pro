@@ -1,4 +1,5 @@
 TARGET = qminimal
+os2:TARGET_SHORT = qplmin
 
 QT += \
     core-private gui-private \

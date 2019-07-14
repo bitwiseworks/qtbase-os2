@@ -1,4 +1,5 @@
 TARGET = qoffscreen
+os2:TARGET_SHORT = qoffscr
 
 QT += \
     core-private gui-private \
