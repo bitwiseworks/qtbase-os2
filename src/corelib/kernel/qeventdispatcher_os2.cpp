@@ -140,7 +140,7 @@ public:
     void destroyMsgQueue();
 
     void fetchFromSelect();
-    void prepareForSelect();
+    void prepareForSelect(bool wakeUp = false);
     int processTimersAndSockets();
 
     void startThread();
@@ -156,7 +156,7 @@ public:
             stopThread();
     }
 
-    inline void maybeStopOrCancelThread() {
+    inline void maybeStopOrStartThread() {
         if (tid != -1) {
             if (socketNotifiers.isEmpty() && timerList.count() == timerList.zeroTimerCount())
                 stopThread();
@@ -243,20 +243,26 @@ MRESULT QEventDispatcherOS2Private::AuxWnd::message(ULONG msg, MPARAM /*mp1*/, M
         // Must get a lock to make sure the select thread has entered the wait state.
         QMutexLocker locker(&d.mutex);
 
-        TRACE(V(d.tid) << V(d.threadState) << "maxfd/nsel" << d.maxfd);
+        TRACE(V(d.tid) << V(d.threadState) << "maxfd/nsel" << d.maxfd << hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
         Q_ASSERT(d.threadState == Waiting);
 
         d.fetchFromSelect();
 
-        // It's important to let select thread go again before calling processTimersAndSockets
+        // It's important to let the select thread go again before calling #processTimersAndSockets
         // because events it sends may enter a nested event loop depending on timers/sockets.
-        d.prepareForSelect();
+        d.prepareForSelect(true /*wakeUp*/);
 
-        // Release the lock before processTimersAndSockets to avoid deadlocks in cases when events
+        // Release the lock before #processTimersAndSockets to avoid deadlocks in cases when events
         // sent by it cause timer/socket creation/removal (which also needs this lock).
         locker.unlock();
 
         d.processTimersAndSockets();
+
+        // Since #processTimersAndSockets delivers all pending socket events (unblocking them for
+        // further selection), the current socket set needs to be be sent to the select thread
+        // again. This is covered if this pending event processing also registers or unregisters
+        // sockets or timers, but if not, it will be covered here.
+        d.maybeStartThread();
     }
 
     return 0;
@@ -347,9 +353,9 @@ void QEventDispatcherOS2Private::fetchFromSelect()
 }
 
 // NOTE: Must be called from the mutex lock.
-void QEventDispatcherOS2Private::prepareForSelect()
+void QEventDispatcherOS2Private::prepareForSelect(bool wakeUp)
 {
-    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
+    TRACE(V(wakeUp) << V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
     Q_ASSERT(threadState == Starting || threadState == Waiting);
 
     // Check that fetchFromSelect has been called so we don't overwrite the previous results.
@@ -389,8 +395,11 @@ void QEventDispatcherOS2Private::prepareForSelect()
         timeout = &waitTime;
     }
 
-    // Inform the select thread we have new data.
-    if (threadState == Waiting)
+    // Inform the select thread we have new data. Note that there may be no new data because all
+    // exising sockets are pending and there are no timers. In this case we will leave the select
+    // thread Waiting: #maybeStartThread called on any socket/timer change (and also after
+    // delivering pending socket events) in AuxWnd::message) will take care of that.
+    if (wakeUp && threadState == Waiting && (maxfd >= 0 || timeout))
         cond.wakeOne();
 }
 
@@ -428,7 +437,7 @@ void QEventDispatcherOS2Private::startThread()
 
     QMutexLocker locker(&mutex);
 
-    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd);
+    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd << hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
 
     if (tid == -1 || threadState == Starting) {
         if (tid == -1) {
@@ -458,6 +467,18 @@ void QEventDispatcherOS2Private::startThread()
             } else {
                 // Terminate the simple wait state.
                 cond.wakeOne();
+            }
+        } else if (threadState == Waiting) {
+            // We end up here either from the WM_QT_TIMER_OR_SOCKET handler that wants to update
+            // socket sets for select after delivering pending socket events or when the number
+            // of socket notifiers changes and the select thread is Waiting because all old sockets
+            // were pending (see #prepareForSelect). Let it go with new data unless there is
+            // WM_QT_TIMER_OR_SOCKET already pending which will do the same.
+            Q_STATIC_ASSERT(WM_QT_TIMER_OR_SOCKET == WM_SEM3);
+            if (!(WinQueryQueueStatus(HWND_DESKTOP) & (QS_SEM3 << 16))) {
+                // Let prepareForSelect update the data.
+                maxfd = -1;
+                prepareForSelect(true);
             }
         }
     }
@@ -642,7 +663,12 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
     d->processedTimers = false;
 
-    QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
+    // We need to return true if we processed any posted events (some tests, e.g.
+    // tst_QEventDispatcher::sendPostedEvents) expect that. See qGlobalqGlobalPostedEventsCount and
+    // QCoreApplicationPrivate::sendPostedEvents for more info on the below code.
+    retVal = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
+    if (retVal)
+        QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
 
     do {
         bool quit = false;
@@ -839,7 +865,7 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
     // Note: Not maybeStopThread since if there are still some sockets, we need to poke the select
     // thread instead of doing nothing - to let it pick up the new fd set (otherwise it will most
     // likely abort with ENOTSOCK due to a closed file handle).
-    d->maybeStopOrCancelThread();
+    d->maybeStopOrStartThread();
 }
 
 void QEventDispatcherOS2::registerTimer(int timerId, int interval, Qt::TimerType timerType, QObject *object)
@@ -881,8 +907,8 @@ bool QEventDispatcherOS2::unregisterTimer(int timerId)
 
     bool ok = d->timerList.unregisterTimer(timerId);
 
-    // Note: Not maybeStopOrCancelThread since no need to interrupt the wait as only the existing
-    // timers ones will be fired anyway.
+    // Note: Not maybeStopOrStartThread since no need to interrupt the select thread as only the
+    // existing timers will be fired anyway.
     d->maybeStopThread();
 
     return ok;
@@ -906,8 +932,8 @@ bool QEventDispatcherOS2::unregisterTimers(QObject *object)
 
     bool ok = d->timerList.unregisterTimers(object);
 
-    // Note: Not maybeStopOrCancelThread since no need to interrupt the wait as only the existing
-    // timers ones will be fired anyway.
+    // Note: Not maybeStopOrStartThread since no need to interrupt the select thread as only the
+    // existing timers will be fired anyway.
     d->maybeStopThread();
 
     return ok;
