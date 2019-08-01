@@ -238,6 +238,11 @@ bool QLibraryPrivate::load_sys()
 
 bool QLibraryPrivate::unload_sys()
 {
+#if defined(Q_OS_OS2) && !defined(RTLD_NODELETE)
+    // Currently, LIBC doesn't support RTLD_NODELETE. Emulate it by not actually unloading the
+    // library (it will be unloaded by the system at process termination).
+    if (!(loadHints() & QLibrary::PreventUnloadHint)) {
+#endif
     if (dlclose(pHnd)) {
 #if defined (Q_OS_QNX)                // Workaround until fixed in QNX; fixes crash in
         char *error = dlerror();      // QtDeclarative auto test "qqmlenginecleanup" for instance
@@ -250,6 +255,9 @@ bool QLibraryPrivate::unload_sys()
 #endif
         return false;
     }
+#if defined(Q_OS_OS2) && !defined(RTLD_NODELETE)
+    }
+#endif
     errorString.clear();
     return true;
 }
