@@ -738,7 +738,7 @@ UnixMakefileGenerator::defaultInstall(const QString &t)
         if(project->first("TEMPLATE") == "lib" && !project->isActiveConfig("staticlib")
             && !project->isActiveConfig("plugin") && !project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
             QString dst_lib = escapeFilePath(
-                        filePrefixRoot(root, fileFixify(targetdir, FileFixifyAbsolute))) + "$(LIB_TARGET)";
+                        filePrefixRoot(root, fileFixify(targetdir, FileFixifyAbsolute))) + "/$(LIB_TARGET)";
             ret += "\n\t-$(INSTALL_FILE) " + destdir + "$(LIB_TARGET) " + dst_lib;
             if(!uninst.isEmpty())
                 uninst.append("\n\t");
