@@ -26,6 +26,11 @@
 **
 ****************************************************************************/
 
+#ifdef __OS2__
+#  define _EMX_SOURCE // _abspath
+#  include <stdlib.h>
+#endif
+
 #include "ioutils.h"
 
 #include <qdir.h>
@@ -78,6 +83,19 @@ bool IoUtils::isRelativePath(const QString &path)
         return false;
     }
     // (... unless, of course, they're UNC, which qmake fails on anyway)
+#ifdef Q_OS_OS2
+    // However, on OS/2 under kLIBC paths like /@unixroot are also absolute and should not be
+    // fiddled with. Luckily, _abspath knows that and returns them as is. We use this feature here.
+    if (path.length() > 0 && (path.at(0) == QLatin1Char('/') || path.at(0) == QLatin1Char('\\'))) {
+        QByteArray bpath = QFile::encodeName(path);
+        if (!_abspath(bpath.data(), bpath.constData(), bpath.size() + 1)) {
+            // _abspath succeeded. If it still starts with a slash, then it was already absoltue
+            // (a /@unixroot-like path rewrite or a special device name).
+            if (bpath.at(0) == '/' || bpath.at(0) == '\\')
+                return false;
+        }
+    }
+#endif
 #else
     if (path.startsWith(QLatin1Char('/')))
         return false;
