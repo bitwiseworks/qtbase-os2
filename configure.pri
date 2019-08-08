@@ -697,7 +697,7 @@ defineTest(qtConfOutput_preparePaths) {
         $$qtConfEvaluate("features.developer-build") {
             config.input.prefix = $$QT_BUILD_TREE  # In Development, we use sandboxed builds by default
         } else {
-            win32: \
+            win32|os2: \
                 config.input.prefix = C:/Qt/Qt-$$[QT_VERSION]
             else: \
                 config.input.prefix = /usr/local/Qt-$$[QT_VERSION]
