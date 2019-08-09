@@ -323,12 +323,19 @@ static bool findPatternUnloaded(const QString &library, QLibraryPrivate *lib)
     if (pos >= 0) {
         if (hasMetaData) {
             const char *data = filedata + pos;
-            QJsonDocument doc = qJsonFromRawLibraryMetaData(data);
-            lib->metaData = doc.object();
-            if (qt_debug_component())
-                qWarning("Found metadata in lib %s, metadata=\n%s\n",
-                         library.toLocal8Bit().constData(), doc.toJson().constData());
-            ret = !doc.isNull();
+            // Check that the file has enough bytes for JS data (see qJsonFromRawLibraryMetaData) to
+            // avoid a possible process crash due to reading beyond the end in case of wrong data.
+            if (data + plen + 8 <= filedata + fdlen) {
+                uint jsonsize = qFromLittleEndian<uint>(*(const uint *)(data + plen + 8)) + 8;
+                if (data + plen + jsonsize <= filedata + fdlen) {
+                    QJsonDocument doc = qJsonFromRawLibraryMetaData(data);
+                    lib->metaData = doc.object();
+                    if (qt_debug_component())
+                        qWarning("Found metadata in lib %s, metadata=\n%s\n",
+                                 library.toLocal8Bit().constData(), doc.toJson().constData());
+                    ret = !doc.isNull();
+                }
+            }
         }
     }
 
