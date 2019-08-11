@@ -1,0 +1,10 @@
+!CONFIG(windows):!CONFIG(console) {
+    CONFIG(release, debug|release):CONFIG(qt):contains(QT, gui|widgets) {
+        CONFIG *= windows
+    } else {
+        CONFIG *= console
+    }
+}
+
+# load the global default_post
+load(default_post)

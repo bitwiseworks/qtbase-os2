@@ -1,0 +1,2 @@
+CONFIG -= console
+contains(TEMPLATE, ".*app"): QMAKE_LFLAGS += $$QMAKE_LFLAGS_WINDOWS
