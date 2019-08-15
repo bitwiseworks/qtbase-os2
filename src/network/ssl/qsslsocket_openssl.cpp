@@ -525,7 +525,7 @@ QList<QSslCertificate> QSslSocketPrivate::systemCaCertificates()
             ptrCertCloseStore(hSystemStore, 0);
         }
     }
-#elif defined(Q_OS_UNIX)
+#elif defined(Q_OS_UNIXLIKE)
     QSet<QString> certFiles;
     QDir currentDir;
     QStringList nameFilters;
@@ -564,8 +564,12 @@ QList<QSslCertificate> QSslSocketPrivate::systemCaCertificates()
         for (const QString& file : qAsConst(certFiles))
             systemCerts.append(QSslCertificate::fromPath(file, platformEncodingFormat));
 # ifndef Q_OS_ANDROID
+#  ifdef Q_OS_OS2
+        systemCerts.append(QSslCertificate::fromPath(QLatin1String("/@unixroot/etc/pki/tls/certs/ca-bundle.crt"), QSsl::Pem));
+#  else
         systemCerts.append(QSslCertificate::fromPath(QLatin1String("/etc/pki/tls/certs/ca-bundle.crt"), QSsl::Pem)); // Fedora, Mandriva
         systemCerts.append(QSslCertificate::fromPath(QLatin1String("/usr/local/share/certs/ca-root-nss.crt"), QSsl::Pem)); // FreeBSD's ca_root_nss
+#  endif
 # endif
     }
 #endif
