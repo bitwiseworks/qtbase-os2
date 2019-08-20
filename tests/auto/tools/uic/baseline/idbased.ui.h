@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'idbased.ui'
 **
-** Created by: Qt User Interface Compiler version 5.11.0
+** Created by: Qt User Interface Compiler version 5.12.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -26,12 +26,12 @@ public:
     void setupUi(QWidget *Form)
     {
         if (Form->objectName().isEmpty())
-            Form->setObjectName(QStringLiteral("Form"));
+            Form->setObjectName(QString::fromUtf8("Form"));
         Form->resize(400, 300);
         verticalLayout = new QVBoxLayout(Form);
-        verticalLayout->setObjectName(QStringLiteral("verticalLayout"));
+        verticalLayout->setObjectName(QString::fromUtf8("verticalLayout"));
         pushButton = new QPushButton(Form);
-        pushButton->setObjectName(QStringLiteral("pushButton"));
+        pushButton->setObjectName(QString::fromUtf8("pushButton"));
 
         verticalLayout->addWidget(pushButton);
 
@@ -44,15 +44,15 @@ public:
     void retranslateUi(QWidget *Form)
     {
         Form->setWindowTitle(qtTrId("windowTitleId"));
-#ifndef QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
         pushButton->setToolTip(qtTrId("buttonToolTipId"));
-#endif // QT_NO_TOOLTIP
-#ifndef QT_NO_STATUSTIP
+#endif // QT_CONFIG(tooltip)
+#if QT_CONFIG(statustip)
         pushButton->setStatusTip(qtTrId("buttonStatusTipId"));
-#endif // QT_NO_STATUSTIP
-#ifndef QT_NO_WHATSTHIS
+#endif // QT_CONFIG(statustip)
+#if QT_CONFIG(whatsthis)
         pushButton->setWhatsThis(qtTrId("buttonWhatsThisId"));
-#endif // QT_NO_WHATSTHIS
+#endif // QT_CONFIG(whatsthis)
         pushButton->setText(qtTrId("buttonTextId"));
     } // retranslateUi
 

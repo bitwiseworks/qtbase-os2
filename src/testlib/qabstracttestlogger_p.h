@@ -58,6 +58,7 @@
 QT_BEGIN_NAMESPACE
 
 class QBenchmarkResult;
+class QTestData;
 
 class QAbstractTestLogger
 {
@@ -68,7 +69,9 @@ public:
         Fail,
         XPass,
         BlacklistedPass,
-        BlacklistedFail
+        BlacklistedFail,
+        BlacklistedXPass,
+        BlacklistedXFail
     };
 
     enum MessageTypes {
@@ -90,6 +93,8 @@ public:
 
     virtual void enterTestFunction(const char *function) = 0;
     virtual void leaveTestFunction() = 0;
+
+    virtual void enterTestData(QTestData *) {}
 
     virtual void addIncident(IncidentTypes type, const char *description,
                              const char *file = 0, int line = 0) = 0;
@@ -175,6 +180,11 @@ namespace QTest
     int qt_asprintf(QTestCharBuffer *buf, const char *format, ...);
 }
 
+namespace QTestPrivate
+{
+    enum IdentifierPart { TestObject = 0x1, TestFunction = 0x2, TestDataTag = 0x4, AllParts = 0xFFFF };
+    void generateTestIdentifier(QTestCharBuffer *identifier, int parts = AllParts);
+}
 
 QT_END_NAMESPACE
 

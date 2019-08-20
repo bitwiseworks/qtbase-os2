@@ -53,6 +53,12 @@
 # include <unistd.h>
 #endif
 
+enum {
+    QMakeTimeout = 300000,      // 5 minutes
+    CompileTimeout = 600000,    // 10 minutes
+    RunTimeout = 300000         // 5 minutes
+};
+
 static QString makespec()
 {
     static const char default_makespec[] = DEFAULT_MAKESPEC;
@@ -143,7 +149,7 @@ namespace QTest {
         bool prepareSourceCode(const QByteArray &body);
         bool createProjectFile();
         bool runQmake();
-        bool runMake(Target target);
+        bool runMake(Target target, int timeout);
         bool commonSetup(const QByteArray &body);
     };
 
@@ -464,9 +470,8 @@ namespace QTest {
             "TEMPLATE = app\n"
             "\n"
             "TARGET   = externaltest\n"
-            "CONFIG   -= app_bundle\n"        // for the Mac
             "CONFIG   -= debug_and_release\n"
-            "CONFIG   += console\n"
+            "CONFIG   += cmdline\n"
             "DESTDIR  = .\n"
             "OBJECTS_DIR = .\n"
             "UI_DIR   = .\n"
@@ -602,7 +607,7 @@ namespace QTest {
             std_err += "qmake: ";
             std_err += qmake.errorString().toLocal8Bit();
         } else {
-            ok = qmake.waitForFinished();
+            ok = qmake.waitForFinished(QMakeTimeout);
             exitCode = qmake.exitCode();
             if (!ok)
                 QTest::ensureStopped(qmake);
@@ -617,7 +622,7 @@ namespace QTest {
 #endif // QT_CONFIG(process)
     }
 
-    bool QExternalTestPrivate::runMake(Target target)
+    bool QExternalTestPrivate::runMake(Target target, int timeout)
     {
 #if !QT_CONFIG(process)
         return false;
@@ -670,7 +675,7 @@ namespace QTest {
         }
 
         make.closeWriteChannel();
-        bool ok = make.waitForFinished(channelMode == QProcess::ForwardedChannels ? -1 : 60000);
+        bool ok = make.waitForFinished(channelMode == QProcess::ForwardedChannels ? -1 : timeout);
         if (!ok)
             QTest::ensureStopped(make);
         exitCode = make.exitCode();
@@ -705,7 +710,7 @@ namespace QTest {
         failedStage = QExternalTest::CompilationStage;
         std_out += "\n### --- stdout from make (compilation) --- ###\n";
         std_err += "\n### --- stderr from make (compilation) --- ###\n";
-        return runMake(Compile);
+        return runMake(Compile, CompileTimeout);
     }
 
     bool QExternalTestPrivate::tryLink(const QByteArray &body)
@@ -717,7 +722,7 @@ namespace QTest {
         failedStage = QExternalTest::LinkStage;
         std_out += "\n### --- stdout from make (linking) --- ###\n";
         std_err += "\n### --- stderr from make (linking) --- ###\n";
-        return runMake(Link);
+        return runMake(Link, CompileTimeout);
     }
 
     bool QExternalTestPrivate::tryRun(const QByteArray &body)
@@ -729,7 +734,7 @@ namespace QTest {
         failedStage = QExternalTest::RunStage;
         std_out += "\n### --- stdout from process --- ###\n";
         std_err += "\n### --- stderr from process --- ###\n";
-        return runMake(Run);
+        return runMake(Run, RunTimeout);
     }
 }
 QT_END_NAMESPACE

@@ -294,7 +294,8 @@ static inline QAbstractSocket::SocketType qt_socket_getType(qintptr socketDescri
 {
     int value = 0;
     QT_SOCKLEN_T valueSize = sizeof(value);
-    if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_TYPE, (char *) &value, &valueSize) != 0) {
+    if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_TYPE,
+                     reinterpret_cast<char *>(&value), &valueSize) != 0) {
         WS_ERROR_DEBUG(WSAGetLastError());
     } else {
         if (value == SOCK_STREAM)
@@ -361,7 +362,7 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
 #ifdef HANDLE_FLAG_INHERIT
         if (socket != INVALID_SOCKET) {
             // make non inheritable the old way
-            BOOL handleFlags = SetHandleInformation((HANDLE)socket, HANDLE_FLAG_INHERIT, 0);
+            BOOL handleFlags = SetHandleInformation(reinterpret_cast<HANDLE>(socket), HANDLE_FLAG_INHERIT, 0);
 #ifdef QNATIVESOCKETENGINE_DEBUG
             qDebug() << "QNativeSocketEnginePrivate::createNewSocket - set inheritable" << handleFlags;
 #else
@@ -1145,22 +1146,17 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
     qint64 ret = -1;
     int recvResult = 0;
     DWORD flags;
-    DWORD bufferCount = 5;
-    WSABUF * buf = 0;
+    // We start at 1500 bytes (the MTU for Ethernet V2), which should catch
+    // almost all uses (effective MTU for UDP under IPv4 is 1468), except
+    // for localhost datagrams and those reassembled by the IP layer.
+    char udpMessagePeekBuffer[1500];
+    std::vector<WSABUF> buf;
     for (;;) {
-        // We start at 1500 bytes (the MTU for Ethernet V2), which should catch
-        // almost all uses (effective MTU for UDP under IPv4 is 1468), except
-        // for localhost datagrams and those reassembled by the IP layer.
-        char udpMessagePeekBuffer[1500];
+        buf.resize(buf.size() + 5, {sizeof(udpMessagePeekBuffer), udpMessagePeekBuffer});
 
-        buf = new WSABUF[bufferCount];
-        for (DWORD i=0; i<bufferCount; i++) {
-           buf[i].buf = udpMessagePeekBuffer;
-           buf[i].len = sizeof(udpMessagePeekBuffer);
-        }
         flags = MSG_PEEK;
         DWORD bytesRead = 0;
-        recvResult = ::WSARecv(socketDescriptor, buf, bufferCount, &bytesRead, &flags, 0,0);
+        recvResult = ::WSARecv(socketDescriptor, buf.data(), DWORD(buf.size()), &bytesRead, &flags, nullptr, nullptr);
         int err = WSAGetLastError();
         if (recvResult != SOCKET_ERROR) {
             ret = qint64(bytesRead);
@@ -1168,8 +1164,6 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
         } else {
             switch (err) {
             case WSAEMSGSIZE:
-                bufferCount += 5;
-                delete[] buf;
                 continue;
             case WSAECONNRESET:
             case WSAENETRESET:
@@ -1183,9 +1177,6 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
             break;
         }
     }
-
-    if (buf)
-        delete[] buf;
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
     qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %lli", ret);
@@ -1232,6 +1223,8 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxL
             // it is ok the buffer was to small if bytesRead is larger than
             // maxLength then assume bytes read is really maxLenth
             ret = qint64(bytesRead) > maxLength ? maxLength : qint64(bytesRead);
+            if (options & QNativeSocketEngine::WantDatagramSender)
+                qt_socket_getPortAndAddress(socketDescriptor, &aa, &header->senderPort, &header->senderAddress);
         } else {
             WS_ERROR_DEBUG(err);
             switch (err) {
@@ -1441,7 +1434,7 @@ qint64 QNativeSocketEnginePrivate::nativeWrite(const char *data, qint64 len)
 
     for (;;) {
         WSABUF buf;
-        buf.buf = (char*)data + ret;
+        buf.buf = const_cast<char*>(data) + ret;
         buf.len = bytesToSend;
         DWORD flags = 0;
         DWORD bytesWritten = 0;

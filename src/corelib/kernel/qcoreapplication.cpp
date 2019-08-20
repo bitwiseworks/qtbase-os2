@@ -55,12 +55,13 @@
 #include <qmutex.h>
 #include <private/qloggingregistry_p.h>
 #include <qstandardpaths.h>
-#include <qtextcodec.h>
 #ifndef QT_NO_QOBJECT
 #include <qthread.h>
-#include <qthreadpool.h>
 #include <qthreadstorage.h>
 #include <private/qthread_p.h>
+#if QT_CONFIG(thread)
+#include <qthreadpool.h>
+#endif
 #endif
 #include <qelapsedtimer.h>
 #include <qlibraryinfo.h>
@@ -114,6 +115,11 @@
 
 #ifdef Q_OS_VXWORKS
 #  include <taskLib.h>
+#endif
+
+#ifdef Q_OS_WASM
+#include <emscripten.h>
+#include <emscripten/val.h>
 #endif
 
 #ifdef QT_BOOTSTRAPPED
@@ -268,9 +274,7 @@ typedef QList<QtStartUpFunction> QStartUpFuncList;
 Q_GLOBAL_STATIC(QStartUpFuncList, preRList)
 typedef QList<QtCleanUpFunction> QVFuncList;
 Q_GLOBAL_STATIC(QVFuncList, postRList)
-#ifndef QT_NO_QOBJECT
 static QBasicMutex globalRoutinesMutex;
-#endif
 
 /*!
     \internal
@@ -289,9 +293,7 @@ void qAddPreRoutine(QtStartUpFunction p)
 
     // Due to C++11 parallel dynamic initialization, this can be called
     // from multiple threads.
-#ifndef QT_NO_THREAD
     QMutexLocker locker(&globalRoutinesMutex);
-#endif
     list->prepend(p); // in case QCoreApplication is re-created, see qt_call_pre_routines
 }
 
@@ -300,9 +302,7 @@ void qAddPostRoutine(QtCleanUpFunction p)
     QVFuncList *list = postRList();
     if (!list)
         return;
-#ifndef QT_NO_THREAD
     QMutexLocker locker(&globalRoutinesMutex);
-#endif
     list->prepend(p);
 }
 
@@ -311,9 +311,7 @@ void qRemovePostRoutine(QtCleanUpFunction p)
     QVFuncList *list = postRList();
     if (!list)
         return;
-#ifndef QT_NO_THREAD
     QMutexLocker locker(&globalRoutinesMutex);
-#endif
     list->removeAll(p);
 }
 
@@ -324,9 +322,7 @@ static void qt_call_pre_routines()
 
     QVFuncList list;
     {
-#ifndef QT_NO_THREAD
         QMutexLocker locker(&globalRoutinesMutex);
-#endif
         // Unlike qt_call_post_routines, we don't empty the list, because
         // Q_COREAPP_STARTUP_FUNCTION is a macro, so the user expects
         // the function to be executed every time QCoreApplication is created.
@@ -345,9 +341,7 @@ void Q_CORE_EXPORT qt_call_post_routines()
         QVFuncList list;
         {
             // extract the current list and make the stored list empty
-#ifndef QT_NO_THREAD
             QMutexLocker locker(&globalRoutinesMutex);
-#endif
             qSwap(*postRList, list);
         }
 
@@ -466,9 +460,6 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
     , q_ptr(0)
 #endif
 {
-#if defined(Q_OS_DARWIN)
-    qt_apple_check_os_version();
-#endif
     app_compile_version = flags & 0xffffff;
     static const char *const empty = "";
     if (argc == 0 || argv == 0) {
@@ -491,6 +482,10 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
         qFatal("FATAL: The application binary appears to be running setuid, this is a security hole.");
 #  endif // Q_OS_UNIX
 
+#ifdef Q_OS_WINRT
+    QThreadData::setMainThread();
+#endif
+
     QThread *cur = QThread::currentThread(); // note: this may end up setting theMainThread!
     if (cur != theMainThread)
         qWarning("WARNING: QApplication was not created in the main() thread.");
@@ -499,6 +494,13 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
 
 QCoreApplicationPrivate::~QCoreApplicationPrivate()
 {
+#ifdef Q_OS_WASM
+    EM_ASM(
+        // unmount persistent directory as IDBFS
+        // see also QTBUG-70002
+        FS.unmount('/home/web_user');
+    );
+#endif
 #ifndef QT_NO_QOBJECT
     cleanupThreadData();
 #endif
@@ -513,7 +515,7 @@ QCoreApplicationPrivate::~QCoreApplicationPrivate()
 void QCoreApplicationPrivate::cleanupThreadData()
 {
     if (threadData && !threadData_clean) {
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
         void *data = &threadData->tls;
         QThreadStorageData::finish((void **)data);
 #endif
@@ -540,7 +542,7 @@ void QCoreApplicationPrivate::createEventDispatcher()
     Q_Q(QCoreApplication);
     QThreadData *data = QThreadData::current();
     Q_ASSERT(!data->hasEventDispatcher());
-    eventDispatcher = QThreadPrivate::createEventDispatcher(data);
+    eventDispatcher = data->createEventDispatcher();
     eventDispatcher->setParent(q);
 }
 
@@ -777,7 +779,7 @@ QCoreApplication::QCoreApplication(int &argc, char **argv
 
 void QCoreApplicationPrivate::init()
 {
-    Q_TRACE(qcoreapplicationprivate_init_entry);
+    Q_TRACE_SCOPE(QCoreApplicationPrivate_init);
 
 #if defined(Q_OS_MACOS)
     QMacAutoReleasePool pool;
@@ -789,6 +791,21 @@ void QCoreApplicationPrivate::init()
 
     Q_ASSERT_X(!QCoreApplication::self, "QCoreApplication", "there should be only one application object");
     QCoreApplication::self = q;
+
+#ifdef Q_OS_WASM
+    EM_ASM(
+        // mount and sync persistent filesystem to sandbox
+        FS.mount(IDBFS, {}, '/home/web_user');
+        FS.syncfs(true, function(err) {
+            if (err)
+                Module.print(err);
+        });
+    );
+
+#if QT_CONFIG(thread)
+    QThreadPrivate::idealThreadCount = emscripten::val::global("navigator")["hardwareConcurrency"].as<int>();
+#endif
+#endif
 
     // Store app name/version (so they're still available after QCoreApplication is destroyed)
     if (!coreappdata()->applicationNameSet)
@@ -871,8 +888,6 @@ void QCoreApplicationPrivate::init()
 #ifndef QT_NO_QOBJECT
     is_app_running = true; // No longer starting up.
 #endif
-
-    Q_TRACE(qcoreapplicationprivate_init_exit);
 }
 
 /*!
@@ -888,7 +903,7 @@ QCoreApplication::~QCoreApplication()
     QCoreApplicationPrivate::is_app_running = false;
 #endif
 
-#if !defined(QT_NO_THREAD)
+#if QT_CONFIG(thread)
     // Synchronize and stop the global thread pool threads.
     QThreadPool *globalThreadPool = 0;
     QT_TRY {
@@ -1003,6 +1018,7 @@ void QCoreApplication::setQuitLockEnabled(bool enabled)
     quitLockRefEnabled = enabled;
 }
 
+#if QT_DEPRECATED_SINCE(5, 6)
 /*!
   \internal
   \deprecated
@@ -1014,6 +1030,7 @@ bool QCoreApplication::notifyInternal(QObject *receiver, QEvent *event)
 {
     return notifyInternal2(receiver, event);
 }
+#endif
 
 /*!
   \internal
@@ -1185,16 +1202,29 @@ bool QCoreApplicationPrivate::sendThroughObjectEventFilters(QObject *receiver, Q
  */
 bool QCoreApplicationPrivate::notify_helper(QObject *receiver, QEvent * event)
 {
+    // Note: when adjusting the tracepoints in here
+    // consider adjusting QApplicationPrivate::notify_helper too.
+    Q_TRACE(QCoreApplication_notify_entry, receiver, event, event->type());
+    bool consumed = false;
+    bool filtered = false;
+    Q_TRACE_EXIT(QCoreApplication_notify_exit, consumed, filtered);
+
     // send to all application event filters (only does anything in the main thread)
     if (QCoreApplication::self
             && receiver->d_func()->threadData->thread == mainThread()
-            && QCoreApplication::self->d_func()->sendThroughApplicationEventFilters(receiver, event))
-        return true;
+            && QCoreApplication::self->d_func()->sendThroughApplicationEventFilters(receiver, event)) {
+        filtered = true;
+        return filtered;
+    }
     // send to all receiver event filters
-    if (sendThroughObjectEventFilters(receiver, event))
-        return true;
+    if (sendThroughObjectEventFilters(receiver, event)) {
+        filtered = true;
+        return filtered;
+    }
+
     // deliver the event
-    return receiver->event(event);
+    consumed = receiver->event(event);
+    return consumed;
 }
 
 /*!
@@ -1238,7 +1268,11 @@ bool QCoreApplication::closingDown()
     \l{QCoreApplication::sendPostedEvents()}{sendPostedEvents()} from
     within that local loop.
 
-    Calling this function processes events only for the calling thread.
+    Calling this function processes events only for the calling thread,
+    and returns after all available events have been processed. Available
+    events are events queued before the function call. This means that
+    events that are posted while the function runs will be queued until
+    a later round of event processing.
 
     \threadsafe
 
@@ -1255,7 +1289,7 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
 /*!
     \overload processEvents()
 
-    Processes pending events for the calling thread for \a maxtime
+    Processes pending events for the calling thread for \a ms
     milliseconds or until there are no more events to process,
     whichever is shorter.
 
@@ -1264,11 +1298,14 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
 
     Calling this function processes events only for the calling thread.
 
+    \note Unlike the \l{QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)}{processEvents()}
+    overload, this function also processes events that are posted while the function runs.
+
     \threadsafe
 
     \sa exec(), QTimer, QEventLoop::processEvents()
 */
-void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags, int maxtime)
+void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags, int ms)
 {
     // ### Qt 6: consider splitting this method into a public and a private
     //           one, so that a user-invoked processEvents can be detected
@@ -1279,7 +1316,7 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags, int m
     QElapsedTimer start;
     start.start();
     while (data->eventDispatcher.load()->processEvents(flags & ~QEventLoop::WaitForMoreEvents)) {
-        if (start.elapsed() > maxtime)
+        if (start.elapsed() > ms)
             break;
     }
 }
@@ -1399,6 +1436,7 @@ void QCoreApplication::exit(int returnCode)
   QCoreApplication management of posted events
  *****************************************************************************/
 
+#ifndef QT_NO_QOBJECT
 /*!
     \fn bool QCoreApplication::sendEvent(QObject *receiver, QEvent *event)
 
@@ -1413,6 +1451,28 @@ void QCoreApplication::exit(int returnCode)
 
     \sa postEvent(), notify()
 */
+bool QCoreApplication::sendEvent(QObject *receiver, QEvent *event)
+{
+    Q_TRACE(QCoreApplication_sendEvent, receiver, event, event->type());
+
+    if (event)
+        event->spont = false;
+    return notifyInternal2(receiver, event);
+}
+
+/*!
+    \internal
+*/
+bool QCoreApplication::sendSpontaneousEvent(QObject *receiver, QEvent *event)
+{
+    Q_TRACE(QCoreApplication_sendSpontaneousEvent, receiver, event, event->type());
+
+    if (event)
+        event->spont = true;
+    return notifyInternal2(receiver, event);
+}
+
+#endif // QT_NO_QOBJECT
 
 /*!
     \since 4.3
@@ -1441,6 +1501,8 @@ void QCoreApplication::exit(int returnCode)
 */
 void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
 {
+    Q_TRACE_SCOPE(QCoreApplication_postEvent, receiver, event, event->type());
+
     if (receiver == 0) {
         qWarning("QCoreApplication::postEvent: Unexpected null receiver");
         delete event;
@@ -1477,6 +1539,7 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
     // if this is one of the compressible events, do compression
     if (receiver->d_func()->postedEvents
         && self && self->compressEvent(event, receiver, &data->postEventList)) {
+        Q_TRACE(QCoreApplication_postEvent_event_compressed, receiver, event);
         return;
     }
 
@@ -1508,6 +1571,7 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
     // delete the event on exceptions to protect against memory leaks till the event is
     // properly owned in the postEventList
     QScopedPointer<QEvent> eventDeleter(event);
+    Q_TRACE(QCoreApplication_postEvent_event_posted, receiver, event, event->type());
     data->postEventList.addEvent(QPostEvent(receiver, event, priority));
     eventDeleter.take();
     event->posted = true;
@@ -1575,14 +1639,15 @@ bool QCoreApplication::compressEvent(QEvent *event, QObject *receiver, QPostEven
 
 /*!
   Immediately dispatches all events which have been previously queued
-  with QCoreApplication::postEvent() and which are for the object \a receiver
-  and have the event type \a event_type.
+  with QCoreApplication::postEvent() and which are for the object \a
+  receiver and have the event type \a event_type.
 
   Events from the window system are \e not dispatched by this
   function, but by processEvents().
 
-  If \a receiver is null, the events of \a event_type are sent for all
-  objects. If \a event_type is 0, all the events are sent for \a receiver.
+  If \a receiver is \nullptr, the events of \a event_type are sent for
+  all objects. If \a event_type is 0, all the events are sent for
+  \a receiver.
 
   \note This method must be called from the thread in which its QObject
   parameter, \a receiver, lives.
@@ -1763,11 +1828,10 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
     call it, be aware that killing events may cause \a receiver to
     break one or more invariants.
 
-    If \a receiver is null, the events of \a eventType are removed for
-    all objects. If \a eventType is 0, all the events are removed for
-    \a receiver. You should never call this function with \a eventType
-    of 0. If you do call it in this way, be aware that killing events
-    may cause \a receiver to break one or more invariants.
+    If \a receiver is \nullptr, the events of \a eventType are removed
+    for all objects. If \a eventType is 0, all the events are removed
+    for \a receiver. You should never call this function with \a
+    eventType of 0.
 
     \threadsafe
 */
@@ -1818,9 +1882,7 @@ void QCoreApplication::removePostedEvents(QObject *receiver, int eventType)
     }
 
     locker.unlock();
-    for (int i = 0; i < events.count(); ++i) {
-        delete events[i];
-    }
+    qDeleteAll(events);
 }
 
 /*!
@@ -1889,7 +1951,7 @@ bool QCoreApplication::event(QEvent *e)
 
     \value UnicodeUTF8   UTF-8.
     \omitvalue Latin1
-    \omitvalue DefaultCodec  UTF-8.
+    \omitvalue DefaultCodec \omit UTF-8. \endomit
     \omitvalue CodecForTr
 
     \sa QObject::tr(), QString::fromUtf8()
@@ -2046,9 +2108,13 @@ static void replacePercentN(QString *result, int n)
         int len = 0;
         while ((percentPos = result->indexOf(QLatin1Char('%'), percentPos + len)) != -1) {
             len = 1;
+            if (percentPos + len == result->length())
+                break;
             QString fmt;
             if (result->at(percentPos + len) == QLatin1Char('L')) {
                 ++len;
+                if (percentPos + len == result->length())
+                    break;
                 fmt = QLatin1String("%L1");
             } else {
                 fmt = QLatin1String("%1");
@@ -2078,7 +2144,7 @@ static void replacePercentN(QString *result, int n)
 
     \a disambiguation is an identifying string, for when the same \a
     sourceText is used in different roles within the same context. By
-    default, it is null.
+    default, it is \nullptr.
 
     See the \l QTranslator and \l QObject::tr() documentation for
     more information about contexts, disambiguations and comments.
@@ -2613,9 +2679,9 @@ QStringList QCoreApplication::libraryPaths()
         QStringList *app_libpaths = new QStringList;
         coreappdata()->app_libpaths.reset(app_libpaths);
 
-        const QByteArray libPathEnv = qgetenv("QT_PLUGIN_PATH");
+        QString libPathEnv = qEnvironmentVariable("QT_PLUGIN_PATH");
         if (!libPathEnv.isEmpty()) {
-            QStringList paths = QFile::decodeName(libPathEnv).split(QDir::listSeparator(), QString::SkipEmptyParts);
+            QStringList paths = libPathEnv.split(QDir::listSeparator(), QString::SkipEmptyParts);
             for (QStringList::const_iterator it = paths.constBegin(); it != paths.constEnd(); ++it) {
                 QString canonicalPath = QDir(*it).canonicalPath();
                 if (!canonicalPath.isEmpty()
@@ -2868,7 +2934,7 @@ bool QCoreApplication::hasPendingEvents()
 
 /*!
     Returns a pointer to the event dispatcher object for the main thread. If no
-    event dispatcher exists for the thread, this function returns 0.
+    event dispatcher exists for the thread, this function returns \nullptr.
 */
 QAbstractEventDispatcher *QCoreApplication::eventDispatcher()
 {

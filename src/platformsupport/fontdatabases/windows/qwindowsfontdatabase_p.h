@@ -67,7 +67,7 @@ Q_DECLARE_LOGGING_CATEGORY(lcQpaFonts)
 
 class QWindowsFontEngineData
 {
-    Q_DISABLE_COPY(QWindowsFontEngineData)
+    Q_DISABLE_COPY_MOVE(QWindowsFontEngineData)
 public:
     QWindowsFontEngineData();
     ~QWindowsFontEngineData();
@@ -85,6 +85,7 @@ public:
 
 class QWindowsFontDatabase : public QPlatformFontDatabase
 {
+    Q_DISABLE_COPY_MOVE(QWindowsFontDatabase)
 public:
     enum FontOptions {
         // Relevant bits from QWindowsIntegration::Options
@@ -93,11 +94,10 @@ public:
     };
 
     QWindowsFontDatabase();
-    ~QWindowsFontDatabase();
+    ~QWindowsFontDatabase() override;
 
     void populateFontDatabase() override;
     void populateFamily(const QString &familyName) override;
-    QFontEngineMulti *fontEngineMulti(QFontEngine *fontEngine, QChar::Script script) override;
     QFontEngine *fontEngine(const QFontDef &fontDef, void *handle) override;
     QFontEngine *fontEngine(const QByteArray &fontData, qreal pixelSize, QFont::HintingPreference hintingPreference) override;
     QStringList fallbacksForFamily(const QString &family, QFont::Style style, QFont::StyleHint styleHint, QChar::Script script) const override;
@@ -168,16 +168,25 @@ inline quint16 qt_getUShort(const unsigned char *p)
     return val;
 }
 
-struct FontNames {
+struct QFontNames
+{
     QString name;   // e.g. "DejaVu Sans Condensed"
     QString style;  // e.g. "Italic"
     QString preferredName;  // e.g. "DejaVu Sans"
     QString preferredStyle; // e.g. "Condensed Italic"
 };
 
+struct QFontValues
+{
+    quint16 weight = 0;
+    bool isItalic = false;
+    bool isOverstruck = false;
+    bool isUnderlined = false;
+};
+
 bool qt_localizedName(const QString &name);
 QString qt_getEnglishName(const QString &familyName, bool includeStyle = false);
-FontNames qt_getCanonicalFontNames(const LOGFONT &lf);
+QFontNames qt_getCanonicalFontNames(const LOGFONT &lf);
 
 QT_END_NAMESPACE
 

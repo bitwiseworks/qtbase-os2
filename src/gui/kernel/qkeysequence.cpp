@@ -1062,6 +1062,8 @@ int QKeySequence::decodeString(const QString &str)
 
 int QKeySequencePrivate::decodeString(QString accel, QKeySequence::SequenceFormat format)
 {
+    Q_ASSERT(!accel.isEmpty());
+
     int ret = 0;
     accel = std::move(accel).toLower();
     bool nativeText = (format == QKeySequence::NativeText);
@@ -1121,7 +1123,10 @@ int QKeySequencePrivate::decodeString(QString accel, QKeySequence::SequenceForma
             sl = accel;
         }
     }
+    if (accel.isEmpty()) // Incomplete, like for "Meta+Shift+"
+        return Qt::Key_unknown;
 #endif
+
     int i = 0;
     int lastI = 0;
     while ((i = sl.indexOf(QLatin1Char('+'), i + 1)) != -1) {
@@ -1216,10 +1221,12 @@ QString QKeySequence::encodeString(int key)
 static inline void addKey(QString &str, const QString &theKey, QKeySequence::SequenceFormat format)
 {
     if (!str.isEmpty()) {
-        if (format == QKeySequence::NativeText)
+        if (format == QKeySequence::NativeText) {
+            //: Key separator in shortcut string
             str += QCoreApplication::translate("QShortcut", "+");
-        else
+        } else {
             str += QLatin1Char('+');
+        }
     }
 
     str += theKey;

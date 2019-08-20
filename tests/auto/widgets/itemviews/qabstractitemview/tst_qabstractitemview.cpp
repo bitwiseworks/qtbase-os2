@@ -238,7 +238,7 @@ void tst_QAbstractItemView::getSetCheck()
 
     // bool QAbstractItemView::dragEnabled()
     // void QAbstractItemView::setDragEnabled(bool)
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     obj1->setDragEnabled(false);
     QCOMPARE(false, obj1->dragEnabled());
     obj1->setDragEnabled(true);
@@ -415,7 +415,7 @@ void tst_QAbstractItemView::basic_tests(QAbstractItemView *view)
     view->setTabKeyNavigation(true);
     QCOMPARE(view->tabKeyNavigation(), true);
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     // setDropIndicatorShown
     view->setDropIndicatorShown(false);
     QCOMPARE(view->showDropIndicator(), false);
@@ -502,11 +502,6 @@ void tst_QAbstractItemView::basic_tests(QAbstractItemView *view)
     view->commitData(0);
     view->editorDestroyed(0);
 
-    view->setHorizontalStepsPerItem(2);
-    view->horizontalStepsPerItem();
-    view->setVerticalStepsPerItem(2);
-    view->verticalStepsPerItem();
-
     // Will assert as it should
     // view->setIndexWidget(QModelIndex(), 0);
 
@@ -527,7 +522,7 @@ void tst_QAbstractItemView::basic_tests(QAbstractItemView *view)
 
     view->selectionCommand(QModelIndex(), 0);
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     if (!view->model())
         view->startDrag(Qt::CopyAction);
 
@@ -1168,8 +1163,7 @@ void tst_QAbstractItemView::task221955_selectedEditor()
 
     //We set the focus to the button, the index need to be selected
     button->setFocus();
-    QTest::qWait(100);
-    QVERIFY(tree.selectionModel()->selectedIndexes().contains(tree.model()->index(3,0)));
+    QTRY_VERIFY(tree.selectionModel()->selectedIndexes().contains(tree.model()->index(3,0)));
 
     tree.setCurrentIndex(tree.model()->index(1,0));
     QVERIFY(! tree.selectionModel()->selectedIndexes().contains(tree.model()->index(3,0)));
@@ -1179,7 +1173,6 @@ void tst_QAbstractItemView::task221955_selectedEditor()
     tree.setSelectionMode(QAbstractItemView::NoSelection);
     tree.clearSelection();
     QVERIFY(tree.selectionModel()->selectedIndexes().isEmpty());
-    QTest::qWait(10);
     button->setFocus();
     QTest::qWait(50);
     QVERIFY(tree.selectionModel()->selectedIndexes().isEmpty());
@@ -1219,6 +1212,9 @@ void tst_QAbstractItemView::task250754_fontChange()
 
     font.setPixelSize(60);
     tree.setFont(font);
+#ifdef Q_OS_WINRT
+    QSKIP("Resizing the widget does not work as expected for WinRT, so the scroll bar might not be visible");
+#endif
     //now with the huge items, the scrollbar must be visible
     QTRY_VERIFY(tree.verticalScrollBar()->isVisible());
 
@@ -1267,14 +1263,10 @@ void tst_QAbstractItemView::task257481_emptyEditor()
     QCOMPARE(lineEditors.count(), 1);
     QVERIFY(!lineEditors.first()->size().isEmpty());
 
-    QTest::qWait(30);
-
     treeView.edit(model.index(1,0));
     lineEditors = treeView.viewport()->findChildren<QLineEdit *>();
     QCOMPARE(lineEditors.count(), 1);
     QVERIFY(!lineEditors.first()->size().isEmpty());
-
-    QTest::qWait(30);
 
     treeView.edit(model.index(2,0));
     lineEditors = treeView.viewport()->findChildren<QLineEdit *>();
@@ -1462,7 +1454,6 @@ void tst_QAbstractItemView::QTBUG6407_extendedSelection()
     QCOMPARE(static_cast<QWidget *>(&view), QApplication::activeWindow());
 
     view.verticalScrollBar()->setValue(view.verticalScrollBar()->maximum());
-    QTest::qWait(20);
 
     QModelIndex index49 = view.model()->index(49,0);
     QPoint p = view.visualRect(index49).center();
@@ -1506,7 +1497,6 @@ void tst_QAbstractItemView::QTBUG6753_selectOnSelection()
     QRect itemRect = table.visualRect(item);
     QTest::mouseMove(table.viewport(), itemRect.center());
     QTest::mouseClick(table.viewport(), Qt::LeftButton, Qt::NoModifier, itemRect.center());
-    QTest::qWait(20);
 
     QCOMPARE(table.selectedItems().count(), 1);
     QCOMPARE(table.selectedItems().first(), table.item(item.row(), item.column()));
@@ -1542,6 +1532,9 @@ void tst_QAbstractItemView::testClickedSignal()
     QSignalSpy clickedSpy(&view, SIGNAL(clicked(QModelIndex)));
 
     QTest::mouseClick(view.viewport(), Qt::LeftButton, 0, p);
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "Fails on WinRT - QTBUG-68297", Abort);
+#endif
     QCOMPARE(clickedSpy.count(), 1);
 
     QTest::mouseClick(view.viewport(), Qt::RightButton, 0, p);
@@ -2265,6 +2258,9 @@ void tst_QAbstractItemView::QTBUG46785_mouseout_hover_state()
 
     QTest::mouseMove(table.viewport(), QPoint(-50, 0));
 
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "QTest::mouseMove does not work on WinRT", Abort);
+#endif
     QTRY_VERIFY(delegate.m_paintedWithoutHover);
 }
 

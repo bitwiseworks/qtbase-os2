@@ -50,7 +50,9 @@
 #include <qthread.h>
 #include <qvariant.h>
 #include <qdebug.h>
+#if QT_CONFIG(thread)
 #include <qsemaphore.h>
+#endif
 
 #include "private/qobject_p.h"
 #include "private/qmetaobject_p.h"
@@ -214,8 +216,8 @@ private:
 
     Constructs a new instance of this class. You can pass up to ten arguments
     (\a val0, \a val1, \a val2, \a val3, \a val4, \a val5, \a val6, \a val7,
-    \a val8, and \a val9) to the constructor. Returns the new object, or 0 if
-    no suitable constructor is available.
+    \a val8, and \a val9) to the constructor. Returns the new object, or
+    \nullptr if no suitable constructor is available.
 
     Note that only constructors that are declared with the Q_INVOKABLE
     modifier are made available through the meta-object system.
@@ -233,6 +235,12 @@ QObject *QMetaObject::newInstance(QGenericArgument val0,
                                   QGenericArgument val8,
                                   QGenericArgument val9) const
 {
+    if (!inherits(&QObject::staticMetaObject))
+    {
+        qWarning("QMetaObject::newInstance: type %s does not inherit QObject", className());
+        return nullptr;
+    }
+
     QByteArray constructorName = className();
     {
         int idx = constructorName.lastIndexOf(':');
@@ -319,8 +327,8 @@ const char *QMetaObject::className() const
 /*!
     \fn QMetaObject *QMetaObject::superClass() const
 
-    Returns the meta-object of the superclass, or 0 if there is no
-    such object.
+    Returns the meta-object of the superclass, or \nullptr if there is
+    no such object.
 
     \sa className()
 */
@@ -347,7 +355,7 @@ bool QMetaObject::inherits(const QMetaObject *metaObject) const Q_DECL_NOEXCEPT
     \internal
 
     Returns \a obj if object \a obj inherits from this
-    meta-object; otherwise returns 0.
+    meta-object; otherwise returns \nullptr.
 */
 QObject *QMetaObject::cast(QObject *obj) const
 {
@@ -359,7 +367,7 @@ QObject *QMetaObject::cast(QObject *obj) const
     \internal
 
     Returns \a obj if object \a obj inherits from this
-    meta-object; otherwise returns 0.
+    meta-object; otherwise returns \nullptr.
 */
 const QObject *QMetaObject::cast(const QObject *obj) const
 {
@@ -970,8 +978,23 @@ int QMetaObject::indexOfEnumerator(const char *name) const
     const QMetaObject *m = this;
     while (m) {
         const QMetaObjectPrivate *d = priv(m->d.data);
+        const int intsPerEnum = d->revision >= 8 ? 5 : 4;
         for (int i = d->enumeratorCount - 1; i >= 0; --i) {
-            const char *prop = rawStringData(m, m->d.data[d->enumeratorData + 4*i]);
+            const char *prop = rawStringData(m, m->d.data[d->enumeratorData + intsPerEnum * i]);
+            if (name[0] == prop[0] && strcmp(name + 1, prop + 1) == 0) {
+                i += m->enumeratorOffset();
+                return i;
+            }
+        }
+        m = m->d.superdata;
+    }
+    // Check alias names:
+    m = this;
+    while (m) {
+        const QMetaObjectPrivate *d = priv(m->d.data);
+        const int intsPerEnum = d->revision >= 8 ? 5 : 4;
+        for (int i = d->enumeratorCount - 1; i >= 0; --i) {
+            const char *prop = rawStringData(m, m->d.data[d->enumeratorData + intsPerEnum * i + 1]);
             if (name[0] == prop[0] && strcmp(name + 1, prop + 1) == 0) {
                 i += m->enumeratorOffset();
                 return i;
@@ -1086,10 +1109,11 @@ QMetaEnum QMetaObject::enumerator(int index) const
     if (i < 0 && d.superdata)
         return d.superdata->enumerator(index);
 
+    const int intsPerEnum = priv(d.data)->revision >= 8 ? 5 : 4;
     QMetaEnum result;
     if (i >= 0 && i < priv(d.data)->enumeratorCount) {
         result.mobj = this;
-        result.handle = priv(d.data)->enumeratorData + 4*i;
+        result.handle = priv(d.data)->enumeratorData + intsPerEnum * i;
     }
     return result;
 }
@@ -1363,6 +1387,8 @@ static inline QByteArray findMethodCandidates(const QMetaObject *metaObject, con
 }
 
 /*!
+    \threadsafe
+
     Invokes the \a member (a signal or a slot name) on the object \a
     obj. Returns \c true if the member could be invoked. Returns \c false
     if there is no such member or the parameters did not match.
@@ -1525,14 +1551,14 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 
         QCoreApplication::postEvent(object, new QMetaCallEvent(slot, 0, -1, 1, types, args));
     } else if (type == Qt::BlockingQueuedConnection) {
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
         if (currentThread == objectThread)
             qWarning("QMetaObject::invokeMethod: Dead lock detected");
 
         QSemaphore semaphore;
         QCoreApplication::postEvent(object, new QMetaCallEvent(slot, 0, -1, 0, 0, argv, &semaphore));
         semaphore.acquire();
-#endif // QT_NO_THREAD
+#endif // QT_CONFIG(thread)
     } else {
         qWarning("QMetaObject::invokeMethod: Unknown connection type");
         return false;
@@ -1552,6 +1578,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
                                        QGenericArgument val7 = QGenericArgument(),
                                        QGenericArgument val8 = QGenericArgument(),
                                        QGenericArgument val9 = QGenericArgument());
+    \threadsafe
     \overload invokeMethod()
 
     This overload always invokes the member using the connection type Qt::AutoConnection.
@@ -1570,6 +1597,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
                              QGenericArgument val8 = QGenericArgument(),
                              QGenericArgument val9 = QGenericArgument())
 
+    \threadsafe
     \overload invokeMethod()
 
     This overload can be used if the return value of the member is of no interest.
@@ -1588,6 +1616,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
                              QGenericArgument val8 = QGenericArgument(),
                              QGenericArgument val9 = QGenericArgument())
 
+    \threadsafe
     \overload invokeMethod()
 
     This overload invokes the member using the connection type Qt::AutoConnection and
@@ -1599,6 +1628,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 
     \since 5.10
 
+    \threadsafe
     \overload
 
     Invokes the \a function in the event loop of \a context. \a function can be a functor
@@ -1612,6 +1642,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 
     \since 5.10
 
+    \threadsafe
     \overload
 
     Invokes the \a function in the event loop of \a context using the connection type Qt::AutoConnection.
@@ -1950,9 +1981,8 @@ QList<QByteArray> QMetaMethod::parameterTypes() const
 */
 QList<QByteArray> QMetaMethod::parameterNames() const
 {
-    QList<QByteArray> list;
     if (!mobj)
-        return list;
+        return QList<QByteArray>();
     return QMetaMethodPrivate::get(this)->parameterNames();
 }
 
@@ -1978,27 +2008,11 @@ const char *QMetaMethod::typeName() const
     Tag information can be added in the following
     way in the function declaration:
 
-    \code
-        // In the class MainWindow declaration
-        #ifndef Q_MOC_RUN
-        // define the tag text as empty, so the compiler doesn't see it
-        #  define MY_CUSTOM_TAG
-        #endif
-        ...
-        private slots:
-            MY_CUSTOM_TAG void testFunc();
-    \endcode
+    \snippet code/src_corelib_kernel_qmetaobject.cpp 10
 
     and the information can be accessed by using:
 
-    \code
-        MainWindow win;
-        win.show();
-
-        int functionIndex = win.metaObject()->indexOfSlot("testFunc()");
-        QMetaMethod mm = win.metaObject()->method(functionIndex);
-        qDebug() << mm.tag(); // prints MY_CUSTOM_TAG
-    \endcode
+    \snippet code/src_corelib_kernel_qmetaobject.cpp 11
 
     For the moment, \c moc will extract and record all tags, but it will not
     handle any of them specially. You can use the tags to annotate your methods
@@ -2249,15 +2263,15 @@ bool QMetaMethod::invoke(QObject *object,
         return false;
 
     // check connection type
-    QThread *currentThread = QThread::currentThread();
-    QThread *objectThread = object->thread();
     if (connectionType == Qt::AutoConnection) {
+        QThread *currentThread = QThread::currentThread();
+        QThread *objectThread = object->thread();
         connectionType = currentThread == objectThread
                          ? Qt::DirectConnection
                          : Qt::QueuedConnection;
     }
 
-#ifdef QT_NO_THREAD
+#if !QT_CONFIG(thread)
     if (connectionType == Qt::BlockingQueuedConnection) {
         connectionType = Qt::DirectConnection;
     }
@@ -2333,7 +2347,9 @@ bool QMetaMethod::invoke(QObject *object,
         QCoreApplication::postEvent(object, new QMetaCallEvent(idx_offset, idx_relative, callFunction,
                                                         0, -1, nargs, types, args));
     } else { // blocking queued connection
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
+        QThread *currentThread = QThread::currentThread();
+        QThread *objectThread = object->thread();
         if (currentThread == objectThread) {
             qWarning("QMetaMethod::invoke: Dead lock detected in "
                         "BlockingQueuedConnection: Receiver is %s(%p)",
@@ -2344,7 +2360,7 @@ bool QMetaMethod::invoke(QObject *object,
         QCoreApplication::postEvent(object, new QMetaCallEvent(idx_offset, idx_relative, callFunction,
                                                         0, -1, 0, 0, param, &semaphore));
         semaphore.acquire();
-#endif // QT_NO_THREAD
+#endif // QT_CONFIG(thread)
     }
     return true;
 }
@@ -2552,18 +2568,43 @@ bool QMetaMethod::invokeOnGadget(void* gadget, QGenericReturnArgument returnValu
 */
 
 /*!
-    Returns the name of the enumerator (without the scope).
+    Returns the name of the type (without the scope).
 
-    For example, the Qt::AlignmentFlag enumeration has \c
-    AlignmentFlag as the name and \l Qt as the scope.
+    For example, the Qt::Key enumeration has \c
+    Key as the type name and \l Qt as the scope.
 
-    \sa isValid(), scope()
+    For flags this returns the name of the flag type, not the
+    name of the enum type.
+
+    \sa isValid(), scope(), enumName()
 */
 const char *QMetaEnum::name() const
 {
     if (!mobj)
         return 0;
     return rawStringData(mobj, mobj->d.data[handle]);
+}
+
+/*!
+    Returns the enum name of the flag (without the scope).
+
+    For example, the Qt::AlignmentFlag flag has \c
+    AlignmentFlag as the enum name, but \c Alignment as as the type name.
+    Non flag enums has the same type and enum names.
+
+    Enum names have the same scope as the type name.
+
+    \since 5.12
+    \sa isValid(), name()
+*/
+const char *QMetaEnum::enumName() const
+{
+    if (!mobj)
+        return 0;
+    const bool rev8p = priv(mobj->d.data)->revision >= 8;
+    if (rev8p)
+        return rawStringData(mobj, mobj->d.data[handle + 1]);
+    return name();
 }
 
 /*!
@@ -2575,12 +2616,12 @@ int QMetaEnum::keyCount() const
 {
     if (!mobj)
         return 0;
-    return mobj->d.data[handle + 2];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    return mobj->d.data[handle + offset];
 }
 
-
 /*!
-    Returns the key with the given \a index, or 0 if no such key exists.
+    Returns the key with the given \a index, or \nullptr if no such key exists.
 
     \sa keyCount(), value(), valueToKey()
 */
@@ -2588,8 +2629,9 @@ const char *QMetaEnum::key(int index) const
 {
     if (!mobj)
         return 0;
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     if (index >= 0  && index < count)
         return rawStringData(mobj, mobj->d.data[data + 2*index]);
     return 0;
@@ -2605,8 +2647,9 @@ int QMetaEnum::value(int index) const
 {
     if (!mobj)
         return 0;
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     if (index >= 0  && index < count)
         return mobj->d.data[data + 2*index + 1];
     return -1;
@@ -2624,7 +2667,10 @@ int QMetaEnum::value(int index) const
 */
 bool QMetaEnum::isFlag() const
 {
-    return mobj && mobj->d.data[handle + 1] & EnumIsFlag;
+    if (!mobj)
+        return false;
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 2 : 1;
+    return mobj->d.data[handle + offset] & EnumIsFlag;
 }
 
 /*!
@@ -2635,7 +2681,10 @@ bool QMetaEnum::isFlag() const
 */
 bool QMetaEnum::isScoped() const
 {
-    return mobj && mobj->d.data[handle + 1] & EnumIsScoped;
+    if (!mobj)
+        return false;
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 2 : 1;
+    return mobj->d.data[handle + offset] & EnumIsScoped;
 }
 
 /*!
@@ -2677,8 +2726,9 @@ int QMetaEnum::keyToValue(const char *key, bool *ok) const
         scope = s - key - 1;
         key += scope + 2;
     }
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     for (int i = 0; i < count; ++i) {
         const QByteArray className = stringData(mobj, priv(mobj->d.data)->className);
         if ((!scope || (className.size() == int(scope) && strncmp(qualified_key, className.constData(), scope) == 0))
@@ -2693,7 +2743,7 @@ int QMetaEnum::keyToValue(const char *key, bool *ok) const
 
 /*!
     Returns the string that is used as the name of the given
-    enumeration \a value, or 0 if \a value is not defined.
+    enumeration \a value, or \nullptr if \a value is not defined.
 
     For flag types, use valueToKeys().
 
@@ -2703,8 +2753,9 @@ const char* QMetaEnum::valueToKey(int value) const
 {
     if (!mobj)
         return 0;
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     for (int i = 0; i < count; ++i)
         if (value == (int)mobj->d.data[data + 2*i + 1])
             return rawStringData(mobj, mobj->d.data[data + 2*i]);
@@ -2735,8 +2786,9 @@ int QMetaEnum::keysToValue(const char *keys, bool *ok) const
         return 0;
     // ### TODO write proper code: do not allocate memory, so we can go nothrow
     int value = 0;
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     for (const QStringRef &untrimmed : splitKeys) {
         const QStringRef trimmed = untrimmed.trimmed();
         QByteArray qualified_key = trimmed.toLatin1();
@@ -2778,8 +2830,9 @@ QByteArray QMetaEnum::valueToKeys(int value) const
     QByteArray keys;
     if (!mobj)
         return keys;
-    int count = mobj->d.data[handle + 2];
-    int data = mobj->d.data[handle + 3];
+    const int offset = priv(mobj->d.data)->revision >= 8 ? 3 : 2;
+    int count = mobj->d.data[handle + offset];
+    int data = mobj->d.data[handle + offset + 1];
     int v = value;
     // reverse iterate to ensure values like Qt::Dialog=0x2|Qt::Window are processed first.
     for (int i = count - 1; i >= 0; --i) {
@@ -3475,7 +3528,7 @@ bool QMetaProperty::isStored(const QObject *object) const
     false. e.g., the \c text property is the \c USER editable property
     of a QLineEdit.
 
-    If \a object is null, the function returns \c false if the \c
+    If \a object is \nullptr, the function returns \c false if the \c
     {Q_PROPERTY()}'s \c USER attribute is false. Otherwise it returns
     true.
 

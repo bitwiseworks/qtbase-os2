@@ -439,6 +439,9 @@ void QPaintEngineEx::stroke(const QVectorPath &path, const QPen &pen)
         }
     }
 
+    if (d->activeStroker == &d->stroker)
+        d->stroker.setForceOpen(path.hasExplicitOpen());
+
     const QPainterPath::ElementType *types = path.elements();
     const qreal *points = path.points();
     int pointCount = path.elementCount();
@@ -948,6 +951,8 @@ void QPaintEngineEx::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, con
 {
     QBrush brush(state()->pen.color(), pixmap);
     QTransform xform = QTransform::fromTranslate(r.x() - s.x(), r.y() - s.y());
+    if (!qFuzzyCompare(pixmap.devicePixelRatioF(), 1.0))
+        xform.scale(1.0/pixmap.devicePixelRatioF(), 1.0/pixmap.devicePixelRatioF());
     brush.setTransform(xform);
 
     qreal pts[] = { r.x(), r.y(),
@@ -1088,9 +1093,14 @@ bool QPaintEngineEx::shouldDrawCachedGlyphs(QFontEngine *fontEngine, const QTran
     if (fontEngine->glyphFormat == QFontEngine::Format_ARGB)
         return true;
 
+    static const int maxCachedGlyphSizeSquared = std::pow([]{
+        if (int env = qEnvironmentVariableIntValue("QT_MAX_CACHED_GLYPH_SIZE"))
+            return env;
+        return QT_MAX_CACHED_GLYPH_SIZE;
+    }(), 2);
+
     qreal pixelSize = fontEngine->fontDef.pixelSize;
-    return (pixelSize * pixelSize * qAbs(m.determinant())) <
-            QT_MAX_CACHED_GLYPH_SIZE * QT_MAX_CACHED_GLYPH_SIZE;
+    return (pixelSize * pixelSize * qAbs(m.determinant())) <= maxCachedGlyphSizeSquared;
 }
 
 QT_END_NAMESPACE

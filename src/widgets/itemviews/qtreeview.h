@@ -143,7 +143,6 @@ public:
     void doItemsLayout() override;
     void reset() override;
 
-    void sortByColumn(int column, Qt::SortOrder order);
 
     void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>()) override;
     void selectAll() override;
@@ -158,8 +157,13 @@ public Q_SLOTS:
     void expand(const QModelIndex &index);
     void collapse(const QModelIndex &index);
     void resizeColumnToContents(int column);
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED_X ("Use QTreeeView::sortByColumn(int column, Qt::SortOrder order) instead")
     void sortByColumn(int column);
+#endif
+    void sortByColumn(int column, Qt::SortOrder order);
     void expandAll();
+    void expandRecursively(const QModelIndex &index, int depth = -1);
     void collapseAll();
     void expandToDepth(int depth);
 
@@ -201,7 +205,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     void dragMoveEvent(QDragMoveEvent *event) override;
 #endif
     bool viewportEvent(QEvent *event) override;
@@ -230,9 +234,9 @@ private:
 
     Q_DECLARE_PRIVATE(QTreeView)
     Q_DISABLE_COPY(QTreeView)
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
     Q_PRIVATE_SLOT(d_func(), void _q_endAnimatedOperation())
-#endif //QT_NO_ANIMATION
+#endif // animation
     Q_PRIVATE_SLOT(d_func(), void _q_modelAboutToBeReset())
     Q_PRIVATE_SLOT(d_func(), void _q_sortIndicatorChanged(int column, Qt::SortOrder order))
 };

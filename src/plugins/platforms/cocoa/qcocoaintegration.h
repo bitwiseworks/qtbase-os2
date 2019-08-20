@@ -51,6 +51,9 @@
 #include "qcocoadrag.h"
 #include "qcocoaservices.h"
 #include "qcocoakeymapper.h"
+#if QT_CONFIG(vulkan)
+#include "qcocoavulkaninstance.h"
+#endif
 
 #include <QtCore/QScopedPointer>
 #include <qpa/qplatformintegration.h>
@@ -85,6 +88,11 @@ public:
     QPlatformBackingStore *createPlatformBackingStore(QWindow *widget) const override;
 
     QAbstractEventDispatcher *createEventDispatcher() const override;
+
+#if QT_CONFIG(vulkan)
+    QPlatformVulkanInstance *createPlatformVulkanInstance(QVulkanInstance *instance) const override;
+    QCocoaVulkanInstance *getCocoaVulkanInstance() const;
+#endif
 
     QCoreTextFontDatabase *fontDatabase() const override;
     QCocoaNativeInterface *nativeInterface() const override;
@@ -136,6 +144,7 @@ private:
 #endif
     QScopedPointer<QPlatformTheme> mPlatformTheme;
     QList<QCocoaScreen *> mScreens;
+    QMacScopedObserver m_screensObserver;
 #ifndef QT_NO_CLIPBOARD
     QCocoaClipboard  *mCocoaClipboard;
 #endif
@@ -144,6 +153,9 @@ private:
     QScopedPointer<QCocoaServices> mServices;
     QScopedPointer<QCocoaKeyMapper> mKeyboardMapper;
 
+#if QT_CONFIG(vulkan)
+    mutable QCocoaVulkanInstance *mCocoaVulkanInstance = nullptr;
+#endif
     QHash<QWindow *, NSToolbar *> mToolbars;
     QList<QCocoaWindow *> m_popupWindowStack;
 };

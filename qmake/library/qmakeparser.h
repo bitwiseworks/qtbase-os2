@@ -110,7 +110,7 @@ private:
     };
 
     struct BlockScope {
-        BlockScope() : start(0), braceLevel(0), special(false), inBranch(false), nest(NestNone) {}
+        BlockScope() : start(nullptr), braceLevel(0), special(false), inBranch(false), nest(NestNone) {}
         BlockScope(const BlockScope &other) { *this = other; }
         ushort *start; // Where this block started; store length here
         int braceLevel; // Nesting of braces in scope
@@ -201,7 +201,7 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(QMakeParser::ParseFlags)
 class QMAKE_EXPORT ProFileCache
 {
 public:
-    ProFileCache() {}
+    ProFileCache();
     ~ProFileCache();
 
     void discardFile(int id);

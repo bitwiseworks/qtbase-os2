@@ -85,6 +85,12 @@ QT_END_NAMESPACE
 #include <stdio.h>
 #include <errno.h>
 
+#ifdef Q_OS_ANDROID
+// Android introduces a braindamaged fileno macro that isn't
+// compatible with the POSIX fileno or its own FILE type.
+#  undef fileno
+#endif
+
 #if defined(Q_OS_WIN)
 #include "../../../network-settings.h"
 #endif
@@ -361,7 +367,7 @@ private:
 
     QTemporaryDir m_temporaryDir;
     const QString m_oldDir;
-    QString m_stdinProcessDir;
+    QString m_stdinProcess;
     QString m_testSourceFile;
     QString m_testLogFile;
     QString m_dosFile;
@@ -442,8 +448,14 @@ void tst_QFile::initTestCase()
 {
     QVERIFY2(m_temporaryDir.isValid(), qPrintable(m_temporaryDir.errorString()));
 #if QT_CONFIG(process)
-    m_stdinProcessDir = QFINDTESTDATA("stdinprocess");
-    QVERIFY(!m_stdinProcessDir.isEmpty());
+#if defined(Q_OS_ANDROID)
+    m_stdinProcess = QCoreApplication::applicationDirPath() + QLatin1String("/libstdinprocess_helper.so");
+#elif defined(Q_OS_WIN)
+    m_stdinProcess = QFINDTESTDATA("stdinprocess_helper.exe");
+#else
+    m_stdinProcess = QFINDTESTDATA("stdinprocess_helper");
+#endif
+    QVERIFY(!m_stdinProcess.isEmpty());
 #endif
     m_testLogFile = QFINDTESTDATA("testlog.txt");
     QVERIFY(!m_testLogFile.isEmpty());
@@ -958,11 +970,14 @@ void tst_QFile::readAllStdin()
 #if !QT_CONFIG(process)
     QSKIP("No qprocess support", SkipAll);
 #else
+#if defined(Q_OS_ANDROID)
+    QSKIP("This test crashes when doing nanosleep. See QTBUG-69034.");
+#endif
     QByteArray lotsOfData(1024, '@'); // 10 megs
 
     QProcess process;
     StdinReaderProcessGuard processGuard(&process);
-    process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"), QStringList(QStringLiteral("all")));
+    process.start(m_stdinProcess, QStringList(QStringLiteral("all")));
     QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
     for (int i = 0; i < 5; ++i) {
         QTest::qWait(1000);
@@ -981,6 +996,9 @@ void tst_QFile::readLineStdin()
 #if !QT_CONFIG(process)
     QSKIP("No qprocess support", SkipAll);
 #else
+#if defined(Q_OS_ANDROID)
+    QSKIP("This test crashes when doing nanosleep. See QTBUG-69034.");
+#endif
     QByteArray lotsOfData(1024, '@'); // 10 megs
     for (int i = 0; i < lotsOfData.size(); ++i) {
         if ((i % 32) == 31)
@@ -992,7 +1010,7 @@ void tst_QFile::readLineStdin()
     for (int i = 0; i < 2; ++i) {
         QProcess process;
         StdinReaderProcessGuard processGuard(&process);
-        process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"),
+        process.start(m_stdinProcess,
                       QStringList() << QStringLiteral("line") << QString::number(i),
                       QIODevice::Text | QIODevice::ReadWrite);
         QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
@@ -1022,10 +1040,13 @@ void tst_QFile::readLineStdin_lineByLine()
 #if !QT_CONFIG(process)
     QSKIP("No qprocess support", SkipAll);
 #else
+#if defined(Q_OS_ANDROID)
+    QSKIP("This test crashes when calling ::poll. See QTBUG-69034.");
+#endif
     for (int i = 0; i < 2; ++i) {
         QProcess process;
         StdinReaderProcessGuard processGuard(&process);
-        process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"),
+        process.start(m_stdinProcess,
                       QStringList() << QStringLiteral("line") << QString::number(i),
                       QIODevice::Text | QIODevice::ReadWrite);
         QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
@@ -1272,6 +1293,12 @@ void tst_QFile::append()
     f.putChar('a');
     f.close();
     QCOMPARE(int(f.size()), 2);
+
+    QVERIFY2(f.open(QIODevice::Append | QIODevice::Truncate), msgOpenFailed(f).constData());
+    QCOMPARE(f.pos(), 0);
+    f.putChar('a');
+    f.close();
+    QCOMPARE(int(f.size()), 1);
 }
 
 void tst_QFile::permissions_data()
@@ -1808,13 +1835,14 @@ void tst_QFile::encodeName()
 
 void tst_QFile::truncate()
 {
-    for (int i = 0; i < 2; ++i) {
+    const QIODevice::OpenModeFlag modes[] = { QFile::ReadWrite, QIODevice::WriteOnly, QIODevice::Append };
+    for (auto mode : modes) {
         QFile file("truncate.txt");
         QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
         file.write(QByteArray(200, '@'));
         file.close();
 
-        QVERIFY2(file.open((i ? QFile::WriteOnly : QFile::ReadWrite) | QFile::Truncate), msgOpenFailed(file).constData());
+        QVERIFY2(file.open(mode | QFile::Truncate), msgOpenFailed(file).constData());
         file.write(QByteArray(100, '$'));
         file.close();
 
@@ -2185,7 +2213,8 @@ public:
     uint ownerId(FileOwner) const { return 0; }
     QString owner(FileOwner) const { return QString(); }
     QDateTime fileTime(FileTime) const { return QDateTime(); }
-    bool setFileTime(const QDateTime &newDate, FileTime time) { return false; }
+    bool setFileTime(const QDateTime &newDate, FileTime time)
+    { Q_UNUSED(newDate) Q_UNUSED(time) return false; }
 
 private:
     int number;
@@ -2730,19 +2759,20 @@ void tst_QFile::renameMultiple()
 
 void tst_QFile::appendAndRead()
 {
-    QFile writeFile(QLatin1String("appendfile.txt"));
-    QVERIFY2(writeFile.open(QIODevice::WriteOnly | QIODevice::Truncate), msgOpenFailed(writeFile).constData());
+    const QString fileName(QStringLiteral("appendfile.txt"));
+    QFile writeFile(fileName);
+    QVERIFY2(writeFile.open(QIODevice::Append | QIODevice::Truncate), msgOpenFailed(writeFile).constData());
 
-    QFile readFile(QLatin1String("appendfile.txt"));
+    QFile readFile(fileName);
     QVERIFY2(readFile.open(QIODevice::ReadOnly), msgOpenFailed(readFile).constData());
 
     // Write to the end of the file, then read that character back, and so on.
     for (int i = 0; i < 100; ++i) {
         char c = '\0';
-        writeFile.putChar(char(i % 256));
+        writeFile.putChar(char(i));
         writeFile.flush();
         QVERIFY(readFile.getChar(&c));
-        QCOMPARE(c, char(i % 256));
+        QCOMPARE(c, char(i));
         QCOMPARE(readFile.pos(), writeFile.pos());
     }
 
@@ -2753,8 +2783,6 @@ void tst_QFile::appendAndRead()
         writeFile.flush();
         QCOMPARE(readFile.read(size).size(), size);
     }
-
-    readFile.close();
 }
 
 void tst_QFile::miscWithUncPathAsCurrentDir()
@@ -2878,10 +2906,6 @@ void tst_QFile::nativeHandleLeaks()
 #endif
 
     QCOMPARE( fd2, fd1 );
-
-#ifdef Q_OS_WIN
-    QCOMPARE( handle2, handle1 );
-#endif
 }
 
 void tst_QFile::readEof_data()

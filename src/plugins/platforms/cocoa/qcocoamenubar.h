@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -60,17 +60,16 @@ public:
     void removeMenu(QPlatformMenu *menu) override;
     void syncMenu(QPlatformMenu *menuItem) override;
     void handleReparent(QWindow *newParentWindow) override;
+    QWindow *parentWindow() const override;
     QPlatformMenu *menuForTag(quintptr tag) const override;
 
     inline NSMenu *nsMenu() const
         { return m_nativeMenu; }
 
-    static void redirectKnownMenuItemsToFirstResponder();
-    static void resetKnownMenuItemsToQt();
     static void updateMenuBarImmediately();
 
     QList<QCocoaMenuItem*> merged() const;
-    NSMenuItem *itemForRole(QPlatformMenuItem::MenuRole r);
+    NSMenuItem *itemForRole(QPlatformMenuItem::MenuRole role);
     QCocoaWindow *cocoaWindow() const;
 
     void syncMenu_helper(QPlatformMenu *menu, bool menubarUpdate);

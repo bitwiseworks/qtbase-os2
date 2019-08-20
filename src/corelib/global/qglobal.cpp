@@ -53,10 +53,6 @@
 
 #include <qmutex.h>
 
-#ifndef QT_NO_QOBJECT
-#include <private/qthread_p.h>
-#endif
-
 #include <stdlib.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -529,6 +525,31 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
   made private. In that case, no error would be reported, but your
   application would probably crash when you called a member function
   of \c{w}.
+
+  \sa Q_DISABLE_COPY_MOVE, Q_DISABLE_MOVE
+*/
+
+/*!
+  \macro Q_DISABLE_MOVE(Class)
+  \relates QObject
+
+  Disables the use of move constructors and move assignment operators
+  for the given \a Class.
+
+  \sa Q_DISABLE_COPY, Q_DISABLE_COPY_MOVE
+  \since 5.13
+*/
+
+/*!
+  \macro Q_DISABLE_COPY_MOVE(Class)
+  \relates QObject
+
+  A convenience macro that disables the use of copy constructors, assignment
+  operators, move constructors and move assignment operators for the given
+  \a Class, combining Q_DISABLE_COPY and Q_DISABLE_MOVE.
+
+  \sa Q_DISABLE_COPY, Q_DISABLE_MOVE
+  \since 5.13
 */
 
 /*!
@@ -589,7 +610,7 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     {long long int } (\c __int64 on Windows).
 
     Several convenience type definitions are declared: \l qreal for \c
-    double, \l uchar for \c unsigned char, \l uint for \c unsigned
+    double or \c float, \l uchar for \c unsigned char, \l uint for \c unsigned
     int, \l ulong for \c unsigned long and \l ushort for \c unsigned
     short.
 
@@ -648,10 +669,11 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     compiler or platform specific code to their application.
 
     The remaining macros are convenience macros for larger operations:
-    The QT_TRANSLATE_NOOP() and QT_TR_NOOP() macros provide the
-    possibility of marking text for dynamic translation,
-    i.e. translation without changing the stored source text. The
-    Q_ASSERT() and Q_ASSERT_X() enables warning messages of various
+    The QT_TR_NOOP(), QT_TRANSLATE_NOOP(), and QT_TRANSLATE_NOOP3()
+    macros provide the possibility of marking strings for delayed
+    translation. QT_TR_N_NOOP(), QT_TRANSLATE_N_NOOP(), and
+    QT_TRANSLATE_N_NOOP3() are numerator dependent variants of these.
+    The Q_ASSERT() and Q_ASSERT_X() enables warning messages of various
     level of refinement. The Q_FOREACH() and foreach() macros
     implement Qt's foreach loop.
 
@@ -662,11 +684,11 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     memory, if the pointer is 0. The qPrintable() and qUtf8Printable()
     macros represent an easy way of printing text.
 
-    Finally, the QT_POINTER_SIZE macro expands to the size of a
-    pointer in bytes, and the QT_VERSION and QT_VERSION_STR macros
-    expand to a numeric value or a string, respectively, specifying
-    Qt's version number, i.e the version the application is compiled
-    against.
+    The QT_POINTER_SIZE macro expands to the size of a pointer in bytes.
+
+    The macros QT_VERSION and QT_VERSION_STR expand to a numeric value
+    or a string, respectively, that specifies the version of Qt that the
+    application is compiled against.
 
     \sa <QtAlgorithms>, QSysInfo
 */
@@ -939,6 +961,8 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
 
     Rounds \a d to the nearest integer.
 
+    Rounds half up (e.g. 0.5 -> 1, -0.5 -> 0).
+
     Example:
 
     \snippet code/src_corelib_global_qglobal.cpp 11A
@@ -948,6 +972,8 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     \relates <QtGlobal>
 
     Rounds \a d to the nearest integer.
+
+    Rounds half up (e.g. 0.5f -> 1, -0.5f -> 0).
 
     Example:
 
@@ -959,6 +985,8 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
 
     Rounds \a d to the nearest 64-bit integer.
 
+    Rounds half up (e.g. 0.5 -> 1, -0.5 -> 0).
+
     Example:
 
     \snippet code/src_corelib_global_qglobal.cpp 12A
@@ -968,6 +996,8 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     \relates <QtGlobal>
 
     Rounds \a d to the nearest 64-bit integer.
+
+    Rounds half up (e.g. 0.5f -> 1, -0.5f -> 0).
 
     Example:
 
@@ -1028,6 +1058,11 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     classes QOverload, QConstOverload, and QNonConstOverload can be used directly:
 
     \snippet code/src_corelib_global_qglobal.cpp 53
+
+    \note Qt detects the necessary C++14 compiler support by way of the feature
+    test recommendations from
+    \l{https://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations}
+    {C++ Committee's Standing Document 6}.
 
     \sa qConstOverload(), qNonConstOverload(), {Differences between String-Based
     and Functor-Based Connections}
@@ -1511,6 +1546,13 @@ bool qSharedBuild() Q_DECL_NOTHROW
 */
 
 /*!
+    \macro Q_OS_WASM
+    \relates <QtGlobal>
+
+    Defined on Web Assembly.
+*/
+
+/*!
     \macro Q_CC_SYM
     \relates <QtGlobal>
 
@@ -1944,11 +1986,11 @@ bool qSharedBuild() Q_DECL_NOTHROW
   a specified version of Qt or any earlier version. The default version number is 5.0,
   meaning that functions deprecated in or before Qt 5.0 will not be included.
 
-  Examples:
-  When using a future release of Qt 5, set QT_DISABLE_DEPRECATED_BEFORE=0x050100 to
-  disable functions deprecated in Qt 5.1 and earlier. In any release, set
-  QT_DISABLE_DEPRECATED_BEFORE=0x000000 to enable any functions, including the ones
-  deprecated in Qt 5.0
+  For instance, when using a future release of Qt 5, set
+  \c{QT_DISABLE_DEPRECATED_BEFORE=0x050100} to disable functions deprecated in
+  Qt 5.1 and earlier. In any release, set
+  \c{QT_DISABLE_DEPRECATED_BEFORE=0x000000} to enable all functions, including
+  the ones deprecated in Qt 5.0.
 
   \sa QT_DEPRECATED_WARNINGS
  */
@@ -1958,11 +2000,23 @@ bool qSharedBuild() Q_DECL_NOTHROW
   \macro QT_DEPRECATED_WARNINGS
   \relates <QtGlobal>
 
-  If this macro is defined, the compiler will generate warnings if API declared as
+  Since Qt 5.13, this macro has no effect. In Qt 5.12 and before, if this macro
+  is defined, the compiler will generate warnings if any API declared as
   deprecated by Qt is used.
 
-  \sa QT_DISABLE_DEPRECATED_BEFORE
+  \sa QT_DISABLE_DEPRECATED_BEFORE, QT_NO_DEPRECATED_WARNINGS
  */
+
+/*!
+  \macro QT_NO_DEPRECATED_WARNINGS
+  \relates <QtGlobal>
+  \since 5.13
+
+  This macro can be used to suppress deprecation warnings that would otherwise
+  be generated when using deprecated APIs.
+
+  \sa QT_DISABLE_DEPRECATED_BEFORE
+*/
 
 #if defined(QT_BUILD_QMAKE)
 // needed to bootstrap qmake
@@ -2015,6 +2069,8 @@ static const char *osVer_helper(QOperatingSystemVersion version = QOperatingSyst
             return "Sierra";
         case 13:
             return "High Sierra";
+        case 14:
+            return "Mojave";
         }
     }
     // unknown, future version
@@ -2132,11 +2188,20 @@ struct QUnixOSVersion
 
 static QString unquote(const char *begin, const char *end)
 {
+    // man os-release says:
+    // Variable assignment values must be enclosed in double
+    // or single quotes if they include spaces, semicolons or
+    // other special characters outside of A–Z, a–z, 0–9. Shell
+    // special characters ("$", quotes, backslash, backtick)
+    // must be escaped with backslashes, following shell style.
+    // All strings should be in UTF-8 format, and non-printable
+    // characters should not be used. It is not supported to
+    // concatenate multiple individually quoted strings.
     if (*begin == '"') {
         Q_ASSERT(end[-1] == '"');
-        return QString::fromLatin1(begin + 1, end - begin - 2);
+        return QString::fromUtf8(begin + 1, end - begin - 2);
     }
-    return QString::fromLatin1(begin, end - begin);
+    return QString::fromUtf8(begin, end - begin);
 }
 static QByteArray getEtcFileContent(const char *filename)
 {
@@ -2198,10 +2263,19 @@ static bool readEtcFile(QUnixOSVersion &v, const char *filename,
     return true;
 }
 
-static bool readEtcOsRelease(QUnixOSVersion &v)
+static bool readOsRelease(QUnixOSVersion &v)
 {
-    return readEtcFile(v, "/etc/os-release", QByteArrayLiteral("ID="),
-                       QByteArrayLiteral("VERSION_ID="), QByteArrayLiteral("PRETTY_NAME="));
+    QByteArray id = QByteArrayLiteral("ID=");
+    QByteArray versionId = QByteArrayLiteral("VERSION_ID=");
+    QByteArray prettyName = QByteArrayLiteral("PRETTY_NAME=");
+
+    // man os-release(5) says:
+    // The file /etc/os-release takes precedence over /usr/lib/os-release.
+    // Applications should check for the former, and exclusively use its data
+    // if it exists, and only fall back to /usr/lib/os-release if it is
+    // missing.
+    return readEtcFile(v, "/etc/os-release", id, versionId, prettyName) ||
+            readEtcFile(v, "/usr/lib/os-release", id, versionId, prettyName);
 }
 
 static bool readEtcLsbRelease(QUnixOSVersion &v)
@@ -2283,7 +2357,7 @@ static bool readEtcDebianVersion(QUnixOSVersion &v)
 
 static bool findUnixOsVersion(QUnixOSVersion &v)
 {
-    if (readEtcOsRelease(v))
+    if (readOsRelease(v))
         return true;
     if (readEtcLsbRelease(v))
         return true;
@@ -2880,18 +2954,18 @@ enum {
 QByteArray QSysInfo::machineUniqueId()
 {
 #ifdef Q_OS_BSD4
-    char uuid[UuidStringLen];
+    char uuid[UuidStringLen + 1];
     size_t uuidlen = sizeof(uuid);
 #  ifdef KERN_HOSTUUID
     int name[] = { CTL_KERN, KERN_HOSTUUID };
     if (sysctl(name, sizeof name / sizeof name[0], &uuid, &uuidlen, nullptr, 0) == 0
             && uuidlen == sizeof(uuid))
-        return QByteArray(uuid, uuidlen);
+        return QByteArray(uuid, uuidlen - 1);
 
 #  else
     // Darwin: no fixed value, we need to search by name
     if (sysctlbyname("kern.uuid", uuid, &uuidlen, nullptr, 0) == 0 && uuidlen == sizeof(uuid))
-        return QByteArray(uuid, uuidlen);
+        return QByteArray(uuid, uuidlen - 1);
 #  endif
 #elif defined(Q_OS_UNIX)
     // The modern name on Linux is /etc/machine-id, but that path is
@@ -2914,7 +2988,7 @@ QByteArray QSysInfo::machineUniqueId()
 #elif defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     // Let's poke at the registry
     HKEY key = NULL;
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ, &key)
+    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &key)
             == ERROR_SUCCESS) {
         wchar_t buffer[UuidStringLen + 1];
         DWORD size = sizeof(buffer);
@@ -2955,11 +3029,11 @@ QByteArray QSysInfo::bootUniqueId()
     }
 #elif defined(Q_OS_DARWIN)
     // "kern.bootsessionuuid" is only available by name
-    char uuid[UuidStringLen];
+    char uuid[UuidStringLen + 1];
     size_t uuidlen = sizeof(uuid);
     if (sysctlbyname("kern.bootsessionuuid", uuid, &uuidlen, nullptr, 0) == 0
             && uuidlen == sizeof(uuid))
-        return QByteArray(uuid, uuidlen);
+        return QByteArray(uuid, uuidlen - 1);
 #endif
     return QByteArray();
 };
@@ -3224,6 +3298,34 @@ void *qMemSet(void *dest, int c, size_t n) { return memset(dest, c, n); }
 // add thread-safety for the Qt wrappers.
 static QBasicMutex environmentMutex;
 
+/*
+  Wraps tzset(), which accesses the environment, so should only be called while
+  we hold the lock on the environment mutex.
+*/
+void qTzSet()
+{
+    QMutexLocker locker(&environmentMutex);
+#if defined(Q_OS_WIN)
+    _tzset();
+#else
+    tzset();
+#endif // Q_OS_WIN
+}
+
+/*
+  Wrap mktime(), which is specified to behave as if it called tzset(), hence
+  shares its implicit environment-dependence.
+*/
+time_t qMkTime(struct tm *when)
+{
+    QMutexLocker locker(&environmentMutex);
+    return mktime(when);
+}
+
+// Also specified to behave as if they call tzset():
+// localtime() -- but not localtime_r(), which we use when threaded
+// strftime() -- not used (except in tests)
+
 /*!
     \relates <QtGlobal>
     \threadsafe
@@ -3268,14 +3370,15 @@ QByteArray qgetenv(const char *varName)
 
 
 /*!
-    QString qEnvironmentVariable(const char *varName, const QString &defaultValue);
+    \fn QString qEnvironmentVariable(const char *varName, const QString &defaultValue)
+    \fn QString qEnvironmentVariable(const char *varName)
 
     \relates <QtGlobal>
     \since 5.10
 
-    Returns the value of the environment variable with name \a varName as a
-    QString. If no variable by that name is found in the environment, this
-    function returns \a defaultValue.
+    These functions return the value of the environment variable, \a varName, as a
+    QString. If no variable \a varName is found in the environment and \a defaultValue
+    is provided, \a defaultValue is returned. Otherwise QString() is returned.
 
     The Qt environment manipulation functions are thread-safe, but this
     requires that the C library equivalent functions like getenv and putenv are
@@ -3344,9 +3447,6 @@ QString qEnvironmentVariable(const char *varName, const QString &defaultValue)
 #endif
 }
 
-/*!
-  \internal
-*/
 QString qEnvironmentVariable(const char *varName)
 {
     return qEnvironmentVariable(varName, QString());
@@ -3359,9 +3459,7 @@ QString qEnvironmentVariable(const char *varName)
     Returns whether the environment variable \a varName is empty.
 
     Equivalent to
-    \code
-    qgetenv(varName).isEmpty()
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp is-empty
     except that it's potentially much faster, and can't throw exceptions.
 
     \sa qgetenv(), qEnvironmentVariable(), qEnvironmentVariableIsSet()
@@ -3391,9 +3489,7 @@ bool qEnvironmentVariableIsEmpty(const char *varName) Q_DECL_NOEXCEPT
     on the success of the conversion.
 
     Equivalent to
-    \code
-    qgetenv(varName).toInt(ok, 0)
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp to-int
     except that it's much faster, and can't throw exceptions.
 
     \note there's a limit on the length of the value, which is sufficient for
@@ -3430,7 +3526,27 @@ int qEnvironmentVariableIntValue(const char *varName, bool *ok) Q_DECL_NOEXCEPT
     bool ok_ = true;
     const char *endptr;
     const qlonglong value = qstrtoll(buffer, &endptr, 0, &ok_);
-    if (int(value) != value || *endptr != '\0') { // this is the check in QByteArray::toInt(), keep it in sync
+
+    // Keep the following checks in sync with QByteArray::toInt()
+    if (!ok_) {
+        if (ok)
+            *ok = false;
+        return 0;
+    }
+
+    if (*endptr != '\0') {
+        while (ascii_isspace(*endptr))
+            ++endptr;
+    }
+
+    if (*endptr != '\0') {
+        // we stopped at a non-digit character after converting some digits
+        if (ok)
+            *ok = false;
+        return 0;
+    }
+
+    if (int(value) != value) {
         if (ok)
             *ok = false;
         return 0;
@@ -3447,9 +3563,7 @@ int qEnvironmentVariableIntValue(const char *varName, bool *ok) Q_DECL_NOEXCEPT
     Returns whether the environment variable \a varName is set.
 
     Equivalent to
-    \code
-    !qgetenv(varName).isNull()
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp is-null
     except that it's potentially much faster, and can't throw exceptions.
 
     \sa qgetenv(), qEnvironmentVariable(), qEnvironmentVariableIsEmpty()
@@ -3625,37 +3739,21 @@ bool qunsetenv(const char *varName)
 
     Its main use in Qt is to prevent implicitly-shared Qt containers
     from detaching:
-    \code
-    QString s = ...;
-    for (QChar ch : s) // detaches 's' (performs a deep-copy if 's' was shared)
-        process(ch);
-    for (QChar ch : qAsConst(s)) // ok, no detach attempt
-        process(ch);
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp as-const-0
 
     Of course, in this case, you could (and probably should) have declared
     \c s as \c const in the first place:
-    \code
-    const QString s = ...;
-    for (QChar ch : s) // ok, no detach attempt on const objects
-        process(ch);
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp as-const-1
     but often that is not easily possible.
 
     It is important to note that qAsConst() does not copy its argument,
     it just performs a \c{const_cast<const T&>(t)}. This is also the reason
     why it is designed to fail for rvalues: The returned reference would go
     stale too soon. So while this works (but detaches the returned object):
-    \code
-    for (QChar ch : funcReturningQString())
-        process(ch); // OK, the returned object is kept alive for the loop's duration
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp as-const-2
 
     this would not:
-    \code
-    for (QChar ch : qAsConst(funcReturningQString()))
-        process(ch); // ERROR: ch is copied from deleted memory
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp as-const-3
 
     To prevent this construct from compiling (and failing at runtime), qAsConst() has
     a second, deleted, overload which binds to rvalues.
@@ -3668,29 +3766,25 @@ bool qunsetenv(const char *varName)
     \overload
 
     This overload is deleted to prevent a dangling reference in code like
-    \code
-    for (QChar ch : qAsConst(funcReturningQString()))
-        process(ch); // ERROR: ch is copied from deleted memory
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp as-const-4
 */
 
 /*!
     \macro QT_TR_NOOP(sourceText)
     \relates <QtGlobal>
 
-    Marks the string literal \a sourceText for dynamic translation in
-    the current context (class), i.e the stored \a sourceText will not
-    be altered.
+    Marks the UTF-8 encoded string literal \a sourceText for delayed
+    translation in the current context (class).
 
-    The macro expands to \a sourceText.
+    The macro tells lupdate to collect the string, and expands to
+    \a sourceText itself.
 
     Example:
 
     \snippet code/src_corelib_global_qglobal.cpp 34
 
-    The macro QT_TR_NOOP_UTF8() is identical except that it tells lupdate
-    that the source string is encoded in UTF-8. Corresponding variants
-    exist in the QT_TRANSLATE_NOOP() family of macros, too.
+    The macro QT_TR_NOOP_UTF8() is identical and obsolete; this applies
+    to all other _UTF8 macros as well.
 
     \sa QT_TRANSLATE_NOOP(), {Internationalization with Qt}
 */
@@ -3699,12 +3793,12 @@ bool qunsetenv(const char *varName)
     \macro QT_TRANSLATE_NOOP(context, sourceText)
     \relates <QtGlobal>
 
-    Marks the string literal \a sourceText for dynamic translation in
-    the given \a context; i.e, the stored \a sourceText will not be
-    altered. The \a context is typically a class and also needs to
-    be specified as string literal.
+    Marks the UTF-8 encoded string literal \a sourceText for delayed
+    translation in the given \a context. The \a context is typically
+    a class name and also needs to be specified as a string literal.
 
-    The macro expands to \a sourceText.
+    The macro tells lupdate to collect the string, and expands to
+    \a sourceText itself.
 
     Example:
 
@@ -3714,24 +3808,90 @@ bool qunsetenv(const char *varName)
 */
 
 /*!
-    \macro QT_TRANSLATE_NOOP3(context, sourceText, comment)
+    \macro QT_TRANSLATE_NOOP3(context, sourceText, disambiguation)
     \relates <QtGlobal>
     \since 4.4
 
-    Marks the string literal \a sourceText for dynamic translation in the
-    given \a context and with \a comment, i.e the stored \a sourceText will
-    not be altered. The \a context is typically a class and also needs to
-    be specified as string literal. The string literal \a comment
-    will be available for translators using e.g. Qt Linguist.
+    Marks the UTF-8 encoded string literal \a sourceText for delayed
+    translation in the given \a context with the given \a disambiguation.
+    The \a context is typically a class and also needs to be specified
+    as a string literal. The string literal \a disambiguation should be
+    a short semantic tag to tell apart otherwise identical strings.
 
-    The macro expands to anonymous struct of the two string
-    literals passed as \a sourceText and \a comment.
+    The macro tells lupdate to collect the string, and expands to an
+    anonymous struct of the two string literals passed as \a sourceText
+    and \a disambiguation.
 
     Example:
 
     \snippet code/src_corelib_global_qglobal.cpp 36
 
     \sa QT_TR_NOOP(), QT_TRANSLATE_NOOP(), {Internationalization with Qt}
+*/
+
+/*!
+    \macro QT_TR_N_NOOP(sourceText)
+    \relates <QtGlobal>
+    \since 5.12
+
+    Marks the UTF-8 encoded string literal \a sourceText for numerator
+    dependent delayed translation in the current context (class).
+
+    The macro tells lupdate to collect the string, and expands to
+    \a sourceText itself.
+
+    The macro expands to \a sourceText.
+
+    Example:
+
+    \snippet code/src_corelib_global_qglobal.cpp qttrnnoop
+
+    \sa QT_TR_NOOP, {Internationalization with Qt}
+*/
+
+/*!
+    \macro QT_TRANSLATE_N_NOOP(context, sourceText)
+    \relates <QtGlobal>
+    \since 5.12
+
+    Marks the UTF-8 encoded string literal \a sourceText for numerator
+    dependent delayed translation in the given \a context.
+    The \a context is typically a class name and also needs to be
+    specified as a string literal.
+
+    The macro tells lupdate to collect the string, and expands to
+    \a sourceText itself.
+
+    Example:
+
+    \snippet code/src_corelib_global_qglobal.cpp qttranslatennoop
+
+    \sa QT_TRANSLATE_NOOP(), QT_TRANSLATE_N_NOOP3(),
+    {Internationalization with Qt}
+*/
+
+/*!
+    \macro QT_TRANSLATE_N_NOOP3(context, sourceText, comment)
+    \relates <QtGlobal>
+    \since 5.12
+
+    Marks the UTF-8 encoded string literal \a sourceText for numerator
+    dependent delayed translation in the given \a context with the given
+    \a comment.
+    The \a context is typically a class and also needs to be specified
+    as a string literal. The string literal \a comment should be
+    a short semantic tag to tell apart otherwise identical strings.
+
+    The macro tells lupdate to collect the string, and expands to an
+    anonymous struct of the two string literals passed as \a sourceText
+    and \a comment.
+
+    Example:
+
+    \snippet code/src_corelib_global_qglobal.cpp qttranslatennoop3
+
+    \sa QT_TR_NOOP(), QT_TRANSLATE_NOOP(), QT_TRANSLATE_NOOP3(),
+    {Internationalization with Qt}
 */
 
 /*!
@@ -3964,6 +4124,13 @@ bool qunsetenv(const char *varName)
     Example of a movable type:
 
     \snippet code/src_corelib_global_qglobal.cpp 39
+
+    Qt will try to detect the class of a type using std::is_trivial or
+    std::is_trivially_copyable. Use this macro to tune the behavior.
+    For instance many types would be candidates for Q_MOVABLE_TYPE despite
+    not being trivially-copyable. For binary compatibility reasons, QList
+    optimizations are only enabled if there is an explicit
+    Q_DECLARE_TYPEINFO even for trivially-copyable types.
 */
 
 /*!
@@ -3984,7 +4151,7 @@ Q_GLOBAL_STATIC(QInternal_CallBackTable, global_callback_table)
 
 bool QInternal::registerCallback(Callback cb, qInternalCallback callback)
 {
-    if (cb >= 0 && cb < QInternal::LastCallback) {
+    if (unsigned(cb) < unsigned(QInternal::LastCallback)) {
         QInternal_CallBackTable *cbt = global_callback_table();
         cbt->callbacks.resize(cb + 1);
         cbt->callbacks[cb].append(callback);
@@ -3995,7 +4162,7 @@ bool QInternal::registerCallback(Callback cb, qInternalCallback callback)
 
 bool QInternal::unregisterCallback(Callback cb, qInternalCallback callback)
 {
-    if (cb >= 0 && cb < QInternal::LastCallback) {
+    if (unsigned(cb) < unsigned(QInternal::LastCallback)) {
         if (global_callback_table.exists()) {
             QInternal_CallBackTable *cbt = global_callback_table();
             return (bool) cbt->callbacks[cb].removeAll(callback);
@@ -4540,9 +4707,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
     purpose. It either expands to \c expr (if Qt is compiled without
     exception support or the compiler supports C++11 noexcept
     semantics) or to
-    \code
-    try { expr; } catch(...) { qTerminate(); }
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp qterminate
     otherwise.
 
     Since this macro expands to just \c expr if the compiler supports
@@ -4612,10 +4777,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 
     The macro goes at the end of the function, usually after the
     \c{const}, if any:
-    \code
-    // generate error if this doesn't actually override anything:
-    virtual void MyWidget::paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp qdecloverride
 
     \sa Q_DECL_FINAL
 */
@@ -4637,18 +4799,11 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 
     The macro goes at the end of the function, usually after the
     \c{const}, if any:
-    \code
-    // more-derived classes no longer permitted to override this:
-    virtual void MyWidget::paintEvent(QPaintEvent*) Q_DECL_FINAL;
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp qdeclfinal-1
 
     For classes, it goes in front of the \c{:} in the class
     definition, if any:
-    \code
-    class QRect Q_DECL_FINAL { // cannot be derived from
-        // ...
-    };
-    \endcode
+    \snippet code/src_corelib_global_qglobal.cpp qdeclfinal-2
 
     \sa Q_DECL_OVERRIDE
 */

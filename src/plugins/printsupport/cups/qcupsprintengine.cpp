@@ -104,7 +104,11 @@ void QCupsPrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &v
         break;
     case PPK_QPageLayout: {
         QPageLayout pageLayout = value.value<QPageLayout>();
-        if (pageLayout.isValid() && (d->m_printDevice.isValidPageLayout(pageLayout, d->resolution) || d->m_printDevice.supportsCustomPageSizes())) {
+        if (pageLayout.isValid() && (d->m_printDevice.isValidPageLayout(pageLayout, d->resolution)
+                                     || d->m_printDevice.supportsCustomPageSizes()
+                                     || d->m_printDevice.supportedPageSizes().isEmpty())) {
+            // supportedPageSizes().isEmpty() because QPageSetupWidget::initPageSizes says
+            // "If no available printer page sizes, populate with all page sizes"
             d->m_pageLayout = pageLayout;
             d->setPageSize(pageLayout.pageSize());
         }
@@ -132,6 +136,9 @@ QVariant QCupsPrintEngine::property(PrintEnginePropertyKey key) const
     case PPK_CupsOptions:
         ret = d->cupsOptions;
         break;
+    case PPK_Duplex:
+        ret = d->duplex;
+        break;
     default:
         ret = QPdfPrintEngine::property(key);
         break;
@@ -140,7 +147,9 @@ QVariant QCupsPrintEngine::property(PrintEnginePropertyKey key) const
 }
 
 
-QCupsPrintEnginePrivate::QCupsPrintEnginePrivate(QPrinter::PrinterMode m) : QPdfPrintEnginePrivate(m)
+QCupsPrintEnginePrivate::QCupsPrintEnginePrivate(QPrinter::PrinterMode m)
+    : QPdfPrintEnginePrivate(m)
+    , duplex(QPrint::DuplexNone)
 {
 }
 
@@ -276,7 +285,10 @@ void QCupsPrintEnginePrivate::changePrinter(const QString &newPrinter)
         grayscale = m_printDevice.defaultColorMode() == QPrint::GrayScale;
 
     // Get the equivalent page size for this printer as supported names may be different
-    setPageSize(m_pageLayout.pageSize());
+    if (m_printDevice.supportedPageSize(m_pageLayout.pageSize()).isValid())
+        setPageSize(m_pageLayout.pageSize());
+    else
+        setPageSize(QPageSize(m_pageLayout.pageSize().size(QPageSize::Point), QPageSize::Point));
 }
 
 void QCupsPrintEnginePrivate::setPageSize(const QPageSize &pageSize)

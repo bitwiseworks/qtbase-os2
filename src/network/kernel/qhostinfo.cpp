@@ -137,8 +137,7 @@ void emit_results_ready(const QHostInfo &hostInfo, const QObject *receiver,
     \inmodule QtNetwork
     \ingroup network
 
-    QHostInfo uses the lookup mechanisms provided by the operating
-    system to find the IP address(es) associated with a host name,
+    QHostInfo finds the IP address(es) associated with a host name,
     or the host name associated with an IP address.
     The class provides two static convenience functions: one that
     works asynchronously and emits a signal once the host is found,
@@ -173,6 +172,11 @@ void emit_results_ready(const QHostInfo &hostInfo, const QObject *receiver,
     To retrieve the name of the local host, use the static
     QHostInfo::localHostName() function.
 
+    QHostInfo uses the mechanisms provided by the operating system
+    to perform the lookup. As per {https://tools.ietf.org/html/rfc6724}{RFC 6724}
+    there is no guarantee that all IP addresses registered for a domain or
+    host will be returned.
+
     \note Since Qt 4.6.1 QHostInfo is using multiple threads for DNS lookup
     instead of one dedicated DNS thread. This improves performance,
     but also changes the order of signal emissions when using lookupHost()
@@ -180,7 +184,8 @@ void emit_results_ready(const QHostInfo &hostInfo, const QObject *receiver,
     \note Since Qt 4.6.3 QHostInfo is using a small internal 60 second DNS cache
     for performance improvements.
 
-    \sa QAbstractSocket, {http://www.rfc-editor.org/rfc/rfc3492.txt}{RFC 3492}
+    \sa QAbstractSocket, {http://www.rfc-editor.org/rfc/rfc3492.txt}{RFC 3492},
+    {https://tools.ietf.org/html/rfc6724}{RFC 6724}
 */
 
 static int nextId()
@@ -300,25 +305,6 @@ int QHostInfo::lookupHost(const QString &name, QObject *receiver,
 */
 
 /*!
-    \fn template<typename PointerToMemberFunction> int QHostInfo::lookupHost(const QString &name, const QObject *receiver, PointerToMemberFunction function)
-
-    \since 5.9
-
-    \overload
-
-    Looks up the IP address(es) associated with host name \a name, and
-    returns an ID for the lookup. When the result of the lookup is
-    ready, the slot or signal \a function in \a receiver is called with
-    a QHostInfo argument. The QHostInfo object can then be inspected
-    to get the results of the lookup.
-
-    \note There is no guarantee on the order the signals will be emitted
-    if you start multiple requests with lookupHost().
-
-    \sa abortHostLookup(), addresses(), error(), fromName()
-*/
-
-/*!
     \fn template<typename Functor> int QHostInfo::lookupHost(const QString &name, Functor functor)
 
     \since 5.9
@@ -353,6 +339,16 @@ int QHostInfo::lookupHost(const QString &name, QObject *receiver,
     \a functor will not be called. The \a functor will be run in the
     thread of \a context. The context's thread must have a running Qt
     event loop.
+
+    Here is an alternative signature for the function:
+    \code
+    lookupHost(const QString &name, const QObject *receiver, PointerToMemberFunction function)
+    \endcode
+
+    In this case, when the result of the lookup is ready, the slot or
+    signal \c{function} in \c{receiver} is called with a QHostInfo
+    argument. The QHostInfo object can then be inspected to get the
+    results of the lookup.
 
     \note There is no guarantee on the order the signals will be emitted
     if you start multiple requests with lookupHost().
@@ -704,6 +700,7 @@ void QHostInfoRunnable::run()
     hostInfo.setLookupId(id);
     resultEmitter.emitResultsReady(hostInfo);
 
+#if QT_CONFIG(thread)
     // now also iterate through the postponed ones
     {
         QMutexLocker locker(&manager->mutex);
@@ -720,6 +717,7 @@ void QHostInfoRunnable::run()
         manager->postponedLookups.erase(partitionBegin, partitionEnd);
     }
 
+#endif
     manager->lookupFinished(this);
 
     // thread goes back to QThreadPool
@@ -728,8 +726,10 @@ void QHostInfoRunnable::run()
 QHostInfoLookupManager::QHostInfoLookupManager() : mutex(QMutex::Recursive), wasDeleted(false)
 {
     moveToThread(QCoreApplicationPrivate::mainThread());
+#if QT_CONFIG(thread)
     connect(QCoreApplication::instance(), SIGNAL(destroyed()), SLOT(waitForThreadPoolDone()), Qt::DirectConnection);
     threadPool.setMaxThreadCount(20); // do up to 20 DNS lookups in parallel
+#endif
 }
 
 QHostInfoLookupManager::~QHostInfoLookupManager()
@@ -744,15 +744,19 @@ void QHostInfoLookupManager::clear()
 {
     {
         QMutexLocker locker(&mutex);
-        qDeleteAll(postponedLookups);
         qDeleteAll(scheduledLookups);
         qDeleteAll(finishedLookups);
+#if QT_CONFIG(thread)
+        qDeleteAll(postponedLookups);
         postponedLookups.clear();
+#endif
         scheduledLookups.clear();
         finishedLookups.clear();
     }
 
+#if QT_CONFIG(thread)
     threadPool.waitForDone();
+#endif
     cache.clear();
 }
 
@@ -776,6 +780,7 @@ void QHostInfoLookupManager::work()
         finishedLookups.clear();
     }
 
+#if QT_CONFIG(thread)
     auto isAlreadyRunning = [this](QHostInfoRunnable *lookup) {
         return any_of(currentLookups.cbegin(), currentLookups.cend(), ToBeLookedUpEquals(lookup->toBeLookedUp));
     };
@@ -808,6 +813,10 @@ void QHostInfoLookupManager::work()
         }
         scheduledLookups.erase(scheduledLookups.begin(), it);
     }
+#else
+    if (!scheduledLookups.isEmpty())
+        scheduledLookups.takeFirst()->run();
+#endif
 }
 
 // called by QHostInfo
@@ -829,6 +838,7 @@ void QHostInfoLookupManager::abortLookup(int id)
 
     QMutexLocker locker(&this->mutex);
 
+#if QT_CONFIG(thread)
     // is postponed? delete and return
     for (int i = 0; i < postponedLookups.length(); i++) {
         if (postponedLookups.at(i)->id == id) {
@@ -836,6 +846,7 @@ void QHostInfoLookupManager::abortLookup(int id)
             return;
         }
     }
+#endif
 
     // is scheduled? delete and return
     for (int i = 0; i < scheduledLookups.length(); i++) {
@@ -866,7 +877,9 @@ void QHostInfoLookupManager::lookupFinished(QHostInfoRunnable *r)
         return;
 
     QMutexLocker locker(&this->mutex);
+#if QT_CONFIG(thread)
     currentLookups.removeOne(r);
+#endif
     finishedLookups.append(r);
     work();
 }

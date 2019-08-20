@@ -1,6 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 Intel Corporation
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -43,6 +44,7 @@
 #include "qlibrary_p.h"
 #include <qcoreapplication.h>
 #include <private/qfilesystementry_p.h>
+#include <private/qsimd_p.h>
 
 #include <dlfcn.h>
 
@@ -155,7 +157,7 @@ bool QLibraryPrivate::load_sys()
     // Do not unload the library during dlclose(). Consequently, the
     // library's specific static variables are not reinitialized if the
     // library is reloaded with dlopen() at a later time.
-#ifdef RTLD_NODELETE
+#if defined(RTLD_NODELETE) && !defined(Q_OS_ANDROID)
     if (loadHints & QLibrary::PreventUnloadHint) {
         dlFlags |= RTLD_NODELETE;
     }
@@ -177,6 +179,29 @@ bool QLibraryPrivate::load_sys()
         suffixes.append(QString());
         prefixes.append(QString());
     }
+
+#if defined(Q_PROCESSOR_X86) && !defined(Q_OS_DARWIN)
+    if (qCpuHasFeature(ArchHaswell)) {
+        auto transform = [](QStringList &list, void (*f)(QString *)) {
+            QStringList tmp;
+            qSwap(tmp, list);
+            list.reserve(tmp.size() * 2);
+            for (const QString &s : qAsConst(tmp)) {
+                QString modifiedPath = s;
+                f(&modifiedPath);
+                list.append(modifiedPath);
+                list.append(s);
+            }
+        };
+        if (pluginState == IsAPlugin) {
+            // add ".avx2" to each suffix in the list
+            transform(suffixes, [](QString *s) { s->append(QLatin1String(".avx2")); });
+        } else {
+            // prepend "haswell/" to each prefix in the list
+            transform(prefixes, [](QString *s) { s->prepend(QLatin1String("haswell/")); });
+        }
+    }
+#endif
 
     bool retry = true;
     for(int prefix = 0; retry && !pHnd && prefix < prefixes.size(); prefix++) {

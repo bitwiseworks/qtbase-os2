@@ -50,7 +50,9 @@
 #include <QtCore/qmath.h>
 #include <QtCore/QList>
 #include <QtCore/QDir>
+#if QT_CONFIG(settings)
 #include <QtCore/QSettings>
+#endif
 #include <QtGui/QPainter>
 
 #include <private/qhexstring_p.h>
@@ -60,7 +62,7 @@ QT_BEGIN_NAMESPACE
 Q_GLOBAL_STATIC(QIconLoader, iconLoaderInstance)
 
 /* Theme to use in last resort, if the theme does not have the icon, neither the parents  */
-static QString fallbackTheme()
+static QString systemFallbackThemeName()
 {
     if (const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme()) {
         const QVariant themeHint = theme->themeHint(QPlatformTheme::SystemIconFallbackThemeName);
@@ -117,7 +119,7 @@ void QIconLoader::ensureInitialized()
         m_systemTheme = systemThemeName();
 
         if (m_systemTheme.isEmpty())
-            m_systemTheme = fallbackTheme();
+            m_systemTheme = systemFallbackThemeName();
         if (qt_iconEngineFactoryLoader()->keyMap().key(QLatin1String("svg"), -1) != -1)
             m_supportsSvg = true;
     }
@@ -137,7 +139,7 @@ void QIconLoader::updateSystemTheme()
     if (m_userTheme.isEmpty()) {
         QString theme = systemThemeName();
         if (theme.isEmpty())
-            theme = fallbackTheme();
+            theme = fallbackThemeName();
         if (theme != m_systemTheme) {
             m_systemTheme = theme;
             invalidateKey();
@@ -149,6 +151,16 @@ void QIconLoader::setThemeName(const QString &themeName)
 {
     m_userTheme = themeName;
     invalidateKey();
+}
+
+QString QIconLoader::fallbackThemeName() const
+{
+    return m_userFallbackTheme.isEmpty() ? systemFallbackThemeName() : m_userFallbackTheme;
+}
+
+void QIconLoader::setFallbackThemeName(const QString &themeName)
+{
+    m_userFallbackTheme = themeName;
 }
 
 void QIconLoader::setThemeSearchPath(const QStringList &searchPaths)
@@ -338,7 +350,7 @@ QIconTheme::QIconTheme(const QString &themeName)
                 m_valid = true;
         }
     }
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     if (themeIndex.exists()) {
         const QSettings indexReader(themeIndex.fileName(), QSettings::IniFormat);
         const QStringList keys = indexReader.allKeys();
@@ -388,7 +400,7 @@ QIconTheme::QIconTheme(const QString &themeName)
 
         // Ensure a default platform fallback for all themes
         if (m_parents.isEmpty()) {
-            const QString fallback = fallbackTheme();
+            const QString fallback = QIconLoader::instance()->fallbackThemeName();
             if (!fallback.isEmpty())
                 m_parents.append(fallback);
         }
@@ -397,7 +409,7 @@ QIconTheme::QIconTheme(const QString &themeName)
         if (!m_parents.contains(QLatin1String("hicolor")))
             m_parents.append(QLatin1String("hicolor"));
     }
-#endif //QT_NO_SETTINGS
+#endif // settings
 }
 
 QThemeIconInfo QIconLoader::findIconHelper(const QString &themeName,
@@ -414,7 +426,7 @@ QThemeIconInfo QIconLoader::findIconHelper(const QString &themeName,
     if (!theme.isValid()) {
         theme = QIconTheme(themeName);
         if (!theme.isValid())
-            theme = QIconTheme(fallbackTheme());
+            theme = QIconTheme(fallbackThemeName());
     }
 
     const QStringList contentDirs = theme.contentDirs();
@@ -617,7 +629,10 @@ void QIconLoaderEngine::ensureLoaded()
 void QIconLoaderEngine::paint(QPainter *painter, const QRect &rect,
                              QIcon::Mode mode, QIcon::State state)
 {
-    QSize pixmapSize = rect.size();
+    const qreal dpr = !qApp->testAttribute(Qt::AA_UseHighDpiPixmaps) ?
+                qreal(1.0) : painter->device()->devicePixelRatioF();
+
+    QSize pixmapSize = rect.size() * dpr;
     painter->drawPixmap(rect, pixmap(pixmapSize, mode, state));
 }
 

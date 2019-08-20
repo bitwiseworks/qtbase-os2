@@ -235,7 +235,10 @@ public:
 
     bool isEnabled() const;
     bool isEnabledTo(const QWidget *) const;
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED_X ("Use isEnabled() instead")
     bool isEnabledToTLW() const;
+#endif
 
 public Q_SLOTS:
     void setEnabled(bool);
@@ -636,7 +639,7 @@ protected:
     virtual void actionEvent(QActionEvent *event);
 #endif
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     virtual void dragEnterEvent(QDragEnterEvent *event);
     virtual void dragMoveEvent(QDragMoveEvent *event);
     virtual void dragLeaveEvent(QDragLeaveEvent *event);
@@ -714,6 +717,7 @@ private:
     friend class QWidgetWindow;
     friend class QAccessibleWidget;
     friend class QAccessibleTable;
+    friend class QAccessibleTabButton;
 #ifndef QT_NO_GESTURES
     friend class QGestureManager;
     friend class QWinNativePanGestureRecognizer;
@@ -768,8 +772,10 @@ inline bool QWidget::isEnabled() const
 inline bool QWidget::isModal() const
 { return data->window_modality != Qt::NonModal; }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 inline bool QWidget::isEnabledToTLW() const
 { return isEnabled(); }
+#endif
 
 inline int QWidget::minimumWidth() const
 { return minimumSize().width(); }

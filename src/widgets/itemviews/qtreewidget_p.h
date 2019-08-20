@@ -99,7 +99,9 @@ public:
 
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
-
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    bool clearItemData(const QModelIndex &index) override;
+#endif
     QMap<int, QVariant> itemData(const QModelIndex &index) const override;
 
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
@@ -139,7 +141,7 @@ public:
 
 protected:
     QTreeModel(QTreeModelPrivate &, QTreeWidget *parent = 0);
-    void emitDataChanged(QTreeWidgetItem *item, int column);
+    void emitDataChanged(QTreeWidgetItem *item, int column, const QVector<int> &roles);
     void beginInsertItems(QTreeWidgetItem *parent, int row, int count);
     void endInsertItems();
     void beginRemoveItems(QTreeWidgetItem *parent, int row, int count);
@@ -187,13 +189,16 @@ class QTreeWidgetItemPrivate
 {
 public:
     QTreeWidgetItemPrivate(QTreeWidgetItem *item)
-        : q(item), disabled(false), selected(false), rowGuess(-1), policy(QTreeWidgetItem::DontShowIndicatorWhenChildless) {}
+        : q(item), disabled(false), selected(false), hidden(false), rowGuess(-1),
+          policy(QTreeWidgetItem::DontShowIndicatorWhenChildless) {}
     void propagateDisabled(QTreeWidgetItem *item);
+    void updateHiddenStatus(QTreeWidgetItem *item, bool inserting);
     void sortChildren(int column, Qt::SortOrder order, bool climb);
     QTreeWidgetItem *q;
     QVariantList display;
     uint disabled : 1;
     uint selected : 1;
+    uint hidden : 1;
     int rowGuess;
     QTreeWidgetItem::ChildIndicatorPolicy policy;
 };

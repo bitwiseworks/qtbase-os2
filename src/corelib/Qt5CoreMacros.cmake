@@ -285,7 +285,7 @@ function(QT5_ADD_RESOURCES outfiles )
                            COMMAND ${Qt5Core_RCC_EXECUTABLE}
                            ARGS ${rcc_options} --name ${outfilename} --output ${outfile} ${infile}
                            MAIN_DEPENDENCY ${infile}
-                           DEPENDS ${_rc_depends} "${out_depends}" VERBATIM)
+                           DEPENDS ${_rc_depends} "${_out_depends}" VERBATIM)
         set_source_files_properties(${outfile} PROPERTIES SKIP_AUTOMOC ON)
         set_source_files_properties(${outfile} PROPERTIES SKIP_AUTOUIC ON)
         list(APPEND ${outfiles} ${outfile})
@@ -293,4 +293,98 @@ function(QT5_ADD_RESOURCES outfiles )
     set(${outfiles} ${${outfiles}} PARENT_SCOPE)
 endfunction()
 
+# qt5_add_big_resources(outfiles inputfile ... )
+
+function(QT5_ADD_BIG_RESOURCES outfiles )
+
+    set(options)
+    set(oneValueArgs)
+    set(multiValueArgs OPTIONS)
+
+    cmake_parse_arguments(_RCC "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    set(rcc_files ${_RCC_UNPARSED_ARGUMENTS})
+    set(rcc_options ${_RCC_OPTIONS})
+
+    if("${rcc_options}" MATCHES "-binary")
+        message(WARNING "Use qt5_add_binary_resources for binary option")
+    endif()
+
+    foreach(it ${rcc_files})
+        get_filename_component(outfilename ${it} NAME_WE)
+        get_filename_component(infile ${it} ABSOLUTE)
+        set(tmpoutfile ${CMAKE_CURRENT_BINARY_DIR}/qrc_${outfilename}tmp.cpp)
+        set(outfile ${CMAKE_CURRENT_BINARY_DIR}/qrc_${outfilename}.o)
+
+        _QT5_PARSE_QRC_FILE(${infile} _out_depends _rc_depends)
+        set_source_files_properties(${infile} PROPERTIES SKIP_AUTORCC ON)
+        add_custom_command(OUTPUT ${tmpoutfile}
+                           COMMAND ${Qt5Core_RCC_EXECUTABLE} ${rcc_options} --name ${outfilename} --pass 1 --output ${tmpoutfile} ${infile}
+                           DEPENDS ${infile} ${_rc_depends} "${out_depends}" VERBATIM)
+        add_custom_target(big_resources_${outfilename} ALL DEPENDS ${tmpoutfile})
+        add_library(rcc_object_${outfilename} OBJECT ${tmpoutfile})
+        set_target_properties(rcc_object_${outfilename} PROPERTIES AUTOMOC OFF)
+        set_target_properties(rcc_object_${outfilename} PROPERTIES AUTOUIC OFF)
+        add_dependencies(rcc_object_${outfilename} big_resources_${outfilename})
+        add_custom_command(OUTPUT ${outfile}
+                           COMMAND ${Qt5Core_RCC_EXECUTABLE}
+                           ARGS ${rcc_options} --name ${outfilename} --pass 2 --temp $<TARGET_OBJECTS:rcc_object_${outfilename}> --output ${outfile} ${infile}
+                           DEPENDS rcc_object_${outfilename}
+                           VERBATIM)
+       list(APPEND ${outfiles} ${outfile})
+    endforeach()
+    set(${outfiles} ${${outfiles}} PARENT_SCOPE)
+endfunction()
+
 set(_Qt5_COMPONENT_PATH "${CMAKE_CURRENT_LIST_DIR}/..")
+
+if (NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+    macro(qt5_use_modules _target _link_type)
+        if(NOT CMAKE_MINIMUM_REQUIRED_VERSION VERSION_LESS 2.8.11)
+            if(CMAKE_WARN_DEPRECATED)
+                set(messageType WARNING)
+            endif()
+            if(CMAKE_ERROR_DEPRECATED)
+                set(messageType FATAL_ERROR)
+            endif()
+            if(messageType)
+                message(${messageType} "The qt5_use_modules macro is obsolete. Use target_link_libraries with IMPORTED targets instead.")
+            endif()
+        endif()
+
+        if (NOT TARGET ${_target})
+            message(FATAL_ERROR "The first argument to qt5_use_modules must be an existing target.")
+        endif()
+        if ("${_link_type}" STREQUAL "LINK_PUBLIC" OR "${_link_type}" STREQUAL "LINK_PRIVATE" )
+            set(_qt5_modules ${ARGN})
+            set(_qt5_link_type ${_link_type})
+        else()
+            set(_qt5_modules ${_link_type} ${ARGN})
+        endif()
+
+        if ("${_qt5_modules}" STREQUAL "")
+            message(FATAL_ERROR "qt5_use_modules requires at least one Qt module to use.")
+        endif()
+
+        foreach(_module ${_qt5_modules})
+            if (NOT Qt5${_module}_FOUND)
+                find_package(Qt5${_module} PATHS "${_Qt5_COMPONENT_PATH}" NO_DEFAULT_PATH)
+                if (NOT Qt5${_module}_FOUND)
+                    message(FATAL_ERROR "Cannot use \"${_module}\" module which has not yet been found.")
+                endif()
+            endif()
+            target_link_libraries(${_target} ${_qt5_link_type} ${Qt5${_module}_LIBRARIES})
+            set_property(TARGET ${_target} APPEND PROPERTY INCLUDE_DIRECTORIES ${Qt5${_module}_INCLUDE_DIRS})
+            set_property(TARGET ${_target} APPEND PROPERTY COMPILE_DEFINITIONS ${Qt5${_module}_COMPILE_DEFINITIONS})
+            set_property(TARGET ${_target} APPEND PROPERTY COMPILE_DEFINITIONS_RELEASE QT_NO_DEBUG)
+            set_property(TARGET ${_target} APPEND PROPERTY COMPILE_DEFINITIONS_RELWITHDEBINFO QT_NO_DEBUG)
+            set_property(TARGET ${_target} APPEND PROPERTY COMPILE_DEFINITIONS_MINSIZEREL QT_NO_DEBUG)
+            if (Qt5_POSITION_INDEPENDENT_CODE
+                    AND (CMAKE_VERSION VERSION_LESS 2.8.12
+                        AND (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+                        OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)))
+                set_property(TARGET ${_target} PROPERTY POSITION_INDEPENDENT_CODE ${Qt5_POSITION_INDEPENDENT_CODE})
+            endif()
+        endforeach()
+    endmacro()
+endif()

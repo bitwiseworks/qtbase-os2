@@ -44,10 +44,9 @@
 #include <QtWidgets/qaction.h>
 #include <QtWidgets/qwidget.h>
 
+QT_REQUIRE_CONFIG(toolbar);
+
 QT_BEGIN_NAMESPACE
-
-
-#ifndef QT_NO_TOOLBAR
 
 class QToolBarPrivate;
 
@@ -100,15 +99,11 @@ public:
     QAction *addAction(const QString &text, const QObject *receiver, const char* member);
     QAction *addAction(const QIcon &icon, const QString &text,
                        const QObject *receiver, const char* member);
-#ifdef Q_QDOC
-    template<typename PointerToMemberFunction>
-    QAction *addAction(const QString &text, const QObject *receiver, PointerToMemberFunction method);
+#ifdef Q_CLANG_QDOC
     template<typename Functor>
     QAction *addAction(const QString &text, Functor functor);
     template<typename Functor>
     QAction *addAction(const QString &text, const QObject *context, Functor functor);
-    template<typename PointerToMemberFunction>
-    QAction *addAction(const QIcon &icon, const QString &text, const QObject *receiver, PointerToMemberFunction method);
     template<typename Functor>
     QAction *addAction(const QIcon &icon, const QString &text, Functor functor);
     template<typename Functor>
@@ -150,7 +145,7 @@ public:
         connect(result, &QAction::triggered, slot);
         return result;
     }
-#endif // !Q_QDOC
+#endif // !Q_CLANG_QDOC
 
     QAction *addSeparator();
     QAction *insertSeparator(QAction *before);
@@ -210,8 +205,6 @@ private:
 
 inline QAction *QToolBar::actionAt(int ax, int ay) const
 { return actionAt(QPoint(ax, ay)); }
-
-#endif // QT_NO_TOOLBAR
 
 QT_END_NAMESPACE
 

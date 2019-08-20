@@ -110,6 +110,12 @@ public:
 
     ~QWidgetLineControl()
     {
+        // If this control is used for password input, we don't want the
+        // password data to stay in the process memory, therefore we need
+        // to zero it out
+        if (m_echoMode != QLineEdit::Normal)
+            m_text.fill('\0');
+
         delete [] m_maskData;
     }
 
@@ -274,6 +280,13 @@ public:
         cancelPasswordEchoTimer();
         m_echoMode = mode;
         m_passwordEchoEditing = false;
+
+        // If this control is used for password input, we want to minimize
+        // the possibility of string reallocation not to leak (parts of)
+        // the password.
+        if (m_echoMode != QLineEdit::Normal)
+            m_text.reserve(30);
+
         updateDisplayText();
     }
 
@@ -545,6 +558,7 @@ Q_SIGNALS:
     void accepted();
     void editingFinished();
     void updateNeeded(const QRect &);
+    void inputRejected();
 
 #ifdef QT_KEYPAD_NAVIGATION
     void editFocusChange(bool);

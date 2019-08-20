@@ -35,7 +35,7 @@ using namespace QMakeInternal;
 #include <qfile.h>
 #include <qfileinfo.h>
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 #include <qtextcodec.h>
 #endif
 
@@ -49,14 +49,41 @@ QMakeVfs::QMakeVfs()
     , m_magicExisting(fL1S("existing"))
 #endif
 {
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
     m_textCodec = 0;
 #endif
+    ref();
+}
+
+QMakeVfs::~QMakeVfs()
+{
+    deref();
+}
+
+void QMakeVfs::ref()
+{
+#ifdef PROEVALUATOR_THREAD_SAFE
+    QMutexLocker locker(&s_mutex);
+#endif
+    ++s_refCount;
+}
+
+void QMakeVfs::deref()
+{
+#ifdef PROEVALUATOR_THREAD_SAFE
+    QMutexLocker locker(&s_mutex);
+#endif
+    if (!--s_refCount) {
+        s_fileIdCounter = 0;
+        s_fileIdMap.clear();
+        s_idFileMap.clear();
+    }
 }
 
 #ifdef PROPARSER_THREAD_SAFE
 QMutex QMakeVfs::s_mutex;
 #endif
+int QMakeVfs::s_refCount;
 QAtomicInt QMakeVfs::s_fileIdCounter;
 QHash<QString, int> QMakeVfs::s_fileIdMap;
 QHash<int, QString> QMakeVfs::s_idFileMap;
@@ -82,10 +109,10 @@ int QMakeVfs::idForFileName(const QString &fn, VfsFlags flags)
             return id;
     }
 #endif
-    if (!(flags & VfsAccessedOnly)) {
 #ifdef PROPARSER_THREAD_SAFE
-        QMutexLocker locker(&s_mutex);
+    QMutexLocker locker(&s_mutex);
 #endif
+    if (!(flags & VfsAccessedOnly)) {
         int &id = s_fileIdMap[fn];
         if (!id) {
             id = ++s_fileIdCounter;
@@ -112,16 +139,6 @@ QString QMakeVfs::fileNameForId(int id)
     QMutexLocker locker(&s_mutex);
 #endif
     return s_idFileMap.value(id);
-}
-
-void QMakeVfs::clearIds()
-{
-#ifdef PROEVALUATOR_THREAD_SAFE
-    QMutexLocker locker(&s_mutex);
-#endif
-    s_fileIdCounter = 0;
-    s_fileIdMap.clear();
-    s_idFileMap.clear();
 }
 
 bool QMakeVfs::writeFile(int id, QIODevice::OpenMode mode, VfsFlags flags,
@@ -219,7 +236,7 @@ QMakeVfs::ReadResult QMakeVfs::readFile(int id, QString *contents, QString *errS
         return ReadOtherError;
     }
     *contents =
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         m_textCodec ? m_textCodec->toUnicode(bcont) :
 #endif
         QString::fromLocal8Bit(bcont);
@@ -273,7 +290,7 @@ void QMakeVfs::invalidateContents()
 }
 #endif
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 void QMakeVfs::setTextCodec(const QTextCodec *textCodec)
 {
     m_textCodec = textCodec;

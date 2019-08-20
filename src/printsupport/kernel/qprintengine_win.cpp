@@ -587,11 +587,8 @@ void QWin32PrintEngine::drawPixmap(const QRectF &targetRect,
             QPixmap p = QPixmap::fromImage(img);
 
             HBITMAP hbitmap = qt_pixmapToWinHBITMAP(p, HBitmapNoAlpha);
-            HDC display_dc = GetDC(0);
-            HDC hbitmap_hdc = CreateCompatibleDC(display_dc);
+            HDC hbitmap_hdc = CreateCompatibleDC(d->hdc);
             HGDIOBJ null_bitmap = SelectObject(hbitmap_hdc, hbitmap);
-
-            ReleaseDC(0, display_dc);
 
             if (!StretchBlt(d->hdc, qRound(tposx - xform_offset_x), qRound(tposy - xform_offset_y), width, height,
                             hbitmap_hdc, 0, 0, p.width(), p.height(), SRCCOPY))
@@ -620,12 +617,9 @@ void QWin32PrintEngine::drawTiledPixmap(const QRectF &r, const QPixmap &pm, cons
     } else {
         int dc_state = SaveDC(d->hdc);
 
-        HDC display_dc = GetDC(0);
         HBITMAP hbitmap = qt_pixmapToWinHBITMAP(pm, HBitmapNoAlpha);
-        HDC hbitmap_hdc = CreateCompatibleDC(display_dc);
+        HDC hbitmap_hdc = CreateCompatibleDC(d->hdc);
         HGDIOBJ null_bitmap = SelectObject(hbitmap_hdc, hbitmap);
-
-        ReleaseDC(0, display_dc);
 
         QRectF trect = d->painterMatrix.mapRect(r);
         int tx = int(trect.left() * d->stretch_x + d->origin_x);
@@ -1111,16 +1105,16 @@ void QWin32PrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &
         if (mode == property(PPK_Duplex).toInt() || !d->m_printDevice.supportedDuplexModes().contains(mode))
             break;
         switch (mode) {
-        case QPrinter::DuplexNone:
+        case QPrint::DuplexNone:
             d->devMode->dmDuplex = DMDUP_SIMPLEX;
             break;
-        case QPrinter::DuplexAuto:
+        case QPrint::DuplexAuto:
             d->devMode->dmDuplex = d->m_pageLayout.orientation() == QPageLayout::Landscape ? DMDUP_HORIZONTAL : DMDUP_VERTICAL;
             break;
-        case QPrinter::DuplexLongSide:
+        case QPrint::DuplexLongSide:
             d->devMode->dmDuplex = DMDUP_VERTICAL;
             break;
-        case QPrinter::DuplexShortSide:
+        case QPrint::DuplexShortSide:
             d->devMode->dmDuplex = DMDUP_HORIZONTAL;
             break;
         default:
@@ -1234,7 +1228,10 @@ void QWin32PrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &
         if (printDevice.isValid()) {
             d->m_printDevice = printDevice;
             d->initialize();
-            setProperty(PPK_QPageSize, pageSize);
+            if (d->m_printDevice.supportedPageSize(pageSize.value<QPageSize>()).isValid())
+                setProperty(PPK_QPageSize, pageSize);
+            else
+                setProperty(PPK_CustomPaperSize, pageSize.value<QPageSize>().size(QPageSize::Point));
             setProperty(PPK_FullPage, QVariant(isFullPage));
             setProperty(PPK_Orientation, orientation);
             setProperty(PPK_QPageMargins, margins);
@@ -1559,14 +1556,15 @@ HGLOBAL *QWin32PrintEngine::createGlobalDevNames()
     Q_D(QWin32PrintEngine);
 
     int size = sizeof(DEVNAMES) + d->m_printDevice.id().length() * 2 + 2;
-    HGLOBAL *hGlobal = (HGLOBAL *) GlobalAlloc(GMEM_MOVEABLE, size);
-    DEVNAMES *dn = (DEVNAMES*) GlobalLock(hGlobal);
+    auto hGlobal = reinterpret_cast<HGLOBAL *>(GlobalAlloc(GMEM_MOVEABLE, size));
+    auto dn = reinterpret_cast<DEVNAMES*>(GlobalLock(hGlobal));
 
     dn->wDriverOffset = 0;
     dn->wDeviceOffset = sizeof(DEVNAMES) / sizeof(wchar_t);
     dn->wOutputOffset = 0;
 
-    memcpy((ushort*)dn + dn->wDeviceOffset, d->m_printDevice.id().utf16(), d->m_printDevice.id().length() * 2 + 2);
+    memcpy(reinterpret_cast<ushort*>(dn) + dn->wDeviceOffset,
+           d->m_printDevice.id().utf16(), d->m_printDevice.id().length() * 2 + 2);
     dn->wDefault = 0;
 
     GlobalUnlock(hGlobal);
@@ -1577,8 +1575,9 @@ void QWin32PrintEngine::setGlobalDevMode(HGLOBAL globalDevNames, HGLOBAL globalD
 {
     Q_D(QWin32PrintEngine);
     if (globalDevNames) {
-        DEVNAMES *dn = (DEVNAMES*) GlobalLock(globalDevNames);
-        QString id = QString::fromWCharArray((wchar_t*)(dn) + dn->wDeviceOffset);
+        auto dn = reinterpret_cast<DEVNAMES*>(GlobalLock(globalDevNames));
+        const QString id =
+            QString::fromWCharArray(reinterpret_cast<const wchar_t*>(dn) + dn->wDeviceOffset);
         QPlatformPrinterSupport *ps = QPlatformPrinterSupportPlugin::get();
         if (ps)
             d->m_printDevice = ps->createPrintDevice(id.isEmpty() ? ps->defaultPrintDeviceId() : id);
@@ -1586,7 +1585,7 @@ void QWin32PrintEngine::setGlobalDevMode(HGLOBAL globalDevNames, HGLOBAL globalD
     }
 
     if (globalDevMode) {
-        DEVMODE *dm = (DEVMODE*) GlobalLock(globalDevMode);
+        auto dm = reinterpret_cast<DEVMODE*>(GlobalLock(globalDevMode));
         d->release();
         d->globalDevMode = globalDevMode;
         if (d->ownsDevMode) {
@@ -1782,39 +1781,26 @@ static void draw_text_item_win(const QPointF &pos, const QTextItemInt &ti, HDC h
         QTransform matrix = QTransform::fromTranslate(baseline_pos.x(), baseline_pos.y());
         ti.fontEngine->getGlyphPositions(ti.glyphs, matrix, ti.flags,
             _glyphs, positions);
-        if (_glyphs.size() == 0) {
+        if (_glyphs.isEmpty()) {
             SelectObject(hdc, old_font);
             return;
         }
 
-        bool outputEntireItem = _glyphs.size() > 0;
-
-        if (outputEntireItem) {
-            options |= ETO_PDY;
-            QVarLengthArray<INT> glyphDistances(_glyphs.size() * 2);
-            QVarLengthArray<wchar_t> g(_glyphs.size());
-            for (int i=0; i<_glyphs.size() - 1; ++i) {
-                glyphDistances[i * 2] = qRound(positions[i + 1].x) - qRound(positions[i].x);
-                glyphDistances[i * 2 + 1] = qRound(positions[i + 1].y) - qRound(positions[i].y);
-                g[i] = _glyphs[i];
-            }
-            glyphDistances[(_glyphs.size() - 1) * 2] = 0;
-            glyphDistances[(_glyphs.size() - 1) * 2 + 1] = 0;
-            g[_glyphs.size() - 1] = _glyphs[_glyphs.size() - 1];
-            ExtTextOut(hdc, qRound(positions[0].x), qRound(positions[0].y), options, 0,
-                       g.constData(), _glyphs.size(),
-                       glyphDistances.data());
-        } else {
-            int i = 0;
-            while(i < _glyphs.size()) {
-                wchar_t g = _glyphs[i];
-
-                ExtTextOut(hdc, qRound(positions[i].x),
-                           qRound(positions[i].y), options, 0,
-                           &g, 1, 0);
-                ++i;
-            }
+        options |= ETO_PDY;
+        QVarLengthArray<INT> glyphDistances(_glyphs.size() * 2);
+        QVarLengthArray<wchar_t> g(_glyphs.size());
+        const int lastGlyph = _glyphs.size() - 1;
+        for (int i = 0; i < lastGlyph; ++i) {
+            glyphDistances[i * 2] = qRound(positions[i + 1].x) - qRound(positions[i].x);
+            glyphDistances[i * 2 + 1] = qRound(positions[i + 1].y) - qRound(positions[i].y);
+            g[i] = _glyphs[i];
         }
+        glyphDistances[lastGlyph * 2] = 0;
+        glyphDistances[lastGlyph * 2 + 1] = 0;
+        g[lastGlyph] = _glyphs[lastGlyph];
+        ExtTextOut(hdc, qRound(positions[0].x), qRound(positions[0].y), options, nullptr,
+                   g.constData(), _glyphs.size(),
+                   glyphDistances.data());
     }
 
         win_xform.eM11 = win_xform.eM22 = 1.0;

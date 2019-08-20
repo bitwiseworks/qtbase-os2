@@ -75,7 +75,11 @@ public:
     // Additional methods
     void setVirtualSiblings(const QList<QPlatformScreen *> &siblings) { m_siblings = siblings; }
     NSScreen *nativeScreen() const;
-    void updateGeometry();
+    void updateProperties();
+
+    void requestUpdate();
+    void deliverUpdateRequests();
+    bool isRunningDisplayLink() const;
 
     static QCocoaScreen *primaryScreen();
 
@@ -96,6 +100,10 @@ public:
     QSizeF m_physicalSize;
     QCocoaCursor *m_cursor;
     QList<QPlatformScreen *> m_siblings;
+
+    CVDisplayLinkRef m_displayLink = nullptr;
+    dispatch_source_t m_displayLinkSource = nullptr;
+    QAtomicInt m_pendingUpdates;
 };
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -103,6 +111,10 @@ QDebug operator<<(QDebug debug, const QCocoaScreen *screen);
 #endif
 
 QT_END_NAMESPACE
+
+@interface NSScreen (QtExtras)
+@property(readonly) CGDirectDisplayID qt_displayId;
+@end
 
 #endif
 

@@ -60,6 +60,7 @@ class QMenu;
 class QPlainTextEditPrivate;
 class QMimeData;
 class QPagedPaintDevice;
+class QRegularExpression;
 
 class Q_WIDGETS_EXPORT QPlainTextEdit : public QAbstractScrollArea
 {
@@ -148,6 +149,9 @@ public:
     bool find(const QString &exp, QTextDocument::FindFlags options = QTextDocument::FindFlags());
 #ifndef QT_NO_REGEXP
     bool find(const QRegExp &exp, QTextDocument::FindFlags options = QTextDocument::FindFlags());
+#endif
+#if QT_CONFIG(regularexpression)
+    bool find(const QRegularExpression &exp, QTextDocument::FindFlags options = QTextDocument::FindFlags());
 #endif
 
     inline QString toPlainText() const
@@ -247,7 +251,7 @@ protected:
 #ifndef QT_NO_CONTEXTMENU
     virtual void contextMenuEvent(QContextMenuEvent *e) override;
 #endif
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     virtual void dragEnterEvent(QDragEnterEvent *e) override;
     virtual void dragLeaveEvent(QDragLeaveEvent *e) override;
     virtual void dragMoveEvent(QDragMoveEvent *e) override;

@@ -128,6 +128,7 @@ public:
 
     virtual QByteArray systemTimeZoneId() const;
 
+    virtual bool isTimeZoneIdAvailable(const QByteArray &ianaId) const;
     virtual QList<QByteArray> availableTimeZoneIds() const;
     virtual QList<QByteArray> availableTimeZoneIds(QLocale::Country country) const;
     virtual QList<QByteArray> availableTimeZoneIds(int utcOffset) const;
@@ -204,6 +205,7 @@ public:
 
     QByteArray systemTimeZoneId() const override;
 
+    bool isTimeZoneIdAvailable(const QByteArray &ianaId) const override;
     QList<QByteArray> availableTimeZoneIds() const override;
     QList<QByteArray> availableTimeZoneIds(QLocale::Country country) const override;
     QList<QByteArray> availableTimeZoneIds(int utcOffset) const override;
@@ -323,11 +325,13 @@ public:
 
     QByteArray systemTimeZoneId() const override;
 
+    bool isTimeZoneIdAvailable(const QByteArray &ianaId) const override;
     QList<QByteArray> availableTimeZoneIds() const override;
     QList<QByteArray> availableTimeZoneIds(QLocale::Country country) const override;
 
 private:
     void init(const QByteArray &ianaId);
+    QVector<QTimeZonePrivate::Data> getPosixTransitions(qint64 msNear) const;
 
     Data dataForTzTransition(QTzTransitionTime tran) const;
     QVector<QTzTransitionTime> m_tranTimes;

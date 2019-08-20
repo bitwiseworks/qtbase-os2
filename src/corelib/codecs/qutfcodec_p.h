@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2018 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -52,7 +52,13 @@
 // We mean it.
 //
 
+#include <QtCore/qstring.h>
+#include <QtCore/qlist.h>
+
+#if QT_CONFIG(textcodec)
 #include "QtCore/qtextcodec.h"
+#endif
+
 #include "private/qtextcodec_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -311,7 +317,7 @@ struct QUtf32
     static QByteArray convertFromUnicode(const QChar *, int, QTextCodec::ConverterState *, DataEndianness = DetectEndianness);
 };
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 
 class QUtf8Codec : public QTextCodec {
 public:
@@ -391,7 +397,7 @@ public:
 };
 
 
-#endif // QT_NO_TEXTCODEC
+#endif // textcodec
 
 QT_END_NAMESPACE
 

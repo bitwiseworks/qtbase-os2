@@ -38,10 +38,14 @@
 ****************************************************************************/
 
 #include "qaccessiblecache_p.h"
+#include <QtCore/qdebug.h>
+#include <QtCore/qloggingcategory.h>
 
 #ifndef QT_NO_ACCESSIBILITY
 
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcAccessibilityCache, "qt.accessibility.cache");
 
 /*!
     \class QAccessibleCache
@@ -55,6 +59,12 @@ static void cleanupAccessibleCache()
 {
     delete accessibleCache;
     accessibleCache = nullptr;
+}
+
+QAccessibleCache::~QAccessibleCache()
+{
+    for (QAccessible::Id id: idToInterface.keys())
+        deleteInterface(id);
 }
 
 QAccessibleCache *QAccessibleCache::instance()
@@ -116,6 +126,7 @@ QAccessible::Id QAccessibleCache::insert(QObject *object, QAccessibleInterface *
     }
     idToInterface.insert(id, iface);
     interfaceToId.insert(iface, id);
+    qCDebug(lcAccessibilityCache) << "insert - id:" << id << " iface:" << iface;
     return id;
 }
 
@@ -131,6 +142,9 @@ void QAccessibleCache::objectDestroyed(QObject* obj)
 void QAccessibleCache::deleteInterface(QAccessible::Id id, QObject *obj)
 {
     QAccessibleInterface *iface = idToInterface.take(id);
+    qCDebug(lcAccessibilityCache) << "delete - id:" << id << " iface:" << iface;
+    if (!iface) // the interface may be deleted already
+        return;
     interfaceToId.take(iface);
     if (!obj)
         obj = iface->object();

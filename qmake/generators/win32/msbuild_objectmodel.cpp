@@ -34,7 +34,6 @@
 #include <qscopedpointer.h>
 #include <qstringlist.h>
 #include <qfileinfo.h>
-#include <qversionnumber.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -143,6 +142,7 @@ const char _InterfaceIdentifierFileName[]       = "InterfaceIdentifierFileName";
 const char _IntermediateDirectory[]             = "IntermediateDirectory";
 const char _KeyContainer[]                      = "KeyContainer";
 const char _KeyFile[]                           = "KeyFile";
+const char _LanguageStandard[]                  = "LanguageStandard";
 const char _LargeAddressAware[]                 = "LargeAddressAware";
 const char _LinkDLL[]                           = "LinkDLL";
 const char _LinkErrorReporting[]                = "LinkErrorReporting";
@@ -557,6 +557,12 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProjectSingleConfig &tool)
     addFilters(tempProj, xmlFilter, "Deployment Files");
     addFilters(tempProj, xmlFilter, "Distribution Files");
 
+    tempProj.ExtraCompilers.reserve(tool.ExtraCompilersFiles.size());
+    std::transform(tool.ExtraCompilersFiles.cbegin(), tool.ExtraCompilersFiles.cend(),
+                   std::back_inserter(tempProj.ExtraCompilers),
+                   [] (const VCFilter &filter) { return filter.Name; });
+    tempProj.ExtraCompilers.removeDuplicates();
+
     for (int x = 0; x < tempProj.ExtraCompilers.count(); ++x)
         addFilters(tempProj, xmlFilter, tempProj.ExtraCompilers.at(x));
 
@@ -619,31 +625,17 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProject &tool)
         << tagValue("RootNamespace", tool.Name)
         << tagValue("Keyword", tool.Keyword);
 
-    QString windowsTargetPlatformVersion;
     if (isWinRT) {
         xml << tagValue("MinimumVisualStudioVersion", tool.Version)
             << tagValue("DefaultLanguage", "en")
             << tagValue("AppContainerApplication", "true")
             << tagValue("ApplicationType", "Windows Store")
             << tagValue("ApplicationTypeRevision", tool.SdkVersion);
-        if (tool.SdkVersion == "10.0")
-            windowsTargetPlatformVersion = qgetenv("UCRTVERSION");
-    } else {
-        QByteArray winSDKVersionStr = qgetenv("WindowsSDKVersion").trimmed();
-
-        // This environment variable might end with a backslash due to a VS bug.
-        if (winSDKVersionStr.endsWith('\\'))
-            winSDKVersionStr.chop(1);
-
-        QVersionNumber winSDKVersion = QVersionNumber::fromString(
-                    QString::fromLocal8Bit(winSDKVersionStr));
-        if (!winSDKVersion.isNull())
-            windowsTargetPlatformVersion = winSDKVersionStr;
     }
-    if (!windowsTargetPlatformVersion.isEmpty()) {
-        xml << tagValue("WindowsTargetPlatformVersion", windowsTargetPlatformVersion)
-            << tagValue("WindowsTargetPlatformMinVersion", windowsTargetPlatformVersion);
-    }
+    if (!tool.WindowsTargetPlatformVersion.isEmpty())
+        xml << tagValue("WindowsTargetPlatformVersion", tool.WindowsTargetPlatformVersion);
+    if (!tool.WindowsTargetPlatformMinVersion.isEmpty())
+        xml << tagValue("WindowsTargetPlatformMinVersion", tool.WindowsTargetPlatformMinVersion);
 
     xml << closetag();
 
@@ -1201,7 +1193,7 @@ static inline QString toString(midlCharOption option)
 static inline QString toString(midlErrorCheckOption option)
 {
     switch (option) {
-    case midlAlignNotSet:
+    case midlEnableCustom:
         break;
     case midlDisableAll:
         return "None";
@@ -1486,6 +1478,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
             << attrTagT(_IntrinsicFunctions, tool.EnableIntrinsicFunctions)
             << attrTagT(_MinimalRebuild, tool.MinimalRebuild)
             << attrTagT(_MultiProcessorCompilation, tool.MultiProcessorCompilation)
+            << attrTagS(_LanguageStandard, tool.LanguageStandard)
             << attrTagS(_ObjectFileName, tool.ObjectFile)
             << attrTagT(_OmitDefaultLibName, tool.OmitDefaultLibName)
             << attrTagT(_OmitFramePointers, tool.OmitFramePointers)
@@ -1977,6 +1970,15 @@ bool VCXProjectWriter::outputFileConfig(OutputFilterData *d, XmlOutput &xml, Xml
     return fileAdded;
 }
 
+static bool isFileClCompatible(const QString &filePath)
+{
+    auto filePathEndsWith = [&filePath] (const QString &ext) {
+        return filePath.endsWith(ext, Qt::CaseInsensitive);
+    };
+    return std::any_of(Option::cpp_ext.cbegin(), Option::cpp_ext.cend(), filePathEndsWith)
+            || std::any_of(Option::c_ext.cbegin(), Option::c_ext.cend(), filePathEndsWith);
+}
+
 void VCXProjectWriter::outputFileConfig(XmlOutput &xml, XmlOutput &xmlFilter,
                                         const QString &filePath, const QString &filterName)
 {
@@ -2000,7 +2002,7 @@ void VCXProjectWriter::outputFileConfig(XmlOutput &xml, XmlOutput &xmlFilter,
                       << attrTagS("Filter", filterName);
             xml << tag("ClInclude")
                 << attrTag("Include", nativeFilePath);
-        } else if (filePath.endsWith(".cpp")) {
+        } else if (isFileClCompatible(filePath)) {
             xmlFilter << tag("ClCompile")
                       << attrTag("Include", nativeFilePath)
                       << attrTagS("Filter", filterName);

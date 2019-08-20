@@ -43,7 +43,9 @@
 #include "qaction.h"
 #include "qapplication.h"
 #include "qclipboard.h"
-#include "qdrag.h"
+#if QT_CONFIG(draganddrop)
+#include <qdrag.h>
+#endif
 #include "qdrawutil.h"
 #include "qevent.h"
 #include "qfontmetrics.h"
@@ -435,8 +437,6 @@ bool QLineEdit::hasFrame() const
 
 #if QT_CONFIG(action)
 /*!
-    \overload
-
     Adds the \a action to the list of actions at the \a position.
 
     \since 5.2
@@ -488,13 +488,18 @@ void QLineEdit::setClearButtonEnabled(bool enable)
         QAction *clearAction = new QAction(d->clearButtonIcon(), QString(), this);
         clearAction->setEnabled(!isReadOnly());
         clearAction->setObjectName(QLatin1String(clearButtonActionNameC));
-        d->addAction(clearAction, 0, QLineEdit::TrailingPosition, QLineEditPrivate::SideWidgetClearButton | QLineEditPrivate::SideWidgetFadeInWithText);
+
+        int flags = QLineEditPrivate::SideWidgetClearButton | QLineEditPrivate::SideWidgetFadeInWithText;
+        auto widgetAction = d->addAction(clearAction, nullptr, QLineEdit::TrailingPosition, flags);
+        widgetAction->setVisible(!text().isEmpty());
     } else {
         QAction *clearAction = findChild<QAction *>(QLatin1String(clearButtonActionNameC));
         Q_ASSERT(clearAction);
         d->removeAction(clearAction);
         delete clearAction;
     }
+#else
+    Q_UNUSED(enable);
 #endif // QT_CONFIG(action)
 }
 
@@ -581,7 +586,7 @@ void QLineEdit::setEchoMode(EchoMode mode)
 
 #ifndef QT_NO_VALIDATOR
 /*!
-    Returns a pointer to the current input validator, or 0 if no
+    Returns a pointer to the current input validator, or \nullptr if no
     validator has been set.
 
     \sa setValidator()
@@ -678,7 +683,8 @@ QSize QLineEdit::sizeHint() const
     Q_D(const QLineEdit);
     ensurePolished();
     QFontMetrics fm(font());
-    int h = qMax(fm.height(), 14) + 2*d->verticalMargin
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, 0, this);
+    int h = qMax(fm.height(), iconSize - 2) + 2*d->verticalMargin
             + d->topTextMargin + d->bottomTextMargin
             + d->topmargin + d->bottommargin;
     int w = fm.horizontalAdvance(QLatin1Char('x')) * 17 + 2*d->horizontalMargin
@@ -1427,7 +1433,7 @@ bool QLineEdit::event(QEvent * e)
         // ### Qt6: move to timerEvent, is here for binary compatibility
         int timerId = ((QTimerEvent*)e)->timerId();
         if (false) {
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
         } else if (timerId == d->dndTimer.timerId()) {
             d->drag();
 #endif
@@ -1515,7 +1521,7 @@ void QLineEdit::mousePressEvent(QMouseEvent* e)
     mark = mark && (d->imHints & Qt::ImhNoPredictiveText);
 #endif // Q_OS_ANDROID
     int cursor = d->xToPos(e->pos().x());
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     if (!mark && d->dragEnabled && d->control->echoMode() == Normal &&
          e->button() == Qt::LeftButton && d->inSelection(e->pos().x())) {
         if (!d->dndTimer.isActive())
@@ -1534,7 +1540,7 @@ void QLineEdit::mouseMoveEvent(QMouseEvent * e)
     Q_D(QLineEdit);
 
     if (e->buttons() & Qt::LeftButton) {
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
         if (d->dndTimer.isActive()) {
             if ((d->mousePressPos - e->pos()).manhattanLength() > QApplication::startDragDistance())
                 d->drag();
@@ -1581,7 +1587,7 @@ void QLineEdit::mouseReleaseEvent(QMouseEvent* e)
     Q_D(QLineEdit);
     if (d->sendMouseEventToInputContext(e))
         return;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     if (e->button() == Qt::LeftButton) {
         if (d->dndTimer.isActive()) {
             d->dndTimer.stop();
@@ -1671,6 +1677,22 @@ void QLineEdit::mouseDoubleClickEvent(QMouseEvent* e)
     inputMask() set on the line edit and enter/return is pressed, the
     editingFinished() signal will only be emitted if the input follows
     the inputMask() and the validator() returns QValidator::Acceptable.
+*/
+
+/*!
+    \fn void QLineEdit::inputRejected()
+    \since 5.12
+
+    This signal is emitted when the user presses a key that is not
+    considered to be acceptable input. For example, if a key press
+    results in a validator's validate() call to return Invalid.
+    Another case is when trying to enter in more characters beyond the
+    maximum length of the line edit.
+
+    Note: This signal will still be emitted in a case where part of
+    the text is accepted but not all of it is. For example, if there
+    is a maximum length set and the clipboard text is longer than the
+    maximum length when it is pasted.
 */
 
 /*!
@@ -1944,8 +1966,7 @@ void QLineEdit::paintEvent(QPaintEvent *)
         if (!d->placeholderText.isEmpty()) {
             const Qt::LayoutDirection layoutDir = d->placeholderText.isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight;
             const Qt::Alignment alignPhText = QStyle::visualAlignment(layoutDir, QFlag(d->alignment));
-            QColor col = pal.text().color();
-            col.setAlpha(128);
+            const QColor col = pal.placeholderText().color();
             QPen oldpen = p.pen();
             p.setPen(col);
             Qt::LayoutDirection oldLayoutDir = p.layoutDirection();
@@ -2000,7 +2021,7 @@ void QLineEdit::paintEvent(QPaintEvent *)
 
     // draw text, selections and cursors
 #ifndef QT_NO_STYLE_STYLESHEET
-    if (QStyleSheetStyle* cssStyle = qobject_cast<QStyleSheetStyle*>(style())) {
+    if (QStyleSheetStyle* cssStyle = qt_styleSheet(style())) {
         cssStyle->styleSheetPalette(this, &panel, &pal);
     }
 #endif
@@ -2031,7 +2052,7 @@ void QLineEdit::paintEvent(QPaintEvent *)
 }
 
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 /*!\reimp
 */
 void QLineEdit::dragMoveEvent(QDragMoveEvent *e)
@@ -2096,7 +2117,7 @@ void QLineEdit::dropEvent(QDropEvent* e)
     }
 }
 
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 #ifndef QT_NO_CONTEXTMENU
 /*!

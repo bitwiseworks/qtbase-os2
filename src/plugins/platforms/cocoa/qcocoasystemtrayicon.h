@@ -42,8 +42,9 @@
 #define QCOCOASYSTEMTRAYICON_P_H
 
 #include <QtCore/qglobal.h>
+#include <QtGui/qtguiglobal.h>
 
-#ifndef QT_NO_SYSTEMTRAYICON
+#if QT_CONFIG(systemtrayicon)
 
 #include "QtCore/qstring.h"
 #include "QtGui/qpa/qplatformsystemtrayicon.h"
@@ -55,7 +56,7 @@ class QSystemTrayIconSys;
 class Q_GUI_EXPORT QCocoaSystemTrayIcon : public QPlatformSystemTrayIcon
 {
 public:
-    QCocoaSystemTrayIcon() : m_sys(0) {}
+    QCocoaSystemTrayIcon() : m_sys(nullptr) {}
 
     void init() override;
     void cleanup() override;

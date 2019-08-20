@@ -409,6 +409,9 @@ public:
     bool endsWith(QLatin1String s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
     bool endsWith(QChar c, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
 
+    bool isUpper() const;
+    bool isLower() const;
+
     Q_REQUIRED_RESULT QString leftJustified(int width, QChar fill = QLatin1Char(' '), bool trunc = false) const;
     Q_REQUIRED_RESULT QString rightJustified(int width, QChar fill = QLatin1Char(' '), bool trunc = false) const;
 
@@ -605,8 +608,12 @@ public:
     QString &setUnicode(const QChar *unicode, int size);
     inline QString &setUtf16(const ushort *utf16, int size);
 
+#if QT_STRINGVIEW_LEVEL < 2
     int compare(const QString &s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW;
+    inline int compare(const QStringRef &s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW;
+#endif
     int compare(QLatin1String other, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW;
+    inline int compare(QStringView s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW;
 
     static inline int compare(const QString &s1, const QString &s2,
                               Qt::CaseSensitivity cs = Qt::CaseSensitive) Q_DECL_NOTHROW
@@ -619,7 +626,6 @@ public:
                               Qt::CaseSensitivity cs = Qt::CaseSensitive) Q_DECL_NOTHROW
     { return -s2.compare(s1, cs); }
 
-    inline int compare(const QStringRef &s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW;
     static int compare(const QString &s1, const QStringRef &s2,
                        Qt::CaseSensitivity = Qt::CaseSensitive) Q_DECL_NOTHROW;
 
@@ -875,7 +881,6 @@ private:
     static QString fromUtf8_helper(const char *str, int size);
     static QString fromLocal8Bit_helper(const char *, int size);
     static QByteArray toLatin1_helper(const QString &);
-    static QByteArray toLatin1_helper(const QChar *data, int size);
     static QByteArray toLatin1_helper_inplace(QString &);
     static QByteArray toUtf8_helper(const QString &);
     static QByteArray toLocal8Bit_helper(const QChar *data, int size);
@@ -894,10 +899,8 @@ private:
     template <typename T> static
     T toIntegral_helper(const QChar *data, int len, bool *ok, int base)
     {
-        // ### Qt6: use std::conditional<std::is_unsigned<T>::value, qulonglong, qlonglong>::type
-        const bool isUnsigned = T(0) < T(-1);
-        typedef typename QtPrivate::QConditional<isUnsigned, qulonglong, qlonglong>::Type Int64;
-        typedef typename QtPrivate::QConditional<isUnsigned, uint, int>::Type Int32;
+        using Int64 = typename std::conditional<std::is_unsigned<T>::value, qulonglong, qlonglong>::type;
+        using Int32 = typename std::conditional<std::is_unsigned<T>::value, uint, int>::type;
 
         // we select the right overload by casting size() to int or uint
         Int64 val = toIntegral_helper(data, Int32(len), ok, base);
@@ -1636,8 +1639,12 @@ inline bool operator> (const QStringRef &lhs, const QString &rhs) Q_DECL_NOTHROW
 inline bool operator<=(const QStringRef &lhs, const QString &rhs) Q_DECL_NOTHROW { return rhs >= lhs; }
 inline bool operator>=(const QStringRef &lhs, const QString &rhs) Q_DECL_NOTHROW { return rhs <= lhs; }
 
+#if QT_STRINGVIEW_LEVEL < 2
 inline int QString::compare(const QStringRef &s, Qt::CaseSensitivity cs) const Q_DECL_NOTHROW
 { return QString::compare_helper(constData(), length(), s.constData(), s.length(), cs); }
+#endif
+inline int QString::compare(QStringView s, Qt::CaseSensitivity cs) const Q_DECL_NOTHROW
+{ return -s.compare(*this, cs); }
 inline int QString::compare(const QString &s1, const QStringRef &s2, Qt::CaseSensitivity cs) Q_DECL_NOTHROW
 { return QString::compare_helper(s1.constData(), s1.length(), s2.constData(), s2.length(), cs); }
 inline int QStringRef::compare(const QString &s, Qt::CaseSensitivity cs) const Q_DECL_NOTHROW

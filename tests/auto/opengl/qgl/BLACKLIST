@@ -19,6 +19,7 @@ winrt
 [graphicsViewClipping]
 windows
 winrt
+linux ci
 [glFBOUseInGLWidget]
 windows
 winrt

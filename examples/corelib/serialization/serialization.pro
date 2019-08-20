@@ -1,2 +1,5 @@
 TEMPLATE = subdirs
-SUBDIRS = savegame
+SUBDIRS = \
+    cbordump \
+    convert \
+    savegame

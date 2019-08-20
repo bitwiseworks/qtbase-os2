@@ -54,7 +54,6 @@
 #include <QtGui/qscreen.h>
 
 #include <QtPlatformHeaders/qxcbwindowfunctions.h>
-#include <QtPlatformHeaders/qxcbintegrationfunctions.h>
 #include <QtPlatformHeaders/qxcbscreenfunctions.h>
 
 #include <stdio.h>
@@ -93,8 +92,7 @@ static int resourceType(const QByteArray &key)
     return int(result - names);
 }
 
-QXcbNativeInterface::QXcbNativeInterface() :
-    m_genericEventFilterType(QByteArrayLiteral("xcb_generic_event_t"))
+QXcbNativeInterface::QXcbNativeInterface()
 {
 }
 
@@ -104,50 +102,6 @@ static inline QXcbSystemTrayTracker *systemTrayTracker(const QScreen *s)
         return nullptr;
 
     return static_cast<const QXcbScreen *>(s->handle())->connection()->systemTrayTracker();
-}
-
-bool QXcbNativeInterface::systemTrayAvailable(const QScreen *screen) const
-{
-    return systemTrayTracker(screen);
-}
-
-bool QXcbNativeInterface::requestSystemTrayWindowDock(const QWindow *window)
-{
-    return QXcbWindow::requestSystemTrayWindowDockStatic(window);
-}
-
-QRect QXcbNativeInterface::systemTrayWindowGlobalGeometry(const QWindow *window)
-{
-    return QXcbWindow::systemTrayWindowGlobalGeometryStatic(window);
-}
-
-xcb_window_t QXcbNativeInterface::locateSystemTray(xcb_connection_t *conn, const QXcbScreen *screen)
-{
-    if (m_sysTraySelectionAtom == XCB_ATOM_NONE) {
-        const QByteArray net_sys_tray = QString::fromLatin1("_NET_SYSTEM_TRAY_S%1").arg(screen->screenNumber()).toLatin1();
-        auto intern_r = Q_XCB_REPLY_UNCHECKED(xcb_intern_atom, conn,
-                                              true, net_sys_tray.length(), net_sys_tray);
-        if (!intern_r)
-            return XCB_WINDOW_NONE;
-
-        m_sysTraySelectionAtom = intern_r->atom;
-    }
-
-    auto sel_owner_r = Q_XCB_REPLY_UNCHECKED(xcb_get_selection_owner, conn, m_sysTraySelectionAtom);
-    if (!sel_owner_r)
-        return XCB_WINDOW_NONE;
-
-    return sel_owner_r->owner;
-}
-
-bool QXcbNativeInterface::systrayVisualHasAlphaChannel()
-{
-    return QXcbConnection::xEmbedSystemTrayVisualHasAlphaChannel();
-}
-
-void QXcbNativeInterface::setParentRelativeBackPixmap(QWindow *window)
-{
-    QXcbWindow::setParentRelativeBackPixmapStatic(window);
 }
 
 void *QXcbNativeInterface::nativeResourceForIntegration(const QByteArray &resourceString)
@@ -350,7 +304,7 @@ QPlatformNativeInterface::NativeResourceForWindowFunction QXcbNativeInterface::n
 QPlatformNativeInterface::NativeResourceForBackingStoreFunction QXcbNativeInterface::nativeResourceFunctionForBackingStore(const QByteArray &resource)
 {
     const QByteArray lowerCaseResource = resource.toLower();
-    NativeResourceForBackingStoreFunction func = handlerNativeResourceFunctionForBackingStore(resource);
+    NativeResourceForBackingStoreFunction func = handlerNativeResourceFunctionForBackingStore(lowerCaseResource);
     return func;
 }
 
@@ -370,18 +324,6 @@ QFunctionPointer QXcbNativeInterface::platformFunction(const QByteArray &functio
 
     if (function == QXcbWindowFunctions::setWmWindowIconTextIdentifier())
         return QFunctionPointer(QXcbWindowFunctions::SetWmWindowIconText(QXcbWindow::setWindowIconTextStatic));
-
-    if (function == QXcbWindowFunctions::setParentRelativeBackPixmapIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::SetParentRelativeBackPixmap(QXcbWindow::setParentRelativeBackPixmapStatic));
-
-    if (function == QXcbWindowFunctions::requestSystemTrayWindowDockIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::RequestSystemTrayWindowDock(QXcbWindow::requestSystemTrayWindowDockStatic));
-
-    if (function == QXcbWindowFunctions::systemTrayWindowGlobalGeometryIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::SystemTrayWindowGlobalGeometry(QXcbWindow::systemTrayWindowGlobalGeometryStatic));
-
-    if (function == QXcbIntegrationFunctions::xEmbedSystemTrayVisualHasAlphaChannelIdentifier())
-        return QFunctionPointer(QXcbIntegrationFunctions::XEmbedSystemTrayVisualHasAlphaChannel(QXcbConnection::xEmbedSystemTrayVisualHasAlphaChannel));
 
     if (function == QXcbWindowFunctions::visualIdIdentifier()) {
         return QFunctionPointer(QXcbWindowFunctions::VisualId(QXcbWindow::visualIdStatic));
@@ -466,16 +408,19 @@ void *QXcbNativeInterface::atspiBus()
     QXcbIntegration *integration = static_cast<QXcbIntegration *>(QGuiApplicationPrivate::platformIntegration());
     QXcbConnection *defaultConnection = integration->defaultConnection();
     if (defaultConnection) {
-        xcb_atom_t atspiBusAtom = defaultConnection->internAtom("AT_SPI_BUS");
+        auto atspiBusAtom = defaultConnection->atom(QXcbAtom::AT_SPI_BUS);
         auto reply = Q_XCB_REPLY(xcb_get_property, defaultConnection->xcb_connection(),
                                      false, defaultConnection->rootWindow(),
                                      atspiBusAtom, XCB_ATOM_STRING, 0, 128);
-        Q_ASSERT(!reply->bytes_after);
+        if (!reply)
+            return nullptr;
+
         char *data = (char *)xcb_get_property_value(reply.get());
         int length = xcb_get_property_value_length(reply.get());
         return new QByteArray(data, length);
     }
-    return 0;
+
+    return nullptr;
 }
 
 void QXcbNativeInterface::setAppTime(QScreen* screen, xcb_timestamp_t time)
@@ -495,20 +440,20 @@ void QXcbNativeInterface::setAppUserTime(QScreen* screen, xcb_timestamp_t time)
 qint32 QXcbNativeInterface::generatePeekerId()
 {
     QXcbIntegration *integration = QXcbIntegration::instance();
-    return integration->defaultConnection()->generatePeekerId();
+    return integration->defaultConnection()->eventQueue()->generatePeekerId();
 }
 
 bool QXcbNativeInterface::removePeekerId(qint32 peekerId)
 {
     QXcbIntegration *integration = QXcbIntegration::instance();
-    return integration->defaultConnection()->removePeekerId(peekerId);
+    return integration->defaultConnection()->eventQueue()->removePeekerId(peekerId);
 }
 
-bool QXcbNativeInterface::peekEventQueue(QXcbConnection::PeekerCallback peeker, void *peekerData,
-                                         QXcbConnection::PeekOptions option, qint32 peekerId)
+bool QXcbNativeInterface::peekEventQueue(QXcbEventQueue::PeekerCallback peeker, void *peekerData,
+                                         QXcbEventQueue::PeekOptions option, qint32 peekerId)
 {
     QXcbIntegration *integration = QXcbIntegration::instance();
-    return integration->defaultConnection()->peekEventQueue(peeker, peekerData, option, peekerId);
+    return integration->defaultConnection()->eventQueue()->peekEventQueue(peeker, peekerData, option, peekerId);
 }
 
 void QXcbNativeInterface::setStartupId(const char *data)

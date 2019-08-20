@@ -365,7 +365,7 @@ public:
         QUrl url;
     };
 
-    class TabletEvent : public InputEvent {
+    class Q_GUI_EXPORT TabletEvent : public InputEvent {
     public:
         static void handleTabletEvent(QWindow *w, const QPointF &local, const QPointF &global,
                                       int device, int pointerType, Qt::MouseButtons buttons, qreal pressure, int xTilt, int yTilt,
@@ -508,7 +508,7 @@ public:
             }
         }
     private:
-        Q_DISABLE_COPY(WindowSystemEventList)
+        Q_DISABLE_COPY_MOVE(WindowSystemEventList)
     };
 
     static WindowSystemEventList windowSystemEventQueue;
@@ -525,6 +525,7 @@ public:
 public:
     static QElapsedTimer eventTime;
     static bool synchronousWindowSystemEvents;
+    static bool platformFiltersEvents;
 
     static QWaitCondition eventsFlushed;
     static QMutex flushEventMutex;
@@ -536,6 +537,7 @@ public:
     static QList<QWindowSystemInterface::TouchPoint>
         toNativeTouchPoints(const QList<QTouchEvent::TouchPoint>& pointList,
                             const QWindow *window);
+    static void clearPointIdMap();
 
     static void installWindowSystemEventHandler(QWindowSystemEventHandler *handler);
     static void removeWindowSystemEventhandler(QWindowSystemEventHandler *handler);

@@ -24,8 +24,7 @@ HEADERS += \
     access/qabstractnetworkcache.h \
     access/qnetworkfile_p.h \
     access/qhsts_p.h \
-    access/qhstspolicy.h \
-    access/qhstsstore_p.h
+    access/qhstspolicy.h
 
 SOURCES += \
     access/qnetworkaccessauthenticationmanager.cpp \
@@ -45,8 +44,7 @@ SOURCES += \
     access/qabstractnetworkcache.cpp \
     access/qnetworkfile.cpp \
     access/qhsts.cpp \
-    access/qhstspolicy.cpp \
-    access/qhstsstore.cpp
+    access/qhstspolicy.cpp
 
 qtConfig(ftp) {
     HEADERS += \
@@ -66,7 +64,22 @@ qtConfig(networkdiskcache) {
     SOURCES += access/qnetworkdiskcache.cpp
 }
 
+qtConfig(settings) {
+    HEADERS += \
+        access/qhstsstore_p.h
+
+    SOURCES += \
+        access/qhstsstore.cpp
+}
+
 mac: LIBS_PRIVATE += -framework Security
+
+wasm {
+    SOURCES += \
+        access/qnetworkreplywasmimpl.cpp
+    HEADERS += \
+        access/qnetworkreplywasmimpl_p.h
+}
 
 include($$PWD/../../3rdparty/zlib_dependency.pri)
 
@@ -84,8 +97,7 @@ qtConfig(http) {
         access/qhttpnetworkrequest.cpp \
         access/qhttpprotocolhandler.cpp \
         access/qhttpthreaddelegate.cpp \
-        access/qnetworkreplyhttpimpl.cpp \
-        access/qspdyprotocolhandler.cpp
+        access/qnetworkreplyhttpimpl.cpp
 
     HEADERS += \
         access/qabstractprotocolhandler_p.h \
@@ -99,6 +111,12 @@ qtConfig(http) {
         access/qhttpnetworkrequest_p.h \
         access/qhttpprotocolhandler_p.h \
         access/qhttpthreaddelegate_p.h \
-        access/qnetworkreplyhttpimpl_p.h \
-        access/qspdyprotocolhandler_p.h
+        access/qnetworkreplyhttpimpl_p.h
+
+    qtConfig(ssl) {
+        SOURCES += \
+            access/qspdyprotocolhandler.cpp
+        HEADERS += \
+            access/qspdyprotocolhandler_p.h
+    }
 }

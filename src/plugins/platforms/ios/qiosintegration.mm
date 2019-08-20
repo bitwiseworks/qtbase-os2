@@ -86,7 +86,7 @@ QIOSIntegration::QIOSIntegration()
     , m_accessibility(0)
     , m_optionalPlugins(new QFactoryLoader(QIosOptionalPluginInterface_iid, QLatin1String("/platforms/darwin")))
 {
-    if (Q_UNLIKELY(![UIApplication sharedApplication])) {
+    if (Q_UNLIKELY(!qt_apple_isApplicationExtension() && !qt_apple_sharedApplication())) {
         qFatal("Error: You are creating QApplication before calling UIApplicationMain.\n" \
                "If you are writing a native iOS application, and only want to use Qt for\n" \
                "parts of the application, a good place to create QApplication is from within\n" \
@@ -100,14 +100,14 @@ QIOSIntegration::QIOSIntegration()
 void QIOSIntegration::initialize()
 {
     UIScreen *mainScreen = [UIScreen mainScreen];
-    NSMutableArray *screens = [[[UIScreen screens] mutableCopy] autorelease];
+    NSMutableArray<UIScreen *> *screens = [[[UIScreen screens] mutableCopy] autorelease];
     if (![screens containsObject:mainScreen]) {
         // Fallback for iOS 7.1 (QTBUG-42345)
         [screens insertObject:mainScreen atIndex:0];
     }
 
     for (UIScreen *screen in screens)
-        addScreen(new QIOSScreen(screen));
+        QWindowSystemInterface::handleScreenAdded(new QIOSScreen(screen));
 
     // Depends on a primary screen being present
     m_inputContext = new QIOSInputContext;
@@ -115,10 +115,8 @@ void QIOSIntegration::initialize()
     m_touchDevice = new QTouchDevice;
     m_touchDevice->setType(QTouchDevice::TouchScreen);
     QTouchDevice::Capabilities touchCapabilities = QTouchDevice::Position | QTouchDevice::NormalizedPosition;
-    if (__builtin_available(iOS 9, *)) {
-        if (mainScreen.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable)
-            touchCapabilities |= QTouchDevice::Pressure;
-    }
+    if (mainScreen.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable)
+        touchCapabilities |= QTouchDevice::Pressure;
     m_touchDevice->setCapabilities(touchCapabilities);
     QWindowSystemInterface::registerTouchDevice(m_touchDevice);
 #if QT_CONFIG(tabletevent)
@@ -145,7 +143,7 @@ QIOSIntegration::~QIOSIntegration()
     m_inputContext = 0;
 
     foreach (QScreen *screen, QGuiApplication::screens())
-        destroyScreen(screen->handle());
+        QWindowSystemInterface::handleScreenRemoved(screen->handle());
 
     delete m_platformServices;
     m_platformServices = 0;
@@ -217,10 +215,7 @@ QPlatformOffscreenSurface *QIOSIntegration::createPlatformOffscreenSurface(QOffs
 
 QAbstractEventDispatcher *QIOSIntegration::createEventDispatcher() const
 {
-    if (isQtApplication())
-        return new QIOSEventDispatcher;
-    else
-        return new QEventDispatcherCoreFoundation;
+    return QIOSEventDispatcher::create();
 }
 
 QPlatformFontDatabase * QIOSIntegration::fontDatabase() const

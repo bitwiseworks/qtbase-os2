@@ -66,11 +66,10 @@ static QTimeZonePrivate *newBackendTimeZone()
     return new QAndroidTimeZonePrivate();
 #elif defined(Q_OS_UNIX) || defined(Q_OS_ANDROID_EMBEDDED)
     return new QTzTimeZonePrivate();
-    // Registry based timezone backend not available on WinRT
-#elif defined Q_OS_WIN
-    return new QWinTimeZonePrivate();
 #elif QT_CONFIG(icu)
     return new QIcuTimeZonePrivate();
+#elif defined Q_OS_WIN
+    return new QWinTimeZonePrivate();
 #else
     return new QUtcTimeZonePrivate();
 #endif // System Locales
@@ -93,11 +92,10 @@ static QTimeZonePrivate *newBackendTimeZone(const QByteArray &ianaId)
     return new QAndroidTimeZonePrivate(ianaId);
 #elif defined(Q_OS_UNIX) || defined(Q_OS_ANDROID_EMBEDDED)
     return new QTzTimeZonePrivate(ianaId);
-    // Registry based timezone backend not available on WinRT
-#elif defined Q_OS_WIN
-    return new QWinTimeZonePrivate(ianaId);
 #elif QT_CONFIG(icu)
     return new QIcuTimeZonePrivate(ianaId);
+#elif defined Q_OS_WIN
+    return new QWinTimeZonePrivate(ianaId);
 #else
     return new QUtcTimeZonePrivate(ianaId);
 #endif // System Locales
@@ -219,7 +217,7 @@ Q_GLOBAL_STATIC(QTimeZoneSingleton, global_tz);
 
     This class includes data obtained from the CLDR data files under the terms
     of the Unicode Data Files and Software License. See
-    \l{Unicode CLDR (Unicode Common Locale Data Repository)} for the details.
+    \l{Unicode Common Locale Data Repository (CLDR)} for details.
 
     \sa QDateTime
 */
@@ -822,8 +820,8 @@ bool QTimeZone::isTimeZoneIdAvailable(const QByteArray &ianaId)
     // IDs as availableTimeZoneIds() may be slow
     if (!QTimeZonePrivate::isValidId(ianaId))
         return false;
-    const QList<QByteArray> tzIds = availableTimeZoneIds();
-    return std::binary_search(tzIds.begin(), tzIds.end(), ianaId);
+    return QUtcTimeZonePrivate().isTimeZoneIdAvailable(ianaId) ||
+           global_tz->backend->isTimeZoneIdAvailable(ianaId);
 }
 
 static QList<QByteArray> set_union(const QList<QByteArray> &l1, const QList<QByteArray> &l2)

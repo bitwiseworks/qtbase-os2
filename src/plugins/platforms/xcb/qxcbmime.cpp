@@ -46,8 +46,6 @@
 
 QT_BEGIN_NAMESPACE
 
-#if !(defined(QT_NO_DRAGANDDROP) && defined(QT_NO_CLIPBOARD))
-
 QXcbMime::QXcbMime()
     : QInternalMimeData()
 { }
@@ -170,7 +168,7 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
     if (!encoding.isEmpty()
         && atomName == format + QLatin1String(";charset=") + QLatin1String(encoding)) {
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         if (requestedType == QVariant::String) {
             QTextCodec *codec = QTextCodec::codecForName(encoding);
             if (codec)
@@ -319,7 +317,5 @@ xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString
 
     return 0;
 }
-
-#endif // !(defined(QT_NO_DRAGANDDROP) && defined(QT_NO_CLIPBOARD))
 
 QT_END_NAMESPACE

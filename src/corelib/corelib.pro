@@ -4,6 +4,7 @@ CONFIG    += exceptions
 
 MODULE = core     # not corelib, as per project file
 MODULE_CONFIG = moc resources
+qtConfig(gc_binaries): MODULE_CONFIG += gc_binaries
 !isEmpty(QT_NAMESPACE): MODULE_DEFINES = QT_NAMESPACE=$$QT_NAMESPACE
 
 TRACEPOINT_PROVIDER = $$PWD/qtcore.tracepoints
@@ -31,7 +32,7 @@ ANDROID_PERMISSIONS = \
 # OpenBSD 6.0 will include environ in libc.
 freebsd|openbsd: QMAKE_LFLAGS_NOUNDEF =
 
-include(animation/animation.pri)
+qtConfig(animation): include(animation/animation.pri)
 include(global/global.pri)
 include(thread/thread.pri)
 include(tools/tools.pri)
@@ -43,6 +44,7 @@ include(codecs/codecs.pri)
 include(serialization/serialization.pri)
 include(statemachine/statemachine.pri)
 include(mimetypes/mimetypes.pri)
+include(platform/platform.pri)
 
 win32 {
     LIBS_PRIVATE += -lws2_32

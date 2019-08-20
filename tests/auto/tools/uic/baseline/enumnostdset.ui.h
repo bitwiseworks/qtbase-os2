@@ -24,10 +24,10 @@ public:
     void setupUi(QWidget *Form)
     {
         if (Form->objectName().isEmpty())
-            Form->setObjectName(QStringLiteral("Form"));
+            Form->setObjectName(QString::fromUtf8("Form"));
         Form->resize(400, 300);
         worldTimeClock = new WorldTimeClock(Form);
-        worldTimeClock->setObjectName(QStringLiteral("worldTimeClock"));
+        worldTimeClock->setObjectName(QString::fromUtf8("worldTimeClock"));
         worldTimeClock->setGeometry(QRect(100, 100, 100, 100));
         worldTimeClock->setProperty("penStyle", QVariant::fromValue(Qt::DashDotLine));
 
@@ -38,7 +38,7 @@ public:
 
     void retranslateUi(QWidget *Form)
     {
-        Form->setWindowTitle(QApplication::translate("Form", "Form", nullptr));
+        Form->setWindowTitle(QCoreApplication::translate("Form", "Form", nullptr));
     } // retranslateUi
 
 };

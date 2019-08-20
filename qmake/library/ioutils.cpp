@@ -77,7 +77,12 @@ bool IoUtils::isRelativePath(const QString &path)
         && (path.at(2) == QLatin1Char('/') || path.at(2) == QLatin1Char('\\'))) {
         return false;
     }
-    // (... unless, of course, they're UNC, which qmake fails on anyway)
+    // ... unless, of course, they're UNC:
+    if (path.length() >= 2
+        && (path.at(0).unicode() == '\\' || path.at(0).unicode() == '/')
+        && path.at(1) == path.at(0)) {
+        return false;
+    }
 #else
     if (path.startsWith(QLatin1Char('/')))
         return false;
@@ -200,7 +205,7 @@ QString IoUtils::shellQuoteWin(const QString &arg)
 #  if defined(Q_OS_WIN)
 static QString windowsErrorCode()
 {
-    wchar_t *string = 0;
+    wchar_t *string = nullptr;
     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
                   NULL,
                   GetLastError(),
@@ -244,7 +249,7 @@ bool IoUtils::touchFile(const QString &targetFileName, const QString &referenceF
         return false;
         }
     FILETIME ft;
-    GetFileTime(rHand, 0, 0, &ft);
+    GetFileTime(rHand, NULL, NULL, &ft);
     CloseHandle(rHand);
     HANDLE wHand = CreateFile((wchar_t*)targetFileName.utf16(),
                               GENERIC_WRITE, FILE_SHARE_READ,
@@ -253,7 +258,7 @@ bool IoUtils::touchFile(const QString &targetFileName, const QString &referenceF
         *errorString = fL1S("Cannot open %1: %2").arg(targetFileName, windowsErrorCode());
         return false;
     }
-    SetFileTime(wHand, 0, 0, &ft);
+    SetFileTime(wHand, NULL, NULL, &ft);
     CloseHandle(wHand);
 #  endif
     return true;

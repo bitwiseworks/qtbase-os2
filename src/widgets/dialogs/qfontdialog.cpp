@@ -534,7 +534,7 @@ void QFontDialogPrivate::updateFamilies()
 
         //and try some fall backs
         match_t type = MATCH_NONE;
-        if (bestFamilyType <= MATCH_NONE && familyName2 == f.lastResortFamily())
+        if (bestFamilyType <= MATCH_NONE && familyName2 == QStringLiteral("helvetica"))
             type = MATCH_LAST_RESORT;
         if (bestFamilyType <= MATCH_LAST_RESORT && familyName2 == f.family())
             type = MATCH_APP;
@@ -931,7 +931,6 @@ QFontDialog::FontDialogOptions QFontDialog::options() const
 
 /*!
     \since 4.5
-    \overload
 
     Opens the dialog and connects its fontSelected() signal to the slot specified
     by \a receiver and \a member.

@@ -120,7 +120,14 @@ public:
         return rec;
     }
 
-    bool isValid() const override { return m_parent.data() && m_parent->count() > m_index; }
+    bool isValid() const override {
+        if (m_parent) {
+            if (static_cast<QWidget *>(m_parent.data())->d_func()->data.in_destructor)
+                return false;
+            return m_parent->count() > m_index;
+        }
+        return false;
+    }
 
     QAccessibleInterface *childAt(int, int) const override { return 0; }
     int childCount() const override { return 0; }
@@ -199,7 +206,7 @@ QAccessibleTabBar::QAccessibleTabBar(QWidget *w)
 
 QAccessibleTabBar::~QAccessibleTabBar()
 {
-    foreach (QAccessible::Id id, m_childInterfaces)
+    for (QAccessible::Id id : qAsConst(m_childInterfaces))
         QAccessible::deleteAccessibleInterface(id);
 }
 

@@ -73,6 +73,11 @@ class QSslKey;
 class QSslEllipticCurve;
 class QSslDiffieHellmanParameters;
 
+namespace dtlsopenssl
+{
+class DtlsState;
+}
+
 class QSslConfigurationPrivate;
 class Q_NETWORK_EXPORT QSslConfiguration
 {
@@ -157,6 +162,17 @@ public:
     static QSslConfiguration defaultConfiguration();
     static void setDefaultConfiguration(const QSslConfiguration &configuration);
 
+#if QT_CONFIG(dtls) || defined(Q_CLANG_QDOC)
+    bool dtlsCookieVerificationEnabled() const;
+    void setDtlsCookieVerificationEnabled(bool enable);
+
+    static QSslConfiguration defaultDtlsConfiguration();
+    static void setDefaultDtlsConfiguration(const QSslConfiguration &configuration);
+#endif // dtls
+
+    void setOcspStaplingEnabled(bool enable);
+    bool ocspStaplingEnabled() const;
+
     enum NextProtocolNegotiationStatus {
         NextProtocolNegotiationNone,
         NextProtocolNegotiationNegotiated,
@@ -182,6 +198,8 @@ private:
     friend class QSslConfigurationPrivate;
     friend class QSslSocketBackendPrivate;
     friend class QSslContext;
+    friend class QDtlsBasePrivate;
+    friend class dtlsopenssl::DtlsState;
     QSslConfiguration(QSslConfigurationPrivate *dd);
     QSharedDataPointer<QSslConfigurationPrivate> d;
 };

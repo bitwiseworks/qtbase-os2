@@ -36,6 +36,7 @@
 #include <qtextlayout.h>
 #include <qdebug.h>
 #include <QStaticText>
+#include <QTextDocument>
 #include <private/qimage_p.h>
 
 #ifndef QT_NO_OPENGL
@@ -106,7 +107,8 @@ const char *PaintCommands::spreadMethodTable[] = {
 const char *PaintCommands::coordinateMethodTable[] = {
     "LogicalMode",
     "StretchToDeviceMode",
-    "ObjectBoundingMode"
+    "ObjectBoundingMode",
+    "ObjectMode"
 };
 
 const char *PaintCommands::sizeModeTable[] = {
@@ -176,6 +178,9 @@ const char *PaintCommands::imageFormatTable[] = {
     "Format_A2RGB30_Premultiplied",
     "Alpha8",
     "Grayscale8",
+    "RGBx64",
+    "RGBA64",
+    "RGBA64_Premultiplied",
 };
 
 int PaintCommands::translateEnum(const char *table[], const QString &pattern, int limit)
@@ -437,6 +442,10 @@ void PaintCommands::staticInit()
                       "^drawStaticText\\s+(-?\\w*)\\s+(-?\\w*)\\s+\"(.*)\"$",
                       "drawStaticText <x> <y> <text>",
                       "drawStaticText 10 10 \"my text\"");
+    DECL_PAINTCOMMAND("drawTextDocument", command_drawTextDocument,
+                      "^drawTextDocument\\s+(-?\\w*)\\s+(-?\\w*)\\s+\"(.*)\"$",
+                      "drawTextDocument <x> <y> <html>",
+                      "drawTextDocument 10 10 \"html\"");
     DECL_PAINTCOMMAND("drawTiledPixmap", command_drawTiledPixmap,
                       "^drawTiledPixmap\\s+([\\w.:\\/]*)"
                       "\\s+(-?\\w*)\\s+(-?\\w*)\\s*(-?\\w*)\\s*(-?\\w*)"
@@ -561,6 +570,10 @@ void PaintCommands::staticInit()
                       "^bitmap_load\\s+([\\w.:\\/]*)\\s*([\\w.:\\/]*)$",
                       "bitmap_load <bitmap filename> <bitmapName>\n  - note that the image is stored as a pixmap",
                       "bitmap_load :/images/bitmap.png myBitmap");
+    DECL_PAINTCOMMAND("pixmap_setDevicePixelRatio", command_pixmap_setDevicePixelRatio,
+                      "^pixmap_setDevicePixelRatio\\s+([\\w.:\\/]*)\\s+([.0-9]*)$",
+                      "pixmap_setDevicePixelRatio <pixmapName> <dpr>",
+                      "pixmap_setDevicePixelRatio myPixmap 2.0");
     DECL_PAINTCOMMAND("image_convertToFormat", command_image_convertToFormat,
                       "^image_convertToFormat\\s+([\\w.:\\/]*)\\s+([\\w.:\\/]+)\\s+([\\w0-9_]*)$",
                       "image_convertToFormat <sourceImageName> <destImageName> <image format enum>",
@@ -577,6 +590,10 @@ void PaintCommands::staticInit()
                       "^image_setColorCount\\s+([\\w.:\\/]*)\\s+([0-9]*)$",
                       "image_setColorCount <imageName> <nbColors>",
                       "image_setColorCount myImage 128");
+    DECL_PAINTCOMMAND("image_setDevicePixelRatio", command_image_setDevicePixelRatio,
+                      "^image_setDevicePixelRatio\\s+([\\w.:\\/]*)\\s+([.0-9]*)$",
+                      "image_setDevicePixelRatio <imageName> <dpr>",
+                      "image_setDevicePixelRatio myImage 2.0");
 
     DECL_PAINTCOMMANDSECTION("transformations");
     DECL_PAINTCOMMAND("resetMatrix", command_resetMatrix,
@@ -1183,7 +1200,10 @@ void PaintCommands::command_drawRoundRect(QRegularExpressionMatch re)
     if (m_verboseMode)
         printf(" -(lance) drawRoundRect(%d, %d, %d, %d, [%d, %d])\n", x, y, w, h, xs, ys);
 
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
     m_painter->drawRoundRect(x, y, w, h, xs, ys);
+    QT_WARNING_POP
 }
 
 /***************************************************************************************************/
@@ -1282,6 +1302,29 @@ void PaintCommands::command_drawStaticText(QRegularExpressionMatch re)
 
     m_painter->drawStaticText(x, y, QStaticText(txt));
 }
+
+void PaintCommands::command_drawTextDocument(QRegularExpressionMatch re)
+{
+    if (!m_shouldDrawText)
+        return;
+    QStringList caps = re.capturedTexts();
+    int x = convertToInt(caps.at(1));
+    int y = convertToInt(caps.at(2));
+    QString txt = caps.at(3);
+
+    if (m_verboseMode)
+        printf(" -(lance) drawTextDocument(%d, %d, %s)\n", x, y, qPrintable(txt));
+
+    QTextDocument doc;
+    doc.setBaseUrl(QUrl::fromLocalFile(QDir::currentPath() + QLatin1String("/")));
+    doc.setHtml(txt);
+
+    m_painter->save();
+    m_painter->translate(x, y);
+    doc.drawContents(m_painter);
+    m_painter->restore();
+}
+
 
 /***************************************************************************************************/
 void PaintCommands::command_noop(QRegularExpressionMatch)
@@ -1761,7 +1804,9 @@ void PaintCommands::command_setBrush(QRegularExpressionMatch re)
 {
     QStringList caps = re.capturedTexts();
 
-    QImage img = image_load<QImage>(caps.at(1));
+    QImage img = m_imageMap[caps.at(1)]; // try cache first
+    if (img.isNull())
+        img = image_load<QImage>(caps.at(1));
     if (!img.isNull()) { // Assume image brush
         if (m_verboseMode)
             printf(" -(lance) setBrush(image=%s, width=%d, height=%d)\n",
@@ -2132,6 +2177,20 @@ void PaintCommands::command_bitmap_load(QRegularExpressionMatch re)
     m_pixmapMap[name] = bm;
 }
 
+void PaintCommands::command_pixmap_setDevicePixelRatio(QRegularExpressionMatch re)
+{
+    QStringList caps = re.capturedTexts();
+
+    QString name = caps.at(1);
+    double dpr = convertToDouble(caps.at(2));
+
+    if (m_verboseMode)
+        printf(" -(lance) pixmap_setDevicePixelRatio(%s), %.1f -> %.1f\n",
+               qPrintable(name), m_pixmapMap[name].devicePixelRatioF(), dpr);
+
+    m_pixmapMap[name].setDevicePixelRatio(dpr);
+}
+
 /***************************************************************************************************/
 void PaintCommands::command_pixmap_setMask(QRegularExpressionMatch re)
 {
@@ -2194,6 +2253,21 @@ void PaintCommands::command_image_setColor(QRegularExpressionMatch re)
         printf(" -(lance) image_setColor(%s), %d = %08x\n", qPrintable(name), index, color.rgba());
 
     m_imageMap[name].setColor(index, color.rgba());
+}
+
+/***************************************************************************************************/
+void PaintCommands::command_image_setDevicePixelRatio(QRegularExpressionMatch re)
+{
+    QStringList caps = re.capturedTexts();
+
+    QString name = caps.at(1);
+    double dpr = convertToDouble(caps.at(2));
+
+    if (m_verboseMode)
+        printf(" -(lance) image_setDevicePixelRatio(%s), %.1f -> %.1f\n",
+               qPrintable(name), m_imageMap[name].devicePixelRatioF(), dpr);
+
+    m_imageMap[name].setDevicePixelRatio(dpr);
 }
 
 /***************************************************************************************************/
@@ -2355,7 +2429,7 @@ void PaintCommands::command_gradient_setSpread(QRegularExpressionMatch re)
 
 void PaintCommands::command_gradient_setCoordinateMode(QRegularExpressionMatch re)
 {
-    int coord = translateEnum(coordinateMethodTable, re.captured(1), 3);
+    int coord = translateEnum(coordinateMethodTable, re.captured(1), 4);
 
     if (m_verboseMode)
         printf(" -(lance) gradient_setCoordinateMode %d=[%s]\n", coord,

@@ -113,7 +113,7 @@ public:
     bool tryCloseAllWindows() override;
 
 #if 0 // Used to be included in Qt4 for Q_WS_X11
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     static bool x11_apply_settings();
 #endif
     static void reset_instance_pointer();
@@ -177,9 +177,12 @@ public:
 
 protected:
     void notifyThemeChanged() override;
-#ifndef QT_NO_DRAGANDDROP
+    void sendApplicationPaletteChange(bool toAllWidgets = false,
+                                      const char *className = nullptr) override;
+
+#if QT_CONFIG(draganddrop)
     void notifyDragStarted(const QDrag *) override;
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 public:
     static QFont *sys_font;
@@ -226,7 +229,7 @@ public:
                                       QWidget *buttonDown, QWidget *alienWidget);
     static bool sendMouseEvent(QWidget *receiver, QMouseEvent *event, QWidget *alienWidget,
                                QWidget *native, QWidget **buttonDown, QPointer<QWidget> &lastMouseReceiver,
-                               bool spontaneous = true);
+                               bool spontaneous = true, bool onlyDispatchEnterLeave = false);
     void sendSyntheticEnterLeave(QWidget *widget);
 
     static QWindow *windowForWidget(const QWidget *widget)

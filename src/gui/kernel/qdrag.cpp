@@ -45,8 +45,6 @@
 #include <qpoint.h>
 #include "qdnd_p.h"
 
-#ifndef QT_NO_DRAGANDDROP
-
 QT_BEGIN_NAMESPACE
 
 /*!
@@ -286,6 +284,7 @@ Qt::DropAction QDrag::exec(Qt::DropActions supportedActions, Qt::DropAction defa
     return d->executed_action;
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \obsolete
 
@@ -313,6 +312,7 @@ Qt::DropAction QDrag::start(Qt::DropActions request)
     d->executed_action = QDragManager::self()->drag(this);
     return d->executed_action;
 }
+#endif
 
 /*!
     Sets the drag \a cursor for the \a action. This allows you
@@ -420,5 +420,3 @@ void QDrag::cancel()
 */
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_DRAGANDDROP

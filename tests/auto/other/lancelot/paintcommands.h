@@ -198,6 +198,7 @@ private:
     void command_drawRoundRect(QRegularExpressionMatch re);
     void command_drawText(QRegularExpressionMatch re);
     void command_drawStaticText(QRegularExpressionMatch re);
+    void command_drawTextDocument(QRegularExpressionMatch re);
     void command_drawTiledPixmap(QRegularExpressionMatch re);
     void command_path_addEllipse(QRegularExpressionMatch re);
     void command_path_addPolygon(QRegularExpressionMatch re);
@@ -229,10 +230,12 @@ private:
     void command_pixmap_load(QRegularExpressionMatch re);
     void command_pixmap_setMask(QRegularExpressionMatch re);
     void command_bitmap_load(QRegularExpressionMatch re);
+    void command_pixmap_setDevicePixelRatio(QRegularExpressionMatch re);
     void command_image_convertToFormat(QRegularExpressionMatch re);
     void command_image_load(QRegularExpressionMatch re);
     void command_image_setColor(QRegularExpressionMatch re);
     void command_image_setColorCount(QRegularExpressionMatch re);
+    void command_image_setDevicePixelRatio(QRegularExpressionMatch re);
 
     // commands: transformation
     void command_resetMatrix(QRegularExpressionMatch re);
