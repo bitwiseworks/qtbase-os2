@@ -95,8 +95,9 @@ protected:
 #if QT_CONFIG(wheelevent)
     void handleWheelEvent(QWheelEvent *);
 #endif
-#ifndef QT_NO_DRAGANDDROP
-    void handleDragEnterMoveEvent(QDragMoveEvent *);
+#if QT_CONFIG(draganddrop)
+    void handleDragEnterEvent(QDragEnterEvent *, QWidget *widget = nullptr);
+    void handleDragMoveEvent(QDragMoveEvent *);
     void handleDragLeaveEvent(QDragLeaveEvent *);
     void handleDropEvent(QDropEvent *);
 #endif
@@ -132,7 +133,7 @@ private:
 
     QPointer<QWidget> m_widget;
     QPointer<QWidget> m_implicit_mouse_grabber;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     QPointer<QWidget> m_dragTarget;
 #endif
 };

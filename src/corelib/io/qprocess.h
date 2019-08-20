@@ -48,23 +48,26 @@
 
 QT_REQUIRE_CONFIG(processenvironment);
 
+typedef struct _PROCESS_INFORMATION *Q_PID;
+#endif
+
+#if defined(Q_OS_WIN) || defined(Q_CLANG_QDOC)
+typedef struct _SECURITY_ATTRIBUTES Q_SECURITY_ATTRIBUTES;
+typedef struct _STARTUPINFOW Q_STARTUPINFO;
+#endif
+
 QT_BEGIN_NAMESPACE
 
 class QProcessPrivate;
+class QProcessEnvironmentPrivate;
 
-#if !(defined(Q_OS_WIN) || defined(Q_OS_OS2)) || defined(Q_CLANG_QDOC)
-typedef qint64 Q_PID;
-#elif defined(Q_OS_OS2)
+#ifndef Q_OS_WIN
+#ifdef Q_OS_OS2
 typedef unsigned int Q_PID;
 #else
-QT_END_NAMESPACE
-typedef struct _PROCESS_INFORMATION *Q_PID;
-typedef struct _SECURITY_ATTRIBUTES Q_SECURITY_ATTRIBUTES;
-typedef struct _STARTUPINFOW Q_STARTUPINFO;
-QT_BEGIN_NAMESPACE
+typedef qint64 Q_PID;
 #endif
-
-class QProcessEnvironmentPrivate;
+#endif
 
 class Q_CORE_EXPORT QProcessEnvironment
 {
@@ -174,8 +177,12 @@ public:
     QStringList arguments() const;
     void setArguments(const QStringList & arguments);
 
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED_X("Use QProcess::processChannelMode() instead")
     ProcessChannelMode readChannelMode() const;
+    QT_DEPRECATED_X("Use QProcess::setProcessChannelMode() instead")
     void setReadChannelMode(ProcessChannelMode mode);
+#endif
     ProcessChannelMode processChannelMode() const;
     void setProcessChannelMode(ProcessChannelMode mode);
     InputChannelMode inputChannelMode() const;
@@ -276,7 +283,10 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void started(QPrivateSignal);
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED_X("Use QProcess::finished(int, QProcess::ExitStatus) instead")
     void finished(int exitCode); // ### Qt 6: merge the two signals with a default value
+#endif
     void finished(int exitCode, QProcess::ExitStatus exitStatus);
 #if QT_DEPRECATED_SINCE(5,6)
     void error(QProcess::ProcessError error);

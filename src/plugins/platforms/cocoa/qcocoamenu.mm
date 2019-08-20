@@ -1,5 +1,6 @@
 /****************************************************************************
 **
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -53,7 +54,7 @@
 QT_BEGIN_NAMESPACE
 
 QCocoaMenu::QCocoaMenu() :
-    m_attachedItem(0),
+    m_attachedItem(nil),
     m_updateTimer(0),
     m_enabled(true),
     m_parentEnabled(true),
@@ -62,14 +63,14 @@ QCocoaMenu::QCocoaMenu() :
 {
     QMacAutoReleasePool pool;
 
-    m_nativeMenu = [[QCocoaNSMenu alloc] initWithQPAMenu:this];
+    m_nativeMenu = [[QCocoaNSMenu alloc] initWithPlatformMenu:this];
 }
 
 QCocoaMenu::~QCocoaMenu()
 {
-    foreach (QCocoaMenuItem *item, m_menuItems) {
+    for (auto *item : qAsConst(m_menuItems)) {
         if (item->menuParent() == this)
-            item->setMenuParent(0);
+            item->setMenuParent(nullptr);
     }
 
     [m_nativeMenu release];
@@ -79,7 +80,7 @@ void QCocoaMenu::setText(const QString &text)
 {
     QMacAutoReleasePool pool;
     QString stripped = qt_mac_removeAmpersandEscapes(text);
-    [m_nativeMenu setTitle:stripped.toNSString()];
+    m_nativeMenu.title = stripped.toNSString();
 }
 
 void QCocoaMenu::setMinimumWidth(int width)
@@ -132,7 +133,7 @@ void QCocoaMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *
 
 void QCocoaMenu::insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem)
 {
-    setItemTargetAction(item);
+    item->resolveTargetAction();
     NSMenuItem *nativeItem = item->nsItem();
     // Someone's adding new items after aboutToShow() was emitted
     if (isOpen() && nativeItem && item->menu())
@@ -187,25 +188,25 @@ void QCocoaMenu::removeMenuItem(QPlatformMenuItem *menuItem)
     }
 
     if (cocoaItem->menuParent() == this)
-        cocoaItem->setMenuParent(0);
+        cocoaItem->setMenuParent(nullptr);
 
     // Ignore any parent enabled state
     cocoaItem->setParentEnabled(true);
 
     m_menuItems.removeOne(cocoaItem);
     if (!cocoaItem->isMerged()) {
-        if (m_nativeMenu != [cocoaItem->nsItem() menu]) {
+        if (m_nativeMenu != cocoaItem->nsItem().menu) {
             qWarning("Item to remove does not belong to this menu");
             return;
         }
-        [m_nativeMenu removeItem: cocoaItem->nsItem()];
+        [m_nativeMenu removeItem:cocoaItem->nsItem()];
     }
 }
 
 QCocoaMenuItem *QCocoaMenu::itemOrNull(int index) const
 {
     if ((index < 0) || (index >= m_menuItems.size()))
-        return 0;
+        return nullptr;
 
     return m_menuItems.at(index);
 }
@@ -247,8 +248,11 @@ void QCocoaMenu::syncMenuItem_helper(QPlatformMenuItem *menuItem, bool menubarUp
         // native item was changed for some reason
         if (oldItem) {
             if (wasMerged) {
-                [oldItem setEnabled:NO];
-                [oldItem setHidden:YES];
+                oldItem.enabled = NO;
+                oldItem.hidden = YES;
+                oldItem.keyEquivalent = @"";
+                oldItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+
             } else {
                 [m_nativeMenu removeItem:oldItem];
             }
@@ -278,31 +282,27 @@ void QCocoaMenu::syncSeparatorsCollapsible(bool enable)
         bool previousIsSeparator = true; // setting to true kills all the separators placed at the top.
         NSMenuItem *previousItem = nil;
 
-        NSArray *itemArray = [m_nativeMenu itemArray];
-        for (unsigned int i = 0; i < [itemArray count]; ++i) {
-            NSMenuItem *item = reinterpret_cast<NSMenuItem *>([itemArray objectAtIndex:i]);
-            if ([item isSeparatorItem]) {
-                QCocoaMenuItem *cocoaItem = reinterpret_cast<QCocoaMenuItem *>([item tag]);
-                if (cocoaItem)
+        for (NSMenuItem *item in m_nativeMenu.itemArray) {
+            if (item.separatorItem) {
+                if (auto *cocoaItem = qt_objc_cast<QCocoaNSMenuItem *>(item).platformMenuItem)
                     cocoaItem->setVisible(!previousIsSeparator);
-                [item setHidden:previousIsSeparator];
+                item.hidden = previousIsSeparator;
             }
 
-            if (![item isHidden]) {
+            if (!item.hidden) {
                 previousItem = item;
-                previousIsSeparator = ([previousItem isSeparatorItem]);
+                previousIsSeparator = previousItem.separatorItem;
             }
         }
 
         // We now need to check the final item since we don't want any separators at the end of the list.
         if (previousItem && previousIsSeparator) {
-            QCocoaMenuItem *cocoaItem = reinterpret_cast<QCocoaMenuItem *>([previousItem tag]);
-            if (cocoaItem)
+            if (auto *cocoaItem = qt_objc_cast<QCocoaNSMenuItem *>(previousItem).platformMenuItem)
                 cocoaItem->setVisible(false);
-            [previousItem setHidden:YES];
+            previousItem.hidden = YES;
         }
     } else {
-        foreach (QCocoaMenuItem *item, m_menuItems) {
+        for (auto *item : qAsConst(m_menuItems)) {
             if (!item->isSeparator())
                 continue;
 
@@ -324,7 +324,7 @@ void QCocoaMenu::setEnabled(bool enabled)
 
 bool QCocoaMenu::isEnabled() const
 {
-    return m_attachedItem ? [m_attachedItem isEnabled] : m_enabled && m_parentEnabled;
+    return m_attachedItem ? m_attachedItem.enabled : m_enabled && m_parentEnabled;
 }
 
 void QCocoaMenu::setVisible(bool visible)
@@ -337,11 +337,11 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
     QMacAutoReleasePool pool;
 
     QPoint pos =  QPoint(targetRect.left(), targetRect.top() + targetRect.height());
-    QCocoaWindow *cocoaWindow = parentWindow ? static_cast<QCocoaWindow *>(parentWindow->handle()) : 0;
+    QCocoaWindow *cocoaWindow = parentWindow ? static_cast<QCocoaWindow *>(parentWindow->handle()) : nullptr;
     NSView *view = cocoaWindow ? cocoaWindow->view() : nil;
     NSMenuItem *nsItem = item ? ((QCocoaMenuItem *)item)->nsItem() : nil;
 
-    QScreen *screen = 0;
+    QScreen *screen = nullptr;
     if (parentWindow)
         screen = parentWindow->screen();
     if (!screen && !QGuiApplication::screens().isEmpty())
@@ -360,9 +360,9 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
         // respect the menu's minimum width.
         NSPopUpButtonCell *popupCell = [[[NSPopUpButtonCell alloc] initTextCell:@"" pullsDown:NO]
                                                                    autorelease];
-        [popupCell setAltersStateOfSelectedItem:NO];
-        [popupCell setTransparent:YES];
-        [popupCell setMenu:m_nativeMenu];
+        popupCell.altersStateOfSelectedItem = NO;
+        popupCell.transparent = YES;
+        popupCell.menu = m_nativeMenu;
         [popupCell selectItem:nsItem];
 
         QCocoaScreen *cocoaScreen = static_cast<QCocoaScreen *>(screen->handle());
@@ -394,7 +394,7 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
 
         if (view) {
             // Finally, we need to synthesize an event.
-            NSEvent *menuEvent = [NSEvent mouseEventWithType:NSRightMouseDown
+            NSEvent *menuEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
                                           location:nsPos
                                           modifierFlags:0
                                           timestamp:0
@@ -405,7 +405,7 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
                                           pressure:1.0];
             [NSMenu popUpContextMenu:m_nativeMenu withEvent:menuEvent forView:view];
         } else {
-            [m_nativeMenu popUpMenuPositioningItem:nsItem atLocation:nsPos inView:0];
+            [m_nativeMenu popUpMenuPositioningItem:nsItem atLocation:nsPos inView:nil];
         }
     }
 
@@ -425,17 +425,17 @@ QPlatformMenuItem *QCocoaMenu::menuItemAt(int position) const
     if (0 <= position && position < m_menuItems.count())
         return m_menuItems.at(position);
 
-    return 0;
+    return nullptr;
 }
 
 QPlatformMenuItem *QCocoaMenu::menuItemForTag(quintptr tag) const
 {
-    foreach (QCocoaMenuItem *item, m_menuItems) {
+    for (auto *item : qAsConst(m_menuItems)) {
         if (item->tag() ==  tag)
             return item;
     }
 
-    return 0;
+    return nullptr;
 }
 
 QList<QCocoaMenuItem *> QCocoaMenu::items() const
@@ -446,7 +446,7 @@ QList<QCocoaMenuItem *> QCocoaMenu::items() const
 QList<QCocoaMenuItem *> QCocoaMenu::merged() const
 {
     QList<QCocoaMenuItem *> result;
-    foreach (QCocoaMenuItem *item, m_menuItems) {
+    for (auto *item : qAsConst(m_menuItems)) {
         if (item->menu()) { // recurse into submenus
             result.append(item->menu()->merged());
             continue;
@@ -467,7 +467,7 @@ void QCocoaMenu::propagateEnabledState(bool enabled)
     if (!m_enabled && enabled) // Some ancestor was enabled, but this menu is not
         return;
 
-    foreach (QCocoaMenuItem *item, m_menuItems) {
+    for (auto *item : qAsConst(m_menuItems)) {
         if (QCocoaMenu *menu = item->menu())
             menu->propagateEnabledState(enabled);
         else
@@ -493,13 +493,6 @@ void QCocoaMenu::setAttachedItem(NSMenuItem *item)
 NSMenuItem *QCocoaMenu::attachedItem() const
 {
     return m_attachedItem;
-}
-
-void QCocoaMenu::setItemTargetAction(QCocoaMenuItem *item) const
-{
-    auto *nsItem = item->nsItem();
-    nsItem.target = m_nativeMenu;
-    nsItem.action = @selector(qt_itemFired:);
 }
 
 QT_END_NAMESPACE

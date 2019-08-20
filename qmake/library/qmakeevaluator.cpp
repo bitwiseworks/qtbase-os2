@@ -130,7 +130,7 @@ bool operator==(const QMakeBaseKey &one, const QMakeBaseKey &two)
 }
 
 QMakeBaseEnv::QMakeBaseEnv()
-    : evaluator(0)
+    : evaluator(nullptr)
 {
 #ifdef PROEVALUATOR_THREAD_SAFE
     inProgress = false;
@@ -227,7 +227,7 @@ QMakeEvaluator::QMakeEvaluator(QMakeGlobals *option, QMakeParser *parser, QMakeV
     initStatics();
 
     // Configuration, more or less
-    m_caller = 0;
+    m_caller = nullptr;
 #ifdef PROEVALUATOR_CUMULATIVE
     m_cumulative = false;
 #endif
@@ -309,6 +309,7 @@ ProStringList QMakeEvaluator::split_value_list(const QStringRef &vals, int sourc
         case '\'':
             if (!quote)
                 quote = unicode;
+            // FIXME: this is inconsistent with the "there are no empty strings" dogma.
             hadWord = true;
             break;
         case ' ':
@@ -348,7 +349,8 @@ static void replaceInList(ProStringList *varlist,
         const QRegExp &regexp, const QString &replace, bool global, QString &tmp)
 {
     for (ProStringList::Iterator varit = varlist->begin(); varit != varlist->end(); ) {
-        QString val = varit->toQString(tmp);
+        ProStringRoUser u1(*varit, tmp);
+        QString val = u1.str();
         QString copy = val; // Force detach and have a reference value
         val.replace(regexp, replace);
         if (!val.isSharedWith(copy) && val != copy) {
@@ -891,7 +893,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProVariable(
             return ReturnTrue;
         }
         QChar sep = val.at(1);
-        auto func = val.split(sep);
+        auto func = val.split(sep, QString::KeepEmptyParts);
         if (func.count() < 3 || func.count() > 4) {
             evalError(fL1S("The s/// function expects 3 or 4 arguments."));
             return ReturnTrue;
@@ -951,7 +953,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProVariable(
     if (varName == statics.strTEMPLATE)
         setTemplate();
     else if (varName == statics.strQMAKE_PLATFORM)
-        m_featureRoots = 0;
+        m_featureRoots = nullptr;
     else if (varName == statics.strQMAKE_DIR_SEP)
         m_dirSep = first(varName);
     else if (varName == statics.strQMAKESPEC) {
@@ -960,7 +962,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProVariable(
             if (IoUtils::isAbsolutePath(spec)) {
                 m_qmakespec = spec;
                 m_qmakespecName = IoUtils::fileName(m_qmakespec).toString();
-                m_featureRoots = 0;
+                m_featureRoots = nullptr;
             }
         }
     }
@@ -1030,7 +1032,7 @@ static ProString msvcArchitecture(const QString &vcInstallDir, const QString &pa
     QString vcBinDir = vcInstallDir;
     if (vcBinDir.endsWith(QLatin1Char('\\')))
         vcBinDir.chop(1);
-    const auto dirs = pathVar.split(QLatin1Char(';'));
+    const auto dirs = pathVar.split(QLatin1Char(';'), QString::SkipEmptyParts);
     for (const QString &dir : dirs) {
         if (!dir.startsWith(vcBinDir, Qt::CaseInsensitive))
             continue;
@@ -1212,7 +1214,7 @@ bool QMakeEvaluator::loadSpecInternal()
 #  ifdef Q_OS_UNIX
     if (m_qmakespec.endsWith(QLatin1String("/default-host"))
         || m_qmakespec.endsWith(QLatin1String("/default"))) {
-        QString rspec = QFileInfo(m_qmakespec).readLink();
+        QString rspec = QFileInfo(m_qmakespec).symLinkTarget();
         if (!rspec.isEmpty())
             m_qmakespec = QDir::cleanPath(QDir(m_qmakespec).absoluteFilePath(rspec));
     }
@@ -1359,7 +1361,8 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateConfigFeatures()
         bool finished = true;
         ProStringList configs = values(statics.strCONFIG);
         for (int i = configs.size() - 1; i >= 0; --i) {
-            QString config = configs.at(i).toQString(m_tmp1).toLower();
+            ProStringRoUser u1(configs.at(i), m_tmp1);
+            QString config = u1.str().toLower();
             if (!processed.contains(config)) {
                 config.detach();
                 processed.insert(config);
@@ -1615,7 +1618,7 @@ ProFile *QMakeEvaluator::currentProFile() const
 {
     if (m_profileStack.count() > 0)
         return m_profileStack.top();
-    return 0;
+    return nullptr;
 }
 
 int QMakeEvaluator::currentFileId() const
@@ -1663,7 +1666,8 @@ bool QMakeEvaluator::isActiveConfig(const QStringRef &config, bool regex)
         // CONFIG variable
         const auto configValues = values(statics.strCONFIG);
         for (const ProString &configValue : configValues) {
-            if (re.exactMatch(configValue.toQString(m_tmp[m_toggle ^= 1])))
+            ProStringRoUser u1(configValue, m_tmp[m_toggle ^= 1]);
+            if (re.exactMatch(u1.str()))
                 return true;
         }
     } else {
@@ -1772,9 +1776,9 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBoolFunction(
                 if (val)
                     return ReturnTrue;
             } else {
+                ProStringRoUser u1(function, m_tmp1);
                 evalError(fL1S("Unexpected return value from test '%1': %2.")
-                          .arg(function.toQString(m_tmp1))
-                          .arg(ret.join(QLatin1String(" :: "))));
+                          .arg(u1.str(), ret.join(QLatin1String(" :: "))));
             }
         }
         return ReturnFalse;
@@ -1785,12 +1789,13 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBoolFunction(
 QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateConditionalFunction(
         const ProKey &func, const ushort *&tokPtr)
 {
-    if (int func_t = statics.functions.value(func)) {
+    auto adef = statics.functions.constFind(func);
+    if (adef != statics.functions.constEnd()) {
         //why don't the builtin functions just use args_list? --Sam
         ProStringList args;
         if (expandVariableReferences(tokPtr, 5, &args, true) == ReturnError)
             return ReturnError;
-        return evaluateBuiltinConditional(func_t, func, args);
+        return evaluateBuiltinConditional(*adef, func, args);
     }
 
     QHash<ProKey, ProFunctionDef>::ConstIterator it =
@@ -1811,12 +1816,13 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateConditionalFunction(
 QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateExpandFunction(
         const ProKey &func, const ushort *&tokPtr, ProStringList *ret)
 {
-    if (int func_t = statics.expands.value(func)) {
+    auto adef = statics.expands.constFind(func);
+    if (adef != statics.expands.constEnd()) {
         //why don't the builtin functions just use args_list? --Sam
         ProStringList args;
         if (expandVariableReferences(tokPtr, 5, &args, true) == ReturnError)
             return ReturnError;
-        return evaluateBuiltinExpand(func_t, func, args, *ret);
+        return evaluateBuiltinExpand(*adef, func, args, *ret);
     }
 
     QHash<ProKey, ProFunctionDef>::ConstIterator it =
@@ -1892,7 +1898,7 @@ ProValueMap *QMakeEvaluator::findValues(const ProKey &variableName, ProValueMap:
         if (first && isFunctParam(variableName))
             break;
     }
-    return 0;
+    return nullptr;
 }
 
 ProStringList &QMakeEvaluator::valuesRef(const ProKey &variableName)

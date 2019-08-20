@@ -37,17 +37,16 @@
 **
 ****************************************************************************/
 
-#include <QtCore/QtConfig>
-#ifndef QT_NO_ACCESSIBILITY
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(accessibility)
 
 #include "qwindowsuiavalueprovider.h"
 #include "qwindowsuiautils.h"
 #include "qwindowscontext.h"
 
-#include <QtGui/QAccessible>
-#include <QtGui/QAccessibleInterface>
-#include <QtCore/QDebug>
-#include <QtCore/QString>
+#include <QtGui/qaccessible.h>
+#include <QtCore/qloggingcategory.h>
+#include <QtCore/qstring.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -129,4 +128,4 @@ HRESULT STDMETHODCALLTYPE QWindowsUiaValueProvider::get_Value(BSTR *pRetVal)
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)

@@ -57,6 +57,7 @@
 
 QT_BEGIN_NAMESPACE
 
+class qfloat16;
 class QRegularExpression;
 
 #define QVERIFY(statement) \
@@ -67,17 +68,17 @@ do {\
 
 #define QFAIL(message) \
 do {\
-    QTest::qFail(message, __FILE__, __LINE__);\
+    QTest::qFail(static_cast<const char *>(message), __FILE__, __LINE__);\
     return;\
 } while (false)
 
 #define QVERIFY2(statement, description) \
 do {\
     if (statement) {\
-        if (!QTest::qVerify(true, #statement, (description), __FILE__, __LINE__))\
+        if (!QTest::qVerify(true, #statement, static_cast<const char *>(description), __FILE__, __LINE__))\
             return;\
     } else {\
-        if (!QTest::qVerify(false, #statement, (description), __FILE__, __LINE__))\
+        if (!QTest::qVerify(false, #statement, static_cast<const char *>(description), __FILE__, __LINE__))\
             return;\
     }\
 } while (false)
@@ -150,7 +151,7 @@ do {\
 // Ideally we'd use qWaitFor instead of QTRY_LOOP_IMPL, but due
 // to a compiler bug on MSVC < 2017 we can't (see QTBUG-59096)
 #define QTRY_IMPL(expr, timeout)\
-    const int qt_test_step = 50; \
+    const int qt_test_step = timeout < 350 ? timeout / 7 + 1 : 50; \
     const int qt_test_timeoutValue = timeout; \
     QTRY_LOOP_IMPL((expr), qt_test_timeoutValue, qt_test_step); \
     QTRY_TIMEOUT_DEBUG_IMPL((expr), qt_test_timeoutValue, qt_test_step)\
@@ -184,7 +185,7 @@ do { \
 
 #define QSKIP_INTERNAL(statement) \
 do {\
-    QTest::qSkip(statement, __FILE__, __LINE__);\
+    QTest::qSkip(static_cast<const char *>(statement), __FILE__, __LINE__);\
     return;\
 } while (false)
 
@@ -200,7 +201,7 @@ do {\
 
 #define QEXPECT_FAIL(dataIndex, comment, mode)\
 do {\
-    if (!QTest::qExpectFail(dataIndex, comment, QTest::mode, __FILE__, __LINE__))\
+    if (!QTest::qExpectFail(dataIndex, static_cast<const char *>(comment), QTest::mode, __FILE__, __LINE__))\
         return;\
 } while (false)
 
@@ -217,7 +218,7 @@ do {\
 } while (false)
 
 #define QWARN(msg)\
-    QTest::qWarn(msg, __FILE__, __LINE__)
+    QTest::qWarn(static_cast<const char *>(msg), __FILE__, __LINE__)
 
 #ifdef QT_TESTCASE_BUILDDIR
 # define QFINDTESTDATA(basepath)\
@@ -253,6 +254,22 @@ namespace QTest
         return nullptr;
     }
 
+    template<typename F> // Output QFlags of registered enumerations
+    inline typename std::enable_if<QtPrivate::IsQEnumHelper<F>::Value, char*>::type toString(QFlags<F> f)
+    {
+        const QMetaEnum me = QMetaEnum::fromType<F>();
+        return qstrdup(me.valueToKeys(int(f)).constData());
+    }
+
+    template <typename F> // Fallback: Output hex value
+    inline typename std::enable_if<!QtPrivate::IsQEnumHelper<F>::Value, char*>::type toString(QFlags<F> f)
+    {
+        const size_t space = 3 + 2 * sizeof(unsigned); // 2 for 0x, two hex digits per byte, 1 for '\0'
+        char *msg = new char[space];
+        qsnprintf(msg, space, "0x%x", unsigned(f));
+        return msg;
+    }
+
     } // namespace Internal
 
     template<typename T>
@@ -266,6 +283,9 @@ namespace QTest
 
     template <typename T1, typename T2>
     inline char *toString(const std::pair<T1, T2> &pair);
+
+    template <class... Types>
+    inline char *toString(const std::tuple<Types...> &tuple);
 
     Q_TESTLIB_EXPORT char *toHexRepresentation(const char *ba, int length);
     Q_TESTLIB_EXPORT char *toPrettyCString(const char *unicode, int length);
@@ -342,6 +362,9 @@ namespace QTest
     }
 #endif
 
+    Q_TESTLIB_EXPORT bool qCompare(qfloat16 const &t1, qfloat16 const &t2,
+                    const char *actual, const char *expected, const char *file, int line);
+
     Q_TESTLIB_EXPORT bool qCompare(float const &t1, float const &t2,
                     const char *actual, const char *expected, const char *file, int line);
 
@@ -372,6 +395,8 @@ namespace QTest
     Q_TESTLIB_EXPORT bool compare_string_helper(const char *t1, const char *t2, const char *actual,
                                       const char *expected, const char *file, int line);
 
+    Q_TESTLIB_EXPORT char *formatString(const char *prefix, const char *suffix, size_t numArguments, ...);
+
 #ifndef Q_QDOC
     QTEST_COMPARE_DECL(short)
     QTEST_COMPARE_DECL(ushort)
@@ -384,6 +409,7 @@ namespace QTest
 
     QTEST_COMPARE_DECL(float)
     QTEST_COMPARE_DECL(double)
+    QTEST_COMPARE_DECL(qfloat16)
     QTEST_COMPARE_DECL(char)
     QTEST_COMPARE_DECL(signed char)
     QTEST_COMPARE_DECL(unsigned char)

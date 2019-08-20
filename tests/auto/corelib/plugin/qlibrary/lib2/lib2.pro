@@ -7,7 +7,7 @@ DESTDIR = ../
 VERSION = 2
 QT = core
 
-win32-msvc: DEFINES += WIN32_MSVC
+msvc: DEFINES += WIN32_MSVC
 os2: TARGET = qt.mylib
 
 # Force a copy of the library to have an extension that is non-standard.

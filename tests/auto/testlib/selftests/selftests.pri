@@ -21,6 +21,8 @@ SUBPROGRAMS = \
      exceptionthrow \
      expectfail \
      failcleanup \
+     faildatatype \
+     failfetchtype \
      failinit \
      failinitdata \
      fetchbogus \
@@ -43,12 +45,18 @@ SUBPROGRAMS = \
      sleep \
      strcmp \
      subtest \
+     testlib \
+     tuplediagnostics \
      verbose1 \
      verbose2 \
      verifyexceptionthrown \
      warnings \
-     xunit \
-     mouse
+     watchdog \
+     xunit
+
+qtHaveModule(gui): SUBPROGRAMS += \
+    keyboard \
+    mouse
 
 INCLUDEPATH += ../../../../shared/
 HEADERS += ../../../../shared/emulationdetector.h

@@ -47,8 +47,10 @@
 #include "private/qiconloader_p.h"
 #include "qpainter.h"
 #include "qfileinfo.h"
+#if QT_CONFIG(mimetype)
 #include <qmimedatabase.h>
 #include <qmimetype.h>
+#endif
 #include "qpixmapcache.h"
 #include "qvariant.h"
 #include "qcache.h"
@@ -313,9 +315,9 @@ QPixmap QPixmapIconEngine::pixmap(const QSize &size, QIcon::Mode mode, QIcon::St
                   % HexString<uint>(actualSize.height());
 
     if (mode == QIcon::Active) {
-        if (QPixmapCache::find(key % HexString<uint>(mode), pm))
+        if (QPixmapCache::find(key % HexString<uint>(mode), &pm))
             return pm; // horray
-        if (QPixmapCache::find(key % HexString<uint>(QIcon::Normal), pm)) {
+        if (QPixmapCache::find(key % HexString<uint>(QIcon::Normal), &pm)) {
             QPixmap active = pm;
             if (QGuiApplication *guiApp = qobject_cast<QGuiApplication *>(qApp))
                 active = static_cast<QGuiApplicationPrivate*>(QObjectPrivate::get(guiApp))->applyQIconStyleHelper(QIcon::Active, pm);
@@ -324,7 +326,7 @@ QPixmap QPixmapIconEngine::pixmap(const QSize &size, QIcon::Mode mode, QIcon::St
         }
     }
 
-    if (!QPixmapCache::find(key % HexString<uint>(mode), pm)) {
+    if (!QPixmapCache::find(key % HexString<uint>(mode), &pm)) {
         if (pm.size() != actualSize)
             pm = pm.scaled(actualSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         if (pe->mode != mode && mode != QIcon::Normal) {
@@ -1078,11 +1080,12 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
     if (!d) {
 
         QFileInfo info(fileName);
-        QIconEngine *engine = iconEngineFromSuffix(fileName, info.suffix());
-#ifndef QT_NO_MIMETYPE
-        if (!engine)
-            engine = iconEngineFromSuffix(fileName, QMimeDatabase().mimeTypeForFile(info).preferredSuffix());
-#endif // !QT_NO_MIMETYPE
+        QString suffix = info.suffix();
+#if QT_CONFIG(mimetype)
+        if (suffix.isEmpty())
+            suffix = QMimeDatabase().mimeTypeForFile(info).preferredSuffix(); // determination from contents
+#endif // mimetype
+        QIconEngine *engine = iconEngineFromSuffix(fileName, suffix);
         d = new QIconPrivate(engine ? engine : new QPixmapIconEngine);
     }
 
@@ -1194,7 +1197,7 @@ void QIcon::setFallbackSearchPaths(const QStringList &paths)
 
     The \a name should correspond to a directory name in the
     themeSearchPath() containing an index.theme
-    file describing it's contents.
+    file describing its contents.
 
     \sa themeSearchPaths(), themeName()
 */
@@ -1217,6 +1220,37 @@ void QIcon::setThemeName(const QString &name)
 QString QIcon::themeName()
 {
     return QIconLoader::instance()->themeName();
+}
+
+/*!
+    \since 5.12
+
+    Returns the name of the fallback icon theme.
+
+    On X11, if not set, the fallback icon theme depends on your desktop
+    settings. On other platforms it is not set by default.
+
+    \sa setFallbackThemeName(), themeName()
+*/
+QString QIcon::fallbackThemeName()
+{
+    return QIconLoader::instance()->fallbackThemeName();
+}
+
+/*!
+    \since 5.12
+
+    Sets the fallback icon theme to \a name.
+
+    The \a name should correspond to a directory name in the
+    themeSearchPath() containing an index.theme
+    file describing its contents.
+
+    \sa fallbackThemeName(), themeSearchPaths(), themeName()
+*/
+void QIcon::setFallbackThemeName(const QString &name)
+{
+    QIconLoader::instance()->setFallbackThemeName(name);
 }
 
 /*!

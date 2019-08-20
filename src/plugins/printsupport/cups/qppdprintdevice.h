@@ -65,7 +65,6 @@ QT_BEGIN_NAMESPACE
 class QPpdPrintDevice : public QPlatformPrintDevice
 {
 public:
-    QPpdPrintDevice();
     explicit QPpdPrintDevice(const QString &id);
     virtual ~QPpdPrintDevice();
 
@@ -100,12 +99,11 @@ protected:
     void loadOutputBins() const override;
     void loadDuplexModes() const override;
     void loadColorModes() const override;
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
     void loadMimeTypes() const override;
 #endif
 
 private:
-    void loadPrinter();
     QString printerOption(const QString &key) const;
     cups_ptype_e printerTypeFlags() const;
 

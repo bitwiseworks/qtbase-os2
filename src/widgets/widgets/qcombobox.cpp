@@ -73,11 +73,14 @@
 #include <private/qabstractitemmodel_p.h>
 #include <private/qabstractscrollarea_p.h>
 #include <private/qlineedit_p.h>
+#if QT_CONFIG(completer)
 #include <private/qcompleter_p.h>
+#endif
 #include <qdebug.h>
 #if QT_CONFIG(effects)
 # include <private/qeffects_p.h>
 #endif
+#include <private/qstyle_p.h>
 #ifndef QT_NO_ACCESSIBILITY
 #include "qaccessible.h"
 #endif
@@ -164,7 +167,7 @@ QStyleOptionMenuItem QComboMenuDelegate::getStyleOption(const QStyleOptionViewIt
         break;
     }
     if (index.data(Qt::BackgroundRole).canConvert<QBrush>()) {
-        menuOption.palette.setBrush(QPalette::All, QPalette::Background,
+        menuOption.palette.setBrush(QPalette::All, QPalette::Window,
                                     qvariant_cast<QBrush>(index.data(Qt::BackgroundRole)));
     }
     menuOption.text = index.model()->data(index, Qt::DisplayRole).toString()
@@ -259,16 +262,11 @@ void QComboBoxPrivate::_q_modelDestroyed()
     model = QAbstractItemModelPrivate::staticEmptyModel();
 }
 
-
-//Windows and KDE allows menus to cover the taskbar, while GNOME and Mac don't
 QRect QComboBoxPrivate::popupGeometry(int screen) const
 {
-    bool useFullScreenForPopupMenu = false;
-    if (const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme())
-        useFullScreenForPopupMenu = theme->themeHint(QPlatformTheme::UseFullScreenForPopupMenu).toBool();
-    return useFullScreenForPopupMenu ?
-           QDesktopWidgetPrivate::screenGeometry(screen) :
-           QDesktopWidgetPrivate::availableGeometry(screen);
+    return QStylePrivate::useFullScreenForPopup()
+        ? QDesktopWidgetPrivate::screenGeometry(screen)
+        : QDesktopWidgetPrivate::availableGeometry(screen);
 }
 
 bool QComboBoxPrivate::updateHoverControl(const QPoint &pos)
@@ -470,7 +468,7 @@ QComboBoxPrivateContainer::QComboBoxPrivateContainer(QAbstractItemView *itemView
     // we need a vertical layout
     QBoxLayout *layout =  new QBoxLayout(QBoxLayout::TopToBottom, this);
     layout->setSpacing(0);
-    layout->setMargin(0);
+    layout->setContentsMargins(QMargins());
 
     // set item view
     setItemView(itemView);
@@ -893,14 +891,21 @@ QStyleOptionComboBox QComboBoxPrivateContainer::comboStyleOption() const
     currentIndex was reset.
 */
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \fn void QComboBox::currentIndexChanged(const QString &text)
     \since 4.1
+
+    \obsolete
+
+    Use currentTextChanged(const QString &) or currentIndexChanged(int)
+    instead.
 
     This signal is sent whenever the currentIndex in the combobox
     changes either through user interaction or programmatically.  The
     item's \a text is passed.
 */
+#endif
 
 /*!
     \fn void QComboBox::currentTextChanged(const QString &text)
@@ -1373,7 +1378,12 @@ void QComboBoxPrivate::_q_emitCurrentIndexChanged(const QModelIndex &index)
     Q_Q(QComboBox);
     const QString text = itemText(index);
     emit q->currentIndexChanged(index.row());
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
     emit q->currentIndexChanged(text);
+    QT_WARNING_POP
+#endif
     // signal lineEdit.textChanged already connected to signal currentTextChanged, so don't emit double here
     if (!lineEdit)
         emit q->currentTextChanged(text);
@@ -1481,6 +1491,7 @@ int QComboBox::maxCount() const
 }
 
 #if QT_CONFIG(completer)
+#if QT_DEPRECATED_SINCE(5, 13)
 
 /*!
     \property QComboBox::autoCompletion
@@ -1498,7 +1509,7 @@ int QComboBox::maxCount() const
 /*!
     \obsolete
 
-    Use setCompleter() instead.
+    Use completer() instead.
 */
 bool QComboBox::autoCompletion() const
 {
@@ -1574,6 +1585,7 @@ void QComboBox::setAutoCompletionCaseSensitivity(Qt::CaseSensitivity sensitivity
     if (d->lineEdit && d->lineEdit->completer())
         d->lineEdit->completer()->setCaseSensitivity(sensitivity);
 }
+#endif  //  QT_DEPRECATED_SINCE(5, 13)
 
 #endif // QT_CONFIG(completer)
 
@@ -1886,8 +1898,8 @@ void QComboBox::setLineEdit(QLineEdit *edit)
 }
 
 /*!
-    Returns the line edit used to edit items in the combobox, or 0 if there
-    is no line edit.
+    Returns the line edit used to edit items in the combobox, or
+    \nullptr if there is no line edit.
 
     Only editable combo boxes have a line edit.
 */
@@ -1939,12 +1951,15 @@ const QValidator *QComboBox::validator() const
     performs case insensitive inline completion is automatically created.
 
     \note The completer is removed when the \l editable property becomes \c false.
+    Setting a completer on a QComboBox that is not editable will be ignored.
 */
 void QComboBox::setCompleter(QCompleter *c)
 {
     Q_D(QComboBox);
-    if (!d->lineEdit)
+    if (!d->lineEdit) {
+        qWarning("Setting a QCompleter on non-editable QComboBox is not allowed.");
         return;
+    }
     d->lineEdit->setCompleter(c);
     if (c) {
         connect(c, SIGNAL(activated(QModelIndex)), this, SLOT(_q_completerActivated(QModelIndex)));
@@ -2015,7 +2030,7 @@ QAbstractItemModel *QComboBox::model() const
 }
 
 /*!
-    Sets the model to be \a model. \a model must not be 0.
+    Sets the model to be \a model. \a model must not be \nullptr.
     If you want to clear the contents of a model, call clear().
 
     \sa clear()
@@ -3158,7 +3173,6 @@ void QComboBoxPrivate::showPopupFromMouseEvent(QMouseEvent *e)
 #endif
             // We've restricted the next couple of lines, because by not calling
             // viewContainer(), we avoid creating the QComboBoxPrivateContainer.
-            viewContainer()->blockMouseReleaseTimer.start(QApplication::doubleClickInterval());
             viewContainer()->initialClickPosition = q->mapToGlobal(e->pos());
 #ifdef QT_KEYPAD_NAVIGATION
         }
@@ -3167,8 +3181,10 @@ void QComboBoxPrivate::showPopupFromMouseEvent(QMouseEvent *e)
         // The code below ensures that regular mousepress and pick item still works
         // If it was not called the viewContainer would ignore event since it didn't have
         // a mousePressEvent first.
-        if (viewContainer())
+        if (viewContainer()) {
+            viewContainer()->blockMouseReleaseTimer.start(QApplication::doubleClickInterval());
             viewContainer()->maybeIgnoreMouseButtonRelease = false;
+        }
     } else {
 #ifdef QT_KEYPAD_NAVIGATION
         if (QApplication::keypadNavigationEnabled() && sc == QStyle::SC_ComboBoxEditField && lineEdit) {

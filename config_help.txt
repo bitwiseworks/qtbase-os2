@@ -17,7 +17,8 @@ quoting and double quotes for the outer quoting.
 
 Top-level installation directories:
   -prefix <dir> ...... The deployment directory, as seen on the target device.
-                       [/usr/local/Qt-$QT_VERSION, $PWD if -developer-build]
+                       [/usr/local/Qt-$QT_VERSION; qtbase build directory if
+                       -developer-build]
   -extprefix <dir> ... The installation directory, as seen on the host machine.
                        [SYSROOT/PREFIX]
   -hostprefix [dir] .. The installation directory for build tools running on
@@ -98,6 +99,9 @@ Build options:
   -gdb-index ........... Index the debug info to speed up GDB
                          [no; auto if -developer-build with debug info]
   -strip ............... Strip release binaries of unneeded symbols [yes]
+  -gc-binaries ......... Place each function or data item into its own section
+                         and enable linker garbage collection of unused
+                         sections. [auto for static builds, otherwise no]
   -force-asserts ....... Enable Q_ASSERT even in release builds [no]
   -developer-build ..... Compile and link Qt for developing Qt itself
                          (exports for auto-tests, extra checks, etc.) [no]
@@ -132,8 +136,11 @@ Build options:
                          for example, -sanitize address cannot be combined with
                          -sanitize thread.
 
-  -c++std <edition> .... Select C++ standard <edition> [c++1z/c++14/c++11]
-                         (Not supported with MSVC)
+  -coverage {trace-pc-guard}
+                         Add code coverage instrumentation (Clang only)
+
+  -c++std <edition> .... Select C++ standard <edition> [c++2a/c++17/c++14/c++11]
+                         (Not supported with MSVC 2015)
 
   -sse2 ................ Use SSE2 instructions [auto]
   -sse3/-ssse3/-sse4.1/-sse4.2/-avx/-avx2/-avx512
@@ -160,7 +167,8 @@ Build options:
 
   -pch ................. Use precompiled headers [auto]
   -ltcg ................ Use Link Time Code Generation [no]
-  -use-gold-linker ..... Use the GNU gold linker [auto]
+  -linker [bfd,gold,lld] Force use of the GNU ld, GNU gold or LLVM/LLD linker
+                         instead of default one (GCC only)
   -incredibuild-xge .... Use the IncrediBuild XGE [no] (Windows only)
   -ccache .............. Use the ccache compiler cache [no] (Unix only)
   -make-tool <tool> .... Use <tool> to build qmake [nmake] (Windows only)
@@ -195,7 +203,7 @@ Build environment:
   -android-ndk-host .... Set Android NDK host (linux-x86, linux-x86_64, etc.)
                          [$ANDROID_NDK_HOST]
   -android-arch ........ Set Android architecture (armeabi, armeabi-v7a,
-                         arm64-v8a, x86, x86_64, mips, mips64)
+                         arm64-v8a, x86, x86_64)
   -android-toolchain-version ... Set Android toolchain version
   -android-style-assets  Automatically extract style assets from the device at
                          run time. This option makes the Android style behave
@@ -210,7 +218,8 @@ Component selection:
                          [libs and examples, also tools if not cross-building,
                          also tests if -developer-build]
   -nomake <part> ....... Exclude <part> from the list of parts to be built.
-  -compile-examples .... When unset, install only the sources of examples [yes]
+  -compile-examples .... When unset, install only the sources of examples
+                         [no on WebAssembly, otherwise yes]
   -gui ................. Build the Qt GUI module and dependencies [yes]
   -widgets ............. Build the Qt Widgets module and dependencies [yes]
   -no-dbus ............. Do not build the Qt D-Bus module
@@ -288,20 +297,18 @@ Gui, printing, widget options:
     -kms ............... Enable backends for KMS [auto] (Linux only)
     -linuxfb ........... Enable Linux Framebuffer support [auto] (Linux only)
     -mirclient ......... Enable Mir client support [no] (Linux only)
-    -xcb ............... Select used xcb-* libraries [system/qt/no]
+    -xcb ............... Enable X11 support. Select used xcb-* libraries [system/qt/no]
                          (-qt-xcb still uses system version of libxcb itself)
 
   Input backends:
+    -libudev............ Enable udev support [auto]
     -evdev ............. Enable evdev support [auto]
     -imf ............... Enable IMF support [auto] (QNX only)
     -libinput .......... Enable libinput support [auto]
     -mtdev ............. Enable mtdev support [auto]
     -tslib ............. Enable tslib support [auto]
-    -xinput2 ........... Enable XInput2 support [auto]
-    -xkbcommon-x11 ..... Select xkbcommon used in combination with xcb
-                         [system/qt/no]
-    -xkbcommon-evdev ... Enable X-less xkbcommon in combination with libinput
-                         [auto]
+    -xcb-xinput ........ Enable XInput2 support [auto]
+    -xkbcommon ......... Enable key mapping support [auto]
 
   Image formats:
     -gif ............... Enable reading support for GIF [auto]

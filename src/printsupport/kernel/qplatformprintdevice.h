@@ -1,6 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 John Layt <jlayt@kde.org>
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtPrintSupport module of the Qt Toolkit.
@@ -57,7 +58,9 @@
 
 #include <QtCore/qvariant.h>
 #include <QtCore/qvector.h>
+#if QT_CONFIG(mimetype)
 #include <QtCore/qmimetype.h>
+#endif
 #include <QtGui/qpagelayout.h>
 
 
@@ -69,8 +72,7 @@ class Q_PRINTSUPPORT_EXPORT QPlatformPrintDevice
 {
     Q_DISABLE_COPY(QPlatformPrintDevice)
 public:
-    QPlatformPrintDevice();
-    explicit QPlatformPrintDevice(const QString &id);
+    explicit QPlatformPrintDevice(const QString &id = QString());
     virtual ~QPlatformPrintDevice();
 
     virtual QString id() const;
@@ -125,7 +127,7 @@ public:
     virtual bool setProperty(QPrintDevice::PrintDevicePropertyKey key, const QVariant &value);
     virtual bool isFeatureAvailable(QPrintDevice::PrintDevicePropertyKey key, const QVariant &params) const;
 
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
     virtual QList<QMimeType> supportedMimeTypes() const;
 #endif
 
@@ -139,7 +141,7 @@ protected:
     virtual void loadOutputBins() const;
     virtual void loadDuplexModes() const;
     virtual void loadColorModes() const;
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
     virtual void loadMimeTypes() const;
 #endif
 
@@ -152,16 +154,16 @@ protected:
 
     bool m_isRemote;
 
-    bool m_supportsMultipleCopies;
-    bool m_supportsCollateCopies;
+    mutable bool m_supportsMultipleCopies;
+    mutable bool m_supportsCollateCopies;
 
     mutable bool m_havePageSizes;
     mutable QList<QPageSize> m_pageSizes;
 
-    bool m_supportsCustomPageSizes;
+    mutable bool m_supportsCustomPageSizes;
 
-    QSize m_minimumPhysicalPageSize;
-    QSize m_maximumPhysicalPageSize;
+    mutable QSize m_minimumPhysicalPageSize;
+    mutable QSize m_maximumPhysicalPageSize;
 
     mutable bool m_haveResolutions;
     mutable QList<int> m_resolutions;
@@ -178,7 +180,7 @@ protected:
     mutable bool m_haveColorModes;
     mutable QVector<QPrint::ColorMode> m_colorModes;
 
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
     mutable bool m_haveMimeTypes;
     mutable QList<QMimeType> m_mimeTypes;
 #endif

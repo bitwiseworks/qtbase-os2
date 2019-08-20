@@ -711,10 +711,12 @@ bool QWidgetLineControl::finishChange(int validateFromState, bool update, bool e
             m_validInput = (m_validator->validate(textCopy, cursorCopy) != QValidator::Invalid);
             if (m_validInput) {
                 if (m_text != textCopy) {
-                    internalSetText(textCopy, cursorCopy, false);
+                    internalSetText(textCopy, cursorCopy, edited);
                     return true;
                 }
                 m_cursor = cursorCopy;
+            } else {
+                emit inputRejected();
             }
         }
 #endif
@@ -762,6 +764,8 @@ void QWidgetLineControl::internalSetText(const QString &txt, int pos, bool edite
     if (m_maskData) {
         m_text = maskString(0, txt, true);
         m_text += clearString(m_text.length(), m_maxLength - m_text.length());
+        if (edited && oldText == m_text)
+            emit inputRejected();
     } else {
         m_text = txt.isEmpty() ? txt : txt.left(m_maxLength);
     }
@@ -839,6 +843,8 @@ void QWidgetLineControl::internalInsert(const QString &s)
         addCommand(Command(SetSelection, m_cursor, 0, m_selstart, m_selend));
     if (m_maskData) {
         QString ms = maskString(m_cursor, s);
+        if (ms.isEmpty() && !s.isEmpty())
+            emit inputRejected();
 #ifndef QT_NO_ACCESSIBILITY
         QAccessibleTextInsertEvent insertEvent(accessibleObject(), m_cursor, ms);
         QAccessible::updateAccessibility(&insertEvent);
@@ -867,6 +873,8 @@ void QWidgetLineControl::internalInsert(const QString &s)
                addCommand(Command(Insert, m_cursor++, s.at(i), -1, -1));
             m_textDirty = true;
         }
+        if (s.length() > remaining)
+            emit inputRejected();
     }
 }
 
@@ -1840,7 +1848,8 @@ void QWidgetLineControl::processKeyEvent(QKeyEvent* event)
     else if (event == QKeySequence::DeleteStartOfWord) {
         if (!isReadOnly()) {
             cursorWordBackward(true);
-            del();
+            if (hasSelectedText())
+                del();
         }
     } else if (event == QKeySequence::DeleteCompleteLine) {
         if (!isReadOnly()) {

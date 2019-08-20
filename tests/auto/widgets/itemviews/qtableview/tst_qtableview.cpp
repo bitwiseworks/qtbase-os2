@@ -1264,19 +1264,47 @@ void tst_QTableView::moveCursorStrikesBack_data()
     for (int i = 0; i < 7; ++i)
         fullList << i;
 
-    QTest::newRow("All disabled, wrap forward. Timeout => FAIL") << -1 << -1
+    QTest::newRow("All disabled, wrap forward. => invalid index") << -1 << -1
             << fullList
             << fullList
             << QRect()
             << 1 << 0 << (IntList() << int(QtTestTableView::MoveNext))
-            << 1 << 0;
+            << -1 << -1;
 
-    QTest::newRow("All disabled, wrap backwards. Timeout => FAIL") << -1 << -1
+    QTest::newRow("All disabled, wrap backwards. => invalid index") << -1 << -1
             << fullList
             << fullList
             << QRect()
             << 1 << 0 << (IntList() << int(QtTestTableView::MovePrevious))
+            << -1 << -1;
+
+    QTest::newRow("Last column disabled, MoveEnd. QTBUG-72400") << -1 << -1
+            << IntList()
+            << (IntList() << 6)
+            << QRect()
+            << 0 << 0 << (IntList() << int(QtTestTableView::MoveEnd))
+            << 0 << 5;
+
+    QTest::newRow("First column disabled, MoveHome. QTBUG-72400") << -1 << -1
+            << IntList()
+            << (IntList() << 0)
+            << QRect()
+            << 0 << 6 << (IntList() << int(QtTestTableView::MoveHome))
+            << 0 << 1;
+
+    QTest::newRow("First row disabled, MovePageUp. QTBUG-72400") << -1 << -1
+            << (IntList() << 0)
+            << IntList()
+            << QRect()
+            << 2 << 0 << (IntList() << int(QtTestTableView::MovePageUp))
             << 1 << 0;
+
+    QTest::newRow("Last row disabled, MovePageDown. QTBUG-72400") << -1 << -1
+            << (IntList() << 6)
+            << IntList()
+            << QRect()
+            << 4 << 0 << (IntList() << int(QtTestTableView::MovePageDown))
+            << 5 << 0;
 }
 
 void tst_QTableView::moveCursorStrikesBack()
@@ -1302,6 +1330,9 @@ void tst_QTableView::moveCursorStrikesBack()
     if (span.height() && span.width())
         view.setSpan(span.top(), span.left(), span.height(), span.width());
     view.show();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
+    // resize to make sure there are scrollbars
+    view.resize(view.columnWidth(0) * 7, view.rowHeight(0) * 7);
 
     QModelIndex index = model.index(startRow, startColumn);
     view.setCurrentIndex(index);
@@ -1320,9 +1351,6 @@ void tst_QTableView::moveCursorStrikesBack()
         newColumn = newIndex.column();
     }
 
-    // expected fails, task 119433
-    if(newRow == -1)
-        return;
     QCOMPARE(newRow, expectedRow);
     QCOMPARE(newColumn, expectedColumn);
 }
@@ -1353,6 +1381,11 @@ void tst_QTableView::moveCursorBiggerJump()
     QCOMPARE(view.indexAt(QPoint(0,0)), model.index(7,0));
     QTest::keyClick(&view, Qt::Key_PageUp);
     QCOMPARE(view.indexAt(QPoint(0,0)), model.index(0,0));
+
+    QTest::keyClick(&view, Qt::Key_PageDown);
+    view.verticalHeader()->hideSection(0);
+    QTest::keyClick(&view, Qt::Key_PageUp);
+    QTRY_COMPARE(view.currentIndex().row(), view.rowAt(0));
 }
 
 void tst_QTableView::hideRows_data()
@@ -2329,6 +2362,14 @@ void tst_QTableView::rowViewportPosition()
     view.setVerticalScrollMode((QAbstractItemView::ScrollMode)verticalScrollMode);
     view.verticalScrollBar()->setValue(verticalScrollValue);
 
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("row 1, scroll per item, 1", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("row 5, scroll per item, 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("row 9, scroll per item, 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("row 1, scroll per pixel, 1", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("row 5, scroll per pixel, 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("row 9, scroll per pixel, 5", "Fails on WinRT - QTBUG-68297", Abort);
+#endif
     QCOMPARE(view.rowViewportPosition(row), rowViewportPosition);
 }
 
@@ -2492,6 +2533,13 @@ void tst_QTableView::columnViewportPosition()
     view.setHorizontalScrollMode((QAbstractItemView::ScrollMode)horizontalScrollMode);
     view.horizontalScrollBar()->setValue(horizontalScrollValue);
 
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("column 5, scroll per item, 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("column 9, scroll per item, 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("column 1, scroll per pixel 1", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("column 5, scroll per pixel 5", "Fails on WinRT - QTBUG-68297", Abort);
+    QEXPECT_FAIL("column 9, scroll per pixel 5", "Fails on WinRT - QTBUG-68297", Abort);
+#endif
     QCOMPARE(view.columnViewportPosition(column), columnViewportPosition);
 }
 
@@ -2781,15 +2829,14 @@ void tst_QTableView::scrollTo()
     for (int c = 0; c < columnCount; ++c)
         view.setColumnWidth(c, columnWidth);
 
-    QTest::qWait(150); // ### needed to pass the test
     view.horizontalScrollBar()->setValue(horizontalScroll);
     view.verticalScrollBar()->setValue(verticalScroll);
 
     QModelIndex index = model.index(row, column);
     QVERIFY(index.isValid());
     view.scrollTo(index, (QAbstractItemView::ScrollHint)scrollHint);
-    QCOMPARE(view.verticalScrollBar()->value(), expectedVerticalScroll);
-    QCOMPARE(view.horizontalScrollBar()->value(), expectedHorizontalScroll);
+    QTRY_COMPARE(view.verticalScrollBar()->value(), expectedVerticalScroll);
+    QTRY_COMPARE(view.horizontalScrollBar()->value(), expectedHorizontalScroll);
 }
 
 void tst_QTableView::indexAt_data()
@@ -2936,14 +2983,12 @@ void tst_QTableView::indexAt()
     for (int c = 0; c < columnCount; ++c)
         view.setColumnWidth(c, columnWidth);
 
-    QTest::qWait(20);
     view.horizontalScrollBar()->setValue(horizontalScroll);
     view.verticalScrollBar()->setValue(verticalScroll);
-    QTest::qWait(20);
 
     QModelIndex index = view.indexAt(QPoint(x, y));
-    QCOMPARE(index.row(), expectedRow);
-    QCOMPARE(index.column(), expectedColumn);
+    QTRY_COMPARE(index.row(), expectedRow);
+    QTRY_COMPARE(index.column(), expectedColumn);
 }
 
 void tst_QTableView::span_data()
@@ -3261,7 +3306,7 @@ void tst_QTableView::spansAfterRowInsertion()
     view.setModel(&model);
     view.setSpan(3, 3, 3, 3);
     view.show();
-    QTest::qWait(50);
+    QVERIFY(QTest::qWaitForWindowActive(&view));
 
     // Insertion before the span only shifts the span.
     view.model()->insertRows(0, 2);
@@ -3297,7 +3342,7 @@ void tst_QTableView::spansAfterColumnInsertion()
     view.setModel(&model);
     view.setSpan(3, 3, 3, 3);
     view.show();
-    QTest::qWait(50);
+    QVERIFY(QTest::qWaitForWindowActive(&view));
 
     // Insertion before the span only shifts the span.
     view.model()->insertColumns(0, 2);
@@ -3345,7 +3390,7 @@ void tst_QTableView::spansAfterRowRemoval()
         view.setSpan(span.top(), span.left(), span.height(), span.width());
 
     view.show();
-    QTest::qWait(100);
+    QVERIFY(QTest::qWaitForWindowActive(&view));
     view.model()->removeRows(3, 3);
 
     QList<QRect> expectedSpans;
@@ -3385,7 +3430,7 @@ void tst_QTableView::spansAfterColumnRemoval()
         view.setSpan(span.left(), span.top(), span.width(), span.height());
 
     view.show();
-    QTest::qWait(100);
+    QVERIFY(QTest::qWaitForWindowActive(&view));
     view.model()->removeColumns(3, 3);
 
     QList<QRect> expectedSpans;
@@ -4083,7 +4128,6 @@ void tst_QTableView::task259308_scrollVerticalHeaderSwappedSections()
     QTRY_COMPARE(tv.currentIndex().row(), newRow);
 
     tv.setCurrentIndex(model.index(0, 0));
-    QTest::qWait(60);
     QTest::keyClick(&tv, Qt::Key_PageDown); // PageDown won't scroll when at the bottom
     QTRY_COMPARE(tv.rowAt(tv.viewport()->height() - 1), tv.verticalHeader()->logicalIndex(model.rowCount() - 1));
 }
@@ -4104,7 +4148,7 @@ void tst_QTableView::task191545_dragSelectRows()
     table.setSelectionMode(QAbstractItemView::ExtendedSelection);
     table.setMinimumSize(1000, 400);
     table.show();
-    QTest::qWait(200);
+    QVERIFY(QTest::qWaitForWindowActive(&table));
 
     ValueSaver<Qt::KeyboardModifiers> saver(QApplicationPrivate::modifier_buttons);
     QApplicationPrivate::modifier_buttons = Qt::ControlModifier;
@@ -4209,32 +4253,27 @@ void tst_QTableView::task234926_setHeaderSorting()
     QStringList sortedDataA = data;
     QStringList sortedDataD = data;
     std::sort(sortedDataA.begin(), sortedDataA.end());
-    std::sort(sortedDataD.begin(), sortedDataD.end(), qGreater<QString>());
+    std::sort(sortedDataD.begin(), sortedDataD.end(), std::greater<QString>());
     model.setStringList(data);
     QTableView view;
     view.setModel(&model);
 //    view.show();
-    QTest::qWait(20);
-    QCOMPARE(model.stringList(), data);
+    QTRY_COMPARE(model.stringList(), data);
     view.setSortingEnabled(true);
     view.sortByColumn(0, Qt::AscendingOrder);
-    QApplication::processEvents();
-    QCOMPARE(model.stringList() , sortedDataA);
+    QTRY_COMPARE(model.stringList() , sortedDataA);
 
     view.horizontalHeader()->setSortIndicator(0, Qt::DescendingOrder);
-    QApplication::processEvents();
-    QCOMPARE(model.stringList() , sortedDataD);
+    QTRY_COMPARE(model.stringList() , sortedDataD);
 
     QHeaderView *h = new QHeaderView(Qt::Horizontal);
     h->setModel(&model);
     view.setHorizontalHeader(h);
     h->setSortIndicator(0, Qt::AscendingOrder);
-    QApplication::processEvents();
-    QCOMPARE(model.stringList() , sortedDataA);
+    QTRY_COMPARE(model.stringList() , sortedDataA);
 
     h->setSortIndicator(0, Qt::DescendingOrder);
-    QApplication::processEvents();
-    QCOMPARE(model.stringList() , sortedDataD);
+    QTRY_COMPARE(model.stringList() , sortedDataD);
 }
 
 void tst_QTableView::taskQTBUG_5062_spansInconsistency()
@@ -4288,9 +4327,8 @@ void tst_QTableView::changeHeaderData()
     QVERIFY(view.verticalHeader()->width() < textWidth);
 
     model.setHeaderData(2, Qt::Vertical, text);
-    QTest::qWait(100); //leave time for layout
 
-    QVERIFY(view.verticalHeader()->width() > textWidth);
+    QTRY_VERIFY(view.verticalHeader()->width() > textWidth);
 }
 
 #if QT_CONFIG(wheelevent)

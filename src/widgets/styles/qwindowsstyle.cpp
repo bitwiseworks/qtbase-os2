@@ -86,7 +86,9 @@
 #include <private/qhighdpiscaling_p.h>
 
 #include <private/qstylehelper_p.h>
+#if QT_CONFIG(animation)
 #include <private/qstyleanimation_p.h>
+#endif
 
 #include <algorithm>
 
@@ -246,7 +248,7 @@ void QWindowsStyle::polish(QApplication *app)
     d->activeGradientCaptionColor = app->palette().highlight() .color();
     d->inactiveCaptionColor = app->palette().dark().color();
     d->inactiveGradientCaptionColor = app->palette().dark().color();
-    d->inactiveCaptionText = app->palette().background().color();
+    d->inactiveCaptionText = app->palette().window().color();
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) //fetch native title bar colors
     if(app->desktopSettingsAware()){
@@ -552,7 +554,7 @@ int QWindowsStyle::styleHint(StyleHint hint, const QStyleOption *opt, const QWid
     case SH_MenuBar_MouseTracking:
     case SH_Menu_MouseTracking:
     case SH_ComboBox_ListMouseTracking:
-    case SH_ScrollBar_StopMouseOverSlider:
+    case SH_Slider_StopMouseOverSlider:
     case SH_MainWindow_SpaceBelowMenuBar:
         ret = 1;
 
@@ -661,7 +663,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
     bool doRestore = false;
 
     switch (pe) {
-#ifndef QT_NO_TOOLBAR
+#if QT_CONFIG(toolbar)
   case PE_IndicatorToolBarSeparator:
         {
             QRect rect = opt->rect;
@@ -721,7 +723,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         p->restore();
         break;
 
-#endif // QT_NO_TOOLBAR
+#endif // QT_CONFIG(toolbar)
     case PE_FrameButtonTool:
     case PE_PanelButtonTool: {
         QPen oldPen = p->pen();
@@ -815,7 +817,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         else if (opt->state & State_Enabled)
             fill = opt->palette.base();
         else
-            fill = opt->palette.background();
+            fill = opt->palette.window();
         p->save();
         doRestore = true;
         qDrawWinPanel(p, opt->rect, opt->palette, true, &fill);
@@ -825,13 +827,13 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
             p->setPen(opt->palette.text().color());
         }
         Q_FALLTHROUGH();
-    case PE_IndicatorViewItemCheck:
+    case PE_IndicatorItemViewItemCheck:
         if (!doRestore) {
             p->save();
             doRestore = true;
         }
 #if QT_CONFIG(itemviews)
-        if (pe == PE_IndicatorViewItemCheck) {
+        if (pe == PE_IndicatorItemViewItemCheck) {
             const QStyleOptionViewItem *itemViewOpt = qstyleoption_cast<const QStyleOptionViewItem *>(opt);
             p->setPen(itemViewOpt
                       && itemViewOpt->showDecorationSelected
@@ -840,17 +842,19 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
                         : opt->palette.text().color());
             if (opt->state & State_NoChange)
                 p->setBrush(opt->palette.brush(QPalette::Button));
-            p->drawRect(opt->rect.x() + 1, opt->rect.y() + 1, 11, 11);
+            p->drawRect(opt->rect.x() + 1, opt->rect.y() + 1, opt->rect.width() - 2, opt->rect.height() - 2);
         }
 #endif // QT_CONFIG(itemviews)
         if (!(opt->state & State_Off)) {
             QPointF  points[6];
-            points[0] = { opt->rect.x() + QStyleHelper::dpiScaled(3.5), opt->rect.y() + QStyleHelper::dpiScaled(5.5) };
-            points[1] = { points[0].x(), points[0].y() + QStyleHelper::dpiScaled(2) };
-            points[2] = { points[1].x() + QStyleHelper::dpiScaled(2), points[1].y() + QStyleHelper::dpiScaled(2) };
-            points[3] = { points[2].x() + QStyleHelper::dpiScaled(4), points[2].y() - QStyleHelper::dpiScaled(4) };
-            points[4] = { points[3].x(), points[3].y() - QStyleHelper::dpiScaled(2) };
-            points[5] = { points[4].x() - QStyleHelper::dpiScaled(4), points[4].y() + QStyleHelper::dpiScaled(4) };
+            qreal scaleh = opt->rect.width() / 12.0;
+            qreal scalev = opt->rect.height() / 12.0;
+            points[0] = { opt->rect.x() + 3.5 * scaleh, opt->rect.y() + 5.5 * scalev };
+            points[1] = { points[0].x(),                points[0].y() + 2 * scalev };
+            points[2] = { points[1].x() + 2 * scaleh,   points[1].y() + 2 * scalev };
+            points[3] = { points[2].x() + 4 * scaleh,   points[2].y() - 4 * scalev };
+            points[4] = { points[3].x(),                points[3].y() - 2 * scalev };
+            points[5] = { points[4].x() - 4 * scaleh,   points[4].y() + 4 * scalev };
             p->setPen(QPen(opt->palette.text().color(), 0));
             p->setBrush(opt->palette.text().color());
             p->drawPolygon(points, 6);
@@ -947,14 +951,14 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
             if (frame->lineWidth == 2 || pe == PE_Frame) {
                 QPalette popupPal = frame->palette;
                 if (pe == PE_FrameMenu) {
-                    popupPal.setColor(QPalette::Light, frame->palette.background().color());
+                    popupPal.setColor(QPalette::Light, frame->palette.window().color());
                     popupPal.setColor(QPalette::Midlight, frame->palette.light().color());
                 }
                 if (pe == PE_Frame && (frame->state & State_Raised))
                     qDrawWinButton(p, frame->rect, popupPal, frame->state & State_Sunken);
                 else if (pe == PE_Frame && (frame->state & State_Sunken))
                 {
-                    popupPal.setColor(QPalette::Midlight, frame->palette.background().color());
+                    popupPal.setColor(QPalette::Midlight, frame->palette.window().color());
                     qDrawWinPanel(p, frame->rect, popupPal, frame->state & State_Sunken);
                 }
                 else
@@ -964,7 +968,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
             }
         } else {
             QPalette popupPal = opt->palette;
-            popupPal.setColor(QPalette::Light, opt->palette.background().color());
+            popupPal.setColor(QPalette::Light, opt->palette.window().color());
             popupPal.setColor(QPalette::Midlight, opt->palette.light().color());
             qDrawWinPanel(p, opt->rect, popupPal, opt->state & State_Sunken);
         }
@@ -992,7 +996,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         break; }
     case PE_FrameWindow: {
          QPalette popupPal = opt->palette;
-         popupPal.setColor(QPalette::Light, opt->palette.background().color());
+         popupPal.setColor(QPalette::Light, opt->palette.window().color());
          popupPal.setColor(QPalette::Midlight, opt->palette.light().color());
          qDrawWinPanel(p, opt->rect, popupPal, opt->state & State_Sunken);
         break; }
@@ -1148,9 +1152,6 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     pixmap = menuitem->icon.pixmap(proxy()->pixelMetric(PM_SmallIconSize, opt, widget), mode);
                 const int pixw = pixmap.width() / pixmap.devicePixelRatio();
                 const int pixh = pixmap.height() / pixmap.devicePixelRatio();
-                if (act && !dis && !checked)
-                    qDrawShadePanel(p, vCheckRect,  menuitem->palette, false, 1,
-                                    &menuitem->palette.brush(QPalette::Button));
                 QRect pmr(0, 0, pixw, pixh);
                 pmr.moveCenter(vCheckRect.center());
                 p->setPen(menuitem->palette.text().color());
@@ -1314,12 +1315,12 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     x2 -= onlyOne || lastTab ? borderThinkness : 0;
                 }
 
-                p->fillRect(QRect(x1 + 1, y1 + 1, (x2 - x1) - 1, (y2 - y1) - 2), tab->palette.background());
+                p->fillRect(QRect(x1 + 1, y1 + 1, (x2 - x1) - 1, (y2 - y1) - 2), tab->palette.window());
 
                 // Delete border
                 if (selected) {
-                    p->fillRect(QRect(x1,y2-1,x2-x1,1), tab->palette.background());
-                    p->fillRect(QRect(x1,y2,x2-x1,1), tab->palette.background());
+                    p->fillRect(QRect(x1,y2-1,x2-x1,1), tab->palette.window());
+                    p->fillRect(QRect(x1,y2,x2-x1,1), tab->palette.window());
                 }
                 // Left
                 if (firstTab || selected || onlyOne || !previousSelected) {
@@ -1350,12 +1351,12 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     x2 -= lastTab ? borderThinkness : 0;
                 }
 
-                p->fillRect(QRect(x1 + 1, y1 + 2, (x2 - x1) - 1, (y2 - y1) - 1), tab->palette.background());
+                p->fillRect(QRect(x1 + 1, y1 + 2, (x2 - x1) - 1, (y2 - y1) - 1), tab->palette.window());
 
                 // Delete border
                 if (selected) {
-                    p->fillRect(QRect(x1, y1 + 1, (x2 - 1)-x1, 1), tab->palette.background());
-                    p->fillRect(QRect(x1, y1, (x2 - 1)-x1, 1), tab->palette.background());
+                    p->fillRect(QRect(x1, y1 + 1, (x2 - 1)-x1, 1), tab->palette.window());
+                    p->fillRect(QRect(x1, y1, (x2 - 1)-x1, 1), tab->palette.window());
                 }
                 // Left
                 if (firstTab || selected || onlyOne || !previousSelected) {
@@ -1388,12 +1389,12 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     y2 -= lastTab ? borderThinkness : 0;
                 }
 
-                p->fillRect(QRect(x1 + 1, y1 + 1, (x2 - x1) - 2, (y2 - y1) - 1), tab->palette.background());
+                p->fillRect(QRect(x1 + 1, y1 + 1, (x2 - x1) - 2, (y2 - y1) - 1), tab->palette.window());
 
                 // Delete border
                 if (selected) {
-                    p->fillRect(QRect(x2 - 1, y1, 1, y2-y1), tab->palette.background());
-                    p->fillRect(QRect(x2, y1, 1, y2-y1), tab->palette.background());
+                    p->fillRect(QRect(x2 - 1, y1, 1, y2-y1), tab->palette.window());
+                    p->fillRect(QRect(x2, y1, 1, y2-y1), tab->palette.window());
                 }
                 // Top
                 if (firstTab || selected || onlyOne || !previousSelected) {
@@ -1426,12 +1427,12 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     y2 -= lastTab ? borderThinkness : 0;
                 }
 
-                p->fillRect(QRect(x1 + 2, y1 + 1, (x2 - x1) - 1, (y2 - y1) - 1), tab->palette.background());
+                p->fillRect(QRect(x1 + 2, y1 + 1, (x2 - x1) - 1, (y2 - y1) - 1), tab->palette.window());
 
                 // Delete border
                 if (selected) {
-                    p->fillRect(QRect(x1 + 1, y1, 1, (y2 - 1)-y1),tab->palette.background());
-                    p->fillRect(QRect(x1, y1, 1, (y2-1)-y1), tab->palette.background());
+                    p->fillRect(QRect(x1 + 1, y1, 1, (y2 - 1)-y1),tab->palette.window());
+                    p->fillRect(QRect(x1, y1, 1, (y2-1)-y1), tab->palette.window());
                 }
                 // Top
                 if (firstTab || selected || onlyOne || !previousSelected) {
@@ -1525,7 +1526,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                         br = QBrush(paletteBrush.textureImage());
                 } else
                     br = QBrush(opt->palette.light().color(), Qt::Dense4Pattern);
-                p->setBackground(opt->palette.background().color());
+                p->setBackground(opt->palette.window().color());
                 p->setBrush(br);
             }
             p->drawRect(opt->rect);
@@ -1572,7 +1573,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
             p->fillRect(opt->rect, fill);
         }
         break; }
-#ifndef QT_NO_TOOLBAR
+#if QT_CONFIG(toolbar)
     case CE_ToolBar:
         if (const QStyleOptionToolBar *toolbar = qstyleoption_cast<const QStyleOptionToolBar *>(opt)) {
             // Reserve the beveled appearance only for mainwindow toolbars
@@ -1673,7 +1674,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
         break;
 
 
-#endif // QT_NO_TOOLBAR
+#endif // QT_CONFIG(toolbar)
 
     case CE_ProgressBarContents:
         if (const QStyleOptionProgressBar *pb = qstyleoption_cast<const QStyleOptionProgressBar *>(opt)) {
@@ -1692,7 +1693,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
             }
             QPalette pal2 = pb->palette;
             // Correct the highlight color if it is the same as the background
-            if (pal2.highlight() == pal2.background())
+            if (pal2.highlight() == pal2.window())
                 pal2.setColor(QPalette::Highlight, pb->palette.color(QPalette::Active,
                                                                      QPalette::Highlight));
             bool reverse = ((!vertical && (pb->direction == Qt::RightToLeft)) || vertical);
@@ -1824,7 +1825,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                                     titleRect.height(), titleRect.width());
                 }
                 proxy()->drawItemText(p, titleRect,
-                            Qt::AlignLeft | Qt::AlignVCenter | Qt::TextShowMnemonic, palette,
+                            Qt::AlignLeft | Qt::AlignVCenter, palette,
                             dwOpt->state & State_Enabled, dwOpt->title,
                             floating ? (active ? QPalette::BrightText : QPalette::Window) : QPalette::WindowText);
                 p->setFont(oldFont);
@@ -1842,7 +1843,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                 p->setBackground(cb->palette.highlight());
             } else {
                 p->setPen(cb->palette.text().color());
-                p->setBackground(cb->palette.background());
+                p->setBackground(cb->palette.window());
             }
         }
         QCommonStyle::drawControl(ce, opt, p, widget);
@@ -2184,7 +2185,7 @@ void QWindowsStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComp
 
                 } else {
                     p->setPen(cmb->palette.text().color());
-                    p->setBackground(cmb->palette.background());
+                    p->setBackground(cmb->palette.window());
                 }
 
                 if (cmb->state & State_HasFocus && !cmb->editable) {

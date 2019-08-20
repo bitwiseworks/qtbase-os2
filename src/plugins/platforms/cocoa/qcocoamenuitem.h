@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -108,6 +108,7 @@ public:
 
     QCocoaMenu *menu() const { return m_menu; }
     MenuRole effectiveRole() const;
+    void resolveTargetAction();
 
 private:
     QString mergeText();
@@ -118,7 +119,6 @@ private:
     QString m_text;
     QIcon m_icon;
     QPointer<QCocoaMenu> m_menu;
-    QFont m_font;
     MenuRole m_role;
     MenuRole m_detectedRole;
 #ifndef QT_NO_SHORTCUT

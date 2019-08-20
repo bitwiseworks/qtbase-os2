@@ -50,6 +50,7 @@ QT_BEGIN_NAMESPACE
 
 class QIconPrivate;
 class QIconEngine;
+class QPainter;
 
 class Q_GUI_EXPORT QIcon
 {
@@ -123,6 +124,9 @@ public:
 
     static QString themeName();
     static void setThemeName(const QString &path);
+
+    static QString fallbackThemeName();
+    static void setFallbackThemeName(const QString &name);
 
     Q_DUMMY_COMPARISON_OPERATOR(QIcon)
 

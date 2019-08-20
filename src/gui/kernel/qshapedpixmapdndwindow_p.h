@@ -3,7 +3,7 @@
 ** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the plugins of the Qt Toolkit.
+** This file is part of the QtGui module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -54,6 +54,8 @@
 #include <QtGui/private/qtguiglobal_p.h>
 #include <QtGui/QRasterWindow>
 #include <QtGui/QPixmap>
+
+QT_REQUIRE_CONFIG(draganddrop);
 
 QT_BEGIN_NAMESPACE
 

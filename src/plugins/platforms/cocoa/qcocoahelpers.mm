@@ -55,31 +55,33 @@
 
 #include <algorithm>
 
+#include <mach-o/dyld.h>
+#include <dlfcn.h>
+
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcQpaCocoaWindow, "qt.qpa.cocoa.window");
-Q_LOGGING_CATEGORY(lcQpaCocoaDrawing, "qt.qpa.cocoa.drawing");
-Q_LOGGING_CATEGORY(lcQpaCocoaMouse, "qt.qpa.cocoa.mouse");
+Q_LOGGING_CATEGORY(lcQpaWindow, "qt.qpa.window");
+Q_LOGGING_CATEGORY(lcQpaDrawing, "qt.qpa.drawing");
+Q_LOGGING_CATEGORY(lcQpaMouse, "qt.qpa.input.mouse", QtCriticalMsg);
+Q_LOGGING_CATEGORY(lcQpaScreen, "qt.qpa.screen");
 
 //
 // Conversion Functions
 //
 
-QStringList qt_mac_NSArrayToQStringList(void *nsarray)
+QStringList qt_mac_NSArrayToQStringList(NSArray<NSString *> *array)
 {
     QStringList result;
-    NSArray *array = static_cast<NSArray *>(nsarray);
-    for (NSUInteger i=0; i<[array count]; ++i)
-        result << QString::fromNSString([array objectAtIndex:i]);
+    for (NSString *string in array)
+        result << QString::fromNSString(string);
     return result;
 }
 
-void *qt_mac_QStringListToNSMutableArrayVoid(const QStringList &list)
+NSMutableArray<NSString *> *qt_mac_QStringListToNSMutableArray(const QStringList &list)
 {
-    NSMutableArray *result = [NSMutableArray arrayWithCapacity:list.size()];
-    for (int i=0; i<list.size(); ++i){
-        [result addObject:list[i].toNSString()];
-    }
+    NSMutableArray<NSString *> *result = [NSMutableArray<NSString *> arrayWithCapacity:list.size()];
+    for (const QString &string : list)
+        [result addObject:string.toNSString()];
     return result;
 }
 
@@ -93,6 +95,7 @@ struct dndenum_mapper
 static dndenum_mapper dnd_enums[] = {
     { NSDragOperationLink,  Qt::LinkAction, true },
     { NSDragOperationMove,  Qt::MoveAction, true },
+    { NSDragOperationDelete,  Qt::MoveAction, true },
     { NSDragOperationCopy,  Qt::CopyAction, true },
     { NSDragOperationGeneric,  Qt::CopyAction, false },
     { NSDragOperationEvery, Qt::ActionMask, false },
@@ -161,10 +164,7 @@ Qt::DropActions qt_mac_mapNSDragOperations(NSDragOperation nsActions)
 */
 QNSView *qnsview_cast(NSView *view)
 {
-    if (![view isKindOfClass:[QNSView class]])
-        return nil;
-
-    return static_cast<QNSView *>(view);
+    return qt_objc_cast<QNSView *>(view);
 }
 
 //
@@ -265,6 +265,16 @@ QRectF qt_mac_flip(const QRectF &rect, const QRectF &reference)
 
 // -------------------------------------------------------------------------
 
+/*!
+  \fn Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum)
+
+  Returns the Qt::Button that corresponds to an NSEvent.buttonNumber.
+
+  \note AppKit will use buttonNumber 0 to indicate both "left button"
+  and "no button". Only NSEvents that describes mouse press/release
+  events (e.g NSEventTypeOtherMouseDown) will contain a valid
+  button number.
+*/
 Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum)
 {
     if (buttonNum >= 0 && buttonNum <= 31)
@@ -272,9 +282,179 @@ Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum)
     return Qt::NoButton;
 }
 
+/*!
+  \fn Qt::MouseButton cocoaButton2QtButton(NSEvent *event)
+
+  Returns the Qt::Button that corresponds to an NSEvent.buttonNumber.
+
+  \note AppKit will use buttonNumber 0 to indicate both "left button"
+  and "no button". Only NSEvents that describes mouse press/release/dragging
+  events (e.g NSEventTypeOtherMouseDown) will contain a valid
+  button number.
+
+  \note Wacom tablet might not return the correct button number for NSEvent buttonNumber
+  on right clicks. Decide here that the button is the "right" button.
+*/
+Qt::MouseButton cocoaButton2QtButton(NSEvent *event)
+{
+    switch (event.type) {
+    case NSEventTypeMouseMoved:
+        return Qt::NoButton;
+
+    case NSEventTypeRightMouseUp:
+    case NSEventTypeRightMouseDown:
+    case NSEventTypeRightMouseDragged:
+        return Qt::RightButton;
+
+    default:
+        break;
+    }
+
+    return cocoaButton2QtButton(event.buttonNumber);
+}
+
+/*!
+  \fn QEvent::Type cocoaEvent2QtMouseEvent(NSEvent *event)
+
+  Returns the QEvent::Type that corresponds to an NSEvent.type.
+*/
+QEvent::Type cocoaEvent2QtMouseEvent(NSEvent *event)
+{
+    switch (event.type) {
+    case NSEventTypeLeftMouseDown:
+    case NSEventTypeRightMouseDown:
+    case NSEventTypeOtherMouseDown:
+        return QEvent::MouseButtonPress;
+
+    case NSEventTypeLeftMouseUp:
+    case NSEventTypeRightMouseUp:
+    case NSEventTypeOtherMouseUp:
+        return QEvent::MouseButtonRelease;
+
+    case NSEventTypeLeftMouseDragged:
+    case NSEventTypeRightMouseDragged:
+    case NSEventTypeOtherMouseDragged:
+        return QEvent::MouseMove;
+
+    case NSEventTypeMouseMoved:
+        return QEvent::MouseMove;
+
+    default:
+        break;
+    }
+
+    return QEvent::None;
+}
+
+/*!
+  \fn Qt::MouseButtons cocoaMouseButtons2QtMouseButtons(NSInteger pressedMouseButtons)
+
+  Returns the Qt::MouseButtons that corresponds to an NSEvent.pressedMouseButtons.
+*/
+Qt::MouseButtons cocoaMouseButtons2QtMouseButtons(NSInteger pressedMouseButtons)
+{
+  return static_cast<Qt::MouseButton>(pressedMouseButtons & Qt::MouseButtonMask);
+}
+
+/*!
+  \fn Qt::MouseButtons currentlyPressedMouseButtons()
+
+  Returns the Qt::MouseButtons that corresponds to an NSEvent.pressedMouseButtons.
+*/
+Qt::MouseButtons currentlyPressedMouseButtons()
+{
+  return cocoaMouseButtons2QtMouseButtons(NSEvent.pressedMouseButtons);
+}
+
 QString qt_mac_removeAmpersandEscapes(QString s)
 {
     return QPlatformTheme::removeMnemonics(s).trimmed();
+}
+
+// -------------------------------------------------------------------------
+
+#if !defined(Q_PROCESSOR_X86_64)
+#error "32-bit builds are not supported"
+#endif
+
+QOperatingSystemVersion QMacVersion::buildSDK(VersionTarget target)
+{
+    switch (target) {
+    case ApplicationBinary: return applicationVersion().second;
+    case QtLibraries: return libraryVersion().second;
+    }
+    Q_UNREACHABLE();
+}
+
+QOperatingSystemVersion QMacVersion::deploymentTarget(VersionTarget target)
+{
+    switch (target) {
+    case ApplicationBinary: return applicationVersion().first;
+    case QtLibraries: return libraryVersion().first;
+    }
+    Q_UNREACHABLE();
+}
+
+QOperatingSystemVersion QMacVersion::currentRuntime()
+{
+    return QOperatingSystemVersion::current();
+}
+
+QMacVersion::VersionTuple QMacVersion::versionsForImage(const mach_header *machHeader)
+{
+    static auto makeVersionTuple = [](uint32_t dt, uint32_t sdk) {
+        return qMakePair(
+            QOperatingSystemVersion(QOperatingSystemVersion::MacOS,
+                dt >> 16 & 0xffff, dt >> 8 & 0xff, dt & 0xff),
+            QOperatingSystemVersion(QOperatingSystemVersion::MacOS,
+                sdk >> 16 & 0xffff, sdk >> 8 & 0xff, sdk & 0xff)
+        );
+    };
+
+    auto commandCursor = uintptr_t(machHeader) + sizeof(mach_header_64);
+    for (uint32_t i = 0; i < machHeader->ncmds; ++i) {
+        load_command *loadCommand = reinterpret_cast<load_command *>(commandCursor);
+        if (loadCommand->cmd == LC_VERSION_MIN_MACOSX) {
+            auto versionCommand = reinterpret_cast<version_min_command *>(loadCommand);
+            return makeVersionTuple(versionCommand->version, versionCommand->sdk);
+#if QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_13)
+        } else if (loadCommand->cmd == LC_BUILD_VERSION) {
+            auto versionCommand = reinterpret_cast<build_version_command *>(loadCommand);
+            return makeVersionTuple(versionCommand->minos, versionCommand->sdk);
+#endif
+        }
+        commandCursor += loadCommand->cmdsize;
+    }
+    Q_ASSERT_X(false, "QCocoaIntegration", "Could not find any version load command");
+    Q_UNREACHABLE();
+}
+
+QMacVersion::VersionTuple QMacVersion::applicationVersion()
+{
+    static VersionTuple version = []() {
+        const mach_header *executableHeader = nullptr;
+        for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+            auto header = _dyld_get_image_header(i);
+            if (header->filetype == MH_EXECUTE) {
+                executableHeader = header;
+                break;
+            }
+        }
+        Q_ASSERT_X(executableHeader, "QCocoaIntegration", "Failed to resolve Mach-O header of executable");
+        return versionsForImage(executableHeader);
+    }();
+    return version;
+}
+
+QMacVersion::VersionTuple QMacVersion::libraryVersion()
+{
+    static VersionTuple version = []() {
+        Dl_info cocoaPluginImage;
+        dladdr((const void *)&QMacVersion::libraryVersion, &cocoaPluginImage);
+        Q_ASSERT_X(cocoaPluginImage.dli_fbase, "QCocoaIntegration", "Failed to resolve Mach-O header of Cocoa plugin");
+        return versionsForImage(static_cast<mach_header*>(cocoaPluginImage.dli_fbase));
+    }();
+    return version;
 }
 
 QT_END_NAMESPACE
@@ -288,7 +468,12 @@ QT_END_NAMESPACE
     the target-action for the OK/Cancel buttons and making
     sure the layout is consistent.
  */
-@implementation QNSPanelContentsWrapper
+@implementation QNSPanelContentsWrapper {
+    NSButton *_okButton;
+    NSButton *_cancelButton;
+    NSView *_panelContents;
+    NSEdgeInsets _panelContentsMargins;
+}
 
 @synthesize okButton = _okButton;
 @synthesize cancelButton = _cancelButton;
@@ -336,7 +521,7 @@ QT_END_NAMESPACE
     // FIXME: Not obvious, from Cocoa's documentation, that QString::toNSString() makes a deep copy
     button.title = (NSString *)cleanTitle.toCFString();
     ((NSButtonCell *)button.cell).font =
-            [NSFont systemFontOfSize:[NSFont systemFontSizeForControlSize:NSRegularControlSize]];
+            [NSFont systemFontOfSize:[NSFont systemFontSizeForControlSize:NSControlSizeRegular]];
     [self addSubview:button];
     return button;
 }

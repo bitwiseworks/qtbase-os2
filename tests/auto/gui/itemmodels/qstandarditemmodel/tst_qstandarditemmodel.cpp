@@ -98,6 +98,7 @@ private slots:
     void checkChildren();
     void data();
     void clear();
+    void clearItemData();
     void sort_data();
     void sort();
     void sortRole_data();
@@ -749,7 +750,32 @@ void tst_QStandardItemModel::data()
 
     QCOMPARE(m_model->data(m_model->index(0, 0), Qt::DisplayRole).toString(), QLatin1String("initialitem"));
     QCOMPARE(m_model->data(m_model->index(0, 0), Qt::ToolTipRole).toString(), QLatin1String("tooltip"));
+    const QMap<int, QVariant> itmData = m_model->itemData(m_model->index(0, 0));
+    QCOMPARE(itmData.value(Qt::DisplayRole), QLatin1String("initialitem"));
+    QCOMPARE(itmData.value(Qt::ToolTipRole), QLatin1String("tooltip"));
+    QVERIFY(!itmData.contains(Qt::UserRole - 1));
+    QVERIFY(m_model->itemData(QModelIndex()).isEmpty());
+}
 
+void tst_QStandardItemModel::clearItemData()
+{
+    currentRoles.clear();
+    QVERIFY(!m_model->clearItemData(QModelIndex()));
+    QCOMPARE(currentRoles, {});
+    const QModelIndex idx = m_model->index(0, 0);
+    const QMap<int, QVariant> oldData = m_model->itemData(idx);
+    m_model->setData(idx, QLatin1String("initialitem"), Qt::DisplayRole);
+    m_model->setData(idx, QLatin1String("tooltip"), Qt::ToolTipRole);
+    m_model->setData(idx, 5, Qt::UserRole);
+    currentRoles.clear();
+    QVERIFY(m_model->clearItemData(idx));
+    QCOMPARE(idx.data(Qt::UserRole), QVariant());
+    QCOMPARE(idx.data(Qt::ToolTipRole), QVariant());
+    QCOMPARE(idx.data(Qt::DisplayRole), QVariant());
+    QCOMPARE(idx.data(Qt::EditRole), QVariant());
+    QCOMPARE(currentRoles, {});
+    m_model->setItemData(idx, oldData);
+    currentRoles.clear();
 }
 
 void tst_QStandardItemModel::clear()
@@ -1134,7 +1160,7 @@ void tst_QStandardItemModel::getSetItemData()
     QColor backgroundColor(Qt::blue);
     roles.insert(Qt::BackgroundRole, backgroundColor);
     QColor textColor(Qt::green);
-    roles.insert(Qt::TextColorRole, textColor);
+    roles.insert(Qt::ForegroundRole, textColor);
     Qt::CheckState checkState(Qt::PartiallyChecked);
     roles.insert(Qt::CheckStateRole, int(checkState));
     QLatin1String accessibleText("accessibleText");
@@ -1426,7 +1452,7 @@ void tst_QStandardItemModel::rootItemFlags()
     QCOMPARE(model.invisibleRootItem()->flags() , f);
     QCOMPARE(model.invisibleRootItem()->flags() , model.flags(QModelIndex()));
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     model.invisibleRootItem()->setDropEnabled(false);
 #endif
     QCOMPARE(model.invisibleRootItem()->flags() , Qt::ItemIsEnabled);
@@ -1560,7 +1586,7 @@ void tst_QStandardItemModel::treeDragAndDrop()
     view.setModel(&model);
     view.expandAll();
     view.show();
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     view.setDragDropMode(QAbstractItemView::InternalMove);
 #endif
     view.setSelectionMode(QAbstractItemView::ExtendedSelection);

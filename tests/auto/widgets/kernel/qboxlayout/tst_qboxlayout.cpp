@@ -56,6 +56,7 @@ private slots:
     void taskQTBUG_40609_addingWidgetToItsOwnLayout();
     void taskQTBUG_40609_addingLayoutToItself();
     void replaceWidget();
+    void indexOf();
 };
 
 class CustomLayoutStyle : public QProxyStyle
@@ -226,15 +227,13 @@ void tst_QBoxLayout::setStyleShouldChangeSpacing()
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
 
-    int spacing = pb2->geometry().left() - pb1->geometry().right() - 1;
-    QCOMPARE(spacing, 6);
+    auto spacing = [&]() { return pb2->geometry().left() - pb1->geometry().right() - 1; };
+    QCOMPARE(spacing(), 6);
 
     QScopedPointer<CustomLayoutStyle> style2(new CustomLayoutStyle());
     style2->hspacing = 10;
     window.setStyle(style2.data());
-    QTest::qWait(100);
-    spacing = pb2->geometry().left() - pb1->geometry().right() - 1;
-    QCOMPARE(spacing, 10);
+    QTRY_COMPARE(spacing(), 10);
 }
 
 void tst_QBoxLayout::taskQTBUG_7103_minMaxWidthNotRespected()
@@ -512,6 +511,25 @@ void tst_QBoxLayout::replaceWidget()
 
     QCOMPARE(boxLayout->indexOf(replaceFrom), -1);
     QCOMPARE(boxLayout->indexOf(replaceTo), 1);
+}
+
+void tst_QBoxLayout::indexOf()
+{
+    QWidget w;
+    auto outer = new QVBoxLayout(&w);
+    auto inner = new QHBoxLayout();
+    outer->addLayout(inner);
+    auto widget1 = new QWidget();
+    QWidget widget2;
+    inner->addWidget(widget1);
+
+    QCOMPARE(inner->indexOf(widget1), 0);
+    QCOMPARE(inner->indexOf(&widget2), -1);
+    QCOMPARE(outer->indexOf(widget1), -1);
+    QCOMPARE(outer->indexOf(&widget2), -1);
+    QCOMPARE(outer->indexOf(outer), -1);
+    QCOMPARE(outer->indexOf(inner), 0);
+    QCOMPARE(inner->indexOf(inner->itemAt(0)), 0);
 }
 
 QTEST_MAIN(tst_QBoxLayout)

@@ -244,7 +244,8 @@ static inline bool usePixelDensity()
         return false;
     return QCoreApplication::testAttribute(Qt::AA_EnableHighDpiScaling)
         || (screenEnvValueOk && screenEnvValue > 0)
-        || (qEnvironmentVariableIsSet(legacyDevicePixelEnvVar) && qgetenv(legacyDevicePixelEnvVar).toLower() == "auto");
+        || (qEnvironmentVariableIsSet(legacyDevicePixelEnvVar) &&
+            qgetenv(legacyDevicePixelEnvVar).compare("auto", Qt::CaseInsensitive) == 0);
 }
 
 void QHighDpiScaling::initHighDpiScaling()
@@ -312,9 +313,12 @@ void QHighDpiScaling::updateHighDpiScaling()
     }
     m_active = m_globalScalingActive || m_screenFactorSet || m_pixelDensityScalingActive;
 
-    QPlatformScreen *primaryScreen = QGuiApplication::primaryScreen()->handle();
-    qreal sf = screenSubfactor(primaryScreen);
-    QDpi primaryDpi = primaryScreen->logicalDpi();
+    QScreen *primaryScreen = QGuiApplication::primaryScreen();
+    if (!primaryScreen)
+        return;
+    QPlatformScreen *platformScreen = primaryScreen->handle();
+    qreal sf = screenSubfactor(platformScreen);
+    QDpi primaryDpi = platformScreen->logicalDpi();
     m_logicalDpi = QDpi(primaryDpi.first / sf, primaryDpi.second / sf);
 }
 

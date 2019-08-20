@@ -164,13 +164,9 @@ public:
 
     QDir::Filters filterForMode(QDir::Filters filters) const
     {
-        const QFileDialog::FileMode fileMode = q_func()->fileMode();
-        if (fileMode == QFileDialog::DirectoryOnly) {
-            filters |= QDir::Drives | QDir::AllDirs | QDir::Dirs;
+        filters |= QDir::Drives | QDir::AllDirs | QDir::Dirs | QDir::Files;
+        if (q_func()->testOption(QFileDialog::ShowDirsOnly))
             filters &= ~QDir::Files;
-        } else {
-            filters |= QDir::Drives | QDir::AllDirs | QDir::Files | QDir::Dirs;
-        }
         return filters;
     }
 
@@ -187,7 +183,7 @@ public:
 #endif
     }
 
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     void saveSettings();
     bool restoreFromSettings();
 #endif
@@ -227,7 +223,7 @@ public:
     void _q_fileRenamed(const QString &path, const QString &oldName, const QString &newName);
 
     // layout
-#ifndef QT_NO_PROXYMODEL
+#if QT_CONFIG(proxymodel)
     QAbstractProxyModel *proxyModel;
 #endif
 
@@ -290,7 +286,7 @@ private:
     virtual void helperPrepareShow(QPlatformDialogHelper *) override;
     virtual void helperDone(QDialog::DialogCode, QPlatformDialogHelper *) override;
 
-    Q_DISABLE_COPY(QFileDialogPrivate)
+    Q_DISABLE_COPY_MOVE(QFileDialogPrivate)
 };
 
 class QFileDialogLineEdit : public QLineEdit
@@ -346,17 +342,17 @@ private:
 };
 
 QModelIndex QFileDialogPrivate::mapToSource(const QModelIndex &index) const {
-#ifdef QT_NO_PROXYMODEL
-    return index;
-#else
+#if QT_CONFIG(proxymodel)
     return proxyModel ? proxyModel->mapToSource(index) : index;
+#else
+    return index;
 #endif
 }
 QModelIndex QFileDialogPrivate::mapFromSource(const QModelIndex &index) const {
-#ifdef QT_NO_PROXYMODEL
-    return index;
-#else
+#if QT_CONFIG(proxymodel)
     return proxyModel ? proxyModel->mapFromSource(index) : index;
+#else
+    return index;
 #endif
 }
 

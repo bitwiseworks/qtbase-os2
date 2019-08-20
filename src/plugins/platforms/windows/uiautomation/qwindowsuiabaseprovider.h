@@ -40,12 +40,11 @@
 #ifndef QWINDOWSUIABASEPROVIDER_H
 #define QWINDOWSUIABASEPROVIDER_H
 
-#include <QtCore/QtConfig>
-#ifndef QT_NO_ACCESSIBILITY
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(accessibility)
 
-#include <QtGui/QAccessible>
-#include <QtGui/QAccessibleInterface>
-#include <QtCore/QPointer>
+#include <QtGui/qaccessible.h>
+#include <QtCore/qpointer.h>
 
 #include <qwindowscombase.h>
 #include <QtWindowsUIAutomationSupport/private/qwindowsuiawrapper_p.h>
@@ -53,7 +52,6 @@
 QT_BEGIN_NAMESPACE
 
 class QAccessibleInterface;
-class QDebug;
 
 // Base class for UI Automation providers.
 class QWindowsUiaBaseProvider : public QObject
@@ -73,6 +71,6 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)
 
 #endif // QWINDOWSUIABASEPROVIDER_H

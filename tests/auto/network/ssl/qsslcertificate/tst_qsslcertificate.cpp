@@ -814,7 +814,7 @@ void tst_QSslCertificate::task256066toPem()
 
 void tst_QSslCertificate::nulInCN()
 {
-#if defined(QT_SECURETRANSPORT) || defined(Q_OS_WINRT)
+#if defined(QT_SECURETRANSPORT) || defined(Q_OS_WINRT) || QT_CONFIG(schannel)
     QSKIP("Generic QSslCertificatePrivate fails this test");
 #endif
     QList<QSslCertificate> certList =
@@ -833,7 +833,7 @@ void tst_QSslCertificate::nulInCN()
 
 void tst_QSslCertificate::nulInSan()
 {
-#if defined(QT_SECURETRANSPORT) || defined(Q_OS_WINRT)
+#if defined(QT_SECURETRANSPORT) || defined(Q_OS_WINRT) || QT_CONFIG(schannel)
     QSKIP("Generic QSslCertificatePrivate fails this test");
 #endif
     QList<QSslCertificate> certList =
@@ -922,6 +922,10 @@ void tst_QSslCertificate::toText()
     QVERIFY(f101c.open(QIODevice::ReadOnly | QFile::Text));
     QByteArray txt101c = f101c.readAll();
 
+    QFile f111(testDataDir + "more-certificates/cert-large-expiration-date.txt.1.1.1");
+    QVERIFY(f111.open(QIODevice::ReadOnly | QFile::Text));
+    QByteArray txt111 = f111.readAll();
+
     QString txtcert = cert.toText();
 
 #ifdef QT_NO_OPENSSL
@@ -930,7 +934,8 @@ void tst_QSslCertificate::toText()
     QVERIFY(QString::fromLatin1(txt098) == txtcert ||
             QString::fromLatin1(txt100) == txtcert ||
             QString::fromLatin1(txt101) == txtcert ||
-            QString::fromLatin1(txt101c) == txtcert );
+            QString::fromLatin1(txt101c) == txtcert ||
+            QString::fromLatin1(txt111) == txtcert );
 }
 
 void tst_QSslCertificate::multipleCommonNames()

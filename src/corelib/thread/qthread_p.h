@@ -57,7 +57,9 @@
 #include "QtCore/qthread.h"
 #include "QtCore/qmutex.h"
 #include "QtCore/qstack.h"
+#if QT_CONFIG(thread)
 #include "QtCore/qwaitcondition.h"
+#endif
 #include "QtCore/qmap.h"
 #include "QtCore/qcoreapplication.h"
 #include "private/qobject_p.h"
@@ -145,7 +147,7 @@ private:
     using QVector<QPostEvent>::insert;
 };
 
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
 
 class Q_CORE_EXPORT QDaemonThread : public QThread
 {
@@ -206,6 +208,10 @@ public:
     bool terminationEnabled, terminatePending;
 #endif // Q_OS_OS2
 
+#ifdef Q_OS_WASM
+    static int idealThreadCount;
+#endif
+
     QThreadData *data;
 
     static QAbstractEventDispatcher *createEventDispatcher(QThreadData *data);
@@ -223,15 +229,17 @@ public:
     }
 };
 
-#else // QT_NO_THREAD
+#else // QT_CONFIG(thread)
 
 class QThreadPrivate : public QObjectPrivate
 {
 public:
-    QThreadPrivate(QThreadData *d = 0) : data(d ? d : new QThreadData) {}
-    ~QThreadPrivate() { delete data; }
+    QThreadPrivate(QThreadData *d = 0);
+    ~QThreadPrivate();
 
+    mutable QMutex mutex;
     QThreadData *data;
+    bool running = false;
 
     static void setCurrentThread(QThread*) {}
     static QThread *threadForId(int) { return QThread::currentThread(); }
@@ -243,7 +251,7 @@ public:
     Q_DECLARE_PUBLIC(QThread)
 };
 
-#endif // QT_NO_THREAD
+#endif // QT_CONFIG(thread)
 
 class QThreadData
 {
@@ -252,6 +260,9 @@ public:
     ~QThreadData();
 
     static Q_AUTOTEST_EXPORT QThreadData *current(bool createIfNecessary = true);
+#ifdef Q_OS_WINRT
+    static void setMainThread();
+#endif
     static void clearCurrentThreadData();
     static QThreadData *get2(QThread *thread)
     { Q_ASSERT_X(thread != 0, "QThread", "internal error"); return thread->d_func()->data; }
@@ -260,7 +271,15 @@ public:
     void ref();
     void deref();
     inline bool hasEventDispatcher() const
-    { return eventDispatcher.load() != 0; }
+    { return eventDispatcher.load() != nullptr; }
+    QAbstractEventDispatcher *createEventDispatcher();
+    QAbstractEventDispatcher *ensureEventDispatcher()
+    {
+        QAbstractEventDispatcher *ed = eventDispatcher.load();
+        if (Q_LIKELY(ed))
+            return ed;
+        return createEventDispatcher();
+    }
 
     bool canWaitLocked()
     {
@@ -331,7 +350,9 @@ public:
     void init();
 
 private:
+#if QT_CONFIG(thread)
     void run() override;
+#endif
 };
 
 QT_END_NAMESPACE

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -53,12 +53,10 @@
 
 #import <AppKit/AppKit.h>
 
-#include <QtCore/qpointer.h>
 #include <qcocoahelpers.h>
 
 QT_FORWARD_DECLARE_CLASS(QCocoaMenu);
-typedef QPointer<QCocoaMenu> QCocoaMenuPointer;
-
+QT_FORWARD_DECLARE_CLASS(QCocoaMenuItem);
 
 @interface QT_MANGLE_NAMESPACE(QCocoaNSMenuDelegate) : NSObject <NSMenuDelegate>
 
@@ -72,18 +70,24 @@ typedef QPointer<QCocoaMenu> QCocoaMenuPointer;
 
 @interface QT_MANGLE_NAMESPACE(QCocoaNSMenu) : NSMenu
 
-@property (readonly, nonatomic) QCocoaMenuPointer qpaMenu;
+@property (readonly, nonatomic) QCocoaMenu *platformMenu;
 
-- (instancetype)initWithQPAMenu:(QCocoaMenu *)menu;
+- (instancetype)initWithPlatformMenu:(QCocoaMenu *)menu;
 
-- (void)qt_itemFired:(NSMenuItem *)item;
+@end
 
-- (BOOL)worksWhenModal;
-- (BOOL)validateMenuItem:(NSMenuItem*)item; // NSMenuValidation
+@interface QT_MANGLE_NAMESPACE(QCocoaNSMenuItem) : NSMenuItem
+
+@property (nonatomic) QCocoaMenuItem *platformMenuItem;
+
++ (instancetype)separatorItemWithPlatformMenuItem:(QCocoaMenuItem *)menuItem;
+- (instancetype)initWithPlatformMenuItem:(QCocoaMenuItem *)menuItem;
+- (instancetype)init;
 
 @end
 
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaNSMenu);
+QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaNSMenuItem);
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaNSMenuDelegate);
 
 #endif // QCOCOANSMENU_H

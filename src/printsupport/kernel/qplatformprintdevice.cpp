@@ -40,32 +40,13 @@
 #include "qplatformprintdevice.h"
 
 #include "qprintdevice_p.h"
-#if QT_CONFIG(printdialog)
-#include "qprintdialog.h"
-#endif
 
+#include <QtCore/qcoreapplication.h>
 #include <QtGui/qpagelayout.h>
 
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_PRINTER
-
-QPlatformPrintDevice::QPlatformPrintDevice()
-    : m_isRemote(false),
-      m_supportsMultipleCopies(false),
-      m_supportsCollateCopies(false),
-      m_havePageSizes(false),
-      m_supportsCustomPageSizes(false),
-      m_haveResolutions(false),
-      m_haveInputSlots(false),
-      m_haveOutputBins(false),
-      m_haveDuplexModes(false),
-      m_haveColorModes(false)
-#ifndef QT_NO_MIMETYPE
-    , m_haveMimeTypes(false)
-#endif
-{
-}
 
 QPlatformPrintDevice::QPlatformPrintDevice(const QString &id)
     : m_id(id),
@@ -79,7 +60,7 @@ QPlatformPrintDevice::QPlatformPrintDevice(const QString &id)
       m_haveOutputBins(false),
       m_haveDuplexModes(false),
       m_haveColorModes(false)
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
     , m_haveMimeTypes(false)
 #endif
 {
@@ -182,7 +163,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QPageSize &pageSize) con
     // e.g. Windows defines DMPAPER_11X17 and DMPAPER_TABLOID with names "11x17" and "Tabloid", but both
     // map to QPageSize::Tabloid / PPD Key "Tabloid" / ANSI B Tabloid
     if (pageSize.id() != QPageSize::Custom) {
-        for (const QPageSize &ps : m_pageSizes) {
+        for (const QPageSize &ps : qAsConst(m_pageSizes)) {
             if (ps.id() == pageSize.id() && ps.name() == pageSize.name())
                 return ps;
         }
@@ -190,7 +171,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QPageSize &pageSize) con
 
     // Next try match on id only if not custom
     if (pageSize.id() != QPageSize::Custom) {
-        for (const QPageSize &ps : m_pageSizes) {
+        for (const QPageSize &ps : qAsConst(m_pageSizes)) {
             if (ps.id() == pageSize.id())
                 return ps;
         }
@@ -205,7 +186,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(QPageSize::PageSizeId pageSize
     if (!m_havePageSizes)
         loadPageSizes();
 
-    for (const QPageSize &ps : m_pageSizes) {
+    for (const QPageSize &ps : qAsConst(m_pageSizes)) {
         if (ps.id() == pageSizeId)
             return ps;
     }
@@ -219,7 +200,7 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QString &pageName) const
     if (!m_havePageSizes)
         loadPageSizes();
 
-    for (const QPageSize &ps : m_pageSizes) {
+    for (const QPageSize &ps : qAsConst(m_pageSizes)) {
         if (ps.name() == pageName)
             return ps;
     }
@@ -247,8 +228,12 @@ QPageSize QPlatformPrintDevice::supportedPageSize(const QSizeF &size, QPageSize:
 
 QPageSize QPlatformPrintDevice::supportedPageSizeMatch(const QPageSize &pageSize) const
 {
+    // If it's a known page size, just return itself
+    if (m_pageSizes.contains(pageSize))
+        return pageSize;
+
     // Try to find a supported page size based on point size
-    for (const QPageSize &ps : m_pageSizes) {
+    for (const QPageSize &ps : qAsConst(m_pageSizes)) {
         if (ps.sizePoints() == pageSize.sizePoints())
             return ps;
     }
@@ -304,11 +289,7 @@ QPrint::InputSlot QPlatformPrintDevice::defaultInputSlot() const
 {
     QPrint::InputSlot input;
     input.key = QByteArrayLiteral("Auto");
-#if QT_CONFIG(printdialog)
-    input.name = QPrintDialog::tr("Automatic");
-#else
-    input.name = QString::fromLatin1("Automatic");
-#endif
+    input.name = QCoreApplication::translate("Print Device Input Slot", "Automatic");
     input.id = QPrint::Auto;
     return input;
 }
@@ -328,11 +309,7 @@ QPrint::OutputBin QPlatformPrintDevice::defaultOutputBin() const
 {
     QPrint::OutputBin output;
     output.key = QByteArrayLiteral("Auto");
-#if QT_CONFIG(printdialog)
-    output.name = QPrintDialog::tr("Automatic");
-#else
-    output.name = QString::fromLatin1("Automatic");
-#endif
+    output.name = QCoreApplication::translate("Print Device Output Bin", "Automatic");
     output.id = QPrint::AutoOutputBin;
     return output;
 }
@@ -376,10 +353,11 @@ QVector<QPrint::ColorMode> QPlatformPrintDevice::supportedColorModes() const
     return m_colorModes;
 }
 
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
 void QPlatformPrintDevice::loadMimeTypes() const
 {
 }
+#endif // mimetype
 
 QVariant QPlatformPrintDevice::property(QPrintDevice::PrintDevicePropertyKey key) const
 {
@@ -404,13 +382,14 @@ bool QPlatformPrintDevice::isFeatureAvailable(QPrintDevice::PrintDevicePropertyK
     return false;
 }
 
+#if QT_CONFIG(mimetype)
 QList<QMimeType> QPlatformPrintDevice::supportedMimeTypes() const
 {
     if (!m_haveMimeTypes)
         loadMimeTypes();
     return m_mimeTypes;
 }
-#endif // QT_NO_MIMETYPE
+#endif // mimetype
 
 QPageSize QPlatformPrintDevice::createPageSize(const QString &key, const QSize &size, const QString &localizedName)
 {

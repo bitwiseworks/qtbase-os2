@@ -117,7 +117,7 @@ QT_BEGIN_NAMESPACE
 
     All timer types may time out later than expected if the system is busy or
     unable to provide the requested accuracy. In such a case of timeout
-    overrun, Qt will emit activated() only once, even if multiple timeouts have
+    overrun, Qt will emit timeout() only once, even if multiple timeouts have
     expired, and then will resume the original interval.
 
     \section1 Alternatives to QTimer
@@ -568,6 +568,48 @@ void QTimer::singleShot(int msec, Qt::TimerType timerType, const QObject *receiv
     accuracy of the timer.
 
     \sa start()
+*/
+
+/*!
+    \fn template <typename Functor> QMetaObject::Connection QTimer::callOnTimeout(Functor slot, Qt::ConnectionType connectionType = Qt::AutoConnection)
+    \since 5.12
+    \overload
+
+    Creates a connection from the timeout() signal to \a slot, and returns a
+    handle to the connection.
+
+    This method is provided for convenience.
+    It's equivalent to calling \c {QObject::connect(timer, &QTimer::timeout, timer, slot, connectionType)}.
+
+    \sa QObject::connect(), timeout()
+*/
+
+/*!
+    \fn template <typename Functor> QMetaObject::Connection QTimer::callOnTimeout(const QObject *context, Functor slot, Qt::ConnectionType connectionType = Qt::AutoConnection)
+    \since 5.12
+    \overload callOnTimeout()
+
+    Creates a connection from the timeout() signal to \a slot to be placed in a specific
+    event loop of \a context, and returns a handle to the connection.
+
+    This method is provided for convenience. It's equivalent to calling
+    \c {QObject::connect(timer, &QTimer::timeout, context, slot, connectionType)}.
+
+    \sa QObject::connect(), timeout()
+*/
+
+/*!
+    \fn template <typename PointerToMemberFunction> QMetaObject::Connection QTimer::callOnTimeout(const QObject *receiver, PointerToMemberFunction slot, Qt::ConnectionType connectionType = Qt::AutoConnection)
+    \since 5.12
+    \overload callOnTimeout()
+
+    Creates a connection from the timeout() signal to the \a slot in the \a receiver object. Returns
+    a handle to the connection.
+
+    This method is provided for convenience. It's equivalent to calling
+    \c {QObject::connect(timer, &QTimer::timeout, receiver, slot, connectionType)}.
+
+    \sa QObject::connect(), timeout()
 */
 
 /*!

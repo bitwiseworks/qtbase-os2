@@ -157,10 +157,13 @@ static Tracepoint::Field::BackendType backendType(QString rawType)
         { "signed_long_long_int",   Tracepoint::Field::Integer },
         { "unsigned_long_long",     Tracepoint::Field::Integer },
         { "char",                   Tracepoint::Field::Integer },
+        { "intptr_t",               Tracepoint::Field::IntegerHex },
+        { "uintptr_t",              Tracepoint::Field::IntegerHex },
+        { "std::intptr_t",          Tracepoint::Field::IntegerHex },
+        { "std::uintptr_t",         Tracepoint::Field::IntegerHex },
         { "float",                  Tracepoint::Field::Float },
         { "double",                 Tracepoint::Field::Float },
         { "long_double",            Tracepoint::Field::Float },
-        { "char_ptr",               Tracepoint::Field::String },
         { "QString",                Tracepoint::Field::QtString },
         { "QByteArray",             Tracepoint::Field::QtByteArray },
         { "QUrl",                   Tracepoint::Field::QtUrl },
@@ -168,7 +171,6 @@ static Tracepoint::Field::BackendType backendType(QString rawType)
     };
 
     auto backendType = [](const QString &rawType) {
-
         static const size_t tableSize = sizeof (typeTable) / sizeof (typeTable[0]);
 
         for (size_t i = 0; i < tableSize; ++i) {
@@ -194,7 +196,13 @@ static Tracepoint::Field::BackendType backendType(QString rawType)
     rawType = rawType.trimmed();
     rawType.replace(QStringLiteral(" "), QStringLiteral("_"));
 
-    return backendType(rawType.trimmed());
+    if (rawType == QLatin1String("char_ptr"))
+        return Tracepoint::Field::String;
+
+    if (rawType.endsWith(QLatin1String("_ptr")))
+        return Tracepoint::Field::Pointer;
+
+    return backendType(rawType);
 }
 
 static Tracepoint parseTracepoint(const QString &name, const QStringList &args,
@@ -264,38 +272,50 @@ Provider parseProvider(const QString &filename)
 
     static const QRegExp tracedef(QStringLiteral("([A-Za-z][A-Za-z0-9_]*)\\((.*)\\)"));
 
-    int lineNumber = 0;
-
     Provider provider;
     provider.name = QFileInfo(filename).baseName();
 
-    for (;;) {
+    bool parsingPrefixText = false;
+    for (int lineNumber = 1; !s.atEnd(); ++lineNumber) {
         QString line = s.readLine().trimmed();
 
-        if (line.isNull())
-            break;
-
-        if (line.isEmpty() || line.startsWith(QStringLiteral("#"))) {
-            ++lineNumber;
+        if (line == QLatin1String("{")) {
+            parsingPrefixText = true;
+            continue;
+        } else if (parsingPrefixText && line == QLatin1String("}")) {
+            parsingPrefixText = false;
+            continue;
+        } else if (parsingPrefixText) {
+            provider.prefixText.append(line);
             continue;
         }
 
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+            continue;
+
         if (tracedef.exactMatch(line)) {
             const QString name = tracedef.cap(1);
-            QStringList args = tracedef.cap(2).split(QStringLiteral(","), QString::SkipEmptyParts);
-
-            if (args.at(0).isNull())
-                args.clear();
+            const QString argsString = tracedef.cap(2);
+            const QStringList args = argsString.split(QLatin1Char(','),
+                                                      QString::SkipEmptyParts);
 
             provider.tracepoints << parseTracepoint(name, args, filename, lineNumber);
         } else {
-            panic("Syntax error whilre processing %s on line %d", qPrintable(filename), lineNumber);
+            panic("Syntax error while processing '%s' line %d:\n"
+                  "    '%s' does not look like a tracepoint definition",
+                  qPrintable(filename), lineNumber,
+                  qPrintable(line));
         }
+    }
 
-        ++lineNumber;
+    if (parsingPrefixText) {
+        panic("Syntax error while processing '%s': "
+              "no closing brace found for prefix text block",
+              qPrintable(filename));
     }
 
 #ifdef TRACEGEN_DEBUG
+    qDebug() << provider.prefixText;
     for (auto i = provider.tracepoints.constBegin(); i != provider.tracepoints.constEnd(); ++i)
         dumpTracepoint(*i);
 #endif

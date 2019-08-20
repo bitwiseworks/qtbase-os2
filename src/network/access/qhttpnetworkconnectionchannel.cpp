@@ -251,6 +251,20 @@ bool QHttpNetworkConnectionChannel::sendRequest()
     return protocolHandler->sendRequest();
 }
 
+/*
+ * Invoke "protocolHandler->sendRequest" using a queued connection.
+ * It's used to return to the event loop before invoking sendRequest when
+ * there's a very real chance that the request could have been aborted
+ * (i.e. after having emitted 'encrypted').
+ */
+void QHttpNetworkConnectionChannel::sendRequestDelayed()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        Q_ASSERT(!protocolHandler.isNull());
+        if (reply)
+            protocolHandler->sendRequest();
+    }, Qt::ConnectionType::QueuedConnection);
+}
 
 void QHttpNetworkConnectionChannel::_q_receiveReply()
 {
@@ -378,6 +392,7 @@ bool QHttpNetworkConnectionChannel::ensureConnection()
             if (!connection->sslContext().isNull())
                 QSslSocketPrivate::checkSettingSslContext(sslSocket, connection->sslContext());
 
+            sslSocket->setPeerVerifyName(connection->d_func()->peerVerifyName);
             sslSocket->connectToHostEncrypted(connectHost, connectPort, QIODevice::ReadWrite, networkLayerPreference);
             if (ignoreAllSslErrors)
                 sslSocket->ignoreSslErrors();
@@ -952,7 +967,10 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
         } else if (state != QHttpNetworkConnectionChannel::IdleState && state != QHttpNetworkConnectionChannel::ReadingState) {
             // Try to reconnect/resend before sending an error.
             // While "Reading" the _q_disconnected() will handle this.
-            if (reconnectAttempts-- > 0) {
+            // If we're using ssl then the protocolHandler is not initialized until
+            // "encrypted" has been emitted, since retrying requires the protocolHandler (asserted)
+            // we will not try if encryption is not done.
+            if (!pendingEncrypt && reconnectAttempts-- > 0) {
                 resendCurrentRequest();
                 return;
             } else {
@@ -1234,7 +1252,7 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
             emit reply->encrypted();
         }
         if (reply)
-            sendRequest();
+            sendRequestDelayed();
     }
 }
 

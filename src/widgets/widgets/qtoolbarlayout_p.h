@@ -56,9 +56,9 @@
 #include <private/qlayoutengine_p.h>
 #include <QVector>
 
-QT_BEGIN_NAMESPACE
+QT_REQUIRE_CONFIG(toolbar);
 
-#ifndef QT_NO_TOOLBAR
+QT_BEGIN_NAMESPACE
 
 class QAction;
 class QToolBarExtension;
@@ -97,7 +97,7 @@ public:
 
     void insertAction(int index, QAction *action);
     int indexOf(QAction *action) const;
-    int indexOf(QWidget *widget) const override { return QLayout::indexOf(widget); }
+    using QLayout::indexOf; // bring back the hidden members
 
     bool layoutActions(const QSize &size);
     QSize expandedSize(const QSize &size) const;
@@ -126,8 +126,6 @@ private:
     QToolBarItem *createItem(QAction *action);
     QMenu *popupMenu;
 };
-
-#endif // QT_NO_TOOLBAR
 
 QT_END_NAMESPACE
 

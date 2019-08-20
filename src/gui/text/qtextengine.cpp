@@ -252,8 +252,6 @@ struct QBidiAlgorithm {
 
     void initScriptAnalysisAndIsolatePairs(Vector<IsolatePair> &isolatePairs)
     {
-        isolatePairs.append({ -1, length }); // treat the whole string as one isolate
-
         int isolateStack[128];
         int isolateLevel = 0;
         // load directions of string, and determine isolate pairs
@@ -304,6 +302,14 @@ struct QBidiAlgorithm {
             case QChar::DirS:
             case QChar::DirB:
                 analysis[pos].bidiFlags = QScriptAnalysis::BidiResetToParagraphLevel;
+                if (uc == QChar::ParagraphSeparator) {
+                    // close all open isolates as we start a new paragraph
+                    while (isolateLevel > 0) {
+                        --isolateLevel;
+                        if (isolateLevel < 128)
+                            isolatePairs[isolateStack[isolateLevel]].end = pos;
+                    }
+                }
                 break;
             default:
                 break;
@@ -434,21 +440,21 @@ struct QBidiAlgorithm {
                 doEmbed(true, true, false);
                 break;
             case QChar::DirLRI:
-                ++isolatePairPosition;
                 Q_ASSERT(isolatePairs.at(isolatePairPosition).start == i);
                 doEmbed(false, false, true);
+                ++isolatePairPosition;
                 break;
             case QChar::DirRLI:
-                ++isolatePairPosition;
                 Q_ASSERT(isolatePairs.at(isolatePairPosition).start == i);
                 doEmbed(true, false, true);
+                ++isolatePairPosition;
                 break;
             case QChar::DirFSI: {
-                ++isolatePairPosition;
                 const auto &pair = isolatePairs.at(isolatePairPosition);
                 Q_ASSERT(pair.start == i);
                 bool isRtl = QStringView(text + pair.start + 1, pair.end - pair.start - 1).isRightToLeft();
                 doEmbed(isRtl, false, true);
+                ++isolatePairPosition;
                 break;
             }
 
@@ -492,16 +498,24 @@ struct QBidiAlgorithm {
                     analysis[i].bidiDirection = (level & 1) ? QChar::DirR : QChar::DirL;
                 break;
             case QChar::DirB:
-                // paragraph separator, go down to base direction
-                appendRun(i - 1);
-                while (stack.counter > 1) {
-                    // there might be remaining isolates on the stack that are missing a PDI. Those need to get
-                    // a continuation indicating to take the eos from the end of the string (ie. the paragraph level)
-                    const auto &t = stack.top();
-                    if (t.isIsolate) {
-                        runs[t.runBeforeIsolate].continuation = -2;
+                // paragraph separator, go down to base direction, reset all state
+                if (text[i].unicode() == QChar::ParagraphSeparator) {
+                    appendRun(i - 1);
+                    while (stack.counter > 1) {
+                        // there might be remaining isolates on the stack that are missing a PDI. Those need to get
+                        // a continuation indicating to take the eos from the end of the string (ie. the paragraph level)
+                        const auto &t = stack.top();
+                        if (t.isIsolate) {
+                            runs[t.runBeforeIsolate].continuation = -2;
+                        }
+                        --stack.counter;
                     }
-                    --stack.counter;
+                    continuationFrom = -1;
+                    lastRunWithContent = -1;
+                    validIsolateCount = 0;
+                    overflowIsolateCount = 0;
+                    overflowEmbeddingCount = 0;
+                    level = baseLevel;
                 }
                 break;
             default:
@@ -597,7 +611,13 @@ struct QBidiAlgorithm {
             } else if (current == QChar::DirBN) {
                 current = last;
             } else {
-                Q_ASSERT(current != QChar::DirLRE && current != QChar::DirRLE && current != QChar::DirLRO && current != QChar::DirRLO && current != QChar::DirPDF); // there shouldn't be any explicit embedding marks here
+                // there shouldn't be any explicit embedding marks here
+                Q_ASSERT(current != QChar::DirLRE);
+                Q_ASSERT(current != QChar::DirRLE);
+                Q_ASSERT(current != QChar::DirLRO);
+                Q_ASSERT(current != QChar::DirRLO);
+                Q_ASSERT(current != QChar::DirPDF);
+
                 last = current;
             }
 
@@ -1037,19 +1057,31 @@ struct QBidiAlgorithm {
         }
     }
 
-    bool process()
+    bool checkForBidi() const
     {
-        memset(analysis, 0, length * sizeof(QScriptAnalysis));
-
-        bool hasBidi = (baseLevel != 0);
-        if (!hasBidi) {
-            for (int i = 0; i < length; ++i) {
-                if (text[i].unicode() >= 0x590) {
-                    hasBidi = true;
+        if (baseLevel != 0)
+            return true;
+        for (int i = 0; i < length; ++i) {
+            if (text[i].unicode() >= 0x590) {
+                switch (text[i].direction()) {
+                case QChar::DirR: case QChar::DirAN:
+                case QChar::DirLRE: case QChar::DirLRO: case QChar::DirAL:
+                case QChar::DirRLE: case QChar::DirRLO: case QChar::DirPDF:
+                case QChar::DirLRI: case QChar::DirRLI: case QChar::DirFSI: case QChar::DirPDI:
+                    return true;
+                default:
                     break;
                 }
             }
         }
+        return false;
+    }
+
+    bool process()
+    {
+        memset(analysis, 0, length * sizeof(QScriptAnalysis));
+
+        bool hasBidi = checkForBidi();
 
         if (!hasBidi)
             return false;
@@ -1074,6 +1106,22 @@ struct QBidiAlgorithm {
             // through the implicit level resolving
 
             resolveImplicitLevels(runs);
+        }
+
+        BIDI_DEBUG() << "Rule L1:";
+        // Rule L1:
+        bool resetLevel = true;
+        for (int i = length - 1; i >= 0; --i) {
+            if (analysis[i].bidiFlags & QScriptAnalysis::BidiResetToParagraphLevel) {
+                BIDI_DEBUG() << "resetting pos" << i << "to baselevel";
+                analysis[i].bidiLevel = baseLevel;
+                resetLevel = true;
+            } else if (resetLevel && analysis[i].bidiFlags & QScriptAnalysis::BidiMaybeResetToParagraphLevel) {
+                BIDI_DEBUG() << "resetting pos" << i << "to baselevel (maybereset flag)";
+                analysis[i].bidiLevel = baseLevel;
+            } else {
+                resetLevel = false;
+            }
         }
 
         // set directions for BN to the minimum of adjacent chars
@@ -1104,22 +1152,6 @@ struct QBidiAlgorithm {
             while (lastBNPos < length) {
                 analysis[lastBNPos].bidiLevel = baseLevel;
                 ++lastBNPos;
-            }
-        }
-
-        BIDI_DEBUG() << "Rule L1:";
-        // Rule L1:
-        bool resetLevel = true;
-        for (int i = length - 1; i >= 0; --i) {
-            if (analysis[i].bidiFlags & QScriptAnalysis::BidiResetToParagraphLevel) {
-                BIDI_DEBUG() << "resetting pos" << i << "to baselevel";
-                analysis[i].bidiLevel = baseLevel;
-                resetLevel = true;
-            } else if (resetLevel && analysis[i].bidiFlags & QScriptAnalysis::BidiMaybeResetToParagraphLevel) {
-                BIDI_DEBUG() << "resetting pos" << i << "to baselevel (maybereset flag)";
-                analysis[i].bidiLevel = baseLevel;
-            } else {
-                resetLevel = false;
             }
         }
 
@@ -1380,11 +1412,12 @@ void QTextEngine::shapeText(int item) const
 #ifndef QT_NO_RAWFONT
     if (useRawFont) {
         QTextCharFormat f = format(&si);
-        kerningEnabled = f.fontKerning();
+        QFont font = f.font();
+        kerningEnabled = font.kerning();
         shapingEnabled = QFontEngine::scriptRequiresOpenType(QChar::Script(si.analysis.script))
-                || (f.fontStyleStrategy() & QFont::PreferNoShaping) == 0;
-        wordSpacing = QFixed::fromReal(f.fontWordSpacing());
-        letterSpacing = QFixed::fromReal(f.fontLetterSpacing());
+                || (font.styleStrategy() & QFont::PreferNoShaping) == 0;
+        wordSpacing = QFixed::fromReal(font.wordSpacing());
+        letterSpacing = QFixed::fromReal(font.letterSpacing());
         letterSpacingIsAbsolute = true;
     } else
 #endif
@@ -1721,7 +1754,7 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si,
 
 #ifdef Q_OS_DARWIN
         if (actualFontEngine->type() == QFontEngine::Mac) {
-            if (actualFontEngine->fontDef.stretch != 100) {
+            if (actualFontEngine->fontDef.stretch != 100 && actualFontEngine->fontDef.stretch != QFont::AnyStretch) {
                 QFixed stretch = QFixed(int(actualFontEngine->fontDef.stretch)) / QFixed(100);
                 for (uint i = 0; i < num_glyphs; ++i)
                     g.advances[i] *= stretch;
@@ -1927,7 +1960,7 @@ const QCharAttributes *QTextEngine::attributes() const
 
     QVarLengthArray<QUnicodeTools::ScriptItem> scriptItems(layoutData->items.size());
     for (int i = 0; i < layoutData->items.size(); ++i) {
-        const QScriptItem &si = layoutData->items[i];
+        const QScriptItem &si = layoutData->items.at(i);
         scriptItems[i].position = si.position;
         scriptItems[i].script = si.analysis.script;
     }
@@ -1944,19 +1977,28 @@ const QCharAttributes *QTextEngine::attributes() const
 
 void QTextEngine::shape(int item) const
 {
-    if (layoutData->items[item].analysis.flags == QScriptAnalysis::Object) {
+    auto &li = layoutData->items[item];
+    if (li.analysis.flags == QScriptAnalysis::Object) {
         ensureSpace(1);
         if (block.docHandle()) {
             docLayout()->resizeInlineObject(QTextInlineObject(item, const_cast<QTextEngine *>(this)),
-                                            layoutData->items[item].position + block.position(),
-                                            format(&layoutData->items[item]));
+                                            li.position + block.position(),
+                                            format(&li));
         }
-    } else if (layoutData->items[item].analysis.flags == QScriptAnalysis::Tab) {
+        // fix log clusters to point to the previous glyph, as the object doesn't have a glyph of it's own.
+        // This is required so that all entries in the array get initialized and are ordered correctly.
+        if (layoutData->logClustersPtr) {
+            ushort *lc = logClusters(&li);
+            *lc = (lc != layoutData->logClustersPtr) ? lc[-1] : 0;
+        }
+    } else if (li.analysis.flags == QScriptAnalysis::Tab) {
         // set up at least the ascent/descent/leading of the script item for the tab
-        fontEngine(layoutData->items[item],
-                   &layoutData->items[item].ascent,
-                   &layoutData->items[item].descent,
-                   &layoutData->items[item].leading);
+        fontEngine(li, &li.ascent, &li.descent, &li.leading);
+        // see the comment above
+        if (layoutData->logClustersPtr) {
+            ushort *lc = logClusters(&li);
+            *lc = (lc != layoutData->logClustersPtr) ? lc[-1] : 0;
+        }
     } else {
         shapeText(item);
     }
@@ -2045,15 +2087,13 @@ void QTextEngine::itemize() const
             analysis->flags = QScriptAnalysis::Object;
             break;
         case QChar::LineSeparator:
-            if (analysis->bidiLevel % 2)
-                --analysis->bidiLevel;
             analysis->flags = QScriptAnalysis::LineOrParagraphSeparator;
             if (option.flags() & QTextOption::ShowLineAndParagraphSeparators) {
                 const int offset = uc - string;
                 layoutData->string.detach();
                 string = reinterpret_cast<const ushort *>(layoutData->string.unicode());
                 uc = string + offset;
-                e = uc + length;
+                e = string + length;
                 *const_cast<ushort*>(uc) = 0x21B5; // visual line separator
             }
             break;
@@ -2064,8 +2104,7 @@ void QTextEngine::itemize() const
         case QChar::Space:
         case QChar::Nbsp:
             if (option.flags() & QTextOption::ShowTabsAndSpaces) {
-                analysis->flags = QScriptAnalysis::Space;
-                analysis->bidiLevel = bidi.baseLevel;
+                analysis->flags = (*uc == QChar::Space) ? QScriptAnalysis::Space : QScriptAnalysis::Nbsp;
                 break;
             }
             Q_FALLTHROUGH();
@@ -2193,9 +2232,9 @@ int QTextEngine::findItem(int strPos, int firstItem) const
     int right = layoutData->items.size()-1;
     while(left <= right) {
         int middle = ((right-left)/2)+left;
-        if (strPos > layoutData->items[middle].position)
+        if (strPos > layoutData->items.at(middle).position)
             left = middle+1;
-        else if(strPos < layoutData->items[middle].position)
+        else if (strPos < layoutData->items.at(middle).position)
             right = middle-1;
         else {
             return middle;
@@ -2587,7 +2626,7 @@ void QTextEngine::justify(const QScriptLine &line)
         int end = line.from + (int)line.length + line.trailingSpaces;
         if (end == layoutData->string.length())
             return; // no justification at end of paragraph
-        if (end && layoutData->items[findItem(end-1)].analysis.flags == QScriptAnalysis::LineOrParagraphSeparator)
+        if (end && layoutData->items.at(findItem(end - 1)).analysis.flags == QScriptAnalysis::LineOrParagraphSeparator)
             return; // no justification at the end of an explicitly separated line
     }
 
@@ -2621,13 +2660,13 @@ void QTextEngine::justify(const QScriptLine &line)
     // store pointers to the glyph data that could get reallocated by the shaping
     // process.
     for (int i = 0; i < nItems; ++i) {
-        QScriptItem &si = layoutData->items[firstItem + i];
+        const QScriptItem &si = layoutData->items.at(firstItem + i);
         if (!si.num_glyphs)
             shape(firstItem + i);
     }
 
     for (int i = 0; i < nItems; ++i) {
-        QScriptItem &si = layoutData->items[firstItem + i];
+        const QScriptItem &si = layoutData->items.at(firstItem + i);
 
         int kashida_type = Justification_Arabic_Normal;
         int kashida_pos = -1;
@@ -2923,7 +2962,7 @@ int QTextEngine::formatIndex(const QScriptItem *si) const
     if (specialData && !specialData->resolvedFormats.isEmpty()) {
         QTextFormatCollection *collection = formatCollection();
         Q_ASSERT(collection);
-        return collection->indexForFormat(specialData->resolvedFormats.at(si - &layoutData->items[0]));
+        return collection->indexForFormat(specialData->resolvedFormats.at(si - &layoutData->items.at(0)));
     }
 
     QTextDocumentPrivate *p = block.docHandle();
@@ -3129,7 +3168,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
         if (!attributes)
             return QString();
         for (int i = 0; i < layoutData->items.size(); ++i) {
-            QScriptItem &si = layoutData->items[i];
+            const QScriptItem &si = layoutData->items.at(i);
             if (!si.num_glyphs)
                 shape(i);
 
@@ -3169,6 +3208,16 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
         QFontEngine *engine = fnt.d->engineForScript(QChar::Script_Common);
 
         QChar ellipsisChar(0x2026);
+
+        // We only want to use the ellipsis character if it is from the main
+        // font (not one of the fallbacks), since using a fallback font
+        // will affect the metrics of the text, potentially causing it to shift
+        // when it is being elided.
+        if (engine->type() == QFontEngine::Multi) {
+            QFontEngineMulti *multiEngine = static_cast<QFontEngineMulti *>(engine);
+            multiEngine->ensureEngineAt(0);
+            engine = multiEngine->engine(0);
+        }
 
         glyph_t glyph = engine->glyphIndex(ellipsisChar.unicode());
 
@@ -3314,24 +3363,29 @@ QFixed QTextEngine::calculateTabWidth(int item, QFixed x) const
     QList<QTextOption::Tab> tabArray = option.tabs();
     if (!tabArray.isEmpty()) {
         if (isRightToLeft()) { // rebase the tabArray positions.
-            QList<QTextOption::Tab> newTabs;
-            newTabs.reserve(tabArray.count());
-            QList<QTextOption::Tab>::Iterator iter = tabArray.begin();
-            while(iter != tabArray.end()) {
-                QTextOption::Tab tab = *iter;
-                if (tab.type == QTextOption::LeftTab)
-                    tab.type = QTextOption::RightTab;
-                else if (tab.type == QTextOption::RightTab)
-                    tab.type = QTextOption::LeftTab;
-                newTabs << tab;
-                ++iter;
+            auto isLeftOrRightTab = [](const QTextOption::Tab &tab) {
+                return tab.type == QTextOption::LeftTab || tab.type == QTextOption::RightTab;
+            };
+            const auto cbegin = tabArray.cbegin();
+            const auto cend = tabArray.cend();
+            const auto cit = std::find_if(cbegin, cend, isLeftOrRightTab);
+            if (cit != cend) {
+                const int index = std::distance(cbegin, cit);
+                auto iter = tabArray.begin() + index;
+                const auto end = tabArray.end();
+                while (iter != end) {
+                    QTextOption::Tab &tab = *iter;
+                    if (tab.type == QTextOption::LeftTab)
+                        tab.type = QTextOption::RightTab;
+                    else if (tab.type == QTextOption::RightTab)
+                        tab.type = QTextOption::LeftTab;
+                    ++iter;
+                }
             }
-            tabArray = newTabs;
         }
-        for (int i = 0; i < tabArray.size(); ++i) {
-            QFixed tab = QFixed::fromReal(tabArray[i].position) * dpiScale;
+        for (const QTextOption::Tab &tabSpec : qAsConst(tabArray)) {
+            QFixed tab = QFixed::fromReal(tabSpec.position) * dpiScale;
             if (tab > x) {  // this is the tab we need.
-                QTextOption::Tab tabSpec = tabArray[i];
                 int tabSectionEnd = layoutData->string.count();
                 if (tabSpec.type == QTextOption::RightTab || tabSpec.type == QTextOption::CenterTab) {
                     // find next tab to calculate the width required.
@@ -3352,7 +3406,7 @@ QFixed QTextEngine::calculateTabWidth(int item, QFixed x) const
                     QFixed length;
                     // Calculate the length of text between this tab and the tabSectionEnd
                     for (int i=item; i < layoutData->items.count(); i++) {
-                        QScriptItem &item = layoutData->items[i];
+                        const QScriptItem &item = layoutData->items.at(i);
                         if (item.position > tabSectionEnd || item.position <= si.position)
                             continue;
                         shape(i); // first, lets make sure relevant text is already shaped
@@ -3652,11 +3706,12 @@ int QTextEngine::lineNumberForTextPosition(int pos)
     return -1;
 }
 
-void QTextEngine::insertionPointsForLine(int lineNum, QVector<int> &insertionPoints)
+std::vector<int> QTextEngine::insertionPointsForLine(int lineNum)
 {
     QTextLineItemIterator iterator(this, lineNum);
 
-    insertionPoints.reserve(iterator.line.length);
+    std::vector<int> insertionPoints;
+    insertionPoints.reserve(size_t(iterator.line.length));
 
     bool lastLine = lineNum >= lines.size() - 1;
 
@@ -3674,25 +3729,22 @@ void QTextEngine::insertionPointsForLine(int lineNum, QVector<int> &insertionPoi
                 insertionPoints.push_back(i);
         }
     }
+    return insertionPoints;
 }
 
 int QTextEngine::endOfLine(int lineNum)
 {
-    QVector<int> insertionPoints;
-    insertionPointsForLine(lineNum, insertionPoints);
-
+    const auto insertionPoints = insertionPointsForLine(lineNum);
     if (insertionPoints.size() > 0)
-        return insertionPoints.constLast();
+        return insertionPoints.back();
     return 0;
 }
 
 int QTextEngine::beginningOfLine(int lineNum)
 {
-    QVector<int> insertionPoints;
-    insertionPointsForLine(lineNum, insertionPoints);
-
+    const auto insertionPoints = insertionPointsForLine(lineNum);
     if (insertionPoints.size() > 0)
-        return insertionPoints.constFirst();
+        return insertionPoints.front();
     return 0;
 }
 
@@ -3709,10 +3761,8 @@ int QTextEngine::positionAfterVisualMovement(int pos, QTextCursor::MoveOperation
     if (lineNum < 0)
         return pos;
 
-    QVector<int> insertionPoints;
-    insertionPointsForLine(lineNum, insertionPoints);
-    int i, max = insertionPoints.size();
-    for (i = 0; i < max; i++)
+    const auto insertionPoints = insertionPointsForLine(lineNum);
+    for (size_t i = 0, max = insertionPoints.size(); i < max; ++i)
         if (pos == insertionPoints[i]) {
             if (moveRight) {
                 if (i + 1 < max)
@@ -3990,7 +4040,7 @@ QTextLineItemIterator::QTextLineItemIterator(QTextEngine *_eng, int _lineNum, co
 
     QVarLengthArray<uchar> levels(nItems);
     for (int i = 0; i < nItems; ++i)
-        levels[i] = eng->layoutData->items[i+firstItem].analysis.bidiLevel;
+        levels[i] = eng->layoutData->items.at(i + firstItem).analysis.bidiLevel;
     QTextEngine::bidiReorder(nItems, levels.data(), visualOrder.data());
 
     eng->shapeLine(line);

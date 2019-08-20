@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'previewdialogbase.ui'
 **
-** Created by: Qt User Interface Compiler version 5.0.0
+** Created by: Qt User Interface Compiler version 5.12.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -45,7 +45,7 @@ public:
     void setupUi(QDialog *PreviewDialogBase)
     {
         if (PreviewDialogBase->objectName().isEmpty())
-            PreviewDialogBase->setObjectName(QStringLiteral("PreviewDialogBase"));
+            PreviewDialogBase->setObjectName(QString::fromUtf8("PreviewDialogBase"));
         PreviewDialogBase->resize(733, 479);
         vboxLayout = new QVBoxLayout(PreviewDialogBase);
 #ifndef Q_OS_MAC
@@ -54,7 +54,7 @@ public:
 #ifndef Q_OS_MAC
         vboxLayout->setContentsMargins(9, 9, 9, 9);
 #endif
-        vboxLayout->setObjectName(QStringLiteral("vboxLayout"));
+        vboxLayout->setObjectName(QString::fromUtf8("vboxLayout"));
         hboxLayout = new QHBoxLayout();
 #ifndef Q_OS_MAC
         hboxLayout->setSpacing(6);
@@ -62,15 +62,15 @@ public:
 #ifndef Q_OS_MAC
         hboxLayout->setContentsMargins(0, 0, 0, 0);
 #endif
-        hboxLayout->setObjectName(QStringLiteral("hboxLayout"));
+        hboxLayout->setObjectName(QString::fromUtf8("hboxLayout"));
         label = new QLabel(PreviewDialogBase);
-        label->setObjectName(QStringLiteral("label"));
+        label->setObjectName(QString::fromUtf8("label"));
 
         hboxLayout->addWidget(label);
 
         paperSizeCombo = new QComboBox(PreviewDialogBase);
-        paperSizeCombo->setObjectName(QStringLiteral("paperSizeCombo"));
-        QSizePolicy sizePolicy(static_cast<QSizePolicy::Policy>(1), static_cast<QSizePolicy::Policy>(0));
+        paperSizeCombo->setObjectName(QString::fromUtf8("paperSizeCombo"));
+        QSizePolicy sizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         sizePolicy.setHorizontalStretch(0);
         sizePolicy.setVerticalStretch(0);
         sizePolicy.setHeightForWidth(paperSizeCombo->sizePolicy().hasHeightForWidth());
@@ -79,12 +79,12 @@ public:
         hboxLayout->addWidget(paperSizeCombo);
 
         label_2 = new QLabel(PreviewDialogBase);
-        label_2->setObjectName(QStringLiteral("label_2"));
+        label_2->setObjectName(QString::fromUtf8("label_2"));
 
         hboxLayout->addWidget(label_2);
 
         paperOrientationCombo = new QComboBox(PreviewDialogBase);
-        paperOrientationCombo->setObjectName(QStringLiteral("paperOrientationCombo"));
+        paperOrientationCombo->setObjectName(QString::fromUtf8("paperOrientationCombo"));
         sizePolicy.setHeightForWidth(paperOrientationCombo->sizePolicy().hasHeightForWidth());
         paperOrientationCombo->setSizePolicy(sizePolicy);
 
@@ -102,9 +102,9 @@ public:
         hboxLayout1->setSpacing(6);
 #endif
         hboxLayout1->setContentsMargins(0, 0, 0, 0);
-        hboxLayout1->setObjectName(QStringLiteral("hboxLayout1"));
+        hboxLayout1->setObjectName(QString::fromUtf8("hboxLayout1"));
         pageList = new QTreeWidget(PreviewDialogBase);
-        pageList->setObjectName(QStringLiteral("pageList"));
+        pageList->setObjectName(QString::fromUtf8("pageList"));
         pageList->setIndentation(0);
         pageList->setRootIsDecorated(false);
         pageList->setUniformRowHeights(true);
@@ -114,8 +114,8 @@ public:
         hboxLayout1->addWidget(pageList);
 
         previewArea = new QScrollArea(PreviewDialogBase);
-        previewArea->setObjectName(QStringLiteral("previewArea"));
-        QSizePolicy sizePolicy1(static_cast<QSizePolicy::Policy>(5), static_cast<QSizePolicy::Policy>(5));
+        previewArea->setObjectName(QString::fromUtf8("previewArea"));
+        QSizePolicy sizePolicy1(QSizePolicy::Preferred, QSizePolicy::Preferred);
         sizePolicy1.setHorizontalStretch(1);
         sizePolicy1.setVerticalStretch(0);
         sizePolicy1.setHeightForWidth(previewArea->sizePolicy().hasHeightForWidth());
@@ -131,11 +131,11 @@ public:
         hboxLayout2->setSpacing(6);
 #endif
         hboxLayout2->setContentsMargins(0, 0, 0, 0);
-        hboxLayout2->setObjectName(QStringLiteral("hboxLayout2"));
+        hboxLayout2->setObjectName(QString::fromUtf8("hboxLayout2"));
         progressBar = new QProgressBar(PreviewDialogBase);
-        progressBar->setObjectName(QStringLiteral("progressBar"));
+        progressBar->setObjectName(QString::fromUtf8("progressBar"));
         progressBar->setEnabled(false);
-        QSizePolicy sizePolicy2(static_cast<QSizePolicy::Policy>(7), static_cast<QSizePolicy::Policy>(0));
+        QSizePolicy sizePolicy2(QSizePolicy::Expanding, QSizePolicy::Fixed);
         sizePolicy2.setHorizontalStretch(1);
         sizePolicy2.setVerticalStretch(0);
         sizePolicy2.setHeightForWidth(progressBar->sizePolicy().hasHeightForWidth());
@@ -147,7 +147,7 @@ public:
         hboxLayout2->addWidget(progressBar);
 
         buttonBox = new QDialogButtonBox(PreviewDialogBase);
-        buttonBox->setObjectName(QStringLiteral("buttonBox"));
+        buttonBox->setObjectName(QString::fromUtf8("buttonBox"));
         buttonBox->setOrientation(Qt::Horizontal);
         buttonBox->setStandardButtons(QDialogButtonBox::Cancel|QDialogButtonBox::NoButton|QDialogButtonBox::Ok);
 
@@ -156,10 +156,10 @@ public:
 
         vboxLayout->addLayout(hboxLayout2);
 
-#ifndef QT_NO_SHORTCUT
+#if QT_CONFIG(shortcut)
         label->setBuddy(paperSizeCombo);
         label_2->setBuddy(paperOrientationCombo);
-#endif // QT_NO_SHORTCUT
+#endif // QT_CONFIG(shortcut)
 
         retranslateUi(PreviewDialogBase);
         QObject::connect(buttonBox, SIGNAL(accepted()), PreviewDialogBase, SLOT(accept()));
@@ -170,11 +170,11 @@ public:
 
     void retranslateUi(QDialog *PreviewDialogBase)
     {
-        PreviewDialogBase->setWindowTitle(QApplication::translate("PreviewDialogBase", "Print Preview", nullptr));
-        label->setText(QApplication::translate("PreviewDialogBase", "&Paper Size:", nullptr));
-        label_2->setText(QApplication::translate("PreviewDialogBase", "&Orientation:", nullptr));
+        PreviewDialogBase->setWindowTitle(QCoreApplication::translate("PreviewDialogBase", "Print Preview", nullptr));
+        label->setText(QCoreApplication::translate("PreviewDialogBase", "&Paper Size:", nullptr));
+        label_2->setText(QCoreApplication::translate("PreviewDialogBase", "&Orientation:", nullptr));
         QTreeWidgetItem *___qtreewidgetitem = pageList->headerItem();
-        ___qtreewidgetitem->setText(0, QApplication::translate("PreviewDialogBase", "1", nullptr));
+        ___qtreewidgetitem->setText(0, QCoreApplication::translate("PreviewDialogBase", "1", nullptr));
     } // retranslateUi
 
 };

@@ -166,12 +166,13 @@ private slots:
     void getSetCheck();
     void fontPropagation();
     void fontPropagation2();
+    void fontPropagation3();
     void palettePropagation();
     void palettePropagation2();
     void enabledPropagation();
     void ignoreKeyEventsWhenDisabled_QTBUG27417();
     void properTabHandlingWhenDisabled_QTBUG27417();
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     void acceptDropsPropagation();
 #endif
     void isEnabledTo();
@@ -188,7 +189,8 @@ private slots:
     void reverseTabOrder();
     void tabOrderWithProxy();
     void tabOrderWithCompoundWidgets();
-#ifdef Q_OS_WIN
+    void tabOrderNoChange();
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     void activation();
 #endif
     void reparent();
@@ -319,7 +321,9 @@ private slots:
     void setMaskInResizeEvent();
     void moveInResizeEvent();
 
-    void immediateRepaintAfterInvalidateBuffer();
+#ifdef QT_BUILD_INTERNAL
+    void immediateRepaintAfterInvalidateBackingStore();
+#endif
 
     void effectiveWinId();
     void effectiveWinId2();
@@ -401,6 +405,8 @@ private slots:
 
     void tabletTracking();
 
+    void closeEvent();
+
 private:
     bool ensureScreenSize(int width, int height);
 
@@ -414,8 +420,7 @@ private:
 
 bool tst_QWidget::ensureScreenSize(int width, int height)
 {
-    QSize available;
-    available = QDesktopWidget().availableGeometry().size();
+    const QSize available = QGuiApplication::primaryScreen()->availableGeometry().size();
     return (available.width() >= width && available.height() >= height);
 }
 
@@ -817,6 +822,18 @@ void tst_QWidget::fontPropagation2()
     QVERIFY(child5->font().italic());
 }
 
+void tst_QWidget::fontPropagation3()
+{
+    QWidget parent;
+    QWidget *child = new QWidget(&parent);
+    parent.setFont(QFont("Monospace", 9));
+    QImage image(32, 32, QImage::Format_RGB32);
+    QPainter p(&image);
+    p.setFont(child->font());
+    QCOMPARE(p.font().family(), child->font().family());
+    QCOMPARE(p.font().pointSize(), child->font().pointSize());
+}
+
 void tst_QWidget::palettePropagation()
 {
     QScopedPointer<QWidget> testWidget(new QWidget);
@@ -1046,7 +1063,7 @@ void tst_QWidget::properTabHandlingWhenDisabled_QTBUG27417()
 }
 
 // Drag'n drop disabled in this build.
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 void tst_QWidget::acceptDropsPropagation()
 {
     QScopedPointer<QWidget> testWidget(new QWidget);
@@ -1424,7 +1441,7 @@ void tst_QWidget::mapFromAndTo()
     subWindow2->setGeometry(75, 75, 100, 100);
     subSubWindow->setGeometry(10, 10, 10, 10);
 
-#if !defined(Q_OS_QNX)
+#if !defined(Q_OS_QNX) && !defined(Q_OS_WINRT)
     //update visibility
     if (windowMinimized) {
         if (!windowHidden) {
@@ -1929,7 +1946,35 @@ void tst_QWidget::tabOrderWithCompoundWidgets()
     QVERIFY(lastEdit->hasFocus());
 }
 
-#ifdef Q_OS_WIN
+static QVector<QWidget*> getFocusChain(QWidget *start, bool bForward)
+{
+    QVector<QWidget*> ret;
+    QWidget *cur = start;
+    do {
+        ret += cur;
+        auto widgetPrivate = static_cast<QWidgetPrivate *>(qt_widget_private(cur));
+        cur = bForward ? widgetPrivate->focus_next : widgetPrivate->focus_prev;
+    } while (cur != start);
+    return ret;
+}
+
+void tst_QWidget::tabOrderNoChange()
+{
+    QWidget w;
+    auto *verticalLayout = new QVBoxLayout(&w);
+    auto *tabWidget = new QTabWidget(&w);
+    auto *tv = new QTreeView(tabWidget);
+    tabWidget->addTab(tv, QStringLiteral("Tab 1"));
+    verticalLayout->addWidget(tabWidget);
+
+    const auto focusChainForward = getFocusChain(&w, true);
+    const auto focusChainBackward = getFocusChain(&w, false);
+    QWidget::setTabOrder(tabWidget, tv);
+    QCOMPARE(focusChainForward, getFocusChain(&w, true));
+    QCOMPARE(focusChainBackward, getFocusChain(&w, false));
+}
+
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 void tst_QWidget::activation()
 {
     Q_CHECK_PAINTEVENTS
@@ -1974,7 +2019,8 @@ void tst_QWidget::windowState()
     QPoint pos;
     QSize size = m_testWidgetSize;
     if (QGuiApplicationPrivate::platformIntegration()->defaultWindowState(Qt::Widget)
-                                                       == Qt::WindowFullScreen) {
+                                                       == Qt::WindowFullScreen
+        || m_platform == QStringLiteral("winrt")) {
         size = QGuiApplication::primaryScreen()->size();
     } else {
         pos = QPoint(10, 10);
@@ -2179,8 +2225,8 @@ void tst_QWidget::showFullScreen()
     QSKIP("QTBUG-52974");
 #endif
 
-    if (m_platform == QStringLiteral("wayland"))
-        QSKIP("Wayland: This fails. Figure out why.");
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT: This fails. QTBUG-68297");
     QWidget plain;
     QHBoxLayout *layout;
     QWidget layouted;
@@ -2302,6 +2348,8 @@ void tst_QWidget::resizeEvent()
         wTopLevel.resize(200, 200);
         wTopLevel.show();
         QVERIFY(QTest::qWaitForWindowExposed(&wTopLevel));
+        if (m_platform == QStringLiteral("winrt"))
+            QEXPECT_FAIL("", "WinRT does not support resize", Abort);
         QCOMPARE (wTopLevel.m_resizeEventCount, 1); // initial resize event before paint for toplevels
         wTopLevel.hide();
         QSize safeSize(640,480);
@@ -2317,6 +2365,12 @@ void tst_QWidget::resizeEvent()
 
 void tst_QWidget::showMinimized()
 {
+    if (m_platform == QStringLiteral("wayland")) {
+        QSKIP("Wayland: Neither xdg_shell, wl_shell or ivi_application support "
+              "letting a client know whether it's minimized. So on these shells "
+              "Qt Wayland will always report that it's unmimized.");
+    }
+
     QWidget plain;
     plain.move(100, 100);
     plain.resize(200, 200);
@@ -2325,6 +2379,9 @@ void tst_QWidget::showMinimized()
     plain.showMinimized();
     QVERIFY(plain.isMinimized());
     QVERIFY(plain.isVisible());
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "Winrt does not support move and resize", Abort);
+#endif
     QCOMPARE(plain.pos(), pos);
 
     plain.showNormal();
@@ -2476,11 +2533,15 @@ void tst_QWidget::showMinimizedKeepsFocus()
 #ifdef Q_OS_OSX
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
+#elif defined(Q_OS_WINRT)
+        QEXPECT_FAIL("", "Winrt fails here - QTBUG-68297", Continue);
 #endif
         QTRY_COMPARE(window.focusWidget(), firstchild);
 #ifdef Q_OS_OSX
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
+#elif defined(Q_OS_WINRT)
+        QEXPECT_FAIL("", "Winrt fails here - QTBUG-68297", Continue);
 #endif
         QTRY_COMPARE(qApp->focusWidget(), firstchild);
     }
@@ -2511,6 +2572,9 @@ void tst_QWidget::reparent()
 
     parent.show();
     childTLW.show();
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "WinRT does not support more than 1 top level widget", Abort);
+#endif
     QVERIFY(QTest::qWaitForWindowExposed(&parent));
 
     parent.move(parentPosition);
@@ -2608,6 +2672,8 @@ void tst_QWidget::normalGeometry()
 
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
+    else if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT: This fails. Figure out why - QTBUG-68297.");
     QWidget parent;
     parent.setWindowTitle("NormalGeometry parent");
     QWidget *child = new QWidget(&parent);
@@ -2717,12 +2783,14 @@ void tst_QWidget::setGeometry()
     tlw.setGeometry(tr);
     child.setGeometry(cr);
     tlw.showNormal();
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT does not support setGeometry", Abort);
     QTRY_COMPARE(tlw.geometry().size(), tr.size());
     QCOMPARE(child.geometry(), cr);
 
     tlw.setParent(0, Qt::Window|Qt::FramelessWindowHint);
     tr = QRect(0,0,100,100);
-    tr.moveTopLeft(QApplication::desktop()->availableGeometry().topLeft());
+    tr.moveTopLeft(QGuiApplication::primaryScreen()->availableGeometry().topLeft());
     tlw.setGeometry(tr);
     QCOMPARE(tlw.geometry(), tr);
     tlw.showNormal();
@@ -3196,6 +3264,8 @@ void tst_QWidget::saveRestoreGeometry()
         QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QApplication::processEvents();
 
+        if (m_platform == QStringLiteral("winrt"))
+            QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
         QTRY_COMPARE(widget.pos(), position);
         QCOMPARE(widget.size(), size);
         savedGeometry = widget.saveGeometry();
@@ -3336,6 +3406,7 @@ void tst_QWidget::restoreVersion1Geometry()
     QFETCH(QString, fileName);
     QFETCH(uint, expectedWindowState);
     QFETCH(QPoint, expectedPosition);
+    Q_UNUSED(expectedPosition);
     QFETCH(QSize, expectedSize);
     QFETCH(QRect, expectedNormalGeometry);
 
@@ -3355,28 +3426,28 @@ void tst_QWidget::restoreVersion1Geometry()
 
     QCOMPARE(uint(widget.windowState() & WindowStateMask), expectedWindowState);
     if (expectedWindowState == Qt::WindowNoState) {
-        QCOMPARE(widget.pos(), expectedPosition);
+        QTRY_COMPARE(widget.geometry(), expectedNormalGeometry);
         QCOMPARE(widget.size(), expectedSize);
     }
+
     widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
     QTest::qWait(100);
 
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT does not support restoreGeometry", Abort);
+
     if (expectedWindowState == Qt::WindowNoState) {
-        QTRY_COMPARE(widget.pos(), expectedPosition);
         QTRY_COMPARE(widget.size(), expectedSize);
+        QCOMPARE(widget.geometry(), expectedNormalGeometry);
     }
 
     widget.showNormal();
     QTest::qWait(10);
 
-    if (expectedWindowState != Qt::WindowNoState) {
-        // restoring from maximized or fullscreen, we can only restore to the normal geometry
-        QTRY_COMPARE(widget.geometry(), expectedNormalGeometry);
-    } else {
-        QTRY_COMPARE(widget.pos(), expectedPosition);
-        QTRY_COMPARE(widget.size(), expectedSize);
-    }
+    QTRY_COMPARE(widget.geometry(), expectedNormalGeometry);
+    if (expectedWindowState == Qt::WindowNoState)
+        QCOMPARE(widget.size(), expectedSize);
 
 #if 0
     // Code for saving a new geometry*.dat files
@@ -3411,6 +3482,8 @@ void tst_QWidget::widgetAt()
         QSKIP("Wayland: This fails. Figure out why.");
     if (m_platform == QStringLiteral("offscreen"))
         QSKIP("Platform offscreen does not support lower()/raise() or WindowMasks");
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support more than 1 top level widget");
 
     Q_CHECK_PAINTEVENTS
 
@@ -3712,6 +3785,8 @@ void tst_QWidget::optimizedResizeMove()
     staticWidget.gotPaintEvent = false;
     staticWidget.move(staticWidget.pos() + QPoint(10, 10));
     QTest::qWait(20);
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(staticWidget.gotPaintEvent, false);
 
     staticWidget.gotPaintEvent = false;
@@ -3796,9 +3871,10 @@ void tst_QWidget::optimizedResize_topLevel()
     // a native function call works (it basically has to go through
     // WM_RESIZE in QApplication). This is a corner case, though.
     // See task 243708
-    const QRect frame = topLevel.frameGeometry();
-    MoveWindow(winHandleOf(&topLevel), frame.x(), frame.y(),
-               frame.width() + 10, frame.height() + 10,
+    RECT rect;
+    GetWindowRect(winHandleOf(&topLevel), &rect);
+    MoveWindow(winHandleOf(&topLevel), rect.left, rect.top,
+               rect.right - rect.left + 10, rect.bottom - rect.top + 10,
                true);
     QTest::qWait(100);
 #endif
@@ -3810,6 +3886,8 @@ void tst_QWidget::optimizedResize_topLevel()
     QTRY_VERIFY(topLevel.gotPaintEvent);
     if (m_platform == QStringLiteral("xcb") || m_platform == QStringLiteral("offscreen"))
         QSKIP("QTBUG-26424");
+    else if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(topLevel.partial, true);
     QCOMPARE(topLevel.paintedRegion, expectedUpdateRegion);
 }
@@ -3858,7 +3936,7 @@ void tst_QWidget::setMinimumSize()
     QSize nonDefaultSize = defaultSize + QSize(5,5);
     w.setMinimumSize(nonDefaultSize);
     w.showNormal();
-    QVERIFY(QTest::qWaitForWindowActive(&w));
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
     QVERIFY2(w.height() >= nonDefaultSize.height(),
              msgComparisonFailed(w.height(), ">=", nonDefaultSize.height()));
     QVERIFY2(w.width() >= nonDefaultSize.width(),
@@ -3913,6 +3991,8 @@ void tst_QWidget::setFixedSize()
     QVERIFY(QTest::qWaitForWindowActive(&w));
     if (m_platform == QStringLiteral("xcb"))
         QSKIP("QTBUG-26424");
+    else if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(w.size(), defaultSize + QSize(150,150));
 }
 
@@ -4113,6 +4193,8 @@ void tst_QWidget::transientParent()
 
 void tst_QWidget::showNativeChild()
 {
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support setGeometry");
     QWidget topLevel;
     topLevel.setGeometry(QRect(m_availableTopLeft + QPoint(100, 100), m_testWidgetSize));
     topLevel.setWindowTitle(__FUNCTION__);
@@ -4295,6 +4377,8 @@ void tst_QWidget::update()
 
     // widgets are transparent by default, so both should get repaints
     {
+        if (m_platform == QStringLiteral("winrt"))
+            QEXPECT_FAIL("", "WinRT does not support setGeometry", Abort);
         QApplication::processEvents();
         QApplication::processEvents();
         QCOMPARE(child.numPaintEvents, 1);
@@ -4516,8 +4600,9 @@ void tst_QWidget::scroll()
 {
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
-    const int w = qMin(500, qApp->desktop()->availableGeometry().width() / 2);
-    const int h = qMin(500, qApp->desktop()->availableGeometry().height() / 2);
+    QScreen *screen = QGuiApplication::primaryScreen();
+    const int w = qMin(500, screen->availableGeometry().width() / 2);
+    const int h = qMin(500, screen->availableGeometry().height() / 2);
 
     UpdateWidget updateWidget;
     updateWidget.resize(w, h);
@@ -4534,6 +4619,8 @@ void tst_QWidget::scroll()
         qApp->processEvents();
         QRegion dirty(QRect(0, 0, w, 10));
         dirty += QRegion(QRect(0, 10, 10, h - 10));
+        if (m_platform == QStringLiteral("winrt"))
+            QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
         QTRY_COMPARE(updateWidget.paintedRegion, dirty);
     }
 
@@ -4645,7 +4732,7 @@ void tst_QWidget::setWindowGeometry_data()
     QList<QList<QRect> > rects;
     const int width = m_testWidgetSize.width();
     const int height = m_testWidgetSize.height();
-    const QRect availableAdjusted = QApplication::desktop()->availableGeometry().adjusted(100, 100, -100, -100);
+    const QRect availableAdjusted = QGuiApplication::primaryScreen()->availableGeometry().adjusted(100, 100, -100, -100);
     rects << (QList<QRect>()
               << QRect(m_availableTopLeft + QPoint(100, 100), m_testWidgetSize)
               << availableAdjusted
@@ -4709,6 +4796,8 @@ void tst_QWidget::setWindowGeometry()
 {
     if (m_platform == QStringLiteral("xcb"))
          QSKIP("X11: Skip this test due to Window manager positioning issues.");
+    else if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support setWindowGeometry");
 
     QFETCH(QList<QRect>, rects);
     QFETCH(int, windowFlags);
@@ -4875,6 +4964,8 @@ void tst_QWidget::windowMoveResize()
          QSKIP("X11: Skip this test due to Window manager positioning issues.");
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support move/resize");
 
     QFETCH(QList<QRect>, rects);
     QFETCH(int, windowFlags);
@@ -5195,6 +5286,9 @@ void tst_QWidget::moveChild()
 
     QTRY_COMPARE(parent.r, QRegion(parent.rect()) - child.geometry());
     QTRY_COMPARE(child.r, QRegion(child.rect()));
+
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support setGeometry (and we cannot use QEXPECT_FAIL because of VERIFY_COLOR)");
     VERIFY_COLOR(child, child.rect(),
                  child.color);
     VERIFY_COLOR(parent, QRegion(parent.rect()) - child.geometry(), parent.color);
@@ -5251,6 +5345,8 @@ void tst_QWidget::showAndMoveChild()
     child.move(desktopDimensions.width()/2, desktopDimensions.height()/2);
     qApp->processEvents();
 
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT does not support setGeometry (and we cannot use QEXPECT_FAIL because of VERIFY_COLOR)");
     VERIFY_COLOR(child, child.rect(), Qt::blue);
     VERIFY_COLOR(parent, QRegion(parent.rect()) - child.geometry(), Qt::red);
 }
@@ -5339,6 +5435,8 @@ void tst_QWidget::multipleToplevelFocusCheck()
 
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
+    else if (m_platform == QStringLiteral("winrt"))
+        QSKIP("Winrt: Sometimes crashes in QTextLayout. - QTBUG-68297");
     TopLevelFocusCheck w1;
     TopLevelFocusCheck w2;
 
@@ -5497,6 +5595,8 @@ void tst_QWidget::setFocus()
             testWidget->clearFocus();
 
         child1.setFocus();
+        if (m_platform == QStringLiteral("winrt"))
+            QEXPECT_FAIL("", "WinRT fails here - QTBUG-68297", Abort);
         QVERIFY(!child1.hasFocus());
         QCOMPARE(window.focusWidget(), &child1);
         QCOMPARE(QApplication::focusWidget(), nullptr);
@@ -6183,8 +6283,8 @@ QByteArray EventRecorder::msgEventListMismatch(const EventList &expected, const 
 
 void tst_QWidget::childEvents()
 {
-    if (m_platform == QStringLiteral("wayland"))
-        QSKIP("Wayland: This fails. Figure out why.");
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT: This fails. QTBUG-68297.");
     EventRecorder::EventList expected;
 
     // Move away the cursor; otherwise it might result in an enter event if it's
@@ -6580,6 +6680,8 @@ void tst_QWidget::renderInvisible()
 {
     if (m_platform == QStringLiteral("xcb"))
         QSKIP("QTBUG-26424");
+    if (m_platform == QStringLiteral("winrt"))
+        QSKIP("WinRT: This fails. QTBUG-68297.");
 
     QScopedPointer<QCalendarWidget> calendar(new QCalendarWidget);
     calendar->move(m_availableTopLeft + QPoint(100, 100));
@@ -7428,7 +7530,7 @@ void tst_QWidget::moveWindowInShowEvent_data()
     QTest::addColumn<QPoint>("initial");
     QTest::addColumn<QPoint>("position");
 
-    QPoint p = QApplication::desktop()->availableGeometry().topLeft();
+    QPoint p = QGuiApplication::primaryScreen()->availableGeometry().topLeft();
 
     QTest::newRow("1") << p << (p + QPoint(10, 10));
     QTest::newRow("2") << (p + QPoint(10,10)) << p;
@@ -7453,7 +7555,8 @@ void tst_QWidget::moveWindowInShowEvent()
     };
 
     MoveWindowInShowEventWidget widget;
-    widget.resize(QSize(qApp->desktop()->availableGeometry().size() / 3).expandedTo(QSize(1, 1)));
+    QScreen *screen = QGuiApplication::primaryScreen();
+    widget.resize(QSize(screen->availableGeometry().size() / 3).expandedTo(QSize(1, 1)));
     // move to this position in showEvent()
     widget.position = position;
 
@@ -7522,6 +7625,8 @@ void tst_QWidget::hideOpaqueChildWhileHidden()
     child.hide();
     child2.hide();
 
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(w.r, QRegion(child.geometry()));
 
     child.show();
@@ -7559,13 +7664,12 @@ void tst_QWidget::updateWhileMinimized()
     // Make sure update requests are discarded until the widget is shown again.
     widget.update(0, 0, 50, 50);
     QTest::qWait(10);
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QCOMPARE(widget.numPaintEvents, 0);
 
     // Restore window.
     widget.showNormal();
-    QTest::qWait(30);
-    if (m_platform == QStringLiteral("xcb"))
-        QSKIP("QTBUG-26424");
     QTRY_COMPARE(widget.numPaintEvents, 1);
     QCOMPARE(widget.paintedRegion, QRegion(0, 0, 50, 50));
 }
@@ -8086,6 +8190,8 @@ void tst_QWidget::doubleRepaint()
 #if defined(Q_OS_QNX)
     QEXPECT_FAIL("", "Platform does not support showMinimized()", Continue);
 #endif
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
    QCOMPARE(widget.numPaintEvents, 0);
    widget.numPaintEvents = 0;
 
@@ -8103,7 +8209,7 @@ void tst_QWidget::resizeInPaintEvent()
     window.resize(200, 200);
     window.show();
     qApp->setActiveWindow(&window);
-    QVERIFY(QTest::qWaitForWindowActive(&window));
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     QTRY_VERIFY(widget.numPaintEvents > 0);
 
     widget.reset();
@@ -8111,7 +8217,7 @@ void tst_QWidget::resizeInPaintEvent()
 
     widget.resizeInPaintEvent = true;
     // This will call resize in the paintEvent, which in turn will call
-    // invalidateBuffer() and a new update request should be posted.
+    // invalidateBackingStore() and a new update request should be posted.
     widget.repaint();
     QCOMPARE(widget.numPaintEvents, 1);
     widget.numPaintEvents = 0;
@@ -8215,6 +8321,8 @@ void tst_QWidget::setMaskInResizeEvent()
 
     QRegion expectedParentUpdate(0, 0, 100, 10); // Old testWidget area.
     expectedParentUpdate += testWidget.geometry(); // New testWidget area.
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(w.paintedRegion, expectedParentUpdate);
     QTRY_COMPARE(testWidget.paintedRegion, testWidget.mask());
 
@@ -8264,7 +8372,8 @@ void tst_QWidget::moveInResizeEvent()
     QTRY_COMPARE(testWidget.geometry(), expectedGeometry);
 }
 
-void tst_QWidget::immediateRepaintAfterInvalidateBuffer()
+#ifdef QT_BUILD_INTERNAL
+void tst_QWidget::immediateRepaintAfterInvalidateBackingStore()
 {
     if (m_platform != QStringLiteral("xcb") && m_platform != QStringLiteral("windows"))
         QSKIP("We don't support immediate repaint right after show on other platforms.");
@@ -8278,7 +8387,7 @@ void tst_QWidget::immediateRepaintAfterInvalidateBuffer()
 
     // Marks the area covered by the widget as dirty in the backing store and
     // posts an UpdateRequest event.
-    qt_widget_private(widget.data())->invalidateBuffer(widget->rect());
+    qt_widget_private(widget.data())->invalidateBackingStore(widget->rect());
     QCOMPARE(widget->numPaintEvents, 0);
 
     // The entire widget is already dirty, but this time we want to update immediately
@@ -8287,6 +8396,7 @@ void tst_QWidget::immediateRepaintAfterInvalidateBuffer()
     widget->repaint();
     QCOMPARE(widget->numPaintEvents, 1);
 }
+#endif
 
 void tst_QWidget::effectiveWinId()
 {
@@ -8643,7 +8753,7 @@ void tst_QWidget::translucentWidget()
     ColorRedWidget label;
     label.setFixedSize(16,16);
     label.setAttribute(Qt::WA_TranslucentBackground);
-    const QPoint labelPos = qApp->desktop()->availableGeometry().topLeft();
+    const QPoint labelPos = QGuiApplication::primaryScreen()->availableGeometry().topLeft();
     label.move(labelPos);
     label.show();
     QVERIFY(QTest::qWaitForWindowExposed(&label));
@@ -8659,6 +8769,8 @@ void tst_QWidget::translucentWidget()
         widgetSnapshot = label.grab(QRect(QPoint(0, 0), label.size()));
     const QImage actual = widgetSnapshot.toImage().convertToFormat(QImage::Format_RGB32);
     const QImage expected = pm.toImage().scaled(label.devicePixelRatioF() * pm.size());
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QCOMPARE(actual.size(),expected.size());
     QCOMPARE(actual,expected);
 }
@@ -8702,7 +8814,7 @@ void tst_QWidget::setClearAndResizeMask()
     centerOnScreen(&topLevel);
     topLevel.show();
     qApp->setActiveWindow(&topLevel);
-    QVERIFY(QTest::qWaitForWindowActive(&topLevel));
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
     QTRY_VERIFY(topLevel.numPaintEvents > 0);
     topLevel.reset();
 
@@ -9102,7 +9214,7 @@ void tst_QWidget::syntheticEnterLeave()
 void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
 {
     if (m_platform == QStringLiteral("wayland"))
-        QSKIP("Wayland: This fails. Figure out why.");
+        QSKIP("Wayland: Clients can't set cursor position on wayland.");
     class SELParent : public QWidget
     {
     public:
@@ -9120,7 +9232,8 @@ void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
          void mouseMoveEvent(QMouseEvent *event)
          {
              QCOMPARE(event->button(), Qt::NoButton);
-             QCOMPARE(event->buttons(), Qt::MouseButtons(Qt::NoButton));
+             QCOMPARE(event->buttons(), QApplication::mouseButtons());
+             QCOMPARE(event->modifiers(), QApplication::keyboardModifiers());
              ++numMouseMoveEvents;
          }
          void reset() { numEnterEvents = numMouseMoveEvents = 0; }
@@ -9154,11 +9267,11 @@ void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
      child.setMouseTracking(true);
      child.show();
 
-     // Make sure the child gets enter event and mouse move event.
+     // Make sure the child gets enter event.
      // Note that we verify event->button() and event->buttons()
      // in SELChild::mouseMoveEvent().
      QTRY_COMPARE(child.numEnterEvents, 1);
-     QCOMPARE(child.numMouseMoveEvents, 1);
+     QCOMPARE(child.numMouseMoveEvents, 0);
 
      // Sending synthetic enter/leave trough the parent's mousePressEvent handler.
      parent.child = &child;
@@ -9167,10 +9280,19 @@ void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
      child.reset();
      QTest::mouseClick(&parent, Qt::LeftButton);
 
-     // Make sure the child gets enter event and one mouse move event.
+     // Make sure the child gets enter event.
      QTRY_COMPARE(child.numEnterEvents, 1);
-     QCOMPARE(child.numMouseMoveEvents, 1);
+     QCOMPARE(child.numMouseMoveEvents, 0);
 
+     child.hide();
+     child.reset();
+     QTest::keyPress(&parent, Qt::Key_Shift);
+     QTest::mouseClick(&parent, Qt::LeftButton);
+
+     // Make sure the child gets enter event
+     QTRY_COMPARE(child.numEnterEvents, 1);
+     QCOMPARE(child.numMouseMoveEvents, 0);
+     QTest::keyRelease(&child, Qt::Key_Shift);
      child.hide();
      child.reset();
      child.setMouseTracking(false);
@@ -9317,7 +9439,7 @@ QWidgetBackingStore* backingStore(QWidget &widget)
 void tst_QWidget::rectOutsideCoordinatesLimit_task144779()
 {
 #ifndef QT_NO_CURSOR
-    QApplication::setOverrideCursor(Qt::BlankCursor); //keep the cursor out of screen grabs
+    QGuiApplication::setOverrideCursor(Qt::BlankCursor); //keep the cursor out of screen grabs
 #endif
     QWidget main(0,Qt::FramelessWindowHint); //don't get confused by the size of the window frame
     QPalette palette;
@@ -9349,10 +9471,12 @@ void tst_QWidget::rectOutsideCoordinatesLimit_task144779()
     correct.fill(Qt::green);
     const QPixmap mainPixmap = grabFromWidget(&main, QRect(QPoint(0, 0), QSize(-1, -1)));
 
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(mainPixmap.toImage().convertToFormat(QImage::Format_RGB32),
                  correct.toImage().convertToFormat(QImage::Format_RGB32));
 #ifndef QT_NO_CURSOR
-    QApplication::restoreOverrideCursor();
+    QGuiApplication::restoreOverrideCursor();
 #endif
 }
 
@@ -9440,6 +9564,8 @@ void tst_QWidget::activateWindow()
     qApp->processEvents();
 
     QTRY_VERIFY(mainwindow->isActiveWindow());
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_VERIFY(!mainwindow2->isActiveWindow());
 }
 
@@ -9506,7 +9632,7 @@ public:
     {
         if (!static_cast<QWidgetPrivate*>(d_ptr.data())->maybeBackingStore()) {
             static_cast<QWidgetPrivate*>(d_ptr.data())->topData()->backingStoreTracker.create(this);
-            static_cast<QWidgetPrivate*>(d_ptr.data())->invalidateBuffer(this->rect());
+            static_cast<QWidgetPrivate*>(d_ptr.data())->invalidateBackingStore(this->rect());
             repaint();
         }
     }
@@ -9958,9 +10084,6 @@ public:
 
 void tst_QWidget::touchEventSynthesizedMouseEvent()
 {
-    if (m_platform == QStringLiteral("wayland"))
-        QSKIP("Wayland: This fails. Figure out why.");
-
     {
         // Simple case, we ignore the touch events, we get mouse events instead
         TouchMouseWidget widget;
@@ -10030,7 +10153,8 @@ void tst_QWidget::touchEventSynthesizedMouseEvent()
         // We should see propagation of the TouchBegin into a MouseButtonPress
         TouchMouseWidget parent;
         TouchMouseWidget child(&parent);
-        child.move(5, 5);
+        const QPoint childPos(5, 5);
+        child.move(childPos);
         child.setAcceptMouse(false);
         parent.show();
         QVERIFY(QTest::qWaitForWindowExposed(parent.windowHandle()));
@@ -10039,13 +10163,14 @@ void tst_QWidget::touchEventSynthesizedMouseEvent()
         QCOMPARE(child.m_touchEventCount, 0);
         QCOMPARE(child.m_mouseEventCount, 0);
 
-        QTest::touchEvent(parent.window(), m_touchScreen).press(0, QPoint(10, 10), &child);
+        const QPoint touchPos(20, 20);
+        QTest::touchEvent(parent.window(), m_touchScreen).press(0, touchPos, &child);
         QCOMPARE(parent.m_touchEventCount, 0);
         QCOMPARE(parent.m_mouseEventCount, 1);
-        QCOMPARE(parent.m_lastMouseEventPos, QPointF(15, 15));
+        QCOMPARE(parent.m_lastMouseEventPos, childPos + touchPos);
         QCOMPARE(child.m_touchEventCount, 0);
         QCOMPARE(child.m_mouseEventCount, 1); // Attempt at mouse event before propagation
-        QCOMPARE(child.m_lastMouseEventPos, QPointF(10, 10));
+        QCOMPARE(child.m_lastMouseEventPos, touchPos);
     }
 }
 
@@ -10542,7 +10667,7 @@ void tst_QWidget::keyboardModifiers()
     KeyboardWidget w;
     w.resize(300, 300);
     w.show();
-    QVERIFY(QTest::qWaitForWindowActive(&w));
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
     QTest::mouseClick(&w, Qt::LeftButton, Qt::ControlModifier);
     QCOMPARE(w.m_eventCounter, 1);
     QCOMPARE(int(w.m_modifiers), int(Qt::ControlModifier));
@@ -10603,6 +10728,8 @@ void tst_QWidget::resizeStaticContentsChildWidget_QTBUG35282()
 
     widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
+    if (m_platform == QStringLiteral("winrt"))
+        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QCOMPARE(childWidget.numPaintEvents, 0);
     childWidget.reset();
 
@@ -10796,6 +10923,32 @@ void tst_QWidget::tabletTracking()
                                               QTabletEvent::Stylus, QTabletEvent::Pen, Qt::NoButton, 0, 0, 0, 0, 0, 0, uid, Qt::NoModifier);
     QCoreApplication::processEvents();
     QTRY_COMPARE(widget.moveEventCount, 3);
+}
+
+class CloseCountingWidget : public QWidget
+{
+public:
+    int closeCount = 0;
+    void closeEvent(QCloseEvent *ev) override;
+};
+
+void CloseCountingWidget::closeEvent(QCloseEvent *ev)
+{
+    ++closeCount;
+    ev->accept();
+}
+
+void tst_QWidget::closeEvent()
+{
+    CloseCountingWidget widget;
+    widget.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&widget));
+    // Yes we call the close() function twice. This mimics the behavior of QTBUG-43344 where
+    // QApplication first closes all windows and then QCocoaApplication flushes window system
+    // events, triggering more close events.
+    widget.windowHandle()->close();
+    widget.windowHandle()->close();
+    QCOMPARE(widget.closeCount, 1);
 }
 
 QTEST_MAIN(tst_QWidget)

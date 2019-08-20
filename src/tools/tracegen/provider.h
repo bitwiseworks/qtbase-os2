@@ -59,8 +59,10 @@ struct Tracepoint
             Array,
             Sequence,
             Integer,
+            IntegerHex,
             Float,
             String,
+            Pointer,
             QtString,
             QtByteArray,
             QtUrl,
@@ -84,6 +86,7 @@ struct Provider
 {
     QString name;
     QVector<Tracepoint> tracepoints;
+    QStringList prefixText;
 };
 
 Provider parseProvider(const QString &filename);

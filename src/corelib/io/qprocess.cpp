@@ -112,12 +112,12 @@ QT_BEGIN_NAMESPACE
     \relates QProcess
 
     Disables the
-    \l {QProcess::start(const QString &, OpenMode)}{QProcess::start()}
-    overload taking a single string.
+    \l {QProcess::start(const QString &, QIODevice::OpenMode)}
+    {QProcess::start}() overload taking a single string.
     In most cases where it is used, the user intends for the first argument
     to be treated atomically as per the other overload.
 
-    \sa QProcess::start(const QString &command, OpenMode mode)
+    \sa QProcess::start(const QString &command, QIODevice::OpenMode mode)
 */
 
 /*!
@@ -775,6 +775,7 @@ void QProcessPrivate::Channel::clear()
 
 /*!
     \class QProcess::CreateProcessArguments
+    \inmodule QtCore
     \note This struct is only available on the Windows platform.
 
     This struct is a representation of all parameters of the Windows API
@@ -813,6 +814,7 @@ void QProcessPrivate::Channel::clear()
     \a newState argument is the state QProcess changed to.
 */
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \fn void QProcess::finished(int exitCode)
     \obsolete
@@ -820,6 +822,7 @@ void QProcessPrivate::Channel::clear()
 
     Use finished(int exitCode, QProcess::ExitStatus status) instead.
 */
+#endif
 
 /*!
     \fn void QProcess::finished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -1007,7 +1010,12 @@ void QProcessPrivate::setErrorAndEmit(QProcess::ProcessError error, const QStrin
     Q_ASSERT(error != QProcess::UnknownError);
     setError(error, description);
     emit q->errorOccurred(processError);
+#if QT_DEPRECATED_SINCE(5, 6)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     emit q->error(processError);
+QT_WARNING_POP
+#endif
 }
 
 /*!
@@ -1194,7 +1202,12 @@ bool QProcessPrivate::_q_processDied()
         //emit q->standardOutputClosed();
         //emit q->standardErrorClosed();
 
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         emit q->finished(exitCode);
+QT_WARNING_POP
+#endif
         emit q->finished(exitCode, exitStatus);
     }
 #if defined QPROCESS_DEBUG
@@ -1294,6 +1307,7 @@ QProcess::~QProcess()
     d->cleanup();
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \obsolete
     Returns the read channel mode of the QProcess. This function is
@@ -1317,6 +1331,7 @@ void QProcess::setReadChannelMode(ProcessChannelMode mode)
 {
     setProcessChannelMode(mode);
 }
+#endif
 
 /*!
     \since 4.2
@@ -2250,6 +2265,10 @@ void QProcess::start(OpenMode mode)
     \endlist
     All other properties of the QProcess object are ignored.
 
+    \note The called process inherits the console window of the calling
+    process. To suppress console output, redirect standard/error output to
+    QProcess::nullDevice().
+
     \note Due to system limitations, under OS/2, zero is always returned in
     *\a pid on success. If you need an actual process identifier, you should
     enable thread-safe mode with setThreadSafe().
@@ -2576,7 +2595,7 @@ QProcess::ExitStatus QProcess::exitStatus() const
 int QProcess::execute(const QString &program, const QStringList &arguments)
 {
     QProcess process;
-    process.setReadChannelMode(ForwardedChannels);
+    process.setProcessChannelMode(ForwardedChannels);
     process.start(program, arguments);
     if (!process.waitForFinished(-1) || process.error() == FailedToStart)
         return -2;
@@ -2599,7 +2618,7 @@ int QProcess::execute(const QString &program, const QStringList &arguments)
 int QProcess::execute(const QString &command)
 {
     QProcess process;
-    process.setReadChannelMode(ForwardedChannels);
+    process.setProcessChannelMode(ForwardedChannels);
     process.start(command);
     if (!process.waitForFinished(-1) || process.error() == FailedToStart)
         return -2;
@@ -2664,7 +2683,7 @@ bool QProcess::startDetached(const QString &program,
     After the \a command string has been split and unquoted, this function
     behaves like the overload which takes the arguments as a string list.
 
-    \sa start(const QString &command, OpenMode mode)
+    \sa start(const QString &command, QIODevice::OpenMode mode)
 */
 bool QProcess::startDetached(const QString &command)
 {

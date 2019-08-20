@@ -77,7 +77,7 @@ public:
     // end reimplementations QPdfPrintEngine
 
 private:
-    Q_DISABLE_COPY(QCupsPrintEngine)
+    Q_DISABLE_COPY_MOVE(QCupsPrintEngine)
 };
 
 class QCupsPrintEnginePrivate : public QPdfPrintEnginePrivate
@@ -91,7 +91,7 @@ public:
     void closePrintDevice() override;
 
 private:
-    Q_DISABLE_COPY(QCupsPrintEnginePrivate)
+    Q_DISABLE_COPY_MOVE(QCupsPrintEnginePrivate)
 
     void changePrinter(const QString &newPrinter);
     void setPageSize(const QPageSize &pageSize);
@@ -99,6 +99,7 @@ private:
     QPrintDevice m_printDevice;
     QStringList cupsOptions;
     QString cupsTempFile;
+    QPrint::DuplexMode duplex;
 };
 
 QT_END_NAMESPACE

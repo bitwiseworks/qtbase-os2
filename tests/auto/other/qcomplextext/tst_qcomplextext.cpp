@@ -48,9 +48,7 @@ private slots:
     void bidiInvalidCursorNoMovement_data();
     void bidiInvalidCursorNoMovement();
 
-    void bidiCharacterTest_data();
     void bidiCharacterTest();
-    void bidiTest_data();
     void bidiTest();
 
 };
@@ -68,8 +66,19 @@ void tst_QComplexText::bidiReorderString_data()
             << QString::fromUtf8( data->logical )
             << QString::fromUtf8( data->visual )
             << (int) data->basicDir;
+
+        QTest::newRow( QByteArray(data->name) + " (doubled)" )
+            << (QString::fromUtf8( data->logical ) + QChar(QChar::ParagraphSeparator) + QString::fromUtf8( data->logical ))
+            << (QString::fromUtf8( data->visual ) + QChar(QChar::ParagraphSeparator) + QString::fromUtf8( data->visual ))
+            << (int) data->basicDir;
         data++;
     }
+
+    QString isolateAndBoundary =  QString(QChar(0x2068 /* DirFSI */)) + QChar(0x1c /* DirB */) + QChar(0x2069 /* DirPDI */);
+    QTest::newRow( "isolateAndBoundary" )
+        << QString::fromUtf8( data->logical )
+        << QString::fromUtf8( data->visual )
+        << (int) QChar::DirL;
 }
 
 void tst_QComplexText::bidiReorderString()
@@ -279,67 +288,6 @@ void tst_QComplexText::bidiCursor_PDF()
     QVERIFY(line.cursorToX(size) == line.cursorToX(size - 1));
 }
 
-void tst_QComplexText::bidiCharacterTest_data()
-{
-    QTest::addColumn<QString>("data");
-    QTest::addColumn<int>("paragraphDirection");
-    QTest::addColumn<QVector<int>>("resolvedLevels");
-    QTest::addColumn<QVector<int>>("visualOrder");
-
-    QString testFile = QFINDTESTDATA("data/BidiCharacterTest.txt");
-    QFile f(testFile);
-    QVERIFY(f.exists());
-
-    f.open(QIODevice::ReadOnly);
-
-    int linenum = 0;
-    while (!f.atEnd()) {
-        linenum++;
-
-        QByteArray line = f.readLine().simplified();
-        if (line.startsWith('#') || line.isEmpty())
-            continue;
-        QVERIFY(!line.contains('#'));
-
-        QList<QByteArray> parts = line.split(';');
-        QVERIFY(parts.size() == 5);
-
-        QString data;
-        QList<QByteArray> dataParts = parts.at(0).split(' ');
-        for (const auto &p : dataParts) {
-            bool ok;
-            data += QChar((ushort)p.toInt(&ok, 16));
-            QVERIFY(ok);
-        }
-
-        int paragraphDirection = parts.at(1).toInt();
-//        int resolvedParagraphLevel = parts.at(2).toInt();
-
-        QVector<int> resolvedLevels;
-        QList<QByteArray> levelParts = parts.at(3).split(' ');
-        for (const auto &p : levelParts) {
-            if (p == "x") {
-                resolvedLevels += -1;
-            } else {
-                bool ok;
-                resolvedLevels += p.toInt(&ok);
-                QVERIFY(ok);
-            }
-        }
-
-        QVector<int> visualOrder;
-        QList<QByteArray> orderParts = parts.at(4).split(' ');
-        for (const auto &p : orderParts) {
-            bool ok;
-            visualOrder += p.toInt(&ok);
-            QVERIFY(ok);
-        }
-
-        const QByteArray nm = "line #" + QByteArray::number(linenum);
-        QTest::newRow(nm.constData()) << data << paragraphDirection  << resolvedLevels << visualOrder;
-    }
-}
-
 static void testBidiString(const QString &data, int paragraphDirection, const QVector<int> &resolvedLevels, const QVector<int> &visualOrder)
 {
     Q_UNUSED(resolvedLevels);
@@ -421,12 +369,59 @@ static void testBidiString(const QString &data, int paragraphDirection, const QV
 
 void tst_QComplexText::bidiCharacterTest()
 {
-    QFETCH(QString, data);
-    QFETCH(int, paragraphDirection);
-    QFETCH(QVector<int>, resolvedLevels);
-    QFETCH(QVector<int>, visualOrder);
+    QString testFile = QFINDTESTDATA("data/BidiCharacterTest.txt");
+    QFile f(testFile);
+    QVERIFY(f.exists());
 
-    testBidiString(data, paragraphDirection, resolvedLevels, visualOrder);
+    f.open(QIODevice::ReadOnly);
+
+    int linenum = 0;
+    while (!f.atEnd()) {
+        linenum++;
+
+        QByteArray line = f.readLine().simplified();
+        if (line.startsWith('#') || line.isEmpty())
+            continue;
+        QVERIFY(!line.contains('#'));
+
+        QList<QByteArray> parts = line.split(';');
+        QVERIFY(parts.size() == 5);
+
+        QString data;
+        QList<QByteArray> dataParts = parts.at(0).split(' ');
+        for (const auto &p : dataParts) {
+            bool ok;
+            data += QChar((ushort)p.toInt(&ok, 16));
+            QVERIFY(ok);
+        }
+
+        int paragraphDirection = parts.at(1).toInt();
+//        int resolvedParagraphLevel = parts.at(2).toInt();
+
+        QVector<int> resolvedLevels;
+        QList<QByteArray> levelParts = parts.at(3).split(' ');
+        for (const auto &p : levelParts) {
+            if (p == "x") {
+                resolvedLevels += -1;
+            } else {
+                bool ok;
+                resolvedLevels += p.toInt(&ok);
+                QVERIFY(ok);
+            }
+        }
+
+        QVector<int> visualOrder;
+        QList<QByteArray> orderParts = parts.at(4).split(' ');
+        for (const auto &p : orderParts) {
+            bool ok;
+            visualOrder += p.toInt(&ok);
+            QVERIFY(ok);
+        }
+
+        const QByteArray nm = "line #" + QByteArray::number(linenum);
+
+        testBidiString(data, paragraphDirection, resolvedLevels, visualOrder);
+    }
 }
 
 ushort unicodeForDirection(const QByteArray &direction)
@@ -442,7 +437,7 @@ ushort unicodeForDirection(const QByteArray &direction)
         { "ET", 0x24 },
         { "AN", 0x660 },
         { "CS", 0x2c },
-        { "B", QChar::ParagraphSeparator },
+        { "B", '\n' },
         { "S", 0x9 },
         { "WS", 0x20 },
         { "ON", 0x2a },
@@ -466,13 +461,8 @@ ushort unicodeForDirection(const QByteArray &direction)
     Q_UNREACHABLE();
 }
 
-void tst_QComplexText::bidiTest_data()
+void tst_QComplexText::bidiTest()
 {
-    QTest::addColumn<QString>("data");
-    QTest::addColumn<int>("paragraphDirection");
-    QTest::addColumn<QVector<int>>("resolvedLevels");
-    QTest::addColumn<QVector<int>>("visualOrder");
-
     QString testFile = QFINDTESTDATA("data/BidiTest.txt");
     QFile f(testFile);
     QVERIFY(f.exists());
@@ -534,24 +524,13 @@ void tst_QComplexText::bidiTest_data()
 
         const QByteArray nm = "line #" + QByteArray::number(linenum);
         if (paragraphDirections & 1)
-            QTest::newRow((nm + " (Auto)").constData()) << data << 2 << resolvedLevels << visualOrder;
+            testBidiString(data, 2, resolvedLevels, visualOrder);
         if (paragraphDirections & 2)
-            QTest::newRow((nm + " (LTR)").constData()) << data << 0 << resolvedLevels << visualOrder;
+            testBidiString(data, 0, resolvedLevels, visualOrder);
         if (paragraphDirections & 4)
-            QTest::newRow((nm + " (RTL)").constData()) << data << 1 << resolvedLevels << visualOrder;
+            testBidiString(data, 1, resolvedLevels, visualOrder);
 
     }
-
-}
-
-void tst_QComplexText::bidiTest()
-{
-    QFETCH(QString, data);
-    QFETCH(int, paragraphDirection);
-    QFETCH(QVector<int>, resolvedLevels);
-    QFETCH(QVector<int>, visualOrder);
-
-    testBidiString(data, paragraphDirection, resolvedLevels, visualOrder);
 }
 
 

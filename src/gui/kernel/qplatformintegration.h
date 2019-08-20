@@ -84,6 +84,8 @@ class QVulkanInstance;
 class Q_GUI_EXPORT QPlatformIntegration
 {
 public:
+    Q_DISABLE_COPY_MOVE(QPlatformIntegration)
+
     enum Capability {
         ThreadedPixmaps = 1,
         OpenGL,
@@ -130,7 +132,7 @@ public:
 #ifndef QT_NO_CLIPBOARD
     virtual QPlatformClipboard *clipboard() const;
 #endif
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     virtual QPlatformDrag *drag() const;
 #endif
     virtual QPlatformInputContext *inputContext() const;
@@ -190,8 +192,6 @@ public:
 #endif
     virtual void setApplicationIcon(const QIcon &icon) const;
 
-    void removeScreen(QScreen *screen);
-
     virtual void beep() const;
 
 #if QT_CONFIG(vulkan) || defined(Q_CLANG_QDOC)
@@ -199,9 +199,7 @@ public:
 #endif
 
 protected:
-    void screenAdded(QPlatformScreen *screen, bool isPrimary = false);
-    void destroyScreen(QPlatformScreen *screen);
-    void setPrimaryScreen(QPlatformScreen *newPrimary);
+    QPlatformIntegration() = default;
 };
 
 QT_END_NAMESPACE

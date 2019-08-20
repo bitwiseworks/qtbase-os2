@@ -139,14 +139,6 @@ QtFreetypeData::~QtFreetypeData()
     library = 0;
 }
 
-#ifdef QT_NO_THREAD
-Q_GLOBAL_STATIC(QtFreetypeData, theFreetypeData)
-
-QtFreetypeData *qt_getFreetypeData()
-{
-    return theFreetypeData();
-}
-#else
 Q_GLOBAL_STATIC(QThreadStorage<QtFreetypeData *>, theFreetypeData)
 
 QtFreetypeData *qt_getFreetypeData()
@@ -169,7 +161,6 @@ QtFreetypeData *qt_getFreetypeData()
     }
     return freetypeData;
 }
-#endif
 
 FT_Library qt_getFreetype()
 {
@@ -600,7 +591,7 @@ static void convertRGBToARGB_helper(const uchar *src, uint *dst, int width, int 
             uchar green = src[x + 1];
             uchar blue = src[x + 1 + offs];
             LcdFilter::filterPixel(red, green, blue);
-            *dd++ = (0xFF << 24) | (red << 16) | (green << 8) | blue;
+            *dd++ = (0xFFU << 24) | (red << 16) | (green << 8) | blue;
         }
         dst += width;
         src += src_pitch;
@@ -625,7 +616,7 @@ static void convertRGBToARGB_V_helper(const uchar *src, uint *dst, int width, in
             uchar green = src[x + src_pitch];
             uchar blue = src[x + src_pitch + offs];
             LcdFilter::filterPixel(red, green, blue);
-            *dst++ = (0XFF << 24) | (red << 16) | (green << 8) | blue;
+            *dst++ = (0XFFU << 24) | (red << 16) | (green << 8) | blue;
         }
         src += 3*src_pitch;
     }
@@ -646,7 +637,7 @@ static inline void convertGRAYToARGB(const uchar *src, uint *dst, int width, int
         const uchar * const e = p + width;
         while (p < e) {
             uchar gray = *p++;
-            *dst++ = (0xFF << 24) | (gray << 16) | (gray << 8) | gray;
+            *dst++ = (0xFFU << 24) | (gray << 16) | (gray << 8) | gray;
         }
         src += src_pitch;
     }
@@ -1565,7 +1556,7 @@ QFontEngineFT::QGlyphSet *QFontEngineFT::loadGlyphSet(const QTransform &matrix)
         gs = &transformedGlyphSets[0];
         gs->clear();
         gs->transformationMatrix = m;
-        gs->outline_drawing = fontDef.pixelSize * fontDef.pixelSize * qAbs(matrix.det()) >= QT_MAX_CACHED_GLYPH_SIZE * QT_MAX_CACHED_GLYPH_SIZE;
+        gs->outline_drawing = fontDef.pixelSize * fontDef.pixelSize * qAbs(matrix.determinant()) > QT_MAX_CACHED_GLYPH_SIZE * QT_MAX_CACHED_GLYPH_SIZE;
     }
     Q_ASSERT(gs != 0);
 

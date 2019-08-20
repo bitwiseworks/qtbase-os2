@@ -38,7 +38,7 @@
 # include <qmutex.h>
 #endif
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 QT_FORWARD_DECLARE_CLASS(QTextCodec)
 #endif
 
@@ -76,10 +76,13 @@ public:
     Q_DECLARE_FLAGS(VfsFlags, VfsFlag)
 
     QMakeVfs();
+    ~QMakeVfs();
+
+    static void ref();
+    static void deref();
 
     int idForFileName(const QString &fn, VfsFlags flags);
     QString fileNameForId(int id);
-    static void clearIds();
     bool writeFile(int id, QIODevice::OpenMode mode, VfsFlags flags, const QString &contents, QString *errStr);
     ReadResult readFile(int id, QString *contents, QString *errStr);
     bool exists(const QString &fn, QMakeVfs::VfsFlags flags);
@@ -89,7 +92,7 @@ public:
     void invalidateContents();
 #endif
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
     void setTextCodec(const QTextCodec *textCodec);
 #endif
 
@@ -97,6 +100,7 @@ private:
 #ifdef PROEVALUATOR_THREAD_SAFE
     static QMutex s_mutex;
 #endif
+    static int s_refCount;
     static QAtomicInt s_fileIdCounter;
     // Qt Creator's ProFile cache is a singleton to maximize its cross-project
     // effectiveness (shared prf files from QtVersions).
@@ -125,7 +129,7 @@ private:
     QString m_magicMissing;
     QString m_magicExisting;
 #endif
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
     const QTextCodec *m_textCodec;
 #endif
 };

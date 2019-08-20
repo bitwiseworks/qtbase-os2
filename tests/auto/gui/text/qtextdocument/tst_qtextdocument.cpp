@@ -619,7 +619,11 @@ void tst_QTextDocument::task240325()
     QCOMPARE(doc->blockCount(), 1);
     for (QTextBlock block = doc->begin() ; block!=doc->end() ; block = block.next()) {
         QTextLayout *layout = block.layout();
+#ifdef Q_OS_ANDROID
+        QEXPECT_FAIL("", "QTBUG-69242", Abort);
+#endif
         QCOMPARE(layout->lineCount(), 4);
+
         for (int lineIdx=0;lineIdx<layout->lineCount();++lineIdx) {
             QTextLine line = layout->lineAt(lineIdx);
 
@@ -1124,7 +1128,7 @@ void tst_QTextDocument::toHtml_data()
 
         QTextCharFormat fmt;
         fmt.setAnchor(true);
-        fmt.setAnchorName("blub");
+        fmt.setAnchorNames({"blub"});
         cursor.insertText("Blah", fmt);
 
         QTest::newRow("named anchor") << QTextDocumentFragment(&doc)

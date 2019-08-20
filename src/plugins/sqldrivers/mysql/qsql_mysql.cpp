@@ -48,7 +48,9 @@
 #include <qsqlquery.h>
 #include <qsqlrecord.h>
 #include <qstringlist.h>
+#if QT_CONFIG(textcodec)
 #include <qtextcodec.h>
+#endif
 #include <qvector.h>
 #include <qfile.h>
 #include <qdebug.h>
@@ -74,6 +76,10 @@ Q_DECLARE_METATYPE(MYSQL_STMT*)
 #  define Q_CLIENT_MULTI_STATEMENTS 0
 #endif
 
+// MySQL above version 8 removed my_bool typedef while MariaDB kept it,
+// by redefining it we can regain source compatibility.
+using my_bool = decltype(mysql_stmt_bind_result(nullptr, nullptr));
+
 QT_BEGIN_NAMESPACE
 
 class QMYSQLDriverPrivate : public QSqlDriverPrivate
@@ -82,7 +88,7 @@ class QMYSQLDriverPrivate : public QSqlDriverPrivate
 
 public:
     QMYSQLDriverPrivate() : QSqlDriverPrivate(), mysql(0),
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         tc(QTextCodec::codecForLocale()),
 #else
         tc(0),
@@ -96,7 +102,7 @@ public:
 
 static inline QString toUnicode(QTextCodec *tc, const char *str)
 {
-#ifdef QT_NO_TEXTCODEC
+#if !QT_CONFIG(textcodec)
     Q_UNUSED(tc);
     return QString::fromLatin1(str);
 #else
@@ -106,7 +112,7 @@ static inline QString toUnicode(QTextCodec *tc, const char *str)
 
 static inline QString toUnicode(QTextCodec *tc, const char *str, int length)
 {
-#ifdef QT_NO_TEXTCODEC
+#if !QT_CONFIG(textcodec)
     Q_UNUSED(tc);
     return QString::fromLatin1(str, length);
 #else
@@ -116,7 +122,7 @@ static inline QString toUnicode(QTextCodec *tc, const char *str, int length)
 
 static inline QByteArray fromUnicode(QTextCodec *tc, const QString &str)
 {
-#ifdef QT_NO_TEXTCODEC
+#if !QT_CONFIG(textcodec)
     Q_UNUSED(tc);
     return str.toLatin1();
 #else
@@ -126,7 +132,7 @@ static inline QByteArray fromUnicode(QTextCodec *tc, const QString &str)
 
 static inline QVariant qDateFromString(const QString &val)
 {
-#ifdef QT_NO_DATESTRING
+#if !QT_CONFIG(datestring)
     Q_UNUSED(val);
     return QVariant(val);
 #else
@@ -138,7 +144,7 @@ static inline QVariant qDateFromString(const QString &val)
 
 static inline QVariant qTimeFromString(const QString &val)
 {
-#ifdef QT_NO_DATESTRING
+#if !QT_CONFIG(datestring)
     Q_UNUSED(val);
     return QVariant(val);
 #else
@@ -150,7 +156,7 @@ static inline QVariant qTimeFromString(const QString &val)
 
 static inline QVariant qDateTimeFromString(QString &val)
 {
-#ifdef QT_NO_DATESTRING
+#if !QT_CONFIG(datestring)
     Q_UNUSED(val);
     return QVariant(val);
 #else
@@ -191,6 +197,7 @@ protected:
     QSqlRecord record() const override;
     void virtual_hook(int id, void *data) override;
     bool nextResult() override;
+    void detachFromResultSet() override;
 
 #if MYSQL_VERSION_ID >= 40108
     bool prepare(const QString &stmt) override;
@@ -251,7 +258,7 @@ public:
     bool preparedQuery;
 };
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 static QTextCodec* codec(MYSQL* mysql)
 {
 #if MYSQL_VERSION_ID >= 32321
@@ -261,7 +268,7 @@ static QTextCodec* codec(MYSQL* mysql)
 #endif
     return QTextCodec::codecForLocale();
 }
-#endif // QT_NO_TEXTCODEC
+#endif // textcodec
 
 static QSqlError qMakeError(const QString& err, QSqlError::ErrorType type,
                             const QMYSQLDriverPrivate* p)
@@ -305,7 +312,9 @@ static QVariant::Type qDecodeMYSQLType(int mysqltype, uint flags)
         type = QVariant::Date;
         break;
     case FIELD_TYPE_TIME :
-        type = QVariant::Time;
+        // A time field can be within the range '-838:59:59' to '838:59:59' so
+        // use QString instead of QTime since QTime is limited to 24 hour clock
+        type = QVariant::String;
         break;
     case FIELD_TYPE_DATETIME :
     case FIELD_TYPE_TIMESTAMP :
@@ -796,6 +805,15 @@ int QMYSQLResult::numRowsAffected()
     return d->rowsAffected;
 }
 
+void QMYSQLResult::detachFromResultSet()
+{
+    Q_D(QMYSQLResult);
+
+    if (d->preparedQuery) {
+        mysql_stmt_free_result(d->stmt);
+    }
+}
+
 QVariant QMYSQLResult::lastInsertId() const
 {
     Q_D(const QMYSQLResult);
@@ -1199,7 +1217,7 @@ QMYSQLDriver::QMYSQLDriver(MYSQL * con, QObject * parent)
     init();
     if (con) {
         d->mysql = (MYSQL *) con;
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         d->tc = codec(con);
 #endif
         setOpen(true);
@@ -1428,14 +1446,14 @@ bool QMYSQLDriver::open(const QString& db,
     if (mysql_get_client_version() >= 50503 && mysql_get_server_version(d->mysql) >= 50503) {
         // force the communication to be utf8mb4 (only utf8mb4 supports 4-byte characters)
         mysql_set_character_set(d->mysql, "utf8mb4");
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         d->tc = QTextCodec::codecForName("UTF-8");
 #endif
     } else
     {
         // force the communication to be utf8
         mysql_set_character_set(d->mysql, "utf8");
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         d->tc = codec(d->mysql);
 #endif
     }
@@ -1448,7 +1466,7 @@ bool QMYSQLDriver::open(const QString& db,
     d->preparedQuerysEnabled = false;
 #endif
 
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
     mysql_thread_init();
 #endif
 
@@ -1462,7 +1480,7 @@ void QMYSQLDriver::close()
 {
     Q_D(QMYSQLDriver);
     if (isOpen()) {
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
         mysql_thread_end();
 #endif
         mysql_close(d->mysql);
@@ -1533,7 +1551,7 @@ QSqlIndex QMYSQLDriver::primaryIndex(const QString& tablename) const
     QSqlQuery i(createResult());
     QString stmt(QLatin1String("show index from %1;"));
     QSqlRecord fil = record(tablename);
-    i.exec(stmt.arg(tablename));
+    i.exec(stmt.arg(escapeIdentifier(tablename, QSqlDriver::TableName)));
     while (i.isActive() && i.next()) {
         if (i.value(2).toString() == QLatin1String("PRIMARY")) {
             idx.append(fil.field(i.value(4).toString()));

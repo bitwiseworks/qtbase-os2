@@ -66,7 +66,8 @@ QHttpNetworkRequestPrivate::QHttpNetworkRequestPrivate(const QHttpNetworkRequest
       ssl(other.ssl),
       preConnect(other.preConnect),
       redirectCount(other.redirectCount),
-      redirectPolicy(other.redirectPolicy)
+      redirectPolicy(other.redirectPolicy),
+      peerVerifyName(other.peerVerifyName)
 {
 }
 
@@ -90,7 +91,8 @@ bool QHttpNetworkRequestPrivate::operator==(const QHttpNetworkRequestPrivate &ot
         && (withCredentials == other.withCredentials)
         && (ssl == other.ssl)
         && (preConnect == other.preConnect)
-        && (redirectPolicy == other.redirectPolicy);
+        && (redirectPolicy == other.redirectPolicy)
+        && (peerVerifyName == other.peerVerifyName);
 }
 
 QByteArray QHttpNetworkRequest::methodName() const
@@ -133,6 +135,8 @@ QByteArray QHttpNetworkRequest::uri(bool throughProxy) const
     QUrl copy = d->url;
     if (copy.path().isEmpty())
         copy.setPath(QStringLiteral("/"));
+    else
+        format |= QUrl::NormalizePathSegments;
     QByteArray uri = copy.toEncoded(format);
     return uri;
 }
@@ -395,6 +399,15 @@ int QHttpNetworkRequest::minorVersion() const
     return 1;
 }
 
+QString QHttpNetworkRequest::peerVerifyName() const
+{
+    return d->peerVerifyName;
+}
+
+void QHttpNetworkRequest::setPeerVerifyName(const QString &peerName)
+{
+    d->peerVerifyName = peerName;
+}
 
 QT_END_NAMESPACE
 

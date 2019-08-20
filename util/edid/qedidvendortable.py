@@ -29,7 +29,10 @@
 
 import urllib.request
 
-url = 'https://git.fedorahosted.org/cgit/hwdata.git/plain/pnp.ids'
+# The original source for this data used to be
+# 'https://git.fedorahosted.org/cgit/hwdata.git/plain/pnp.ids'
+# which is discontinued. For now there seems to be a fork at:
+url = 'https://github.com/vcrhonek/hwdata/raw/master/pnp.ids'
 
 copyright = """/****************************************************************************
 **
@@ -74,7 +77,7 @@ copyright = """/****************************************************************
 notice = """/*
  * This lookup table was generated from {}
  *
- * Do not change directly this file, instead edit the
+ * Do not change this file directly, instead edit the
  * qtbase/util/edid/qedidvendortable.py script and regenerate this file.
  */""".format(url)
 
@@ -129,6 +132,6 @@ for line in data.split('\n'):
 print(copyright)
 print(notice)
 print(header % (max_vendor_length + 1))
-for pnp_id in vendors.keys():
+for pnp_id in sorted(vendors.keys()):
     print('    { "%s", "%s" },' % (pnp_id, vendors[pnp_id]))
 print(footer)

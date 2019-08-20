@@ -78,7 +78,6 @@ static void initAgeMap()
     }
 }
 
-
 static QHash<QByteArray, QChar::Category> categoryMap;
 
 static void initCategoryMap()
@@ -778,7 +777,6 @@ static void initScriptMap()
         { QChar::Script_Soyombo,                "Soyombo" },
         { QChar::Script_ZanabazarSquare,        "ZanabazarSquare" },
 
-
         // unhandled
         { QChar::Script_Unknown,                0 }
     };
@@ -788,7 +786,6 @@ static void initScriptMap()
         ++p;
     }
 }
-
 
 // Keep this one in sync with the code in createPropertyInfo
 static const char *property_string =
@@ -801,6 +798,9 @@ static const char *property_string =
     "    signed short mirrorDiff    : 16;\n"
     "    ushort lowerCaseSpecial    : 1;\n"
     "    signed short lowerCaseDiff : 15;\n"
+    "#ifdef Q_OS_WASM\n"
+    "    unsigned char              : 0; //wasm 64 packing trick\n"
+    "#endif\n"
     "    ushort upperCaseSpecial    : 1;\n"
     "    signed short upperCaseDiff : 15;\n"
     "    ushort titleCaseSpecial    : 1;\n"
@@ -809,6 +809,9 @@ static const char *property_string =
     "    signed short caseFoldDiff  : 15;\n"
     "    ushort unicodeVersion      : 8; /* 5 used */\n"
     "    ushort nfQuickCheck        : 8;\n" // could be narrowed
+    "#ifdef Q_OS_WASM\n"
+    "    unsigned char              : 0; //wasm 64 packing trick\n"
+    "#endif\n"
     "    ushort graphemeBreakClass  : 5; /* 5 used */\n"
     "    ushort wordBreakClass      : 5; /* 5 used */\n"
     "    ushort sentenceBreakClass  : 8; /* 4 used */\n"

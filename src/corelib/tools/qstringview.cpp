@@ -74,19 +74,14 @@ QT_BEGIN_NAMESPACE
     string literal.
 
     QStringViews should be passed by value, not by reference-to-const:
-    \code
-    void myfun1(QStringView sv);        // preferred
-    void myfun2(const QStringView &sv); // compiles and works, but slower
-    \endcode
+    \snippet code/src_corelib_tools_qstringview.cpp 0
 
     If you want to give your users maximum freedom in what strings they can pass
     to your function, accompany the QStringView overload with overloads for
 
     \list
         \li \e QChar: this overload can delegate to the QStringView version:
-            \code
-            void fun(QChar ch) { fun(QStringView(&ch, 1)); }
-            \endcode
+            \snippet code/src_corelib_tools_qstringview.cpp 1
             even though, for technical reasons, QStringView cannot provide a
             QChar constructor by itself.
         \li \e QString: if you store an unmodified copy of the string and thus would
@@ -237,9 +232,9 @@ QT_BEGIN_NAMESPACE
 
     The range \c{[str,len)} must remain valid for the lifetime of this string view object.
 
-    Passing \c nullptr as \a str is safe if \a len is 0, too, and results in a null string view.
+    Passing \nullptr as \a str is safe if \a len is 0, too, and results in a null string view.
 
-    The behavior is undefined if \a len is negative or, when positive, if \a str is \c nullptr.
+    The behavior is undefined if \a len is negative or, when positive, if \a str is \nullptr.
 
     This constructor only participates in overload resolution if \c Char is a compatible
     character type. The compatible character types are: \c QChar, \c ushort, \c char16_t and
@@ -254,11 +249,11 @@ QT_BEGIN_NAMESPACE
     The range \c{[first,last)} must remain valid for the lifetime of
     this string view object.
 
-    Passing \c nullptr as \a first is safe if \a last is nullptr, too,
+    Passing \c \nullptr as \a first is safe if \a last is \nullptr, too,
     and results in a null string view.
 
     The behavior is undefined if \a last precedes \a first, or \a first
-    is \c nullptr and \a last is not.
+    is \nullptr and \a last is not.
 
     This constructor only participates in overload resolution if \c Char
     is a compatible character type. The compatible character types
@@ -274,7 +269,7 @@ QT_BEGIN_NAMESPACE
 
     \a str must remain valid for the lifetime of this string view object.
 
-    Passing \c nullptr as \a str is safe and results in a null string view.
+    Passing \nullptr as \a str is safe and results in a null string view.
 
     This constructor only participates in overload resolution if \a
     str is not an array and if \c Char is a compatible character
@@ -291,9 +286,7 @@ QT_BEGIN_NAMESPACE
     If you need the full array, use the constructor from pointer and
     size instead:
 
-    \code
-    auto sv = QStringView(array, std::size(array)); // using C++17 std::size()
-    \endcode
+    \snippet code/src_corelib_tools_qstringview.cpp 2
 
     \a string must remain valid for the lifetime of this string view
     object.
@@ -339,7 +332,7 @@ QT_BEGIN_NAMESPACE
 
     The string view will be empty if and only if \c{str.empty()}. It is unspecified
     whether this constructor can result in a null string view (\c{str.data()} would
-    have to return \c nullptr for this).
+    have to return \nullptr for this).
 
     \sa isNull(), isEmpty()
 */
@@ -678,6 +671,20 @@ QT_BEGIN_NAMESPACE
     Whitespace means any character for which QChar::isSpace() returns
     \c true. This includes the ASCII characters '\\t', '\\n', '\\v',
     '\\f', '\\r', and ' '.
+*/
+
+/*!
+    \fn int QStringView::compare(QStringView other, Qt::CaseSensitivity cs) const
+    \since 5.12
+
+    Compares this string-view with the \a other string-view and returns an
+    integer less than, equal to, or greater than zero if this string-view
+    is less than, equal to, or greater than the other string-view.
+
+    If \a cs is Qt::CaseSensitive, the comparison is case sensitive;
+    otherwise the comparison is case insensitive.
+
+    \sa operator==(), operator<(), operator>()
 */
 
 /*!

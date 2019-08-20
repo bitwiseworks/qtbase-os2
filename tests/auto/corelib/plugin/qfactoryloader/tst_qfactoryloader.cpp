@@ -42,6 +42,11 @@ Q_IMPORT_PLUGIN(Plugin2)
 class tst_QFactoryLoader : public QObject
 {
     Q_OBJECT
+
+#ifdef Q_OS_ANDROID
+    QSharedPointer<QTemporaryDir> directory;
+#endif
+
 public slots:
     void initTestCase();
 
@@ -54,6 +59,12 @@ static const char *binFolderC = BIN_FOLDER;
 
 void tst_QFactoryLoader::initTestCase()
 {
+#ifdef Q_OS_ANDROID
+    directory = QEXTRACTTESTDATA("android_test_data");
+    QVERIFY(directory);
+    QVERIFY(directory->isValid());
+    QVERIFY2(QDir::setCurrent(directory->path()), qPrintable("Could not chdir to " + directory->path()));
+#endif
     QString binFolder = QFINDTESTDATA(binFolderC);
     // Support running the test case from the build dir w/o installing.
     if (binFolder.isEmpty())

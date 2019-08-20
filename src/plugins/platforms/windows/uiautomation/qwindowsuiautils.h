@@ -40,16 +40,14 @@
 #ifndef QWINDOWSUIAUTILS_H
 #define QWINDOWSUIAUTILS_H
 
-#include <QtCore/QtConfig>
-#ifndef QT_NO_ACCESSIBILITY
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(accessibility)
 
-#include <QtCore/QString>
+#include <QtCore/qstring.h>
 #include <QtCore/qt_windows.h>
-#include <QtGui/QAccessible>
-#include <QtGui/QAccessibleInterface>
-#include <QtGui/QWindow>
-#include <QtCore/QDebug>
-#include <QtCore/QRect>
+#include <QtGui/qaccessible.h>
+#include <QtGui/qwindow.h>
+#include <QtCore/qrect.h>
 #include <QtWindowsUIAutomationSupport/private/qwindowsuiawrapper_p.h>
 
 QT_BEGIN_NAMESPACE
@@ -84,6 +82,6 @@ void setVariantString(const QString &value, VARIANT *variant);
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)
 
 #endif // QWINDOWSUIAUTILS_H

@@ -850,7 +850,7 @@ void QGraphicsViewPrivate::storeDragDropEvent(const QGraphicsSceneDragDropEvent 
 void QGraphicsViewPrivate::populateSceneDragDropEvent(QGraphicsSceneDragDropEvent *dest,
                                                       QDropEvent *source)
 {
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     Q_Q(QGraphicsView);
     dest->setScenePos(q->mapToScene(source->pos()));
     dest->setScreenPos(q->mapToGlobal(source->pos()));
@@ -1676,7 +1676,7 @@ void QGraphicsView::setInteractive(bool allowed)
 
 /*!
     Returns a pointer to the scene that is currently visualized in the
-    view. If no scene is currently visualized, 0 is returned.
+    view. If no scene is currently visualized, \nullptr is returned.
 
     \sa setScene()
 */
@@ -2703,7 +2703,7 @@ void QGraphicsView::updateScene(const QList<QRectF> &rects)
         dirtyViewportRects << xrect;
     }
 
-    foreach (const QRect &rect, dirtyViewportRects) {
+    for (const QRect &rect : qAsConst(dirtyViewportRects)) {
         // Add the exposed rect to the update region. In rect update
         // mode, we only count the bounding rect of items.
         if (!boundingRectUpdate) {
@@ -3483,7 +3483,9 @@ void QGraphicsView::paintEvent(QPaintEvent *event)
         // Recreate the background pixmap, and flag the whole background as
         // exposed.
         if (d->mustResizeBackgroundPixmap) {
-            d->backgroundPixmap = QPixmap(viewport()->size());
+            const qreal dpr = d->viewport->devicePixelRatioF();
+            d->backgroundPixmap = QPixmap(viewport()->size() * dpr);
+            d->backgroundPixmap.setDevicePixelRatio(dpr);
             QBrush bgBrush = viewport()->palette().brush(viewport()->backgroundRole());
             if (!bgBrush.isOpaque())
                 d->backgroundPixmap.fill(Qt::transparent);
@@ -3679,14 +3681,20 @@ void QGraphicsView::scrollContentsBy(int dx, int dy)
         && X11->use_xrender
 #endif
         ) {
+        // Below, QPixmap::scroll() works in device pixels, while the delta values
+        // and backgroundPixmapExposed are in device independent pixels.
+        const qreal dpr = d->backgroundPixmap.devicePixelRatio();
+        const qreal inverseDpr = qreal(1) / dpr;
+
         // Scroll the background pixmap
         QRegion exposed;
         if (!d->backgroundPixmap.isNull())
-            d->backgroundPixmap.scroll(dx, dy, d->backgroundPixmap.rect(), &exposed);
+            d->backgroundPixmap.scroll(dx * dpr, dy * dpr, d->backgroundPixmap.rect(), &exposed);
 
         // Invalidate the background pixmap
         d->backgroundPixmapExposed.translate(dx, dy);
-        d->backgroundPixmapExposed += exposed;
+        const QRegion exposedScaled = QTransform::fromScale(inverseDpr, inverseDpr).map(exposed);
+        d->backgroundPixmapExposed += exposedScaled;
     }
 
     // Always replay on scroll.

@@ -134,7 +134,7 @@ QString QStandardPaths::writableLocation(StandardLocation type)
                     return QString();
                 }
             }
-#ifndef Q_OS_OS2
+#if !defined(Q_OS_OS2) && !defined(Q_OS_WASM)
             // Makes no sense to warn on OS/2 as it is almost always not set and it's normal
             qWarning("QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '%s'", qPrintable(xdgRuntimeDir));
 #endif

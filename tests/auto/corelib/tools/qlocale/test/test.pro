@@ -16,4 +16,4 @@ win32|os2 {
     }
 }
 
-!winrt: TEST_HELPER_INSTALLS = ../syslocaleapp/syslocaleapp
+!android:!winrt: TEST_HELPER_INSTALLS = ../syslocaleapp/syslocaleapp

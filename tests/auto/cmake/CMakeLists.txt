@@ -47,6 +47,7 @@ find_package(Qt5Core REQUIRED)
 
 include("${_Qt5CTestMacros}")
 
+expect_pass(test_use_modules_function)
 expect_pass(test_umbrella_config)
 expect_pass(test_wrap_cpp_and_resources)
 if (NOT NO_WIDGETS)
@@ -145,6 +146,7 @@ endif()
 
 expect_pass(test_interface_link_libraries)
 expect_pass(test_moc_macro_target)
+expect_pass(test_add_big_resource)
 
 if (NOT CMAKE_VERSION VERSION_LESS 3.8)
     # With earlier CMake versions, this test would simply run moc multiple times and lead to:
@@ -152,3 +154,4 @@ if (NOT CMAKE_VERSION VERSION_LESS 3.8)
     # /usr/bin/ld: CMakeFiles/mywidget.dir/moc_mywidget.cpp.o: previous definition here
     # Reason: SKIP_* properties were added in CMake 3.8 only
     expect_pass(test_QTBUG-63422)
+endif()

@@ -96,7 +96,6 @@ public:
     tst_QApplication();
 
 private slots:
-    void initTestCase();
     void cleanup();
     void sendEventsOnProcessEvents(); // this must be the first test
     void staticSetup();
@@ -187,13 +186,6 @@ public:
     }
 };
 
-void tst_QApplication::initTestCase()
-{
-    // chdir to our testdata path and execute helper apps relative to that.
-    const QString testdataDir = QFileInfo(QFINDTESTDATA("desktopsettingsaware")).absolutePath();
-    QVERIFY2(QDir::setCurrent(testdataDir), qPrintable("Could not chdir to " + testdataDir));
-}
-
 void tst_QApplication::sendEventsOnProcessEvents()
 {
     int argc = 0;
@@ -248,6 +240,7 @@ void tst_QApplication::staticSetup()
     QVERIFY(style);
     QApplication::setStyle(style);
 
+    bool palette_changed = false;
     QPalette pal;
     QApplication::setPalette(pal);
 
@@ -255,7 +248,11 @@ void tst_QApplication::staticSetup()
     QApplication::setFont(font);*/
 
     int argc = 0;
-    QApplication app(argc, 0);
+    QApplication app(argc, nullptr);
+    QObject::connect(&app, &QApplication::paletteChanged, [&palette_changed]{ palette_changed = true; });
+    QVERIFY(!palette_changed);
+    qApp->setPalette(QPalette(Qt::red));
+    QVERIFY(palette_changed);
 }
 
 
@@ -277,6 +274,9 @@ public:
 
 void tst_QApplication::alert()
 {
+#ifdef Q_OS_WINRT
+    QSKIP("WinRT does not support more than 1 native widget at the same time");
+#endif
     int argc = 0;
     QApplication app(argc, 0);
     app.alert(0, 0);
@@ -288,7 +288,6 @@ void tst_QApplication::alert()
     widget2.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
     QVERIFY(QTest::qWaitForWindowExposed(&widget2));
-    QTest::qWait(100);
     app.alert(&widget, -1);
     app.alert(&widget, 250);
     widget2.activateWindow();
@@ -361,8 +360,8 @@ void tst_QApplication::setFont_data()
     int cnt = 0;
     QFontDatabase fdb;
     QStringList families = fdb.families();
-    for (QStringList::const_iterator itr = families.begin();
-         itr != families.end();
+    for (QStringList::const_iterator itr = families.cbegin();
+         itr != families.cend();
          ++itr) {
         if (cnt < 3) {
             QString family = *itr;
@@ -821,6 +820,9 @@ public:
 
 void tst_QApplication::closeAllWindows()
 {
+#ifdef Q_OS_WINRT
+    QSKIP("PromptOnCloseWidget does not work on WinRT - QTBUG-68297");
+#endif
     int argc = 0;
     QApplication app(argc, 0);
 
@@ -889,7 +891,11 @@ bool isPathListIncluded(const QStringList &l, const QStringList &r)
 #define QT_TST_QAPP_DEBUG
 void tst_QApplication::libraryPaths()
 {
+#ifndef BUILTIN_TESTDATA
         const QString testDir = QFileInfo(QFINDTESTDATA("test/test.pro")).absolutePath();
+#else
+        const QString testDir = QFileInfo(QFINDTESTDATA("test.pro")).absolutePath();
+#endif
         QVERIFY(!testDir.isEmpty());
     {
         QApplication::setLibraryPaths(QStringList() << testDir);
@@ -922,6 +928,9 @@ void tst_QApplication::libraryPaths()
         QStringList expected = QSet<QString>::fromList((QStringList() << installPathPlugins << appDirPath)).toList();
         expected.sort();
 
+#ifdef Q_OS_WINRT
+        QEXPECT_FAIL("", "On WinRT PluginsPath is outside of sandbox. QTBUG-68297", Abort);
+#endif
         QVERIFY2(isPathListIncluded(actual, expected),
                  qPrintable("actual:\n - " + actual.join("\n - ") +
                             "\nexpected:\n - " + expected.join("\n - ")));
@@ -1045,6 +1054,9 @@ void tst_QApplication::libraryPaths_qt_plugin_path_2()
             << QDir(app.applicationDirPath()).canonicalPath()
             << QDir(QDir::fromNativeSeparators(QString::fromLatin1(validPath))).canonicalPath();
 
+#ifdef Q_OS_WINRT
+        QEXPECT_FAIL("", "On WinRT PluginsPath is outside of sandbox. QTBUG-68297", Abort);
+#endif
         QVERIFY2(isPathListIncluded(app.libraryPaths(), expected),
                  qPrintable("actual:\n - " + app.libraryPaths().join("\n - ") +
                             "\nexpected:\n - " + expected.join("\n - ")));
@@ -1439,20 +1451,10 @@ void tst_QApplication::testDeleteLaterProcessEvents()
 void tst_QApplication::desktopSettingsAware()
 {
 #if QT_CONFIG(process)
-    QString path;
-    {
-        // We need an application object for QFINDTESTDATA to work
-        // properly in all cases.
-        int argc = 0;
-        QCoreApplication app(argc, 0);
-        path = QFINDTESTDATA("desktopsettingsaware/");
-    }
-    QVERIFY2(!path.isEmpty(), "Cannot locate desktopsettingsaware helper application");
-    path += "desktopsettingsaware";
     QProcess testProcess;
-    testProcess.start(path);
+    testProcess.start("desktopsettingsaware_helper");
     QVERIFY2(testProcess.waitForStarted(),
-             qPrintable(QString::fromLatin1("Cannot start '%1': %2").arg(path, testProcess.errorString())));
+             qPrintable(QString::fromLatin1("Cannot start 'desktopsettingsaware_helper': %1").arg(testProcess.errorString())));
     QVERIFY(testProcess.waitForFinished(10000));
     QCOMPARE(int(testProcess.state()), int(QProcess::NotRunning));
     QVERIFY(int(testProcess.error()) != int(QProcess::Crashed));
@@ -1715,6 +1717,7 @@ void tst_QApplication::focusOut()
     le2->setStyleSheet("background: #fee");
     le2->move(100, 100);
     w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     QTest::qWait(2000);
     le2->setFocus();
@@ -1748,6 +1751,9 @@ void tst_QApplication::focusMouseClick()
     QSpontaneKeyEvent::setSpontaneous(&ev);
     QVERIFY(ev.spontaneous());
     qApp->notify(&w2, &ev);
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "Fails on WinRT - QTBUG-68297", Abort);
+#endif
     QTRY_COMPARE(QApplication::focusWidget(), &w2);
 
     // now back to tab focus and click again (it already had focus) -> focus should stay
@@ -2116,23 +2122,12 @@ void tst_QApplication::touchEventPropagation()
 
 void tst_QApplication::qtbug_12673()
 {
-    QString path;
-    {
-        // We need an application object for QFINDTESTDATA to work
-        // properly in all cases.
-        int argc = 0;
-        QCoreApplication app(argc, 0);
-        path = QFINDTESTDATA("modal/");
-    }
-    QVERIFY2(!path.isEmpty(), "Cannot locate modal helper application");
-    path += "modal";
-
 #if QT_CONFIG(process)
     QProcess testProcess;
     QStringList arguments;
-    testProcess.start(path, arguments);
+    testProcess.start("modal_helper", arguments);
     QVERIFY2(testProcess.waitForStarted(),
-             qPrintable(QString::fromLatin1("Cannot start '%1': %2").arg(path, testProcess.errorString())));
+             qPrintable(QString::fromLatin1("Cannot start 'modal_helper': %1").arg(testProcess.errorString())));
     QVERIFY(testProcess.waitForFinished(20000));
     QCOMPARE(testProcess.exitStatus(), QProcess::NormalExit);
 #else
@@ -2209,8 +2204,6 @@ void tst_QApplication::abortQuitOnShow()
 void tst_QApplication::staticFunctions()
 {
     QApplication::setStyle(QStringLiteral("blub"));
-    QApplication::colorSpec();
-    QApplication::setColorSpec(42);
     QApplication::allWidgets();
     QApplication::topLevelWidgets();
     QApplication::desktop();
@@ -2263,7 +2256,7 @@ Q_GLOBAL_STATIC(QLocale, tst_qapp_locale);
 #if QT_CONFIG(process)
 Q_GLOBAL_STATIC(QProcess, tst_qapp_process);
 #endif
-#ifndef QT_NO_FILESYSTEMWATCHER
+#if QT_CONFIG(filesystemwatcher)
 Q_GLOBAL_STATIC(QFileSystemWatcher, tst_qapp_fileSystemWatcher);
 #endif
 #ifndef QT_NO_SHAREDMEMORY
@@ -2288,7 +2281,7 @@ void tst_QApplication::globalStaticObjectDestruction()
 #if QT_CONFIG(process)
     QVERIFY(tst_qapp_process());
 #endif
-#ifndef QT_NO_FILESYSTEMWATCHER
+#if QT_CONFIG(filesystemwatcher)
     QVERIFY(tst_qapp_fileSystemWatcher());
 #endif
 #ifndef QT_NO_SHAREDMEMORY

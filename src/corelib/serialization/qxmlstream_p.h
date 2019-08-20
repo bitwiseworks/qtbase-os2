@@ -788,7 +788,7 @@ public:
 
     QIODevice *device;
     bool deleteDevice;
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
     QTextCodec *codec;
     QTextDecoder *decoder;
 #endif
@@ -1081,7 +1081,7 @@ bool QXmlStreamReaderPrivate::parse()
         lockEncoding = true;
         documentVersion.clear();
         documentEncoding.clear();
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         if (decoder && decoder->hasFailure()) {
             raiseWellFormedError(QXmlStream::tr("Encountered incorrectly encoded content."));
             readBuffer.clear();
@@ -1250,7 +1250,7 @@ bool QXmlStreamReaderPrivate::parse()
             state_stack[tos] = 0;
             return true;
         } else if (act > 0) {
-            if (++tos == stack_size-1)
+            if (++tos >= stack_size-1)
                 reallocateStack();
 
             Value &val = sym_stack[tos];

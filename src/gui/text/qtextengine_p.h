@@ -74,6 +74,7 @@
 #include <private/qunicodetools_p.h>
 
 #include <stdlib.h>
+#include <vector>
 
 QT_BEGIN_NAMESPACE
 
@@ -142,9 +143,10 @@ struct Q_AUTOTEST_EXPORT QScriptAnalysis
         LineOrParagraphSeparator = 4,
         Space = 5,
         SpaceTabOrObject = Space,
-        Tab = 6,
+        Nbsp = 6,
+        Tab = 7,
         TabOrObject = Tab,
-        Object = 7
+        Object = 8
     };
     enum BidiFlags {
         BidiBN = 1,
@@ -632,7 +634,7 @@ public:
     int nextLogicalPosition(int oldPos) const;
     int lineNumberForTextPosition(int pos);
     int positionAfterVisualMovement(int oldPos, QTextCursor::MoveOperation op);
-    void insertionPointsForLine(int lineNum, QVector<int> &insertionPoints);
+    std::vector<int> insertionPointsForLine(int lineNum);
     void resetFontEngineCache();
 
     void enableDelayDecorations(bool enable = true) { delayDecorations = enable; }

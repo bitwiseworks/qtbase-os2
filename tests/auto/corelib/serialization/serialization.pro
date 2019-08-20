@@ -1,7 +1,12 @@
 TEMPLATE = subdirs
 SUBDIRS = \
     json \
+    qcborstreamreader \
+    qcborstreamwriter \
+    qcborvalue \
+    qcborvalue_json \
     qdatastream \
+    qdatastream_core_pixmap \
     qtextstream \
     qxmlstream
 

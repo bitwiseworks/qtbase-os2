@@ -53,6 +53,10 @@
 #include "qnswindow.h"
 #include "qt_mac_p.h"
 
+#if QT_CONFIG(vulkan)
+#include <MoltenVK/mvk_vulkan.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -112,6 +116,7 @@ public:
     void raise() override;
     void lower() override;
     bool isExposed() const override;
+    bool isEmbedded() const override;
     bool isOpaque() const;
     void propagateSizeHints() override;
     void setOpacity(qreal level) override;
@@ -124,6 +129,9 @@ public:
     bool isForeignWindow() const override;
 
     void requestUpdate() override;
+    bool updatesWithDisplayLink() const;
+    void deliverUpdateRequest() override;
+
     void requestActivateWindow() override;
 
     WId winId() const override;
@@ -132,7 +140,7 @@ public:
     NSView *view() const;
     NSWindow *nativeWindow() const;
 
-    void setEmbeddedInForeignView(bool subwindow);
+    void setEmbeddedInForeignView();
 
     Q_NOTIFICATION_HANDLER(NSViewFrameDidChangeNotification) void viewDidChangeFrame();
     Q_NOTIFICATION_HANDLER(NSViewGlobalFrameDidChangeNotification) void viewDidChangeGlobalFrame();
@@ -161,11 +169,6 @@ public:
     NSInteger windowLevel(Qt::WindowFlags flags);
     NSUInteger windowStyleMask(Qt::WindowFlags flags);
     void setWindowZoomButton(Qt::WindowFlags flags);
-
-#ifndef QT_NO_OPENGL
-    void setCurrentContext(QCocoaGLContext *context);
-    QCocoaGLContext *currentContext() const;
-#endif
 
     bool setWindowModified(bool modified) override;
 
@@ -237,11 +240,6 @@ public: // for QNSView
     NSView *m_view;
     QCocoaNSWindow *m_nsWindow;
 
-    // TODO merge to one variable if possible
-    bool m_viewIsEmbedded; // true if the m_view is actually embedded in a "foreign" NSView hiearchy
-    bool m_viewIsToBeEmbedded; // true if the m_view is intended to be embedded in a "foreign" NSView hiearchy
-
-    Qt::WindowFlags m_windowFlags;
     Qt::WindowStates m_lastReportedWindowState;
     Qt::WindowModality m_windowModality;
     QPointer<QWindow> m_enterLeaveTargetWindow;
@@ -251,14 +249,10 @@ public: // for QNSView
     bool m_inSetVisible;
     bool m_inSetGeometry;
     bool m_inSetStyleMask;
-#ifndef QT_NO_OPENGL
-    QCocoaGLContext *m_glContext;
-#endif
     QCocoaMenuBar *m_menubar;
 
     bool m_needsInvalidateShadow;
 
-    bool m_hasModalSession;
     bool m_frameStrutEventsEnabled;
     QRect m_exposedRect;
     int m_registerTouchCount;
@@ -283,6 +277,10 @@ public: // for QNSView
     };
     QHash<quintptr, BorderRange> m_contentBorderAreas; // identifer -> uppper/lower
     QHash<quintptr, bool> m_enabledContentBorderAreas; // identifer -> enabled state (true/false)
+
+#if QT_CONFIG(vulkan)
+    VkSurfaceKHR m_vulkanSurface = nullptr;
+#endif
 };
 
 #ifndef QT_NO_DEBUG_STREAM

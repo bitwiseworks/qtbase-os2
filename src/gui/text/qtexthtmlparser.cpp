@@ -40,7 +40,6 @@
 #include "qtexthtmlparser_p.h"
 
 #include <qbytearray.h>
-#include <qtextcodec.h>
 #include <qstack.h>
 #include <qdebug.h>
 #include <qthread.h>
@@ -447,13 +446,6 @@ static const QTextHtmlElement elements[Html_NumElements]= {
     { "ul",         Html_ul,         QTextHtmlElement::DisplayBlock },
     { "var",        Html_var,        QTextHtmlElement::DisplayInline },
 };
-
-#if defined(Q_CC_MSVC) && _MSC_VER < 1600
-static bool operator<(const QTextHtmlElement &e1, const QTextHtmlElement &e2)
-{
-    return QLatin1String(e1.name) < QLatin1String(e2.name);
-}
-#endif
 
 static bool operator<(const QString &str, const QTextHtmlElement &e)
 {
@@ -869,7 +861,8 @@ QString QTextHtmlParser::parseWord()
         ++pos;
         while (pos < len) {
             QChar c = txt.at(pos++);
-            if (c == QLatin1Char('\''))
+            // Allow for escaped single quotes as they may be part of the string
+            if (c == QLatin1Char('\'') && (txt.length() > 1 && txt.at(pos - 2) != QLatin1Char('\\')))
                 break;
             else
                 word += c;
@@ -1551,7 +1544,7 @@ void QTextHtmlParser::applyAttributes(const QStringList &attributes)
                 if (key == QLatin1String("href"))
                     node->charFormat.setAnchorHref(value);
                 else if (key == QLatin1String("name"))
-                    node->charFormat.setAnchorName(value);
+                    node->charFormat.setAnchorNames({value});
                 break;
             case Html_img:
                 if (key == QLatin1String("src") || key == QLatin1String("source")) {
@@ -1691,7 +1684,7 @@ void QTextHtmlParser::applyAttributes(const QStringList &attributes)
             node->charFormat.setToolTip(value);
         } else if (key == QLatin1String("id")) {
             node->charFormat.setAnchor(true);
-            node->charFormat.setAnchorName(value);
+            node->charFormat.setAnchorNames({value});
         }
     }
 
@@ -1728,6 +1721,8 @@ QStringList QTextHtmlStyleSelector::nodeNames(NodePtr node) const
 
 #endif // QT_NO_CSSPARSER
 
+#ifndef QT_NO_CSSPARSER
+
 static inline int findAttribute(const QStringList &attributes, const QString &name)
 {
     int idx = -1;
@@ -1736,8 +1731,6 @@ static inline int findAttribute(const QStringList &attributes, const QString &na
     } while (idx != -1 && (idx % 2 == 1));
     return idx;
 }
-
-#ifndef QT_NO_CSSPARSER
 
 QString QTextHtmlStyleSelector::attribute(NodePtr node, const QString &name) const
 {

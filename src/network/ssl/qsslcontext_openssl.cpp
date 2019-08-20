@@ -55,9 +55,9 @@ static inline QString msgErrorSettingBackendConfig(const QString &why)
 }
 
 QSslContext::QSslContext()
-    : ctx(0),
-    pkey(0),
-    session(0),
+    : ctx(nullptr),
+    pkey(nullptr),
+    session(nullptr),
     m_sessionTicketLifeTimeHint(-1)
 {
 }
@@ -137,7 +137,8 @@ SSL* QSslContext::createSsl()
     if (!session && !sessionASN1().isEmpty()
             && !sslConfiguration.testSslOption(QSsl::SslOptionDisableSessionPersistence)) {
         const unsigned char *data = reinterpret_cast<const unsigned char *>(m_sessionASN1.constData());
-        session = q_d2i_SSL_SESSION(0, &data, m_sessionASN1.size()); // refcount is 1 already, set by function above
+        session = q_d2i_SSL_SESSION(
+            nullptr, &data, m_sessionASN1.size()); // refcount is 1 already, set by function above
     }
 
     if (session) {
@@ -145,7 +146,7 @@ SSL* QSslContext::createSsl()
         if (!q_SSL_set_session(ssl, session)) {
             qCWarning(lcSsl, "could not set SSL session");
             q_SSL_SESSION_free(session);
-            session = 0;
+            session = nullptr;
         }
     }
 
@@ -204,7 +205,7 @@ bool QSslContext::cacheSession(SSL* ssl)
     session = q_SSL_get1_session(ssl);
 
     if (session && !sslConfiguration.testSslOption(QSsl::SslOptionDisableSessionPersistence)) {
-        int sessionSize = q_i2d_SSL_SESSION(session, 0);
+        int sessionSize = q_i2d_SSL_SESSION(session, nullptr);
         if (sessionSize > 0) {
             m_sessionASN1.resize(sessionSize);
             unsigned char *data = reinterpret_cast<unsigned char *>(m_sessionASN1.data());
@@ -214,7 +215,7 @@ bool QSslContext::cacheSession(SSL* ssl)
         }
     }
 
-    return (session != 0);
+    return (session != nullptr);
 }
 
 QByteArray QSslContext::sessionASN1() const
@@ -242,11 +243,27 @@ QString QSslContext::errorString() const
     return errorStr;
 }
 
+#if QT_CONFIG(ocsp)
+extern "C" int qt_OCSP_status_server_callback(SSL *ssl, void *); // Defined in qsslsocket_openssl.cpp.
+#endif // ocsp
 // static
 void QSslContext::applyBackendConfig(QSslContext *sslContext)
 {
-    if (sslContext->sslConfiguration.backendConfiguration().isEmpty())
+    const QMap<QByteArray, QVariant> &conf = sslContext->sslConfiguration.backendConfiguration();
+    if (conf.isEmpty())
         return;
+
+#if QT_CONFIG(ocsp)
+    auto ocspResponsePos = conf.find("Qt-OCSP-response");
+    if (ocspResponsePos != conf.end()) {
+        // This is our private, undocumented configuration option, existing only for
+        // the purpose of testing OCSP status responses. We don't even check this
+        // callback was set. If no - the test must fail.
+        q_SSL_CTX_set_tlsext_status_cb(sslContext->ctx, qt_OCSP_status_server_callback);
+        if (conf.size() == 1)
+            return;
+    }
+#endif // ocsp
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
     if (QSslSocket::sslLibraryVersionNumber() >= 0x10002000L) {
@@ -255,8 +272,10 @@ void QSslContext::applyBackendConfig(QSslContext *sslContext)
             q_SSL_CONF_CTX_set_ssl_ctx(cctx.data(), sslContext->ctx);
             q_SSL_CONF_CTX_set_flags(cctx.data(), SSL_CONF_FLAG_FILE);
 
-            const auto &backendConfig = sslContext->sslConfiguration.backendConfiguration();
-            for (auto i = backendConfig.constBegin(); i != backendConfig.constEnd(); ++i) {
+            for (auto i = conf.constBegin(); i != conf.constEnd(); ++i) {
+                if (i.key() == "Qt-OCSP-response") // This never goes to SSL_CONF_cmd().
+                    continue;
+
                 if (!i.value().canConvert(QMetaType::QByteArray)) {
                     sslContext->errorCode = QSslError::UnspecifiedError;
                     sslContext->errorStr = msgErrorSettingBackendConfig(

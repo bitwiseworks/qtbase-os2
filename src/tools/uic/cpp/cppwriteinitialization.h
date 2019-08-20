@@ -139,8 +139,6 @@ struct WriteInitialization : public TreeWalker
 private:
     static QString domColor2QString(const DomColor *c);
 
-    QString writeString(const QString &s, const QString &indent) const;
-
     QString iconCall(const DomProperty *prop);
     QString pixCall(const DomProperty *prop) const;
     QString pixCall(const QString &type, const QString &text) const;
@@ -163,6 +161,7 @@ private:
 // special initialization
 //
     class Item {
+        Q_DISABLE_COPY(Item)
     public:
         Item(const QString &itemClassName, const QString &indent, QTextStream &setupUiStream, QTextStream &retranslateUiStream, Driver *driver);
         ~Item();
@@ -175,18 +174,16 @@ private:
         void writeRetranslateUi(const QString &parentPath);
         void addSetter(const QString &setter, const QString &directive = QString(), bool translatable = false); // don't call it if you already added *this as a child of another Item
         void addChild(Item *child); // all setters should already been added
-        int setupUiCount() const { return m_setupUiData.setters.count(); }
-        int retranslateUiCount() const { return m_retranslateUiData.setters.count(); }
     private:
-        struct ItemData {
-            ItemData() : policy(DontGenerate) {}
+        struct ItemData
+        {
             QMultiMap<QString, QString> setters; // directive to setter
             QSet<QString> directives;
             enum TemporaryVariableGeneratorPolicy { // policies with priority, number describes the priority
                 DontGenerate = 1,
                 GenerateWithMultiDirective = 2,
                 Generate = 3
-            } policy;
+            } policy = DontGenerate;
         };
         ItemData m_setupUiData;
         ItemData m_retranslateUiData;
@@ -224,14 +221,12 @@ private:
     void enableSorting(DomWidget *w, const QString &varName, const QString &tempName);
 
     QString findDeclaration(const QString &name);
-    DomWidget *findWidget(QLatin1String widgetClass);
-
-    bool isValidObject(const QString &name) const;
 
 private:
     QString writeFontProperties(const DomFont *f);
-    void writeResourceIcon(QTextStream &output, const QString &iconName, const QString &indent, const DomResourceIcon *i) const;
     QString writeIconProperties(const DomResourceIcon *i);
+    void writePixmapFunctionIcon(QTextStream &output, const QString &iconName,
+                                 const QString &indent, const DomResourceIcon *i) const;
     QString writeSizePolicy(const DomSizePolicy *sp);
     QString writeBrushInitialization(const DomBrush *brush);
     void addButtonGroup(const DomWidget *node, const QString &varName);

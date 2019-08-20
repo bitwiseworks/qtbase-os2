@@ -2,7 +2,7 @@
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2016 Olivier Goffart <ogoffart@woboq.com>
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2018 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -57,9 +57,13 @@
 #include "private/qloggingregistry_p.h"
 #include "private/qcoreapplication_p.h"
 #include "private/qsimd_p.h"
+#include <qtcore_tracepoints_p.h>
 #endif
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#endif
+#ifdef Q_CC_MSVC
+#include <intrin.h>
 #endif
 #if QT_CONFIG(slog2)
 #include <sys/slog2.h>
@@ -89,6 +93,10 @@
 # include <sys/stat.h>
 # include <unistd.h>
 # include "private/qcore_unix_p.h"
+#endif
+
+#ifdef Q_OS_WASM
+#include <emscripten/emscripten.h>
 #endif
 
 #if QT_CONFIG(regularexpression)
@@ -208,6 +216,7 @@ static bool isDefaultCategory(const char *category)
 /*!
     Returns true if writing to \c stderr is supported.
 
+    \internal
     \sa stderrHasConsoleAttached()
 */
 static bool systemHasStderr()
@@ -231,14 +240,15 @@ static bool systemHasStderr()
 
     \note Qt Creator does not implement a pseudo TTY, nor does it launch apps with
     the override environment variable set, but it will read stderr and print it to
-    the user, so in effect this function can not be used to conclude that stderr
+    the user, so in effect this function cannot be used to conclude that stderr
     output will _not_ be visible to the user, as even if this function returns false,
     the output might still end up visible to the user. For this reason, we don't guard
     the stderr output in the default message handler with stderrHasConsoleAttached().
 
+    \internal
     \sa systemHasStderr()
 */
-bool stderrHasConsoleAttached()
+static bool stderrHasConsoleAttached()
 {
     static const bool stderrHasConsoleAttached = []() -> bool {
         if (!systemHasStderr())
@@ -288,6 +298,7 @@ namespace QtPrivate {
     This is normally the case if \c stderr has a console attached, but may be overridden
     by the user by setting the QT_FORCE_STDERR_LOGGING environment variable to \c 1.
 
+    \internal
     \sa stderrHasConsoleAttached()
 */
 bool shouldLogToStderr()
@@ -1205,8 +1216,8 @@ void QMessagePattern::setPattern(const QString &pattern)
                 tokens[i] = backtraceTokenC;
                 QString backtraceSeparator = QStringLiteral("|");
                 int backtraceDepth = 5;
-                QRegularExpression depthRx(QStringLiteral(" depth=(?|\"([^\"]*)\"|([^ }]*))"));
-                QRegularExpression separatorRx(QStringLiteral(" separator=(?|\"([^\"]*)\"|([^ }]*))"));
+                static const QRegularExpression depthRx(QStringLiteral(" depth=(?|\"([^\"]*)\"|([^ }]*))"));
+                static const QRegularExpression separatorRx(QStringLiteral(" separator=(?|\"([^\"]*)\"|([^ }]*))"));
                 QRegularExpressionMatch m = depthRx.match(lexeme);
                 if (m.hasMatch()) {
                     int depth = m.capturedRef(1).toInt();
@@ -1292,8 +1303,7 @@ static QStringList backtraceFramesForLogMessage(int frameCount)
     // The offset and function name are optional.
     // This regexp tries to extract the library name (without the path) and the function name.
     // This code is protected by QMessagePattern::mutex so it is thread safe on all compilers
-    static QRegularExpression rx(QStringLiteral("^(?:[^(]*/)?([^(/]+)\\(([^+]*)(?:[\\+[a-f0-9x]*)?\\) \\[[a-f0-9x]*\\]$"),
-                                 QRegularExpression::OptimizeOnFirstUsageOption);
+    static const QRegularExpression rx(QStringLiteral("^(?:[^(]*/)?([^(/]+)\\(([^+]*)(?:[\\+[a-f0-9x]*)?\\) \\[[a-f0-9x]*\\]$"));
 
     QVarLengthArray<void*, 32> buffer(8 + frameCount);
     int n = backtrace(buffer.data(), buffer.size());
@@ -1663,9 +1673,7 @@ static bool android_default_message_handler(QtMsgType type,
     case QtFatalMsg: priority = ANDROID_LOG_FATAL; break;
     };
 
-    __android_log_print(priority, qPrintable(QCoreApplication::applicationName()),
-                        "%s:%d (%s): %s\n", context.file, context.line,
-                        context.function, qPrintable(formattedMessage));
+    __android_log_print(priority, qPrintable(QCoreApplication::applicationName()), "%s\n", qPrintable(formattedMessage));
 
     return true; // Prevent further output to stderr
 }
@@ -1680,6 +1688,37 @@ static bool win_message_handler(QtMsgType type, const QMessageLogContext &contex
     QString formattedMessage = qFormatLogMessage(type, context, message);
     formattedMessage.append(QLatin1Char('\n'));
     OutputDebugString(reinterpret_cast<const wchar_t *>(formattedMessage.utf16()));
+
+    return true; // Prevent further output to stderr
+}
+#endif
+
+#ifdef Q_OS_WASM
+static bool wasm_default_message_handler(QtMsgType type,
+                                  const QMessageLogContext &context,
+                                  const QString &message)
+{
+    if (shouldLogToStderr())
+        return false; // Leave logging up to stderr handler
+
+    QString formattedMessage = qFormatLogMessage(type, context, message);
+    int emOutputFlags = (EM_LOG_CONSOLE | EM_LOG_DEMANGLE);
+    QByteArray localMsg = message.toLocal8Bit();
+    switch (type) {
+    case QtDebugMsg:
+        break;
+    case QtInfoMsg:
+        break;
+    case QtWarningMsg:
+        emOutputFlags |= EM_LOG_WARN;
+        break;
+    case QtCriticalMsg:
+        emOutputFlags |= EM_LOG_ERROR;
+        break;
+    case QtFatalMsg:
+        emOutputFlags |= EM_LOG_ERROR;
+    }
+    emscripten_log(emOutputFlags, "%s\n", qPrintable(formattedMessage));
 
     return true; // Prevent further output to stderr
 }
@@ -1728,8 +1767,9 @@ static void qDefaultMessageHandler(QtMsgType type, const QMessageLogContext &con
 # elif defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     handledStderr |= android_default_message_handler(type, context, message);
 # elif defined(QT_USE_APPLE_UNIFIED_LOGGING)
-    if (__builtin_available(macOS 10.12, iOS 10, tvOS 10, watchOS 3, *))
-        handledStderr |= AppleUnifiedLogger::messageHandler(type, context, message);
+    handledStderr |= AppleUnifiedLogger::messageHandler(type, context, message);
+# elif defined Q_OS_WASM
+    handledStderr |= wasm_default_message_handler(type, context, message);
 # endif
 #endif
 
@@ -1772,6 +1812,8 @@ static void ungrabMessageHandler() { }
 static void qt_message_print(QtMsgType msgType, const QMessageLogContext &context, const QString &message)
 {
 #ifndef QT_BOOTSTRAPPED
+    Q_TRACE(qt_message_print, msgType, context.category, context.function, context.file, context.line, message);
+
     // qDebug, qWarning, ... macros do not check whether category is enabled
     if (isDefaultCategory(context.category)) {
         if (QLoggingCategory *defaultCategory = QLoggingCategory::defaultCategory()) {
@@ -1836,7 +1878,31 @@ static void qt_message_fatal(QtMsgType, const QMessageLogContext &context, const
     Q_UNUSED(message);
 #endif
 
+#ifdef Q_OS_WIN
+    // std::abort() in the MSVC runtime will call _exit(3) if the abort
+    // behavior is _WRITE_ABORT_MSG - see also _set_abort_behavior(). This is
+    // the default for a debug-mode build of the runtime. Worse, MinGW's
+    // std::abort() implementation (in msvcrt.dll) is basically a call to
+    // _exit(3) too. Unfortunately, _exit() and _Exit() *do* run the static
+    // destructors of objects in DLLs, a violation of the C++ standard (see
+    // [support.start.term]). So we bypass std::abort() and directly
+    // terminate the application.
+
+#  if defined(Q_CC_MSVC) && !defined(Q_CC_INTEL)
+    if (IsProcessorFeaturePresent(PF_FASTFAIL_AVAILABLE))
+        __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+#  else
+    RaiseFailFastException(nullptr, nullptr, 0);
+#  endif
+
+    // Fallback
+    TerminateProcess(GetCurrentProcess(), STATUS_FATAL_APP_EXIT);
+
+    // Tell the compiler the application has stopped.
+    Q_UNREACHABLE_IMPL();
+#else // !Q_OS_WIN
     std::abort();
+#endif
 }
 
 
@@ -1999,9 +2065,7 @@ void qErrnoWarning(int code, const char *msg, ...)
     is not the default one.
 
     Example:
-    \code
-    QT_MESSAGE_PATTERN="[%{time yyyyMMdd h:mm:ss.zzz t} %{if-debug}D%{endif}%{if-info}I%{endif}%{if-warning}W%{endif}%{if-critical}C%{endif}%{if-fatal}F%{endif}] %{file}:%{line} - %{message}"
-    \endcode
+    \snippet code/src_corelib_global_qlogging.cpp 0
 
     The default \a pattern is "%{if-category}%{category}: %{endif}%{message}".
 

@@ -47,6 +47,7 @@
 #include "qjsonwriter_p.h"
 #include "qjsonparser_p.h"
 #include "qjson_p.h"
+#include "qdatastream.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -210,6 +211,9 @@ QJsonDocument QJsonDocument::fromRawData(const char *data, int size, DataValidat
         return QJsonDocument();
     }
 
+    if (size < (int)(sizeof(QJsonPrivate::Header) + sizeof(QJsonPrivate::Base)))
+        return QJsonDocument();
+
     QJsonPrivate::Data *d = new QJsonPrivate::Data((char *)data, size);
     d->ownsData = false;
 
@@ -341,30 +345,20 @@ QByteArray QJsonDocument::toJson() const
 
 /*!
     \enum QJsonDocument::JsonFormat
+    \since 5.1
 
     This value defines the format of the JSON byte array produced
     when converting to a QJsonDocument using toJson().
 
     \value Indented Defines human readable output as follows:
-        \code
-        {
-            "Array": [
-                true,
-                999,
-                "string"
-            ],
-            "Key": "Value",
-            "null": null
-        }
-        \endcode
+        \snippet code/src_corelib_serialization_qjsondocument.cpp 0
 
     \value Compact Defines a compact output as follows:
-        \code
-        {"Array":[true,999,"string"],"Key":"Value","null":null}
-        \endcode
+        \snippet code/src_corelib_serialization_qjsondocument.cpp 1
   */
 
 /*!
+    \since 5.1
     Converts the QJsonDocument to a UTF-8 encoded JSON document in the provided \a format.
 
     \sa fromJson(), JsonFormat
@@ -661,6 +655,25 @@ QDebug operator<<(QDebug dbg, const QJsonDocument &o)
                   << json.constData() // print as utf-8 string without extra quotation marks
                   << ')';
     return dbg;
+}
+#endif
+
+#ifndef QT_NO_DATASTREAM
+QDataStream &operator<<(QDataStream &stream, const QJsonDocument &doc)
+{
+    stream << doc.toJson(QJsonDocument::Compact);
+    return stream;
+}
+
+QDataStream &operator>>(QDataStream &stream, QJsonDocument &doc)
+{
+    QByteArray buffer;
+    stream >> buffer;
+    QJsonParseError parseError{};
+    doc = QJsonDocument::fromJson(buffer, &parseError);
+    if (parseError.error && !buffer.isEmpty())
+        stream.setStatus(QDataStream::ReadCorruptData);
+    return stream;
 }
 #endif
 

@@ -158,6 +158,8 @@ private slots:
     void lastInsertId();
     void lastQuery_data() { generic_data(); }
     void lastQuery();
+    void lastQueryTwoQueries_data() { generic_data(); }
+    void lastQueryTwoQueries();
     void bindBool_data() { generic_data(); }
     void bindBool();
     void psql_bindWithDoubleColonCastOperator_data() { generic_data("QPSQL"); }
@@ -180,6 +182,8 @@ private slots:
     void timeStampParsing();
     void sqliteVirtualTable_data() { generic_data("QSQLITE"); }
     void sqliteVirtualTable();
+    void mysql_timeType_data() { generic_data("QMYSQL"); }
+    void mysql_timeType();
 
 #ifdef NOT_READY_YET
     void task_229811();
@@ -631,13 +635,20 @@ void tst_QSqlQuery::bindBool()
         QVERIFY_SQL(q, exec());
     }
 
-    QVERIFY_SQL(q, exec("SELECT id, flag FROM " + tableName));
+    QVERIFY_SQL(q, exec("SELECT id, flag FROM " + tableName + " ORDER BY id"));
     for (int i = 0; i < 2; ++i) {
         bool flag = i;
         QVERIFY_SQL(q, next());
         QCOMPARE(q.value(0).toInt(), i);
         QCOMPARE(q.value(1).toBool(), flag);
     }
+    QVERIFY_SQL(q, prepare("SELECT flag FROM " + tableName + " WHERE flag = :filter"));
+    const bool filter = true;
+    q.bindValue(":filter", filter);
+    QVERIFY_SQL(q, exec());
+    QVERIFY_SQL(q, next());
+    QCOMPARE(q.value(0).toBool(), filter);
+    QFAIL_SQL(q, next());
     QVERIFY_SQL(q, exec("DROP TABLE " + tableName));
 }
 
@@ -1087,7 +1098,7 @@ void tst_QSqlQuery::record()
     for (int i = 0; i < 3; ++i)
         QCOMPARE(q.record().field(i).tableName().toLower(), lowerQTest);
     q.clear();
-    const auto tst_record = qTableName("tst_record", __FILE__, db).toLower();
+    const auto tst_record = qTableName("tst_record", __FILE__, db, false).toLower();
     SETUP_RECORD_TABLE;
     CHECK_RECORD;
     q.clear();
@@ -2070,8 +2081,6 @@ void tst_QSqlQuery::prepare_bind_exec()
     const QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
     const QString qtest_prepare(qTableName("qtest_prepare", __FILE__, db));
 
-    if (dbType == QSqlDriver::Interbase && (db.databaseName() == "silence.nokia.troll.no:c:\\ibase\\testdb_ascii" || db.databaseName() == "/opt/interbase/qttest.gdb"))
-        QSKIP("Can't transliterate extended unicode to ascii");
     if (dbType == QSqlDriver::DB2)
         QSKIP("Needs someone with more Unicode knowledge than I have to fix");
 
@@ -2347,6 +2356,16 @@ void tst_QSqlQuery::prepare_bind_exec()
         QCOMPARE(q.value(0).toInt(), 107);
         QCOMPARE(q.value(1).toString(), QString("name"));
         QCOMPARE(q.value(2).toString(), QString("107"));
+
+        // Test just duplicated placeholders
+        QVERIFY(q.prepare("insert into " + qtest_prepare + " (id, name, name2) values (110, :name, :name)"));
+        q.bindValue(":name", "name");
+        QVERIFY_SQL(q, exec());
+        QVERIFY(q.exec("select * from " + qtest_prepare + " where id > 109 order by id"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toInt(), 110);
+        QCOMPARE(q.value(1).toString(), QString("name"));
+        QCOMPARE(q.value(2).toString(), QString("name"));
     } // end of SQLite scope
 }
 
@@ -2794,6 +2813,25 @@ void tst_QSqlQuery::lastQuery()
     QVERIFY_SQL( q, exec( sql ) );
     QCOMPARE( q.lastQuery(), sql );
     QCOMPARE( q.executedQuery(), sql );
+}
+
+void tst_QSqlQuery::lastQueryTwoQueries()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+
+    QSqlQuery q(db);
+
+    QString sql = QLatin1String("select * from ") + qtest;
+    QVERIFY_SQL(q, exec(sql));
+    QCOMPARE(q.lastQuery(), sql);
+    QCOMPARE(q.executedQuery(), sql);
+
+    sql = QLatin1String("select id from ") + qtest;
+    QVERIFY_SQL(q, exec(sql));
+    QCOMPARE(q.lastQuery(), sql);
+    QCOMPARE(q.executedQuery(), sql);
 }
 
 void tst_QSqlQuery::psql_bindWithDoubleColonCastOperator()
@@ -3725,15 +3763,13 @@ void tst_QSqlQuery::QTBUG_5251()
     const QString timetest(qTableName("timetest", __FILE__, db));
     tst_Databases::safeDropTable(db, timetest);
     QSqlQuery q(db);
-    QVERIFY_SQL(q, exec(QStringLiteral("CREATE TABLE \"") + timetest + QStringLiteral("\" (t TIME)")));
-    QVERIFY_SQL(q, exec(QStringLiteral("INSERT INTO \"") + timetest +
-                        QStringLiteral("\" VALUES ('1:2:3.666')")));
+    QVERIFY_SQL(q, exec(QStringLiteral("CREATE TABLE ") + timetest + QStringLiteral(" (t TIME)")));
+    QVERIFY_SQL(q, exec(QStringLiteral("INSERT INTO ") + timetest +
+                        QStringLiteral(" VALUES ('1:2:3.666')")));
 
     QSqlTableModel timetestModel(0,db);
     timetestModel.setEditStrategy(QSqlTableModel::OnManualSubmit);
     timetestModel.setTable(timetest);
-    if (tst_Databases::getDatabaseType(db) == QSqlDriver::PostgreSQL)
-        QEXPECT_FAIL("", "Currently broken for PostgreSQL due to case sensitivity problems - see QTBUG-65788", Abort);
     QVERIFY_SQL(timetestModel, select());
 
     QCOMPARE(timetestModel.record(0).field(0).value().toTime().toString("HH:mm:ss.zzz"), QString("01:02:03.666"));
@@ -3742,8 +3778,8 @@ void tst_QSqlQuery::QTBUG_5251()
     QVERIFY_SQL(timetestModel, submitAll());
     QCOMPARE(timetestModel.record(0).field(0).value().toTime().toString("HH:mm:ss.zzz"), QString("00:12:34.500"));
 
-    QVERIFY_SQL(q, exec(QStringLiteral("UPDATE \"") + timetest +
-                        QStringLiteral("\" SET t = '0:11:22.33'")));
+    QVERIFY_SQL(q, exec(QStringLiteral("UPDATE ") + timetest +
+                        QStringLiteral(" SET t = '0:11:22.33'")));
     QVERIFY_SQL(timetestModel, select());
     QCOMPARE(timetestModel.record(0).field(0).value().toTime().toString("HH:mm:ss.zzz"), QString("00:11:22.330"));
 
@@ -4712,6 +4748,59 @@ void tst_QSqlQuery::sqliteVirtualTable()
     QVERIFY(qry.next());
     QCOMPARE(qry.value(0).toInt(), 2);
     QCOMPARE(qry.value(1).toString(), "Peter");
+}
+
+void tst_QSqlQuery::mysql_timeType()
+{
+    // The TIME data type is different to the standard with MySQL as it has a range of
+    // '-838:59:59' to '838:59:59'.
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+    const auto tableName = qTableName("mysqlTimeType", __FILE__, db);
+    tst_Databases::safeDropTables(db, { tableName });
+    QSqlQuery qry(db);
+    QVERIFY_SQL(qry, exec("create table " + tableName + " (t time(6))"));
+
+    // MySQL will convert days into hours and add them together so 17 days 11 hours becomes 419 hours
+    const QStringList timeData = { "-838:59:59.000000", "-123:45:56.789", "000:00:00.0", "123:45:56.789",
+        "838:59:59.000000", "15:50", "12", "1213", "0 1:2:3", "17 11:22:33" };
+    const QStringList resultTimeData = { "-838:59:59.000000", "-123:45:56.789000", "00:00:00.000000",
+        "123:45:56.789000", "838:59:59.000000", "15:50:00.000000", "00:00:12.000000", "00:12:13.000000",
+        "01:02:03.000000", "419:22:33.000000" };
+    for (const QString &time : timeData)
+        QVERIFY_SQL(qry, exec("insert into " + tableName + " (t) VALUES ('" + time + "')"));
+
+    QVERIFY_SQL(qry, exec("select * from " + tableName));
+    for (const QString &time : qAsConst(resultTimeData)) {
+        QVERIFY(qry.next());
+        QCOMPARE(qry.value(0).toString(), time);
+    }
+
+    QVERIFY_SQL(qry, exec("delete from " + tableName));
+    for (const QString &time : timeData) {
+        QVERIFY_SQL(qry, prepare("insert into " + tableName + " (t) VALUES (:time)"));
+        qry.bindValue(0, time);
+        QVERIFY_SQL(qry, exec());
+    }
+    QVERIFY_SQL(qry, exec("select * from " + tableName));
+    for (const QString &time : resultTimeData) {
+        QVERIFY(qry.next());
+        QCOMPARE(qry.value(0).toString(), time);
+    }
+
+    QVERIFY_SQL(qry, exec("delete from " + tableName));
+    const QList<QTime> qTimeBasedData = { QTime(), QTime(1, 2, 3, 4), QTime(0, 0, 0, 0), QTime(23,59,59,999) };
+    for (const QTime &time : qTimeBasedData) {
+        QVERIFY_SQL(qry, prepare("insert into " + tableName + " (t) VALUES (:time)"));
+        qry.bindValue(0, time);
+        QVERIFY_SQL(qry, exec());
+    }
+    QVERIFY_SQL(qry, exec("select * from " + tableName));
+    for (const QTime &time : qTimeBasedData) {
+        QVERIFY(qry.next());
+        QCOMPARE(qry.value(0).toTime(), time);
+    }
 }
 
 QTEST_MAIN( tst_QSqlQuery )

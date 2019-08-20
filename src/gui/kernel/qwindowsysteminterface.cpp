@@ -43,17 +43,21 @@
 #include "private/qevent_p.h"
 #include "private/qtouchdevice_p.h"
 #include <QAbstractEventDispatcher>
-#include <qpa/qplatformdrag.h>
 #include <qpa/qplatformintegration.h>
 #include <qdebug.h>
 #include "qhighdpiscaling_p.h"
 #include <QtCore/qscopedvaluerollback.h>
+
+#if QT_CONFIG(draganddrop)
+#include <qpa/qplatformdrag.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
 
 QElapsedTimer QWindowSystemInterfacePrivate::eventTime;
 bool QWindowSystemInterfacePrivate::synchronousWindowSystemEvents = false;
+bool QWindowSystemInterfacePrivate::platformFiltersEvents = false;
 bool QWindowSystemInterfacePrivate::TabletEvent::platformSynthesizesMouse = true;
 QWaitCondition QWindowSystemInterfacePrivate::eventsFlushed;
 QMutex QWindowSystemInterfacePrivate::flushEventMutex;
@@ -258,11 +262,12 @@ QT_DEFINE_QPA_EVENT_HANDLER(void, handleWindowStateChanged, QWindow *window, Qt:
     QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
 }
 
-void QWindowSystemInterface::handleWindowScreenChanged(QWindow *window, QScreen *screen)
+QT_DEFINE_QPA_EVENT_HANDLER(void, handleWindowScreenChanged, QWindow *window, QScreen *screen)
 {
+
     QWindowSystemInterfacePrivate::WindowScreenChangedEvent *e =
         new QWindowSystemInterfacePrivate::WindowScreenChangedEvent(window, screen);
-    QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+    QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
 }
 
 QT_DEFINE_QPA_EVENT_HANDLER(void, handleSafeAreaMarginsChanged, QWindow *window)
@@ -335,12 +340,12 @@ QT_DEFINE_QPA_EVENT_HANDLER(void, handleExposeEvent, QWindow *window, const QReg
     QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
 }
 
-void QWindowSystemInterface::handleCloseEvent(QWindow *window, bool *accepted)
+QT_DEFINE_QPA_EVENT_HANDLER(void, handleCloseEvent, QWindow *window, bool *accepted)
 {
     if (window) {
         QWindowSystemInterfacePrivate::CloseEvent *e =
                 new QWindowSystemInterfacePrivate::CloseEvent(window, accepted);
-        QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+        QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
     }
 }
 
@@ -389,6 +394,9 @@ QT_DEFINE_QPA_EVENT_HANDLER(void, handleMouseEvent, QWindow *window, ulong times
                             Qt::MouseButton button, QEvent::Type type, Qt::KeyboardModifiers mods,
                             Qt::MouseEventSource source)
 {
+    Q_ASSERT_X(type != QEvent::MouseButtonDblClick && type != QEvent::NonClientAreaMouseButtonDblClick,
+               "QWindowSystemInterface::handleMouseEvent",
+               "QTBUG-71263: Native double clicks are not implemented.");
     auto localPos = QHighDpi::fromNativeLocalPosition(local, window);
     auto globalPos = QHighDpi::fromNativePixels(global, window);
 
@@ -687,11 +695,27 @@ QList<QTouchEvent::TouchPoint>
     }
 
     if (states == Qt::TouchPointReleased) {
-        g_nextPointId = 1;
-        g_pointIdMap->clear();
+        // All points on deviceId have been released.
+        // Remove all points associated with that device from g_pointIdMap.
+        // (On other devices, some touchpoints might still be pressed.
+        // But this function is only called with points from one device at a time.)
+        for (auto it = g_pointIdMap->begin(); it != g_pointIdMap->end();) {
+            if (it.key() >> 32 == quint64(deviceId))
+                it = g_pointIdMap->erase(it);
+            else
+                ++it;
+        }
+        if (g_pointIdMap->isEmpty())
+            g_nextPointId = 1;
     }
 
     return touchPoints;
+}
+
+void QWindowSystemInterfacePrivate::clearPointIdMap()
+{
+    g_pointIdMap->clear();
+    g_nextPointId = 1;
 }
 
 QList<QWindowSystemInterface::TouchPoint>
@@ -756,6 +780,67 @@ QT_DEFINE_QPA_EVENT_HANDLER(void, handleTouchCancelEvent, QWindow *window, ulong
     QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
 }
 
+/*!
+    Should be called by the implementation whenever a new screen is added.
+
+    The first screen added will be the primary screen, used for default-created
+    windows, GL contexts, and other resources unless otherwise specified.
+
+    This adds the screen to QGuiApplication::screens(), and emits the
+    QGuiApplication::screenAdded() signal.
+
+    The screen should be deleted by calling QWindowSystemInterface::handleScreenRemoved().
+*/
+void QWindowSystemInterface::handleScreenAdded(QPlatformScreen *ps, bool isPrimary)
+{
+    QScreen *screen = new QScreen(ps);
+
+    if (isPrimary)
+        QGuiApplicationPrivate::screen_list.prepend(screen);
+    else
+        QGuiApplicationPrivate::screen_list.append(screen);
+
+    QGuiApplicationPrivate::resetCachedDevicePixelRatio();
+
+    emit qGuiApp->screenAdded(screen);
+
+    if (isPrimary)
+        emit qGuiApp->primaryScreenChanged(screen);
+}
+
+/*!
+    Should be called by the implementation whenever a screen is removed.
+
+    This removes the screen from QGuiApplication::screens(), and deletes it.
+
+    Failing to call this and manually deleting the QPlatformScreen instead may
+    lead to a crash due to a pure virtual call.
+*/
+void QWindowSystemInterface::handleScreenRemoved(QPlatformScreen *platformScreen)
+{
+    // Important to keep this order since the QSceen doesn't own the platform screen
+    delete platformScreen->screen();
+    delete platformScreen;
+}
+
+/*!
+    Should be called whenever the primary screen changes.
+
+    When the screen specified as primary changes, this method will notify
+    QGuiApplication and emit the QGuiApplication::primaryScreenChanged signal.
+ */
+void QWindowSystemInterface::handlePrimaryScreenChanged(QPlatformScreen *newPrimary)
+{
+    QScreen *newPrimaryScreen = newPrimary->screen();
+    int indexOfScreen = QGuiApplicationPrivate::screen_list.indexOf(newPrimaryScreen);
+    Q_ASSERT(indexOfScreen >= 0);
+    if (indexOfScreen == 0)
+        return;
+
+    QGuiApplicationPrivate::screen_list.swapItemsAt(0, indexOfScreen);
+    emit qGuiApp->primaryScreenChanged(newPrimaryScreen);
+}
+
 void QWindowSystemInterface::handleScreenOrientationChange(QScreen *screen, Qt::ScreenOrientation orientation)
 {
     QWindowSystemInterfacePrivate::ScreenOrientationEvent *e =
@@ -790,17 +875,47 @@ void QWindowSystemInterface::handleThemeChange(QWindow *window)
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
-#ifndef QT_NO_DRAGANDDROP
-QPlatformDragQtResponse QWindowSystemInterface::handleDrag(QWindow *window, const QMimeData *dropData, const QPoint &p, Qt::DropActions supportedActions)
+#if QT_CONFIG(draganddrop)
+#if QT_DEPRECATED_SINCE(5, 11)
+QPlatformDragQtResponse QWindowSystemInterface::handleDrag(QWindow *window, const QMimeData *dropData,
+                                                           const QPoint &p, Qt::DropActions supportedActions)
 {
-    return QGuiApplicationPrivate::processDrag(window, dropData, QHighDpi::fromNativeLocalPosition(p, window) ,supportedActions);
+    return QGuiApplicationPrivate::processDrag(window, dropData, p, supportedActions,
+                                               QGuiApplication::mouseButtons(),
+                                               QGuiApplication::keyboardModifiers());
 }
 
-QPlatformDropQtResponse QWindowSystemInterface::handleDrop(QWindow *window, const QMimeData *dropData, const QPoint &p, Qt::DropActions supportedActions)
+QPlatformDropQtResponse QWindowSystemInterface::handleDrop(QWindow *window, const QMimeData *dropData,
+                                                           const QPoint &p, Qt::DropActions supportedActions)
 {
-    return QGuiApplicationPrivate::processDrop(window, dropData, QHighDpi::fromNativeLocalPosition(p, window),supportedActions);
+    return QGuiApplicationPrivate::processDrop(window, dropData, p, supportedActions,
+                                               QGuiApplication::mouseButtons(),
+                                               QGuiApplication::keyboardModifiers());
 }
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_DEPRECATED_SINCE(5, 11)
+/*!
+    Drag and drop events are sent immediately.
+
+    ### FIXME? Perhaps DnD API should add some convenience APIs that are more
+    intuitive for the possible DND operations. Here passing nullptr as drop data is used to
+    indicate that drop was canceled and QDragLeaveEvent should be sent as a result.
+*/
+QPlatformDragQtResponse QWindowSystemInterface::handleDrag(QWindow *window, const QMimeData *dropData,
+                                                           const QPoint &p, Qt::DropActions supportedActions,
+                                                           Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers)
+{
+    auto pos = QHighDpi::fromNativeLocalPosition(p, window);
+    return QGuiApplicationPrivate::processDrag(window, dropData, pos, supportedActions, buttons, modifiers);
+}
+
+QPlatformDropQtResponse QWindowSystemInterface::handleDrop(QWindow *window, const QMimeData *dropData,
+                                                           const QPoint &p, Qt::DropActions supportedActions,
+                                                           Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers)
+{
+    auto pos = QHighDpi::fromNativeLocalPosition(p, window);
+    return QGuiApplicationPrivate::processDrop(window, dropData, pos, supportedActions, buttons, modifiers);
+}
+#endif // QT_CONFIG(draganddrop)
 
 /*!
     \fn static QWindowSystemInterface::handleNativeEvent(QWindow *window, const QByteArray &eventType, void *message, long *result)
@@ -1013,10 +1128,15 @@ bool QWindowSystemInterface::sendWindowSystemEvents(QEventLoop::ProcessEventsFla
     int nevents = 0;
 
     while (QWindowSystemInterfacePrivate::windowSystemEventsQueued()) {
-        QWindowSystemInterfacePrivate::WindowSystemEvent *event =
-            (flags & QEventLoop::ExcludeUserInputEvents) ?
-                QWindowSystemInterfacePrivate::getNonUserInputWindowSystemEvent() :
-                QWindowSystemInterfacePrivate::getWindowSystemEvent();
+        QWindowSystemInterfacePrivate::WindowSystemEvent *event = nullptr;
+
+        if (QWindowSystemInterfacePrivate::platformFiltersEvents) {
+            event = QWindowSystemInterfacePrivate::getWindowSystemEvent();
+        } else {
+            event = flags & QEventLoop::ExcludeUserInputEvents ?
+                        QWindowSystemInterfacePrivate::getNonUserInputWindowSystemEvent() :
+                        QWindowSystemInterfacePrivate::getWindowSystemEvent();
+        }
         if (!event)
             break;
 
@@ -1053,6 +1173,21 @@ int QWindowSystemInterface::windowSystemEventsQueued()
 bool QWindowSystemInterface::nonUserInputEventsQueued()
 {
     return QWindowSystemInterfacePrivate::nonUserInputEventsQueued();
+}
+
+/*!
+    Platforms that implement UserInputEvent filtering at native event level must
+    set this property to \c true. The default is \c false, which means that event
+    filtering logic is handled by QWindowSystemInterface. Doing the filtering in
+    platform plugins is necessary when supporting AbstractEventDispatcher::filterNativeEvent(),
+    which should respect flags that were passed to event dispatcher's processEvents()
+    call.
+
+    \since 5.12
+*/
+void QWindowSystemInterface::setPlatformFiltersEvents(bool enable)
+{
+    QWindowSystemInterfacePrivate::platformFiltersEvents = enable;
 }
 
 // --------------------- QtTestLib support ---------------------

@@ -38,13 +38,12 @@
 ****************************************************************************/
 
 #include "qwaitcondition.h"
+#include "qdeadlinetimer.h"
 #include "qnamespace.h"
 #include "qmutex.h"
 #include "qreadwritelock.h"
 #include "qlist.h"
 #include "qalgorithms.h"
-
-#ifndef QT_NO_THREAD
 
 #ifdef Q_OS_OS2
 #include "qmutex_p.h"
@@ -225,6 +224,11 @@ bool QWaitCondition::wait(QMutex *mutex, unsigned long time)
     return returnValue;
 }
 
+bool QWaitCondition::wait(QMutex *mutex, QDeadlineTimer deadline)
+{
+    return wait(mutex, deadline.remainingTime());
+}
+
 bool QWaitCondition::wait(QReadWriteLock *readWriteLock, unsigned long time)
 {
     if (!readWriteLock)
@@ -251,12 +255,16 @@ bool QWaitCondition::wait(QReadWriteLock *readWriteLock, unsigned long time)
     return returnValue;
 }
 
+bool QWaitCondition::wait(QReadWriteLock *readWriteLock, QDeadlineTimer deadline)
+{
+    return wait(readWriteLock, deadline.remainingTime());
+}
+
 void QWaitCondition::wakeOne()
 {
     // wake up the first waiting thread in the queue
     QMutexLocker locker(&d->mtx);
-    for (int i = 0; i < d->queue.size(); ++i) {
-        QWaitConditionEvent *current = d->queue.at(i);
+    for (QWaitConditionEvent *current : qAsConst(d->queue)) {
         if (current->wokenUp)
             continue;
 #ifdef Q_OS_OS2
@@ -273,8 +281,7 @@ void QWaitCondition::wakeAll()
 {
     // wake up the all threads in the queue
     QMutexLocker locker(&d->mtx);
-    for (int i = 0; i < d->queue.size(); ++i) {
-        QWaitConditionEvent *current = d->queue.at(i);
+    for (QWaitConditionEvent *current : qAsConst(d->queue)) {
 #ifdef Q_OS_OS2
         DosPostEventSem(current->event);
 #else
@@ -285,4 +292,3 @@ void QWaitCondition::wakeAll()
 }
 
 QT_END_NAMESPACE
-#endif // QT_NO_THREAD

@@ -55,6 +55,9 @@ SUBDIRS=\
 win32:!qtConfig(private_tests): SUBDIRS -= \
     qfilesystementry
 
+!qtConfig(filesystemwatcher): SUBDIRS -= \
+    qfilesystemwatcher
+
 !qtConfig(processenvironment): SUBDIRS -= \
     qprocessenvironment
 
@@ -62,5 +65,13 @@ win32:!qtConfig(private_tests): SUBDIRS -= \
     qprocess \
     qprocess-noapplication
 
+!qtConfig(settings): SUBDIRS -= \
+    qsettings
+
 winrt: SUBDIRS -= \
     qstorageinfo
+
+android: SUBDIRS -= \
+    qprocess \
+    qdir \
+    qresourceengine

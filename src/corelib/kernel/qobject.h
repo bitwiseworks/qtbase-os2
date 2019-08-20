@@ -176,7 +176,9 @@ public:
     }
 
 #ifndef QT_NO_REGEXP
+#if QT_DEPRECATED_SINCE(5, 13)
     template<typename T>
+    QT_DEPRECATED_X("Use findChildren(const QRegularExpression &, ...) instead.")
     inline QList<T> findChildren(const QRegExp &re, Qt::FindChildOptions options = Qt::FindChildrenRecursively) const
     {
         typedef typename std::remove_cv<typename std::remove_pointer<T>::type>::type ObjType;
@@ -185,6 +187,7 @@ public:
                                 reinterpret_cast<QList<void *> *>(&list), options);
         return list;
     }
+#endif
 #endif
 
 #if QT_CONFIG(regularexpression)
@@ -517,7 +520,10 @@ inline T qobject_cast(const QObject *object)
 template <class T> inline const char * qobject_interface_iid()
 { return nullptr; }
 
-#if !defined(Q_MOC_RUN) && !defined(Q_CLANG_QDOC)
+
+#if defined(Q_CLANG_QDOC)
+#  define Q_DECLARE_INTERFACE(IFace, IId)
+#elif !defined(Q_MOC_RUN)
 #  define Q_DECLARE_INTERFACE(IFace, IId) \
     template <> inline const char *qobject_interface_iid<IFace *>() \
     { return IId; } \

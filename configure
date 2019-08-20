@@ -775,7 +775,7 @@ setBootstrapVariable()
 
         build_on_os2=
         case `basename "$PLATFORM"` in
-        win32-g++*)
+        win32-*g++*)
             cat "$in_mkfile.win32" >> "$mkfile"
             ;;
         os2-*)

@@ -45,6 +45,7 @@
 #include <qdrawutil.h>
 #include <qevent.h>
 #include <qfontmetrics.h>
+#include <qproxystyle.h>
 #include <qwindow.h>
 #include <qscreen.h>
 #include <qmainwindow.h>
@@ -54,6 +55,7 @@
 
 #include <private/qwidgetresizehandler_p.h>
 #include <private/qstylesheetstyle_p.h>
+#include <qpa/qplatformtheme.h>
 
 #include "qdockwidget_p.h"
 #include "qmainwindowlayout_p.h"
@@ -65,16 +67,19 @@ extern QString qt_setWindowTitle_helperHelper(const QString&, const QWidget*); /
 // qmainwindow.cpp
 extern QMainWindowLayout *qt_mainwindow_layout(const QMainWindow *window);
 
-static inline QMainWindowLayout *qt_mainwindow_layout_from_dock(const QDockWidget *dock)
+static const QMainWindow *mainwindow_from_dock(const QDockWidget *dock)
 {
-    const QWidget *p = dock->parentWidget();
-    while (p) {
-        const QMainWindow *window = qobject_cast<const QMainWindow*>(p);
-        if (window)
-            return qt_mainwindow_layout(window);
-        p = p->parentWidget();
+    for (const QWidget *p = dock->parentWidget(); p; p = p->parentWidget()) {
+        if (const QMainWindow *window = qobject_cast<const QMainWindow*>(p))
+            return window;
     }
     return nullptr;
+}
+
+static inline QMainWindowLayout *qt_mainwindow_layout_from_dock(const QDockWidget *dock)
+{
+    auto mainWindow = mainwindow_from_dock(dock);
+    return mainWindow ? qt_mainwindow_layout(mainWindow) : nullptr;
 }
 
 static inline bool hasFeature(const QDockWidgetPrivate *priv, QDockWidget::DockWidgetFeature feature)
@@ -165,6 +170,10 @@ static inline bool isWindowsStyle(const QStyle *style)
 #if QT_CONFIG(style_stylesheet)
     if (style->inherits("QStyleSheetStyle"))
       effectiveStyle = static_cast<const QStyleSheetStyle *>(style)->baseStyle();
+#endif
+#if !defined(QT_NO_STYLE_PROXY)
+    if (style->inherits("QProxyStyle"))
+      effectiveStyle = static_cast<const QProxyStyle *>(style)->baseStyle();
 #endif
 
     return effectiveStyle->inherits("QWindowsStyle");
@@ -691,7 +700,6 @@ void QDockWidget::initStyleOption(QStyleOptionDockWidget *option) const
     // If we are in a floating tab, init from the parent because the attributes and the geometry
     // of the title bar should be taken from the floating window.
     option->initFrom(floatingTab && !isFloating() ? parentWidget() : this);
-    option->fontMetrics = QFontMetrics(d->font);
     option->rect = dwlayout->titleArea();
     option->title = d->fixedWindowTitle;
     option->closable = hasFeature(this, QDockWidget::DockWidgetClosable);
@@ -834,8 +842,9 @@ void QDockWidgetPrivate::endDrag(bool abort)
     q->releaseMouse();
 
     if (state->dragging) {
-        QMainWindowLayout *mwLayout = qt_mainwindow_layout_from_dock(q);
-        Q_ASSERT(mwLayout != 0);
+        const QMainWindow *mainWindow = mainwindow_from_dock(q);
+        Q_ASSERT(mainWindow != nullptr);
+        QMainWindowLayout *mwLayout = qt_mainwindow_layout(mainWindow);
 
         if (abort || !mwLayout->plug(state->widgetItem)) {
             if (hasFeature(this, QDockWidget::DockWidgetFloatable)) {
@@ -856,8 +865,12 @@ void QDockWidgetPrivate::endDrag(bool abort)
                 } else {
                     setResizerActive(false);
                 }
-                if (q->isFloating()) // Might not be floating when dragging a QDockWidgetGroupWindow
+                if (q->isFloating()) { // Might not be floating when dragging a QDockWidgetGroupWindow
                     undockedGeometry = q->geometry();
+#if QT_CONFIG(tabwidget)
+                    tabPosition = mwLayout->tabPosition(mainWindow->dockWidgetArea(q));
+#endif
+                }
                 q->activateWindow();
             } else {
                 // The tab was not plugged back in the QMainWindow but the QDockWidget cannot
@@ -918,7 +931,8 @@ bool QDockWidgetPrivate::mousePressEvent(QMouseEvent *event)
         initDrag(event->pos(), false);
 
         if (state)
-            state->ctrlDrag = hasFeature(this, QDockWidget::DockWidgetFloatable) && event->modifiers() & Qt::ControlModifier;
+            state->ctrlDrag = (hasFeature(this, QDockWidget::DockWidgetFloatable) && event->modifiers() & Qt::ControlModifier) ||
+                              (!hasFeature(this, QDockWidget::DockWidgetMovable) && q->isFloating());
 
         return true;
     }
@@ -1040,7 +1054,8 @@ void QDockWidgetPrivate::nonClientAreaMouseEvent(QMouseEvent *event)
             initDrag(event->pos(), true);
             if (state == 0)
                 break;
-            state->ctrlDrag = event->modifiers() & Qt::ControlModifier;
+            state->ctrlDrag = (event->modifiers() & Qt::ControlModifier) ||
+                              (!hasFeature(this, QDockWidget::DockWidgetMovable) && q->isFloating());
             startDrag();
             break;
         case QEvent::NonClientAreaMouseMove:
@@ -1468,6 +1483,7 @@ void QDockWidget::closeEvent(QCloseEvent *event)
 void QDockWidget::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event)
+    Q_D(QDockWidget);
 
     QDockWidgetLayout *layout
         = qobject_cast<QDockWidgetLayout*>(this->layout());
@@ -1488,7 +1504,11 @@ void QDockWidget::paintEvent(QPaintEvent *event)
         // the title may wish to extend out to all sides (eg. Vista style)
         QStyleOptionDockWidget titleOpt;
         initStyleOption(&titleOpt);
-        p.setFont(d_func()->font);
+        if (font() == QApplication::font("QDockWidget")) {
+            titleOpt.fontMetrics = QFontMetrics(d->font);
+            p.setFont(d->font);
+        }
+
         p.drawControl(QStyle::CE_DockWidgetTitle, titleOpt);
     }
 }
@@ -1720,8 +1740,8 @@ void QDockWidget::setTitleBarWidget(QWidget *widget)
 
 /*!
     \since 4.3
-    Returns the custom title bar widget set on the QDockWidget, or 0 if no
-    custom title bar has been set.
+    Returns the custom title bar widget set on the QDockWidget, or
+    \nullptr if no custom title bar has been set.
 
     \sa setTitleBarWidget()
 */

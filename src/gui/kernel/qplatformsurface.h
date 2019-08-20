@@ -58,9 +58,15 @@ QT_BEGIN_NAMESPACE
 
 class QPlatformScreen;
 
+#ifndef QT_NO_DEBUG_STREAM
+class QDebug;
+#endif
+
 class Q_GUI_EXPORT QPlatformSurface
 {
 public:
+    Q_DISABLE_COPY_MOVE(QPlatformSurface)
+
     virtual ~QPlatformSurface();
     virtual QSurfaceFormat format() const = 0;
 
@@ -75,6 +81,11 @@ private:
     friend class QPlatformWindow;
     friend class QPlatformOffscreenSurface;
 };
+
+
+#ifndef QT_NO_DEBUG_STREAM
+Q_GUI_EXPORT QDebug operator<<(QDebug debug, const QPlatformSurface *surface);
+#endif
 
 QT_END_NAMESPACE
 

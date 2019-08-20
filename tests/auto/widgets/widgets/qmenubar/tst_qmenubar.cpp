@@ -326,7 +326,7 @@ TestMenu tst_QMenuBar::initComplexMenuBar(QMenuBar *mb)
     connect(action, SIGNAL(triggered()), this, SLOT(onComplexActionTriggered()));
     result.actions << action;
 
-    qFill(m_complexTriggerCount, m_complexTriggerCount + sizeof(m_complexTriggerCount) / sizeof(int), 0);
+    std::fill(m_complexTriggerCount, m_complexTriggerCount + sizeof(m_complexTriggerCount) / sizeof(int), 0);
 
     return result;
 }
@@ -1184,6 +1184,9 @@ void tst_QMenuBar::check_menuPosition()
         mbItemRect.moveTo(w.menuBar()->mapToGlobal(mbItemRect.topLeft()));
         QTest::keyClick(&w, Qt::Key_M, Qt::AltModifier );
         QVERIFY(menu.isActiveWindow());
+#ifdef Q_OS_WINRT
+        QEXPECT_FAIL("", "QTest::keyClick does not work on WinRT.", Abort);
+#endif
         QCOMPARE(menu.pos(), QPoint(mbItemRect.x(), mbItemRect.top() - menu.height()));
         menu.close();
     }
@@ -1512,6 +1515,9 @@ void tst_QMenuBar::cornerWidgets()
     case Qt::TopLeftCorner:
         QVERIFY2(fileMenuGeometry.left() >= cornerWidgetWidth,
                  msgComparison(fileMenuGeometry.left(), ">=", cornerWidgetWidth));
+#ifdef Q_OS_WINRT
+        QEXPECT_FAIL("", "Broken on WinRT - QTBUG-68297", Abort);
+#endif
         QVERIFY2(menuBarWidth - editMenuGeometry.right() < cornerWidgetWidth,
                  msgComparison(menuBarWidth - editMenuGeometry.right(), "<", cornerWidgetWidth));
         break;
@@ -1754,7 +1760,6 @@ void tst_QMenuBar::QTBUG_57404_existingMenuItemException()
     mb->addMenu(editMenu);
     QAction *copyAction = editMenu->addAction("&Copy");
     copyAction->setShortcut(QKeySequence("Ctrl+C"));
-    QTest::ignoreMessage(QtWarningMsg, "Menu item \"&Copy\" has unsupported role QPlatformMenuItem::MenuRole(NoRole)");
     copyAction->setMenuRole(QAction::NoRole);
 
     QVERIFY(QTest::qWaitForWindowExposed(&mw2));

@@ -55,12 +55,16 @@ QT_BEGIN_NAMESPACE
 #ifndef QT_NO_DEBUG
 #define QT_RESET_GLERROR()                                \
 {                                                         \
-    while (QOpenGLContext::currentContext()->functions()->glGetError() != GL_NO_ERROR) {} \
+    while (true) {\
+        GLenum error = QOpenGLContext::currentContext()->functions()->glGetError(); \
+        if (error == GL_NO_ERROR || error == GL_CONTEXT_LOST) \
+            break; \
+    } \
 }
 #define QT_CHECK_GLERROR()                                \
 {                                                         \
     GLenum err = QOpenGLContext::currentContext()->functions()->glGetError(); \
-    if (err != GL_NO_ERROR) {                             \
+    if (err != GL_NO_ERROR && err != GL_CONTEXT_LOST) {                             \
         qDebug("[%s line %d] OpenGL Error: %d",           \
                __FILE__, __LINE__, (int)err);             \
     }                                                     \
@@ -106,12 +110,20 @@ QT_BEGIN_NAMESPACE
 #define GL_RGB10                          0x8052
 #endif
 
+#ifndef GL_RGB16
+#define GL_RGB16                          0x8054
+#endif
+
 #ifndef GL_RGBA8
 #define GL_RGBA8                          0x8058
 #endif
 
 #ifndef GL_RGB10_A2
 #define GL_RGB10_A2                       0x8059
+#endif
+
+#ifndef GL_RGBA16
+#define GL_RGBA16                         0x805B
 #endif
 
 #ifndef GL_BGRA
@@ -125,6 +137,19 @@ QT_BEGIN_NAMESPACE
 #ifndef GL_UNSIGNED_INT_2_10_10_10_REV
 #define GL_UNSIGNED_INT_2_10_10_10_REV    0x8368
 #endif
+
+#ifndef GL_CONTEXT_LOST
+#define GL_CONTEXT_LOST                   0x0507
+#endif
+
+#ifndef GL_DEPTH_STENCIL_ATTACHMENT
+#define GL_DEPTH_STENCIL_ATTACHMENT       0x821A
+#endif
+
+#ifndef GL_DEPTH_STENCIL
+#define GL_DEPTH_STENCIL                  0x84F9
+#endif
+
 
 
 /*!
@@ -224,7 +249,7 @@ QOpenGLFramebufferObjectFormat::~QOpenGLFramebufferObjectFormat()
 
     If the desired amount of samples per pixel is not supported by the hardware
     then the maximum number of samples per pixel will be used. Note that
-    multisample framebuffer objects can not be bound as textures. Also, the
+    multisample framebuffer objects cannot be bound as textures. Also, the
     \c{GL_EXT_framebuffer_multisample} extension is required to create a
     framebuffer with more than one sample per pixel.
 
@@ -522,6 +547,8 @@ void QOpenGLFramebufferObjectPrivate::initTexture(int idx)
     GLuint pixelType = GL_UNSIGNED_BYTE;
     if (color.internalFormat == GL_RGB10_A2 || color.internalFormat == GL_RGB10)
         pixelType = GL_UNSIGNED_INT_2_10_10_10_REV;
+    else if (color.internalFormat == GL_RGB16  || color.internalFormat == GL_RGBA16)
+        pixelType = GL_UNSIGNED_SHORT;
 
     funcs.glTexImage2D(target, 0, color.internalFormat, color.size.width(), color.size.height(), 0,
                        GL_RGBA, pixelType, NULL);
@@ -559,11 +586,16 @@ void QOpenGLFramebufferObjectPrivate::initColorBuffer(int idx, GLint *samples)
 
     GLenum storageFormat = color.internalFormat;
     // ES requires a sized format. The older desktop extension does not. Correct the format on ES.
-    if (ctx->isOpenGLES() && color.internalFormat == GL_RGBA) {
-        if (funcs.hasOpenGLExtension(QOpenGLExtensions::Sized8Formats))
-            storageFormat = GL_RGBA8;
-        else
-            storageFormat = GL_RGBA4;
+    if (ctx->isOpenGLES()) {
+        if (color.internalFormat == GL_RGBA) {
+            if (funcs.hasOpenGLExtension(QOpenGLExtensions::Sized8Formats))
+                storageFormat = GL_RGBA8;
+            else
+                storageFormat = GL_RGBA4;
+        } else if (color.internalFormat == GL_RGB10) {
+            // GL_RGB10 is not allowed in ES for glRenderbufferStorage.
+            storageFormat = GL_RGB10_A2;
+        }
     }
 
     funcs.glGenRenderbuffers(1, &color_buffer);
@@ -595,7 +627,11 @@ void QOpenGLFramebufferObjectPrivate::initDepthStencilAttachments(QOpenGLContext
 
     // free existing attachments
     if (depth_buffer_guard) {
+#ifdef Q_OS_WASM
+        funcs.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+#else
         funcs.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+#endif
         depth_buffer_guard->free();
     }
     if (stencil_buffer_guard) {
@@ -613,7 +649,35 @@ void QOpenGLFramebufferObjectPrivate::initDepthStencilAttachments(QOpenGLContext
     // In practice, a combined depth-stencil buffer is supported by all desktop platforms, while a
     // separate stencil buffer is not. On embedded devices however, a combined depth-stencil buffer
     // might not be supported while separate buffers are, according to QTBUG-12861.
+#ifdef Q_OS_WASM
+    // WebGL doesn't allow separately attach buffers to
+    // STENCIL_ATTACHMENT and DEPTH_ATTACHMENT
+    // QTBUG-69913
+    if (attachment == QOpenGLFramebufferObject::CombinedDepthStencil) {
+        funcs.glGenRenderbuffers(1, &depth_buffer);
+        funcs.glBindRenderbuffer(GL_RENDERBUFFER, depth_buffer);
+        Q_ASSERT(funcs.glIsRenderbuffer(depth_buffer));
 
+        GLenum storageFormat = GL_DEPTH_STENCIL;
+
+        if (samples != 0 ) {
+            funcs.glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples,
+                                                   storageFormat, dsSize.width(), dsSize.height());
+        } else {
+            funcs.glRenderbufferStorage(GL_RENDERBUFFER, storageFormat,
+                                        dsSize.width(), dsSize.height());
+        }
+
+        funcs.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                        GL_RENDERBUFFER, depth_buffer);
+
+        valid = checkFramebufferStatus(ctx);
+        if (!valid) {
+            funcs.glDeleteRenderbuffers(1, &depth_buffer);
+            depth_buffer = 0;
+        }
+    }
+#else
     if (attachment == QOpenGLFramebufferObject::CombinedDepthStencil
         && funcs.hasOpenGLExtension(QOpenGLExtensions::PackedDepthStencil))
     {
@@ -705,11 +769,16 @@ void QOpenGLFramebufferObjectPrivate::initDepthStencilAttachments(QOpenGLContext
             stencil_buffer = 0;
         }
     }
+#endif //Q_OS_WASM
 
     // The FBO might have become valid after removing the depth or stencil buffer.
     valid = checkFramebufferStatus(ctx);
 
+#ifdef Q_OS_WASM
+    if (depth_buffer) {
+#else
     if (depth_buffer && stencil_buffer) {
+#endif
         fbo_attachment = QOpenGLFramebufferObject::CombinedDepthStencil;
     } else if (depth_buffer) {
         fbo_attachment = QOpenGLFramebufferObject::Depth;
@@ -1299,12 +1368,23 @@ static inline QImage qt_gl_read_framebuffer_rgb10a2(const QSize &size, bool incl
     return img;
 }
 
+static inline QImage qt_gl_read_framebuffer_rgba16(const QSize &size, bool include_alpha, QOpenGLContext *context)
+{
+    // We assume OpenGL 1.2+ or ES 3.0+ here.
+    QImage img(size, include_alpha ? QImage::Format_RGBA64_Premultiplied : QImage::Format_RGBX64);
+    context->functions()->glReadPixels(0, 0, size.width(), size.height(), GL_RGBA, GL_UNSIGNED_SHORT, img.bits());
+    return img;
+}
+
 static QImage qt_gl_read_framebuffer(const QSize &size, GLenum internal_format, bool include_alpha, bool flip)
 {
     QOpenGLContext *ctx = QOpenGLContext::currentContext();
     QOpenGLFunctions *funcs = ctx->functions();
-    while (funcs->glGetError());
-
+    while (true) {
+        GLenum error = funcs->glGetError();
+        if (error == GL_NO_ERROR || error == GL_CONTEXT_LOST)
+            break;
+    }
     switch (internal_format) {
     case GL_RGB:
     case GL_RGB8:
@@ -1313,6 +1393,10 @@ static QImage qt_gl_read_framebuffer(const QSize &size, GLenum internal_format, 
         return qt_gl_read_framebuffer_rgb10a2(size, false, ctx).mirrored(false, flip);
     case GL_RGB10_A2:
         return qt_gl_read_framebuffer_rgb10a2(size, include_alpha, ctx).mirrored(false, flip);
+    case GL_RGB16:
+        return qt_gl_read_framebuffer_rgba16(size, false, ctx).mirrored(false, flip);
+    case GL_RGBA16:
+        return qt_gl_read_framebuffer_rgba16(size, include_alpha, ctx).mirrored(false, flip);
     case GL_RGBA:
     case GL_RGBA8:
     default:
@@ -1341,7 +1425,8 @@ Q_GUI_EXPORT QImage qt_gl_read_framebuffer(const QSize &size, bool alpha_format,
     is used only when internalTextureFormat() is set to \c GL_RGB. Since Qt 5.2
     the function will fall back to premultiplied RGBA8888 or RGBx8888 when
     reading to (A)RGB32 is not supported, and this includes OpenGL ES. Since Qt
-    5.4 an A2BGR30 image is returned if the internal format is RGB10_A2.
+    5.4 an A2BGR30 image is returned if the internal format is RGB10_A2, and since
+    Qt 5.12 a RGBA64 image is return if the internal format is RGBA16.
 
     If the rendering in the framebuffer was not done with premultiplied alpha in mind,
     create a wrapper QImage with a non-premultiplied format. This is necessary before
@@ -1424,14 +1509,17 @@ QImage QOpenGLFramebufferObject::toImage(bool flipped, int colorAttachmentIndex)
     // qt_gl_read_framebuffer doesn't work on a multisample FBO
     if (format().samples() != 0) {
         QRect rect(QPoint(0, 0), size());
+        QOpenGLFramebufferObjectFormat fmt;
         if (extraFuncs->hasOpenGLFeature(QOpenGLFunctions::MultipleRenderTargets)) {
-            QOpenGLFramebufferObject temp(d->colorAttachments[colorAttachmentIndex].size, QOpenGLFramebufferObjectFormat());
+            fmt.setInternalTextureFormat(d->colorAttachments[colorAttachmentIndex].internalFormat);
+            QOpenGLFramebufferObject temp(d->colorAttachments[colorAttachmentIndex].size, fmt);
             blitFramebuffer(&temp, rect, const_cast<QOpenGLFramebufferObject *>(this), rect,
                             GL_COLOR_BUFFER_BIT, GL_NEAREST,
                             colorAttachmentIndex, 0);
             image = temp.toImage(flipped);
         } else {
-            QOpenGLFramebufferObject temp(size(), QOpenGLFramebufferObjectFormat());
+            fmt.setInternalTextureFormat(d->colorAttachments[0].internalFormat);
+            QOpenGLFramebufferObject temp(size(), fmt);
             blitFramebuffer(&temp, rect, const_cast<QOpenGLFramebufferObject *>(this), rect);
             image = temp.toImage(flipped);
         }

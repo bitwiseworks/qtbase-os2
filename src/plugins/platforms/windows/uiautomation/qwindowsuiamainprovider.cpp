@@ -37,8 +37,8 @@
 **
 ****************************************************************************/
 
-#include <QtCore/QtConfig>
-#ifndef QT_NO_ACCESSIBILITY
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(accessibility)
 
 #include "qwindowsuiamainprovider.h"
 #include "qwindowsuiavalueprovider.h"
@@ -57,10 +57,10 @@
 #include "qwindowsuiautils.h"
 #include "qwindowsuiaprovidercache.h"
 
-#include <QtCore/QDebug>
-#include <QtGui/QAccessible>
-#include <QtGui/QGuiApplication>
-#include <QtGui/QWindow>
+#include <QtCore/qloggingcategory.h>
+#include <QtGui/qaccessible.h>
+#include <QtGui/qguiapplication.h>
+#include <QtGui/qwindow.h>
 
 #if !defined(Q_CC_BOR) && !defined (Q_CC_GNU)
 #include <comdef.h>
@@ -146,14 +146,47 @@ void QWindowsUiaMainProvider::notifyStateChange(QAccessibleStateChangeEvent *eve
 void QWindowsUiaMainProvider::notifyValueChange(QAccessibleValueChangeEvent *event)
 {
     if (QAccessibleInterface *accessible = event->accessibleInterface()) {
-       if (QAccessibleValueInterface *valueInterface = accessible->valueInterface()) {
-           // Notifies changes in values of controls supporting the value interface.
+        if (accessible->role() == QAccessible::ComboBox && accessible->childCount() > 0) {
+            QAccessibleInterface *listacc = accessible->child(0);
+            if (listacc && listacc->role() == QAccessible::List) {
+                int count = listacc->childCount();
+                for (int i = 0; i < count; ++i) {
+                    QAccessibleInterface *item = listacc->child(i);
+                    if (item && item->text(QAccessible::Name) == event->value()) {
+                        if (!item->state().selected) {
+                            if (QAccessibleActionInterface *actionInterface = item->actionInterface())
+                                actionInterface->doAction(QAccessibleActionInterface::toggleAction());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        if (event->value().type() == QVariant::String) {
             if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
+                // Notifies changes in string values.
+                VARIANT oldVal, newVal;
+                clearVariant(&oldVal);
+                setVariantString(event->value().toString(), &newVal);
+                QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_ValueValuePropertyId, oldVal, newVal);
+            }
+        } else if (QAccessibleValueInterface *valueInterface = accessible->valueInterface()) {
+            if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
+                // Notifies changes in values of controls supporting the value interface.
                 VARIANT oldVal, newVal;
                 clearVariant(&oldVal);
                 setVariantDouble(valueInterface->currentValue().toDouble(), &newVal);
                 QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_RangeValueValuePropertyId, oldVal, newVal);
             }
+        }
+    }
+}
+
+void QWindowsUiaMainProvider::notifySelectionChange(QAccessibleEvent *event)
+{
+    if (QAccessibleInterface *accessible = event->accessibleInterface()) {
+        if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
+            QWindowsUiaWrapper::instance()->raiseAutomationEvent(provider, UIA_SelectionItem_ElementSelectedEventId);
         }
     }
 }
@@ -364,7 +397,7 @@ HRESULT QWindowsUiaMainProvider::GetPropertyValue(PROPERTYID idProp, VARIANT *pR
         setVariantBool(accessible->state().focusable, pRetVal);
         break;
     case UIA_IsOffscreenPropertyId:
-        setVariantBool(false, pRetVal);
+        setVariantBool(accessible->state().offscreen, pRetVal);
         break;
     case UIA_IsContentElementPropertyId:
         setVariantBool(true, pRetVal);
@@ -391,9 +424,8 @@ HRESULT QWindowsUiaMainProvider::GetPropertyValue(PROPERTYID idProp, VARIANT *pR
         break;
     case UIA_NamePropertyId: {
         QString name = accessible->text(QAccessible::Name);
-        if (name.isEmpty() && clientTopLevel) {
+        if (name.isEmpty() && clientTopLevel)
            name = QCoreApplication::applicationName();
-        }
         setVariantString(name, pRetVal);
         break;
     }
@@ -454,30 +486,53 @@ HRESULT QWindowsUiaMainProvider::Navigate(NavigateDirection direction, IRawEleme
 
     QAccessibleInterface *targetacc = nullptr;
 
-    switch (direction) {
-    case NavigateDirection_Parent:
-        targetacc = accessible->parent();
-        if (targetacc && (targetacc->role() == QAccessible::Application)) {
-            targetacc = nullptr; // The app's children are considered top level objects.
-        }
-        break;
-    case NavigateDirection_FirstChild:
-        targetacc = accessible->child(0);
-        break;
-    case NavigateDirection_LastChild:
-        targetacc = accessible->child(accessible->childCount() - 1);
-        break;
-    case NavigateDirection_NextSibling:
-    case NavigateDirection_PreviousSibling:
+    if (direction == NavigateDirection_Parent) {
         if (QAccessibleInterface *parent = accessible->parent()) {
-            if (parent->isValid()) {
-                int index = parent->indexOfChild(accessible);
-                index += (direction == NavigateDirection_NextSibling) ? 1 : -1;
-                if (index >= 0 && index < parent->childCount())
-                    targetacc = parent->child(index);
+            // The Application's children are considered top level objects.
+            if (parent->isValid() && parent->role() != QAccessible::Application) {
+                targetacc = parent;
             }
         }
-        break;
+    } else {
+        QAccessibleInterface *parent = nullptr;
+        int index = 0;
+        int incr = 1;
+        switch (direction) {
+        case NavigateDirection_FirstChild:
+            parent = accessible;
+            index = 0;
+            incr = 1;
+            break;
+        case NavigateDirection_LastChild:
+            parent = accessible;
+            index = accessible->childCount() - 1;
+            incr = -1;
+            break;
+        case NavigateDirection_NextSibling:
+            if ((parent = accessible->parent()))
+                index = parent->indexOfChild(accessible) + 1;
+            incr = 1;
+            break;
+        case NavigateDirection_PreviousSibling:
+            if ((parent = accessible->parent()))
+                index = parent->indexOfChild(accessible) - 1;
+            incr = -1;
+            break;
+        default:
+            Q_UNREACHABLE();
+            break;
+        }
+
+        if (parent && parent->isValid()) {
+            for (int count = parent->childCount(); index >= 0 && index < count; index += incr) {
+                if (QAccessibleInterface *child = parent->child(index)) {
+                    if (child->isValid() && !child->state().invisible) {
+                        targetacc = child;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     if (targetacc)
@@ -635,4 +690,4 @@ HRESULT QWindowsUiaMainProvider::GetFocus(IRawElementProviderFragment **pRetVal)
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)

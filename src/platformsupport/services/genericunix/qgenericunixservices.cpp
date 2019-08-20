@@ -45,12 +45,14 @@
 #if QT_CONFIG(process)
 # include <QtCore/QProcess>
 #endif
+#if QT_CONFIG(settings)
 #include <QtCore/QSettings>
+#endif
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
 
 #if QT_CONFIG(dbus)
-// These QtCore includes are needed for flatpak support
+// These QtCore includes are needed for xdg-desktop-portal support
 #include <QtCore/private/qcore_unix_p.h>
 
 #include <QtCore/QFileInfo>
@@ -93,7 +95,7 @@ static inline QByteArray detectDesktopEnvironment()
     // This can be a path in /usr/share/xsessions
     int slash = desktopSession.lastIndexOf('/');
     if (slash != -1) {
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
         QSettings desktopFile(QFile::decodeName(desktopSession + ".desktop"), QSettings::IniFormat);
         desktopFile.beginGroup(QStringLiteral("Desktop Entry"));
         QByteArray desktopName = desktopFile.value(QStringLiteral("DesktopNames")).toByteArray();
@@ -172,12 +174,54 @@ static inline bool launch(const QString &launcher, const QUrl &url)
 }
 
 #if QT_CONFIG(dbus)
-static inline bool checkRunningUnderFlatpak()
+static inline bool checkNeedPortalSupport()
 {
-    return !QStandardPaths::locate(QStandardPaths::RuntimeLocation, QLatin1String("flatpak-info")).isEmpty();
+    return !QStandardPaths::locate(QStandardPaths::RuntimeLocation, QLatin1String("flatpak-info")).isEmpty() || qEnvironmentVariableIsSet("SNAP");
 }
 
-static inline bool flatpakOpenUrl(const QUrl &url)
+static inline bool isPortalReturnPermanent(const QDBusError &error)
+{
+    // A service unknown error isn't permanent, it just indicates that we
+    // should fall back to the regular way. This check includes
+    // QDBusError::NoError.
+    return error.type() != QDBusError::ServiceUnknown;
+}
+
+static inline QDBusMessage xdgDesktopPortalOpenFile(const QUrl &url)
+{
+    // DBus signature:
+    // OpenFile (IN   s      parent_window,
+    //           IN   h      fd,
+    //           IN   a{sv}  options,
+    //           OUT  o      handle)
+    // Options:
+    // handle_token (s) -  A string that will be used as the last element of the @handle.
+    // writable (b) - Whether to allow the chosen application to write to the file.
+
+#ifdef O_PATH
+    const int fd = qt_safe_open(QFile::encodeName(url.toLocalFile()), O_PATH);
+    if (fd != -1) {
+        QDBusMessage message = QDBusMessage::createMethodCall(QLatin1String("org.freedesktop.portal.Desktop"),
+                                                              QLatin1String("/org/freedesktop/portal/desktop"),
+                                                              QLatin1String("org.freedesktop.portal.OpenURI"),
+                                                              QLatin1String("OpenFile"));
+
+        QDBusUnixFileDescriptor descriptor;
+        descriptor.giveFileDescriptor(fd);
+
+        // FIXME parent_window_id and handle writable option
+        message << QString() << QVariant::fromValue(descriptor) << QVariantMap();
+
+        return QDBusConnection::sessionBus().call(message);
+    }
+#else
+    Q_UNUSED(url)
+#endif
+
+    return QDBusMessage::createError(QDBusError::InternalError, qt_error_string());
+}
+
+static inline QDBusMessage xdgDesktopPortalOpenUrl(const QUrl &url)
 {
     // DBus signature:
     // OpenURI (IN   s      parent_window,
@@ -185,6 +229,7 @@ static inline bool flatpakOpenUrl(const QUrl &url)
     //          IN   a{sv}  options,
     //          OUT  o      handle)
     // Options:
+    // handle_token (s) -  A string that will be used as the last element of the @handle.
     // writable (b) - Whether to allow the chosen application to write to the file.
     //                This key only takes effect the uri points to a local file that is exported in the document portal,
     //                and the chosen application is sandboxed itself.
@@ -196,11 +241,10 @@ static inline bool flatpakOpenUrl(const QUrl &url)
     // FIXME parent_window_id and handle writable option
     message << QString() << url.toString() << QVariantMap();
 
-    QDBusPendingReply<QDBusObjectPath> reply = QDBusConnection::sessionBus().call(message);
-    return !reply.isError();
+    return QDBusConnection::sessionBus().call(message);
 }
 
-static inline bool flatpakSendEmail(const QUrl &url)
+static inline QDBusMessage xdgDesktopPortalSendEmail(const QUrl &url)
 {
     // DBus signature:
     // ComposeEmail (IN   s      parent_window,
@@ -243,8 +287,7 @@ static inline bool flatpakSendEmail(const QUrl &url)
     // FIXME parent_window_id
     message << QString() << options;
 
-    QDBusPendingReply<QDBusObjectPath> reply = QDBusConnection::sessionBus().call(message);
-    return !reply.isError();
+    return QDBusConnection::sessionBus().call(message);
 }
 #endif // QT_CONFIG(dbus)
 
@@ -258,15 +301,23 @@ bool QGenericUnixServices::openUrl(const QUrl &url)
 {
     if (url.scheme() == QLatin1String("mailto")) {
 #if QT_CONFIG(dbus)
-        if (checkRunningUnderFlatpak())
-            return flatpakSendEmail(url);
+        if (checkNeedPortalSupport()) {
+            QDBusError error = xdgDesktopPortalSendEmail(url);
+            if (isPortalReturnPermanent(error))
+                return !error.isValid();
+
+            // service not running, fall back
+        }
 #endif
         return openDocument(url);
     }
 
 #if QT_CONFIG(dbus)
-    if (checkRunningUnderFlatpak())
-        return flatpakOpenUrl(url);
+    if (checkNeedPortalSupport()) {
+        QDBusError error = xdgDesktopPortalOpenUrl(url);
+        if (isPortalReturnPermanent(error))
+            return !error.isValid();
+    }
 #endif
 
     if (m_webBrowser.isEmpty() && !detectWebBrowser(desktopEnvironment(), true, &m_webBrowser)) {
@@ -278,6 +329,14 @@ bool QGenericUnixServices::openUrl(const QUrl &url)
 
 bool QGenericUnixServices::openDocument(const QUrl &url)
 {
+#if QT_CONFIG(dbus)
+    if (checkNeedPortalSupport()) {
+        QDBusError error = xdgDesktopPortalOpenFile(url);
+        if (isPortalReturnPermanent(error))
+            return !error.isValid();
+    }
+#endif
+
     if (m_documentLauncher.isEmpty() && !detectWebBrowser(desktopEnvironment(), false, &m_documentLauncher)) {
         qWarning("Unable to detect a launcher for '%s'", qPrintable(url.toString()));
         return false;

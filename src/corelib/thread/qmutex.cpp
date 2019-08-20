@@ -42,8 +42,6 @@
 #include "qplatformdefs.h"
 #include "qmutex.h"
 #include <qdebug.h>
-
-#ifndef QT_NO_THREAD
 #include "qatomic.h"
 #include "qelapsedtimer.h"
 #include "qthread.h"
@@ -741,5 +739,3 @@ QT_END_NAMESPACE
 #elif defined(Q_OS_OS2)
 #  include "qmutex_os2.cpp"
 #endif
-
-#endif // QT_NO_THREAD

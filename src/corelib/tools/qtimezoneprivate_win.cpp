@@ -49,6 +49,7 @@
 QT_BEGIN_NAMESPACE
 
 #ifndef Q_OS_WINRT
+// The registry-based timezone backend is not available on WinRT, which falls back to equivalent APIs.
 #define QT_USE_REGISTRY_TIMEZONE 1
 #endif
 
@@ -139,15 +140,15 @@ bool equalTzi(const TIME_ZONE_INFORMATION &tzi1, const TIME_ZONE_INFORMATION &tz
 #ifdef QT_USE_REGISTRY_TIMEZONE
 bool openRegistryKey(const QString &keyPath, HKEY *key)
 {
-    return (RegOpenKeyEx(HKEY_LOCAL_MACHINE, (const wchar_t*)keyPath.utf16(), 0, KEY_READ, key)
-            == ERROR_SUCCESS);
+    return RegOpenKeyEx(HKEY_LOCAL_MACHINE, reinterpret_cast<const wchar_t*>(keyPath.utf16()),
+                        0, KEY_READ, key) == ERROR_SUCCESS;
 }
 
 QString readRegistryString(const HKEY &key, const wchar_t *value)
 {
     wchar_t buffer[MAX_PATH] = {0};
     DWORD size = sizeof(wchar_t) * MAX_PATH;
-    RegQueryValueEx(key, (LPCWSTR)value, NULL, NULL, (LPBYTE)buffer, &size);
+    RegQueryValueEx(key, value, nullptr, nullptr, reinterpret_cast<LPBYTE>(buffer), &size);
     return QString::fromWCharArray(buffer);
 }
 
@@ -155,7 +156,7 @@ int readRegistryValue(const HKEY &key, const wchar_t *value)
 {
     DWORD buffer;
     DWORD size = sizeof(buffer);
-    RegQueryValueEx(key, (LPCWSTR)value, NULL, NULL, (LPBYTE)&buffer, &size);
+    RegQueryValueEx(key, value, nullptr, nullptr, reinterpret_cast<LPBYTE>(&buffer), &size);
     return buffer;
 }
 
@@ -166,7 +167,7 @@ QWinTimeZonePrivate::QWinTransitionRule readRegistryRule(const HKEY &key,
     QWinTimeZonePrivate::QWinTransitionRule rule;
     REG_TZI_FORMAT tzi;
     DWORD tziSize = sizeof(tzi);
-    if (RegQueryValueEx(key, (LPCWSTR)value, NULL, NULL, (BYTE *)&tzi, &tziSize)
+    if (RegQueryValueEx(key, value, nullptr, nullptr, reinterpret_cast<BYTE *>(&tzi), &tziSize)
         == ERROR_SUCCESS) {
         rule.startYear = 0;
         rule.standardTimeBias = tzi.Bias + tzi.StandardBias;
@@ -191,12 +192,12 @@ TIME_ZONE_INFORMATION getRegistryTzi(const QByteArray &windowsId, bool *ok)
     if (openRegistryKey(tziKeyPath, &key)) {
 
         DWORD size = sizeof(tzi.DaylightName);
-        RegQueryValueEx(key, L"Dlt", NULL, NULL, (LPBYTE)tzi.DaylightName, &size);
+        RegQueryValueEx(key, L"Dlt", nullptr, nullptr, reinterpret_cast<LPBYTE>(tzi.DaylightName), &size);
 
         size = sizeof(tzi.StandardName);
-        RegQueryValueEx(key, L"Std", NULL, NULL, (LPBYTE)tzi.StandardName, &size);
+        RegQueryValueEx(key, L"Std", nullptr, nullptr, reinterpret_cast<LPBYTE>(tzi.StandardName), &size);
 
-        if (RegQueryValueEx(key, L"TZI", NULL, NULL, (BYTE *) &regTzi, &regTziSize)
+        if (RegQueryValueEx(key, L"TZI", nullptr, nullptr, reinterpret_cast<BYTE *>(&regTzi), &regTziSize)
             == ERROR_SUCCESS) {
             tzi.Bias = regTzi.Bias;
             tzi.StandardBias = regTzi.StandardBias;
@@ -589,7 +590,7 @@ void QWinTimeZonePrivate::init(const QByteArray &ianaId)
                 for (int year = startYear; year <= endYear; ++year) {
                     bool ruleOk;
                     QWinTransitionRule rule = readRegistryRule(dynamicKey,
-                                                               (LPCWSTR)QString::number(year).utf16(),
+                                                               reinterpret_cast<LPCWSTR>(QString::number(year).utf16()),
                                                                &ruleOk);
                     if (ruleOk
                         // Don't repeat a recurrent rule:
@@ -687,10 +688,10 @@ QString QWinTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
     if (nameType == QTimeZone::OffsetName) {
         const QWinTransitionRule &rule =
             m_tranRules.at(ruleIndexForYear(m_tranRules, QDate::currentDate().year()));
+        int offset = rule.standardTimeBias;
         if (timeType == QTimeZone::DaylightTime)
-            return isoOffsetFormat((rule.standardTimeBias + rule.daylightTimeBias) * -60);
-        else
-            return isoOffsetFormat((rule.standardTimeBias) * -60);
+            offset += rule.daylightTimeBias;
+        return isoOffsetFormat(offset * -60);
     }
 
     switch (timeType) {

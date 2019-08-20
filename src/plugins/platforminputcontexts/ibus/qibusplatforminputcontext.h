@@ -44,7 +44,9 @@
 #include <QtCore/qpointer.h>
 #include <QtCore/QLocale>
 #include <QtDBus/qdbuspendingreply.h>
+#if QT_CONFIG(filesystemwatcher)
 #include <QFileSystemWatcher>
+#endif
 #include <QTimer>
 #include <QWindow>
 
@@ -108,13 +110,15 @@ public Q_SLOTS:
     void showPreeditText();
     void filterEventFinished(QDBusPendingCallWatcher *call);
     void socketChanged(const QString &str);
+    void busRegistered(const QString &str);
+    void busUnregistered(const QString &str);
     void connectToBus();
     void globalEngineChanged(const QString &engine_name);
 
 private:
     QIBusPlatformInputContextPrivate *d;
     bool m_eventFilterUseSynchronousMode;
-#ifndef QT_NO_FILESYSTEMWATCHER
+#if QT_CONFIG(filesystemwatcher)
     QFileSystemWatcher m_socketWatcher;
 #endif
     QTimer m_timer;

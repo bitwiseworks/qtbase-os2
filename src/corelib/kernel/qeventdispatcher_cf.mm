@@ -58,40 +58,53 @@
 
 QT_USE_NAMESPACE
 
-@interface QT_MANGLE_NAMESPACE(RunLoopModeTracker) : NSObject {
-    QStack<CFStringRef> m_runLoopModes;
-}
+/*
+    During scroll view panning, and possibly other gestures, UIKit will
+    request a switch to UITrackingRunLoopMode via GSEventPushRunLoopMode,
+    which records the new runloop mode and stops the current runloop.
+
+    Unfortunately the runloop mode is just stored on an internal stack, used
+    when UIKit itself is running the runloop, and is not available through e.g.
+    CFRunLoopCopyCurrentMode, which only knows about the current running
+    runloop mode, not the requested future runloop mode.
+
+    To ensure that we pick up this new runloop mode and use it when calling
+    CFRunLoopRunInMode from processEvents, we listen for the notification
+    emitted by [UIApplication pushRunLoopMode:requester:].
+
+    Without this workaround we end up always running in the default runloop
+    mode, resulting in missing momentum-phases in UIScrollViews such as the
+    emoji keyboard.
+*/
+@interface QT_MANGLE_NAMESPACE(RunLoopModeTracker) : NSObject
 @end
 
 QT_NAMESPACE_ALIAS_OBJC_CLASS(RunLoopModeTracker);
 
-@implementation RunLoopModeTracker
+@implementation RunLoopModeTracker {
+    QStack<CFStringRef> m_runLoopModes;
+}
 
-- (id) init
+- (instancetype)init
 {
-    if (self = [super init]) {
+    if ((self = [super init])) {
         m_runLoopModes.push(kCFRunLoopDefaultMode);
 
-        [[NSNotificationCenter defaultCenter]
-            addObserver:self
-            selector:@selector(receivedNotification:)
-            name:nil
-#ifdef Q_OS_OSX
-            object:[NSApplication sharedApplication]];
-#elif defined(Q_OS_WATCHOS)
-            object:[WKExtension sharedExtension]];
-#else
-            // Use performSelector so this can work in an App Extension
-            object:[[UIApplication class] performSelector:@selector(sharedApplication)]];
+#if !defined(Q_OS_WATCHOS)
+        if (!qt_apple_isApplicationExtension()) {
+            [[NSNotificationCenter defaultCenter]
+                addObserver:self selector:@selector(receivedNotification:)
+                name:nil object:qt_apple_sharedApplication()];
+        }
 #endif
     }
 
     return self;
 }
 
-- (void) dealloc
+- (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 
     [super dealloc];
 }
@@ -100,13 +113,13 @@ static CFStringRef runLoopMode(NSDictionary *dictionary)
 {
     for (NSString *key in dictionary) {
         if (CFStringHasSuffix((CFStringRef)key, CFSTR("RunLoopMode")))
-            return (CFStringRef)[dictionary objectForKey: key];
+            return (CFStringRef)dictionary[key];
     }
 
     return nil;
 }
 
-- (void) receivedNotification:(NSNotification *) notification
+- (void)receivedNotification:(NSNotification *)notification
 {
      if (CFStringHasSuffix((CFStringRef)notification.name, CFSTR("RunLoopModePushNotification"))) {
         if (CFStringRef mode = runLoopMode(notification.userInfo))
@@ -116,7 +129,7 @@ static CFStringRef runLoopMode(NSDictionary *dictionary)
 
      } else if (CFStringHasSuffix((CFStringRef)notification.name, CFSTR("RunLoopModePopNotification"))) {
         CFStringRef mode = runLoopMode(notification.userInfo);
-        if (CFStringCompare(mode, [self currentMode], 0) == kCFCompareEqualTo)
+        if (CFStringCompare(mode, self.currentMode, 0) == kCFCompareEqualTo)
             m_runLoopModes.pop();
         else
             qCWarning(lcEventDispatcher) << "Tried to pop run loop mode"
@@ -126,7 +139,7 @@ static CFStringRef runLoopMode(NSDictionary *dictionary)
      }
 }
 
-- (CFStringRef) currentMode
+- (CFStringRef)currentMode
 {
     return m_runLoopModes.top();
 }
@@ -196,8 +209,16 @@ QEventDispatcherCoreFoundation::QEventDispatcherCoreFoundation(QObject *parent)
     , m_blockedRunLoopTimer(0)
     , m_overdueTimerScheduled(false)
 {
-    m_cfSocketNotifier.setHostEventDispatcher(this);
+}
 
+void QEventDispatcherCoreFoundation::startingUp()
+{
+    // The following code must run on the event dispatcher thread, so that
+    // CFRunLoopGetCurrent() returns the correct run loop.
+    Q_ASSERT(QThread::currentThread() == thread());
+
+    m_runLoop = QCFType<CFRunLoopRef>::constructFromGet(CFRunLoopGetCurrent());
+    m_cfSocketNotifier.setHostEventDispatcher(this);
     m_postedEventsRunLoopSource.addToMode(kCFRunLoopCommonModes);
     m_runLoopActivityObserver.addToMode(kCFRunLoopCommonModes);
 }
@@ -238,6 +259,8 @@ QEventLoop *QEventDispatcherCoreFoundation::currentEventLoop() const
 */
 bool QEventDispatcherCoreFoundation::processEvents(QEventLoop::ProcessEventsFlags flags)
 {
+    QT_APPLE_SCOPED_LOG_ACTIVITY(lcEventDispatcher().isDebugEnabled(), "processEvents");
+
     bool eventsProcessed = false;
 
     if (flags & (QEventLoop::ExcludeUserInputEvents | QEventLoop::ExcludeSocketNotifiers))
@@ -390,6 +413,8 @@ bool QEventDispatcherCoreFoundation::processEvents(QEventLoop::ProcessEventsFlag
 
 bool QEventDispatcherCoreFoundation::processPostedEvents()
 {
+    QT_APPLE_SCOPED_LOG_ACTIVITY(lcEventDispatcher().isDebugEnabled(), "processPostedEvents");
+
     if (m_processEvents.processedPostedEvents && !(m_processEvents.flags & QEventLoop::EventLoopExec)) {
         qCDebug(lcEventDispatcher) << "Already processed events this pass";
         return false;
@@ -397,7 +422,8 @@ bool QEventDispatcherCoreFoundation::processPostedEvents()
 
     m_processEvents.processedPostedEvents = true;
 
-    qCDebug(lcEventDispatcher) << "Sending posted events for" << m_processEvents.flags;
+    qCDebug(lcEventDispatcher) << "Sending posted events for"
+        << QEventLoop::ProcessEventsFlags(m_processEvents.flags.load());
     QCoreApplication::sendPostedEvents();
 
     return true;
@@ -405,6 +431,8 @@ bool QEventDispatcherCoreFoundation::processPostedEvents()
 
 void QEventDispatcherCoreFoundation::processTimers(CFRunLoopTimerRef timer)
 {
+    QT_APPLE_SCOPED_LOG_ACTIVITY(lcEventDispatcher().isDebugEnabled(), "processTimers");
+
     if (m_processEvents.processedTimers && !(m_processEvents.flags & QEventLoop::EventLoopExec)) {
         qCDebug(lcEventDispatcher) << "Already processed timers this pass";
         m_processEvents.deferredUpdateTimers = true;
@@ -478,7 +506,7 @@ bool QEventDispatcherCoreFoundation::hasPendingEvents()
     // 'maybeHasPendingEvents' in our case.
 
     extern uint qGlobalPostedEventsCount();
-    return qGlobalPostedEventsCount() || !CFRunLoopIsWaiting(CFRunLoopGetMain());
+    return qGlobalPostedEventsCount() || !CFRunLoopIsWaiting(m_runLoop);
 }
 
 void QEventDispatcherCoreFoundation::wakeUp()
@@ -498,7 +526,8 @@ void QEventDispatcherCoreFoundation::wakeUp()
     }
 
     m_postedEventsRunLoopSource.signal();
-    CFRunLoopWakeUp(CFRunLoopGetMain());
+    if (m_runLoop)
+        CFRunLoopWakeUp(m_runLoop);
 
     qCDebug(lcEventDispatcher) << "Signaled posted event run-loop source";
 }
@@ -507,7 +536,7 @@ void QEventDispatcherCoreFoundation::interrupt()
 {
     qCDebug(lcEventDispatcher) << "Marking current processEvent as interrupted";
     m_processEvents.wasInterrupted = true;
-    CFRunLoopStop(CFRunLoopGetMain());
+    CFRunLoopStop(m_runLoop);
 }
 
 void QEventDispatcherCoreFoundation::flush()
@@ -602,7 +631,7 @@ void QEventDispatcherCoreFoundation::updateTimers()
                 processTimers(timer);
             });
 
-            CFRunLoopAddTimer(CFRunLoopGetMain(), m_runLoopTimer, kCFRunLoopCommonModes);
+            CFRunLoopAddTimer(m_runLoop, m_runLoopTimer, kCFRunLoopCommonModes);
             qCDebug(lcEventDispatcherTimers) << "Created new CFRunLoopTimer" << m_runLoopTimer;
 
         } else {

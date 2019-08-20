@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -44,17 +44,15 @@
 #include "qcocoawindow.h"
 #import "qnsview.h"
 
-#include <QtCore/qmetaobject.h>
-#include <QtCore/private/qthread_p.h>
-#include <QtGui/private/qguiapplication_p.h>
+#include <QtCore/qcoreapplication.h>
+#include <QtCore/qcoreevent.h>
 
-static NSString *qt_mac_removePrivateUnicode(NSString* string)
+static NSString *qt_mac_removePrivateUnicode(NSString *string)
 {
-    int len = [string length];
-    if (len) {
-        QVarLengthArray <unichar, 10> characters(len);
+    if (const int len = string.length) {
+        QVarLengthArray<unichar, 10> characters(len);
         bool changed = false;
-        for (int i = 0; i<len; i++) {
+        for (int i = 0; i < len; i++) {
             characters[i] = [string characterAtIndex:i];
             // check if they belong to key codes in private unicode range
             // currently we need to handle only the NSDeleteFunctionKey
@@ -70,11 +68,14 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
 }
 
 @implementation QCocoaNSMenu
+{
+    QPointer<QCocoaMenu> _platformMenu;
+}
 
-- (instancetype)initWithQPAMenu:(QCocoaMenu *)menu
+- (instancetype)initWithPlatformMenu:(QCocoaMenu *)menu
 {
     if ((self = [super initWithTitle:@"Untitled"])) {
-        _qpaMenu = menu;
+        _platformMenu = menu;
         self.autoenablesItems = YES;
         self.delegate = [QCocoaNSMenuDelegate sharedMenuDelegate];
     }
@@ -82,46 +83,58 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
     return self;
 }
 
-// Cocoa will query the menu item's target for the worksWhenModal selector.
-// So we need to implement this to allow the items to be handled correctly
-// when a modal dialog is visible. See documentation for NSMenuItem.target.
-- (BOOL)worksWhenModal
+- (QCocoaMenu *)platformMenu
 {
-    if (!QGuiApplication::modalWindow())
-        return YES;
-    if (const auto *mb = qobject_cast<QCocoaMenuBar *>(self.qpaMenu->menuParent()))
-        return QGuiApplication::modalWindow()->handle() == mb->cocoaWindow() ? YES : NO;
-    return YES;
-}
-
-- (void)qt_itemFired:(NSMenuItem *)item
-{
-    auto *qpaItem = reinterpret_cast<QCocoaMenuItem *>(item.tag);
-    // Menu-holding items also get a target to play nicely
-    // with NSMenuValidation but should not trigger.
-    if (!qpaItem || qpaItem->menu())
-        return;
-
-    QScopedScopeLevelCounter scopeLevelCounter(QGuiApplicationPrivate::instance()->threadData);
-    QGuiApplicationPrivate::modifier_buttons = [QNSView convertKeyModifiers:[NSEvent modifierFlags]];
-
-    static QMetaMethod activatedSignal = QMetaMethod::fromSignal(&QCocoaMenuItem::activated);
-    activatedSignal.invoke(qpaItem, Qt::QueuedConnection);
-}
-
-- (BOOL)validateMenuItem:(NSMenuItem*)item
-{
-    auto *qpaItem = reinterpret_cast<QCocoaMenuItem *>(item.tag);
-    // Menu-holding items are always enabled, as it's conventional in Cocoa
-    if (!qpaItem || qpaItem->menu())
-        return YES;
-
-    return qpaItem->isEnabled();
+    return _platformMenu.data();
 }
 
 @end
 
-#define CHECK_MENU_CLASS(menu) Q_ASSERT([menu isMemberOfClass:[QCocoaNSMenu class]])
+@implementation QCocoaNSMenuItem
+{
+    QPointer<QCocoaMenuItem> _platformMenuItem;
+}
+
++ (instancetype)separatorItemWithPlatformMenuItem:(QCocoaMenuItem *)menuItem
+{
+    // Safe because +[NSMenuItem separatorItem] invokes [[self alloc] init]
+    auto *item = qt_objc_cast<QCocoaNSMenuItem *>([self separatorItem]);
+    Q_ASSERT_X(item, qPrintable(__FUNCTION__),
+               "Did +[NSMenuItem separatorItem] not invoke [[self alloc] init]?");
+    if (item)
+        item.platformMenuItem = menuItem;
+
+    return item;
+}
+
+- (instancetype)initWithPlatformMenuItem:(QCocoaMenuItem *)menuItem
+{
+    if ((self = [super initWithTitle:@"" action:nil keyEquivalent:@""])) {
+        _platformMenuItem = menuItem;
+    }
+
+    return self;
+}
+
+- (instancetype)init
+{
+    return [self initWithPlatformMenuItem:nullptr];
+}
+
+- (QCocoaMenuItem *)platformMenuItem
+{
+    return _platformMenuItem.data();
+}
+
+- (void)setPlatformMenuItem:(QCocoaMenuItem *)menuItem
+{
+    _platformMenuItem = menuItem;
+}
+
+@end
+
+#define CHECK_MENU_CLASS(menu) Q_ASSERT_X([menu isMemberOfClass:[QCocoaNSMenu class]], \
+                                          __FUNCTION__, "Menu is not a QCocoaNSMenu")
 
 @implementation QCocoaNSMenuDelegate
 
@@ -153,14 +166,15 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
     if (shouldCancel)
         return NO;
 
-    const auto &qpaMenu = static_cast<QCocoaNSMenu *>(menu).qpaMenu;
-    if (qpaMenu.isNull())
+    const auto &platformMenu = static_cast<QCocoaNSMenu *>(menu).platformMenu;
+    if (!platformMenu)
         return YES;
 
-    auto *menuItem = reinterpret_cast<QCocoaMenuItem *>(item.tag);
-    if (qpaMenu->items().contains(menuItem)) {
-        if (QCocoaMenu *itemSubmenu = menuItem->menu())
-            itemSubmenu->setAttachedItem(item);
+    if (auto *platformItem = qt_objc_cast<QCocoaNSMenuItem *>(item).platformMenuItem) {
+        if (platformMenu->items().contains(platformItem)) {
+            if (auto *itemSubmenu = platformItem->menu())
+                itemSubmenu->setAttachedItem(item);
+        }
     }
 
     return YES;
@@ -169,32 +183,31 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
 - (void)menu:(NSMenu *)menu willHighlightItem:(NSMenuItem *)item
 {
     CHECK_MENU_CLASS(menu);
-    auto *qpaItem = reinterpret_cast<QCocoaMenuItem *>(item.tag);
-    if (qpaItem)
-        qpaItem->hovered();
+    if (auto *platformItem = qt_objc_cast<QCocoaNSMenuItem *>(item).platformMenuItem)
+        emit platformItem->hovered();
 }
 
 - (void)menuWillOpen:(NSMenu *)menu
 {
     CHECK_MENU_CLASS(menu);
-    const auto &qpaMenu = static_cast<QCocoaNSMenu *>(menu).qpaMenu;
-    if (qpaMenu.isNull())
+    auto *platformMenu = static_cast<QCocoaNSMenu *>(menu).platformMenu;
+    if (!platformMenu)
         return;
 
-    qpaMenu->setIsOpen(true);
-    emit qpaMenu->aboutToShow();
+    platformMenu->setIsOpen(true);
+    emit platformMenu->aboutToShow();
 }
 
 - (void)menuDidClose:(NSMenu *)menu
 {
     CHECK_MENU_CLASS(menu);
-    const auto &qpaMenu = static_cast<QCocoaNSMenu *>(menu).qpaMenu;
-    if (qpaMenu.isNull())
+    auto *platformMenu = static_cast<QCocoaNSMenu *>(menu).platformMenu;
+    if (!platformMenu)
         return;
 
-    qpaMenu->setIsOpen(false);
+    platformMenu->setIsOpen(false);
     // wrong, but it's the best we can do
-    emit qpaMenu->aboutToHide();
+    emit platformMenu->aboutToHide();
 }
 
 - (BOOL)menuHasKeyEquivalent:(NSMenu *)menu forEvent:(NSEvent *)event target:(id *)target action:(SEL *)action
@@ -212,7 +225,8 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
     CHECK_MENU_CLASS(menu);
 
     // Interested only in Shift, Cmd, Ctrl & Alt Keys, so ignoring masks like, Caps lock, Num Lock ...
-    static const NSUInteger mask = NSShiftKeyMask | NSControlKeyMask | NSCommandKeyMask | NSAlternateKeyMask;
+    static const NSUInteger mask = NSEventModifierFlagShift | NSEventModifierFlagControl
+                                 | NSEventModifierFlagCommand | NSEventModifierFlagOption;
 
     // Change the private unicode keys to the ones used in setting the "Key Equivalents"
     NSString *characters = qt_mac_removePrivateUnicode(event.charactersIgnoringModifiers);
@@ -229,30 +243,17 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
     }
 
     if (keyEquivalentItem) {
-        if (!keyEquivalentItem.target) {
-            // This item was modified by QCocoaMenuBar::redirectKnownMenuItemsToFirstResponder
-            // and it looks like we're running a modal session for NSOpenPanel/NSSavePanel.
-            // QCocoaFileDialogHelper is actually the only place we use this and we run NSOpenPanel modal
-            // (modal sheet, window modal, application modal).
-            // Whatever the current first responder is, let's give it a chance
-            // and do not touch the Qt's focusObject (which is different from some native view
-            // having a focus inside NSSave/OpenPanel.
-            *target = nil;
-            *action = keyEquivalentItem.action;
-            return YES;
-        }
-
         QObject *object = qApp->focusObject();
         if (object) {
             QChar ch;
             int keyCode;
-            ulong nativeModifiers = [event modifierFlags];
-            Qt::KeyboardModifiers modifiers = [QNSView convertKeyModifiers: nativeModifiers];
-            NSString *charactersIgnoringModifiers = [event charactersIgnoringModifiers];
-            NSString *characters = [event characters];
+            ulong nativeModifiers = event.modifierFlags;
+            Qt::KeyboardModifiers modifiers = [QNSView convertKeyModifiers:nativeModifiers];
+            NSString *charactersIgnoringModifiers = event.charactersIgnoringModifiers;
+            NSString *characters = event.characters;
 
-            if ([charactersIgnoringModifiers length] > 0) { // convert the first character into a key code
-                if ((modifiers & Qt::ControlModifier) && ([characters length] != 0)) {
+            if (charactersIgnoringModifiers.length > 0) { // convert the first character into a key code
+                if ((modifiers & Qt::ControlModifier) && characters.length > 0) {
                     ch = QChar([characters characterAtIndex:0]);
                 } else {
                     ch = QChar([charactersIgnoringModifiers characterAtIndex:0]);
@@ -269,7 +270,7 @@ static NSString *qt_mac_removePrivateUnicode(NSString* string)
             accel_ev.ignore();
             QCoreApplication::sendEvent(object, &accel_ev);
             if (accel_ev.isAccepted()) {
-                [[NSApp keyWindow] sendEvent: event];
+                [[NSApp keyWindow] sendEvent:event];
                 *target = nil;
                 *action = nil;
                 return YES;

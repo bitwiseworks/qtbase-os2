@@ -4,9 +4,9 @@
 ** Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the test suite of the Qt Toolkit.
+** This file is part of the QtTest module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
@@ -15,13 +15,24 @@
 ** and conditions see https://www.qt.io/terms-conditions. For further
 ** information use the contact form at https://www.qt.io/contact-us.
 **
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
+**
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
 ** included in the packaging of this file. Please review the following
 ** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -206,7 +217,7 @@ QAbstractItemModelTester::QAbstractItemModelTester(QAbstractItemModel *model, Fa
 
     Q_D(QAbstractItemModelTester);
 
-    const auto &runAllTests = [d] { d->runAllTests(); };
+    auto runAllTests = [d] { d->runAllTests(); };
 
     connect(model, &QAbstractItemModel::columnsAboutToBeInserted,
             this, runAllTests);
@@ -311,9 +322,10 @@ void QAbstractItemModelTesterPrivate::nonDestructiveBasicTest()
     Qt::ItemFlags flags = model->flags(QModelIndex());
     MODELTESTER_VERIFY(flags == Qt::ItemIsDropEnabled || flags == 0);
     model->hasChildren(QModelIndex());
-    model->hasIndex(0, 0);
+    const bool hasRow = model->hasIndex(0, 0);
     QVariant cache;
-    model->match(QModelIndex(), -1, cache);
+    if (hasRow)
+        model->match(model->index(0, 0), -1, cache);
     model->mimeTypes();
     MODELTESTER_VERIFY(!model->parent(QModelIndex()).isValid());
     MODELTESTER_VERIFY(model->rowCount() >= 0);
@@ -701,8 +713,17 @@ void QAbstractItemModelTesterPrivate::rowsAboutToBeRemoved(const QModelIndex &pa
     Changing c;
     c.parent = parent;
     c.oldSize = model->rowCount(parent);
-    c.last = model->data(model->index(start - 1, 0, parent));
-    c.next = model->data(model->index(end + 1, 0, parent));
+    if (start > 0) {
+        const QModelIndex startIndex = model->index(start - 1, 0, parent);
+        MODELTESTER_VERIFY(startIndex.isValid());
+        c.last = model->data(startIndex);
+    }
+    if (end < c.oldSize - 1) {
+        const QModelIndex endIndex = model->index(end + 1, 0, parent);
+        MODELTESTER_VERIFY(endIndex.isValid());
+        c.next = model->data(endIndex);
+    }
+
     remove.push(c);
 }
 
@@ -721,8 +742,10 @@ void QAbstractItemModelTesterPrivate::rowsRemoved(const QModelIndex &parent, int
     Changing c = remove.pop();
     MODELTESTER_COMPARE(parent, c.parent);
     MODELTESTER_COMPARE(model->rowCount(parent), c.oldSize - (end - start + 1));
-    MODELTESTER_COMPARE(model->data(model->index(start - 1, 0, c.parent)), c.last);
-    MODELTESTER_COMPARE(model->data(model->index(start, 0, c.parent)), c.next);
+    if (start > 0)
+        MODELTESTER_COMPARE(model->data(model->index(start - 1, 0, c.parent)), c.last);
+    if (end < c.oldSize - 1)
+        MODELTESTER_COMPARE(model->data(model->index(start, 0, c.parent)), c.next);
 }
 
 void QAbstractItemModelTesterPrivate::dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight)

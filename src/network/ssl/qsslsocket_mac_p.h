@@ -75,7 +75,7 @@ public:
 private:
     SSLContextRef context;
 
-    Q_DISABLE_COPY(QSecureTransportContext)
+    Q_DISABLE_COPY_MOVE(QSecureTransportContext)
 };
 
 class QSslSocketBackendPrivate : public QSslSocketPrivate
@@ -120,9 +120,16 @@ private:
     bool checkSslErrors();
     bool startHandshake();
 
-    QSecureTransportContext context;
+    bool isHandshakeComplete() const {return connectionEncrypted && !renegotiating;}
 
-    Q_DISABLE_COPY(QSslSocketBackendPrivate)
+    // IO callbacks:
+    static OSStatus ReadCallback(QSslSocketBackendPrivate *socket, char *data, size_t *dataLength);
+    static OSStatus WriteCallback(QSslSocketBackendPrivate *plainSocket, const char *data, size_t *dataLength);
+
+    QSecureTransportContext context;
+    bool renegotiating = false;
+
+    Q_DISABLE_COPY_MOVE(QSslSocketBackendPrivate)
 };
 
 QT_END_NAMESPACE

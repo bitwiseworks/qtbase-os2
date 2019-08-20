@@ -162,7 +162,7 @@ QAbstractEventDispatcher::~QAbstractEventDispatcher()
     Returns a pointer to the event dispatcher object for the specified
     \a thread. If \a thread is zero, the current thread is used. If no
     event dispatcher exists for the specified thread, this function
-    returns 0.
+    returns \nullptr.
 
     \b{Note:} If Qt is built without thread support, the \a thread
     argument is ignored.
@@ -205,6 +205,15 @@ QAbstractEventDispatcher *QAbstractEventDispatcher::instance(QThread *thread)
     returns after all available events are processed.
 
     \sa hasPendingEvents()
+*/
+
+/*!
+    \internal
+
+    \note processEvents() only processes events queued before the function
+    is called. Events that are posted while the function runs will be queued
+    until a later round of event processing. This only applies to posted Qt
+    events. For timers and system level events, the situation is unknown.
 */
 
 /*! \fn bool QAbstractEventDispatcher::hasPendingEvents()
@@ -308,6 +317,15 @@ int QAbstractEventDispatcher::registerTimer(int interval, Qt::TimerType timerTyp
     \threadsafe
 
     Wakes up the event loop.
+
+    \omit
+    ### FIXME - QTBUG-70229
+    On Unix and Glib event dispatchers, if the dispatcher is already awake when
+    this function is called, it is ensured that the current iteration won't block
+    waiting for more events, but will instead do another event loop iteration.
+
+    ### TODO - does other event dispatchers behave the same?
+    \endomit
 
     \sa awake()
 */

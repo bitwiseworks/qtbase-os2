@@ -54,12 +54,14 @@
 #include <QtCore/QFile>
 #include <QtCore/QDir>
 
-#include <set>
-
 QT_BEGIN_NAMESPACE
 
 #if defined(QT_OPENGL_3)
 typedef const GLubyte * (QOPENGLF_APIENTRYP qt_glGetStringi)(GLenum, GLuint);
+#endif
+
+#ifndef GL_CONTEXT_LOST
+#define GL_CONTEXT_LOST                   0x0507
 #endif
 
 QOpenGLExtensionMatcher::QOpenGLExtensionMatcher()
@@ -82,8 +84,13 @@ QOpenGLExtensionMatcher::QOpenGLExtensionMatcher()
     } else {
 #ifdef QT_OPENGL_3
         // clear error state
-        while (funcs->glGetError()) {}
-
+        while (true) { // Clear error state.
+            GLenum error = funcs->glGetError();
+            if (error == GL_NO_ERROR)
+                break;
+            if (error == GL_CONTEXT_LOST)
+                return;
+        };
         qt_glGetStringi glGetStringi = (qt_glGetStringi)ctx->getProcAddress("glGetStringi");
 
         if (!glGetStringi)
@@ -525,15 +532,6 @@ QOpenGLConfig::Gpu QOpenGLConfig::Gpu::fromContext()
         gpu.glVendor = QByteArray(reinterpret_cast<const char *>(p));
 
     return gpu;
-}
-
-Q_GUI_EXPORT std::set<QByteArray> *qgpu_features(const QString &filename)
-{
-    const QSet<QString> features = QOpenGLConfig::gpuFeatures(QOpenGLConfig::Gpu::fromContext(), filename);
-    std::set<QByteArray> *result = new std::set<QByteArray>;
-    for (const QString &feature : features)
-        result->insert(feature.toUtf8());
-    return result;
 }
 
 QT_END_NAMESPACE

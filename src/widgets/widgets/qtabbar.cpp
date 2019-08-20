@@ -74,6 +74,23 @@
 
 QT_BEGIN_NAMESPACE
 
+namespace {
+class CloseButton : public QAbstractButton
+{
+    Q_OBJECT
+
+public:
+    explicit CloseButton(QWidget *parent = 0);
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override
+        { return sizeHint(); }
+    void enterEvent(QEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+};
+}
+
 QMovableTabWidget::QMovableTabWidget(QWidget *parent)
     : QWidget(parent)
 {
@@ -1668,7 +1685,7 @@ bool QTabBar::event(QEvent *event)
         d->updateMacBorderMetrics();
         return QWidget::event(event);
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     } else if (event->type() == QEvent::DragEnter) {
         if (d->changeCurrentOnDrag)
             event->accept();
@@ -2076,7 +2093,6 @@ void QTabBarPrivate::setupMovableTab()
     grabImage.setDevicePixelRatio(q->devicePixelRatioF());
     grabImage.fill(Qt::transparent);
     QStylePainter p(&grabImage, q);
-    p.initFrom(q);
 
     QStyleOptionTab tab;
     q->initStyleOption(&tab, pressedIndex);
@@ -2109,13 +2125,13 @@ void QTabBarPrivate::moveTabFinished(int index)
     Q_Q(QTabBar);
     bool cleanup = (pressedIndex == index) || (pressedIndex == -1) || !validIndex(index);
     bool allAnimationsFinished = true;
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
     for(int i = 0; allAnimationsFinished && i < tabList.count(); ++i) {
         const Tab &t = tabList.at(i);
         if (t.animation && t.animation->state() == QAbstractAnimation::Running)
             allAnimationsFinished = false;
     }
-#endif //QT_NO_ANIMATION
+#endif // animation
     if (allAnimationsFinished && cleanup) {
         if(movingTab)
             movingTab->setVisible(false); // We might not get a mouse release
@@ -2550,7 +2566,7 @@ void QTabBar::setChangeCurrentOnDrag(bool change)
 
     The tab bar will take ownership of the widget and so all widgets set here
     will be deleted by the tab bar when it is destroyed unless you separately
-    reparent the widget after setting some other widget (or 0).
+    reparent the widget after setting some other widget (or \nullptr).
 
     \sa tabsClosable()
   */
@@ -2580,14 +2596,14 @@ void QTabBar::setTabButton(int index, ButtonPosition position, QWidget *widget)
 }
 
 /*!
-    Returns the widget set a tab \a index and \a position or 0 if
-    one is not set.
+    Returns the widget set a tab \a index and \a position or \nullptr
+    if one is not set.
   */
 QWidget *QTabBar::tabButton(int index, ButtonPosition position) const
 {
     Q_D(const QTabBar);
     if (index < 0 || index >= d->tabList.count())
-        return 0;
+        return nullptr;
     if (position == LeftSide)
         return d->tabList.at(index).leftWidget;
     else
@@ -2680,13 +2696,13 @@ void CloseButton::paintEvent(QPaintEvent *)
     style()->drawPrimitive(QStyle::PE_IndicatorTabClose, &opt, &p, this);
 }
 
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
 void QTabBarPrivate::Tab::TabBarAnimation::updateCurrentValue(const QVariant &current)
 {
     priv->moveTab(priv->tabList.indexOf(*tab), current.toInt());
 }
 
-void QTabBarPrivate::Tab::TabBarAnimation::updateState(QAbstractAnimation::State, QAbstractAnimation::State newState)
+void QTabBarPrivate::Tab::TabBarAnimation::updateState(QAbstractAnimation::State newState, QAbstractAnimation::State)
 {
     if (newState == Stopped) priv->moveTabFinished(priv->tabList.indexOf(*tab));
 }
@@ -2695,5 +2711,4 @@ void QTabBarPrivate::Tab::TabBarAnimation::updateState(QAbstractAnimation::State
 QT_END_NAMESPACE
 
 #include "moc_qtabbar.cpp"
-
-#include "moc_qtabbar_p.cpp"
+#include "qtabbar.moc"

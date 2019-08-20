@@ -45,7 +45,9 @@
 #include "qdrawutil.h"
 #include "qevent.h"
 #include "qimage.h"
-#include "qdrag.h"
+#if QT_CONFIG(draganddrop)
+#include <qdrag.h>
+#endif
 #include "qlabel.h"
 #include "qlayout.h"
 #include "qlineedit.h"
@@ -55,7 +57,9 @@
 #include "qpainter.h"
 #include "qpixmap.h"
 #include "qpushbutton.h"
+#if QT_CONFIG(settings)
 #include "qsettings.h"
+#endif
 #include "qsharedpointer.h"
 #include "qstyle.h"
 #include "qstyleoption.h"
@@ -592,7 +596,7 @@ protected:
     void mousePressEvent(QMouseEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
     void mouseReleaseEvent(QMouseEvent *e) override;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     void dragEnterEvent(QDragEnterEvent *e) override;
     void dragLeaveEvent(QDragLeaveEvent *e) override;
     void dragMoveEvent(QDragMoveEvent *e) override;
@@ -624,7 +628,7 @@ void QColorWell::mousePressEvent(QMouseEvent *e)
 void QColorWell::mouseMoveEvent(QMouseEvent *e)
 {
     QWellArray::mouseMoveEvent(e);
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     if (!mousePressed)
         return;
     if ((pressPos - e->pos()).manhattanLength() > QApplication::startDragDistance()) {
@@ -642,12 +646,12 @@ void QColorWell::mouseMoveEvent(QMouseEvent *e)
         drg->setMimeData(mime);
         drg->setPixmap(pix);
         mousePressed = false;
-        drg->start();
+        drg->exec(Qt::CopyAction);
     }
 #endif
 }
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 void QColorWell::dragEnterEvent(QDragEnterEvent *e)
 {
     if (qvariant_cast<QColor>(e->mimeData()->colorData()).isValid())
@@ -684,7 +688,7 @@ void QColorWell::dropEvent(QDropEvent *e)
     }
 }
 
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 void QColorWell::mouseReleaseEvent(QMouseEvent *e)
 {
@@ -838,8 +842,8 @@ void QColorLuminancePicker::paintEvent(QPaintEvent *)
     p.drawPixmap(1, coff, *pix);
     const QPalette &g = palette();
     qDrawShadePanel(&p, r, g, true);
-    p.setPen(g.foreground().color());
-    p.setBrush(g.foreground());
+    p.setPen(g.windowText().color());
+    p.setBrush(g.windowText());
     QPolygon a;
     int y = val2y(val);
     a.setPoints(3, w, y, w+5, y+5, w+5, y-5);
@@ -1072,7 +1076,7 @@ protected:
     void mousePressEvent(QMouseEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
     void mouseReleaseEvent(QMouseEvent *e) override;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     void dragEnterEvent(QDragEnterEvent *e) override;
     void dragLeaveEvent(QDragLeaveEvent *e) override;
     void dropEvent(QDropEvent *e) override;
@@ -1110,7 +1114,7 @@ void QColorShowLabel::mousePressEvent(QMouseEvent *e)
 
 void QColorShowLabel::mouseMoveEvent(QMouseEvent *e)
 {
-#ifdef QT_NO_DRAGANDDROP
+#if !QT_CONFIG(draganddrop)
     Q_UNUSED(e);
 #else
     if (!mousePressed)
@@ -1127,12 +1131,12 @@ void QColorShowLabel::mouseMoveEvent(QMouseEvent *e)
         drg->setMimeData(mime);
         drg->setPixmap(pix);
         mousePressed = false;
-        drg->start();
+        drg->exec(Qt::CopyAction);
     }
 #endif
 }
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 void QColorShowLabel::dragEnterEvent(QDragEnterEvent *e)
 {
     if (qvariant_cast<QColor>(e->mimeData()->colorData()).isValid())
@@ -1157,7 +1161,7 @@ void QColorShowLabel::dropEvent(QDropEvent *e)
         e->ignore();
     }
 }
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 void QColorShowLabel::mouseReleaseEvent(QMouseEvent *)
 {
@@ -1175,7 +1179,8 @@ QColorShower::QColorShower(QColorDialog *parent)
     curQColor = Qt::white;
 
     gl = new QGridLayout(this);
-    gl->setMargin(gl->spacing());
+    const int s = gl->spacing();
+    gl->setContentsMargins(s, s, s, s);
     lab = new QColorShowLabel(this);
 
 #ifdef QT_SMALL_COLORDIALOG
@@ -1803,7 +1808,7 @@ void QColorDialogPrivate::initWidgets()
     rightLay->addStretch();
 
     cs = new QColorShower(q);
-    pickLay->setMargin(cs->gl->margin());
+    pickLay->setContentsMargins(cs->gl->contentsMargins());
     QObject::connect(cs, SIGNAL(newCol(QRgb)), q, SLOT(_q_newColorTypedIn(QRgb)));
     QObject::connect(cs, SIGNAL(currentColorChanged(QColor)),
                      q, SIGNAL(currentColorChanged(QColor)));
@@ -1812,7 +1817,7 @@ void QColorDialogPrivate::initWidgets()
 #else
     rightLay->addWidget(cs);
     if (leftLay)
-        leftLay->addSpacing(cs->gl->margin());
+        leftLay->addSpacing(cs->gl->contentsMargins().right());
 #endif
 
     buttons = new QDialogButtonBox(q);
@@ -1849,7 +1854,7 @@ void QColorDialogPrivate::_q_addCustom()
     QColorDialogOptions::setCustomColor(nextCust, cs->currentColor());
     if (custom)
         custom->update();
-    nextCust = (nextCust+1) % 16;
+    nextCust = (nextCust+1) % QColorDialogOptions::customColorCount();
 }
 
 void QColorDialogPrivate::retranslateStrings()
@@ -1883,7 +1888,7 @@ bool QColorDialogPrivate::canBeNativeDialog() const
 }
 
 static const Qt::WindowFlags DefaultWindowFlags =
-        Qt::Dialog | Qt::WindowTitleHint | Qt::MSWindowsFixedSizeDialogHint
+        Qt::Dialog | Qt::WindowTitleHint
         | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint;
 
 /*!
@@ -2121,7 +2126,6 @@ void QColorDialog::setVisible(bool visible)
 }
 
 /*!
-    \overload
     \since 4.5
 
     Opens the dialog and connects its colorSelected() signal to the slot specified
@@ -2160,6 +2164,7 @@ QColor QColorDialog::getColor(const QColor &initial, QWidget *parent, const QStr
     return dlg.selectedColor();
 }
 
+#if QT_DEPRECATED_SINCE(5, 12)
 /*!
     \obsolete
 
@@ -2167,7 +2172,7 @@ QColor QColorDialog::getColor(const QColor &initial, QWidget *parent, const QStr
     and an alpha channel (transparency) value. The color+alpha is
     initially set to \a initial. The dialog is a child of \a parent.
 
-    If \a ok is non-null, \e *\a ok is set to true if the user clicked
+    If \a ok is non-null, \e {*ok} is set to true if the user clicked
     \uicontrol{OK}, and to false if the user clicked Cancel.
 
     If the user clicks Cancel, the \a initial value is returned.
@@ -2185,6 +2190,7 @@ QRgb QColorDialog::getRgba(QRgb initial, bool *ok, QWidget *parent)
         *ok = color.isValid();
     return result;
 }
+#endif
 
 /*!
     Destroys the color dialog.

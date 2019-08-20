@@ -38,6 +38,9 @@
 #include <QBoxLayout>
 #include <QSysInfo>
 
+#include <qpa/qplatformintegration.h>
+#include <private/qguiapplication_p.h>
+
 QT_FORWARD_DECLARE_CLASS(QWidget)
 
 class FocusLineEdit : public QLineEdit
@@ -92,13 +95,16 @@ private slots:
     void checkReason_ActiveWindow();
 
 private:
-    QWidget* testFocusWidget;
+    QWidget* testFocusWidget = nullptr;
     FocusLineEdit* childFocusWidgetOne;
     FocusLineEdit* childFocusWidgetTwo;
 };
 
 void tst_QFocusEvent::initTestCase()
 {
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+        QSKIP("QWindow::requestActivate() is not supported on this platform.");
+
     testFocusWidget = new QWidget( 0 );
     childFocusWidgetOne = new FocusLineEdit( testFocusWidget );
     childFocusWidgetOne->setGeometry( 10, 10, 180, 20 );
@@ -304,6 +310,7 @@ void tst_QFocusEvent::checkReason_focusWidget()
     frame1.setLayout(&leftLayout);
     frame2.setLayout(&rightLayout);
     window1.show();
+    QVERIFY(QTest::qWaitForWindowActive(&window1));
 
     edit1.setFocus();
     QTRY_VERIFY(edit1.hasFocus());
@@ -344,9 +351,10 @@ void tst_QFocusEvent::checkReason_ActiveWindow()
     d->hide();
 
     if (!QGuiApplication::platformName().compare(QLatin1String("offscreen"), Qt::CaseInsensitive)
-        || !QGuiApplication::platformName().compare(QLatin1String("minimal"), Qt::CaseInsensitive)) {
+        || !QGuiApplication::platformName().compare(QLatin1String("minimal"), Qt::CaseInsensitive)
+        || !QGuiApplication::platformName().compare(QLatin1String("winrt"), Qt::CaseInsensitive)) {
         // Activate window of testFocusWidget, focus in that window goes to childFocusWidgetOne
-        QWARN("Platforms offscreen and minimal require explicit activateWindow()");
+        QWARN("Platforms offscreen, minimal, and winrt require explicit activateWindow()");
         testFocusWidget->activateWindow();
     }
 
