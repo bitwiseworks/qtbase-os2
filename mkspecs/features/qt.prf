@@ -213,7 +213,7 @@ for(ever) {
                 LIBS$$var_sfx += -framework $$framework
             } else {
                 lib = $$MODULE_MODULE$$qtPlatformTargetSuffix()
-                win32|contains(MODULE_CONFIG, staticlib) {
+                win32|os2|contains(MODULE_CONFIG, staticlib) {
                     lib = $$MODULE_LIBS/$$QMAKE_PREFIX_STATICLIB$${lib}.$$QMAKE_EXTENSION_STATICLIB
                     PRE_TARGETDEPS += $$lib
                 } else {
