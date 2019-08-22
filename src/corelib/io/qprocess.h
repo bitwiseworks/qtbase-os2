@@ -48,6 +48,7 @@
 
 QT_REQUIRE_CONFIG(processenvironment);
 
+#ifdef Q_OS_WIN
 typedef struct _PROCESS_INFORMATION *Q_PID;
 #endif
 

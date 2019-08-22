@@ -6555,7 +6555,7 @@ int QString::localeAwareCompare_helper(const QChar *data1, int length1,
     CFRelease(thisString);
     CFRelease(otherString);
     return result;
-#  elif defined(Q_OS_UNIX)
+#  elif defined(Q_OS_UNIXLIKE)
     // declared in <string.h>
     int delta = strcoll(lhs.toLocal8Bit().constData(), rhs.toLocal8Bit().constData());
     if (delta == 0)

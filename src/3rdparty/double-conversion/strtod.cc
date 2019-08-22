@@ -204,6 +204,9 @@ static bool DoubleStrtod(Vector<const char> trimmed,
   // We know that Windows32 uses 64 bits and is therefore accurate.
   // Note that the ARM simulator is compiled for 32bits. It therefore exhibits
   // the same problem.
+  (void)trimmed;
+  (void)exponent;
+  (void)result;
   return false;
 #else
   if (trimmed.length() <= kMaxExactDoubleIntegerDecimalDigits) {

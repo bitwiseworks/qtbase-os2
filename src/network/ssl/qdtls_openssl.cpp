@@ -556,8 +556,10 @@ extern "C" long q_dgram_ctrl(BIO *bio, int cmd, long num, void *ptr)
         // BIO_dgram_get_peer. We do not return a real address (DTLS is not
         // using this address), but let's pretend a success.
         switch (dtls->remoteAddress.protocol()) {
+#ifndef QT_NO_IPV6
         case QAbstractSocket::IPv6Protocol:
             return sizeof(sockaddr_in6);
+#endif
         case QAbstractSocket::IPv4Protocol:
             return sizeof(sockaddr_in);
         default:
