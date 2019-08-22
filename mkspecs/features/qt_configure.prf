@@ -405,7 +405,8 @@ defineReplace(qtConfFindInPathList) {
 defineReplace(qtConfFindInPath) {
     ensurePathEnv()
     equals(QMAKE_HOST.os, Windows)|equals(QMAKE_HOST.os, OS/2):!contains(1, .*\\.exe): 1 = $${1}.exe
-    return($$qtConfFindInPathList($$1, $$2 $$QMAKE_PATH_ENV))
+    # Normalize path separators with system_path (vital on OS/2 under sh but won't hurt per se)
+    return($$system_path($$qtConfFindInPathList($$1, $$2 $$QMAKE_PATH_ENV)))
 }
 
 defineReplace(qtConfPkgConfigEnv) {
@@ -574,7 +575,7 @@ defineTest(qtConfResolveLibs) {
                 lcan += \
                     $${QMAKE_PREFIX_STATICLIB}$${lib}.$${QMAKE_EXTENSION_STATICLIB}
             } else {
-                # Under Windows, we look only for static libraries, as even for DLLs
+                # Under Windows and OS/2, we look only for static libraries, as even for DLLs
                 # one actually links against a static import library.
                 mingw {
                     lcan += \
@@ -583,6 +584,11 @@ defineTest(qtConfResolveLibs) {
                         lib$${lib}.dll.a lib$${lib}.a \
                         # Fun fact: prefix-less libraries are also supported.
                         $${lib}.dll.a $${lib}.a
+                } else: os2 {
+                    lcan += \
+                        # OS/2 GCC supports various prefixes/suffixes similar to MinGW
+                        lib$${lib}_dll.a lib$${lib}.a \
+                        $${lib}_dll.a $${lib}.a
                 }
                 lcan += $${lib}.lib
             }
