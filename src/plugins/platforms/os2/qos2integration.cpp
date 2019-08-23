@@ -78,7 +78,7 @@ QOS2Integration::QOS2Integration(const QStringList &paramList)
 
     // Create and notify the system about the primary (and the only) screen.
     mScreen = new QOS2Screen();
-    screenAdded(mScreen);
+    QWindowSystemInterface::handleScreenAdded(mScreen);
 
     mKeyMapper = new QOS2KeyMapper();
 }
@@ -87,7 +87,7 @@ QOS2Integration::~QOS2Integration()
 {
     delete mKeyMapper;
 
-    destroyScreen(mScreen);
+    QWindowSystemInterface::handleScreenRemoved(mScreen);
     delete mFontDatabase;
 
     sInstance = nullptr;

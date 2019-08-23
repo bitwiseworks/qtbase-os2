@@ -87,7 +87,7 @@ public:
     bool setMouseGrabEnabled(bool grab) override;
     bool hasMouseCapture() const { return WinQueryCapture(HWND_DESKTOP) == mHwnd; }
 
-    void windowEvent(QEvent *event) override;
+    bool windowEvent(QEvent *event) override;
 
     void propagateSizeHints() override;
 

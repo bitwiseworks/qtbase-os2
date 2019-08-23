@@ -823,7 +823,7 @@ bool QOS2Window::setMouseGrabEnabled(bool grab)
     return WinSetCapture(HWND_DESKTOP, grab ? mHwnd : NULLHANDLE);
 }
 
-void QOS2Window::windowEvent(QEvent *event)
+bool QOS2Window::windowEvent(QEvent *event)
 {
     qCInfo(lcQpaWindows) << this << event;
 
@@ -841,6 +841,8 @@ void QOS2Window::windowEvent(QEvent *event)
     default:
         break;
     }
+
+    return QPlatformWindow::windowEvent(event);
 }
 
 void QOS2Window::propagateSizeHints()

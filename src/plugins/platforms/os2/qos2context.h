@@ -52,7 +52,6 @@ class QOS2Window;
 class QWindow;
 
 Q_DECLARE_LOGGING_CATEGORY(lcQpaWindows)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaBackingStore)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaEvents)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaMessages)
 

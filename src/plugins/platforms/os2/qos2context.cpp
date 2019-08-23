@@ -48,8 +48,10 @@ QT_BEGIN_NAMESPACE
 // logging of function calls, QtDebugMsg - for extremely verbose logging (like
 // PM message flow).
 
+// Note also that lcQpaBackingStore is declared in qplatfomrbackingstore.cpp
+// (also with QtWarningMsg) so we use that one instead of having our own.
+
 Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows", QtWarningMsg)
-Q_LOGGING_CATEGORY(lcQpaBackingStore, "qt.qpa.backingstore", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaEvents, "qt.qpa.events", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaMessages, "qt.qpa.messages", QtWarningMsg)
 
