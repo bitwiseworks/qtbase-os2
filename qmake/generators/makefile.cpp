@@ -1833,7 +1833,7 @@ static QStringList splitDeps(const QString &indeps, bool lineMode)
     if (!lineMode)
         return indeps.simplified().split(' ');
     QStringList deps = indeps.split('\n', QString::SkipEmptyParts);
-#ifdef Q_OS_WIN
+#ifdef Q_OS_DOSLIKE
     for (auto &dep : deps) {
         if (dep.endsWith(QLatin1Char('\r')))
             dep.chop(1);
