@@ -537,7 +537,7 @@ void tst_QApplication::lastWindowClosed()
 
     QPointer<QDialog> dialog = new QDialog;
     QVERIFY(dialog->testAttribute(Qt::WA_QuitOnClose));
-    QTimer::singleShot(1000, dialog, SLOT(accept()));
+    QTimer::singleShot(1000, dialog.data(), SLOT(accept()));
     dialog->exec();
     QVERIFY(dialog);
     QCOMPARE(spy.count(), 0);
