@@ -463,10 +463,11 @@ void TorrentClient::stop()
         d->transferRateTimer = 0;
     }
 
-    // Abort all existing connections
-    for (PeerWireClient *client : qAsConst(d->connections)) {
-        RateController::instance()->removeSocket(client);
-        ConnectionManager::instance()->removeConnection(client);
+    // Abort all existing connections (note: use a copy of the list because
+    // PeerWireClient::abort may (and is likely to) cause TorrentClient::removeClient
+    // to be called which modifies the list (and does all the removal job).
+    QList<PeerWireClient *> connections = d->connections;
+    for (PeerWireClient *client : qAsConst(connections)) {
         client->abort();
     }
     d->connections.clear();
