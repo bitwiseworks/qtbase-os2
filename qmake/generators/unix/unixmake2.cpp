@@ -605,6 +605,15 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
         if(!project->isEmpty("QMAKE_PRE_LINK"))
             t << "\n\t" << var("QMAKE_PRE_LINK");
 
+        if (!project->isEmpty("TARGET_SHORT") && project->isActiveConfig("target_short_symlink")) {
+            QString symlink = "$(QMAKE_TARGET)." + project->first("QMAKE_EXTENSION_SHLIB");
+            if (!destdir.isEmpty())
+                symlink = destdir + symlink;
+            t << "\n\t"
+              << "-$(DEL_FILE) " << symlink << "\n\t"
+              << "$(SYMLINK) $(TARGET) " << symlink;
+        }
+
         if (project->isActiveConfig("plugin")) {
             t << "\n\t"
               << "-$(DEL_FILE) $(TARGET)\n\t"
@@ -614,7 +623,6 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                   << "-$(MOVE) $(TARGET) " << destdir << "$(TARGET)";
             if(!project->isEmpty("QMAKE_POST_LINK"))
                 t << "\n\t" << var("QMAKE_POST_LINK");
-            t << endl << endl;
         } else if(!project->isEmpty("QMAKE_BUNDLE")) {
             bundledFiles << destdir_r + var("TARGET");
             t << "\n\t"
@@ -628,7 +636,6 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                              " Versions/Current/$(TARGET) $(DESTDIR)$(TARGET0)") << "\n\t";
             if(!project->isEmpty("QMAKE_POST_LINK"))
                 t << "\n\t" << var("QMAKE_POST_LINK");
-            t << endl << endl;
         } else if(project->isEmpty("QMAKE_HPUX_SHLIB")) {
             t << "\n\t";
 
@@ -662,7 +669,6 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
             }
             if(!project->isEmpty("QMAKE_POST_LINK"))
                 t << "\n\t" << var("QMAKE_POST_LINK");
-            t << endl << endl;
         } else {
             t << "\n\t"
               << "-$(DEL_FILE) $(TARGET) $(TARGET0)\n\t"
@@ -676,7 +682,6 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                    << "-$(MOVE) $(TARGET0) " << destdir << "$(TARGET0)\n\t";
             if(!project->isEmpty("QMAKE_POST_LINK"))
                 t << "\n\t" << var("QMAKE_POST_LINK");
-            t << endl << endl;
         }
         t << endl << endl;
 
@@ -1258,7 +1263,7 @@ void UnixMakefileGenerator::init2()
             project->values("LIB_TARGET").prepend(project->first("QMAKE_PREFIX_STATICLIB")
                     + project->first("TARGET") + "." + project->first("QMAKE_EXTENSION_STATICLIB"));
             project->values("TARGET_PRL").prepend(project->first("QMAKE_PREFIX_STATICLIB") + project->first("TARGET"));
-            project->values("TARGET_x").prepend(prefix + dll + "." + project->first("QMAKE_EXTENSION_SHLIB"));
+            project->values("TARGET_x").prepend(dll + "." + project->first("QMAKE_EXTENSION_SHLIB"));
             project->values("TARGET") = project->values("TARGET_x");
         } else if (!project->isEmpty("QMAKE_BUNDLE")) {
             project->values("PRL_TARGET").prepend(

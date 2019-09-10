@@ -49,6 +49,7 @@ exists($$QMLTYPEFILE): AUX_QML_FILES += $$QMLTYPEFILE
 load(qt_build_paths)
 
 DESTDIR = $$MODULE_BASE_OUTDIR/qml/$$TARGETPATH
+os2:CONFIG += target_short_symlink
 
 target.path = $$[QT_INSTALL_QML]/$$TARGETPATH
 INSTALLS += target

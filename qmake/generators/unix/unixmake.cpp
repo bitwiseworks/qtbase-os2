@@ -622,6 +622,14 @@ UnixMakefileGenerator::defaultInstall(const QString &t)
         uninst.append("-$(DEL_FILE) " + dst);
     }
 
+    if (!project->isEmpty("TARGET_SHORT") && project->isActiveConfig("target_short_symlink")) {
+        QString symlink_src = "$(QMAKE_TARGET)." + project->first("QMAKE_EXTENSION_SHLIB");
+        QString symlink_dst = escapeFilePath(filePrefixRoot(root, targetdir)) + symlink_src;
+        if (!destdir.isEmpty())
+            symlink_src = Option::fixPathToTargetOS(destdir, false) + Option::dir_sep + symlink_src;
+        ret += "-$(QINSTALL) " + symlink_src + ' ' + symlink_dst;
+    }
+
     {
         QString src_targ = target;
         if(!destdir.isEmpty())
