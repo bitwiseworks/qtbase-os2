@@ -1084,7 +1084,12 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
                 // fastest) way to do so is just to query FSINFO on such a drive.
                 if (isDriveRoot) {
                     FSINFO fsinfo;
-                    APIRET arc = DosQueryFSInfo (nativeFilePath.at(0) - 'A' + 1, FSIL_VOLSER, &fsinfo, sizeof (fsinfo));
+                    int drive = nativeFilePath.at(0);
+                    if (drive >= 'a' && drive <= 'z')
+                        drive -= 'a';
+                    else
+                        drive -= 'A';
+                    APIRET arc = DosQueryFSInfo (drive + 1, FSIL_VOLSER, &fsinfo, sizeof (fsinfo));
                     if (arc != NO_ERROR)
                         statResult = -EIO;
                 }
