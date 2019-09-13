@@ -4,6 +4,19 @@ windows
 [watchFileAndItsDirectory:native backend-testfile]
 osx
 windows
+os2
 [watchFileAndItsDirectory:native backend-specialchars]
 osx
 windows
+os2
+# https://github.com/bitwiseworks/qtbase-os2/issues/47
+[basicTest:native backend-testfile]
+os2
+[basicTest:native backend-specialchars]
+os2
+[watchDirectory:native backend]
+os2
+[QTBUG2331:native backend-testfile]
+os2
+[QTBUG2331:native backend-specialchars]
+os2

@@ -104,7 +104,7 @@ void tst_QFileSystemWatcher::basicTest_data()
         + QChar(ushort(0x00DC)) // LATIN_CAPITAL_LETTER_U_WITH_DIAERESIS
         + QStringLiteral(".txt");
 
-#if (!defined(Q_OS_QNX) || !defined(QT_NO_INOTIFY)) && !defined(Q_OS_OS2)
+#if !defined(Q_OS_QNX) || !defined(QT_NO_INOTIFY)
     QTest::newRow("native backend-testfile") << "native" << testFile;
     QTest::newRow("native backend-specialchars") << "native" << specialCharacterFile;
 #endif
