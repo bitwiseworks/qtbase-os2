@@ -257,10 +257,17 @@ QOS2Window::QOS2Window(QWindow *window)
     const bool isTool = ((type == Qt::Tool) || (type == Qt::Drawer));
 
     const QWindow *parent = isTopLevel ? window->transientParent() : window->parent();
+
+    // QWindow::create is automatically called for parent but not for transientParent. Call
+    // it now to always have a valid handle (for hwndOwner).
+    if (parent)
+        const_cast<QWindow *>(parent)->create();
+
     const QOS2Window *os2parent = parent ? static_cast<QOS2Window *>(parent->handle()) : nullptr;
-    Q_ASSERT(!parent || os2parent);
 
     qCInfo(lcQpaWindows) << window << DV(isTopLevel) << type << flags << rect << DV(title) << DV(parent);
+
+    Q_ASSERT(!parent || os2parent);
 
     const char *className;
 
