@@ -453,7 +453,7 @@ void tst_QFile::initTestCase()
 #if QT_CONFIG(process)
 #if defined(Q_OS_ANDROID)
     m_stdinProcess = QCoreApplication::applicationDirPath() + QLatin1String("/libstdinprocess_helper.so");
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_DOSLIKE)
     m_stdinProcess = QFINDTESTDATA("stdinprocess_helper.exe");
 #else
     m_stdinProcess = QFINDTESTDATA("stdinprocess_helper");
