@@ -1685,10 +1685,9 @@ const QString::Null QString::null = { };
     \snippet qstring/main.cpp 8
 
     All functions except isNull() treat null strings the same as empty
-    strings. For example, toUtf8().constData() returns a pointer to a
-    '\\0' character for a null string (\e not a null pointer), and
-    QString() compares equal to QString(""). We recommend that you
-    always use the isEmpty() function and avoid isNull().
+    strings. For example, toUtf8().constData() returns a valid pointer
+    (\e not nullptr) to a '\\0' character for a null string. We
+    recommend that you always use the isEmpty() function and avoid isNull().
 
     \section1 Argument Formats
 
@@ -1777,6 +1776,24 @@ const QString::Null QString::null = { };
 
     and the \c{'+'} will automatically be performed as the
     \c{QStringBuilder} \c{'%'} everywhere.
+
+    \section1 Maximum size and out-of-memory conditions
+
+    The current version of QString is limited to just under 2 GB (2^31 bytes)
+    in size. The exact value is architecture-dependent, since it depends on the
+    overhead required for managing the data block, but is no more than 32
+    bytes. Raw data blocks are also limited by the use of \c int type in the
+    current version to 2 GB minus 1 byte. Since QString uses two bytes per
+    character, that translates to just under 2^30 characters in one QString.
+
+    In case memory allocation fails, QString will throw a \c std::bad_alloc
+    exception. Out of memory conditions in the Qt containers are the only case
+    where Qt will throw exceptions.
+
+    Note that the operating system may impose further limits on applications
+    holding a lot of allocated memory, especially large, contiguous blocks.
+    Such considerations, the configuration of such behavior or any mitigation
+    are outside the scope of the Qt API.
 
     \sa fromRawData(), QChar, QLatin1String, QByteArray, QStringRef
 */
@@ -2113,7 +2130,7 @@ int QString::toUcs4_helper(const ushort *uc, int length, uint *out)
 
     If \a size is negative, \a unicode is assumed to point to a \\0'-terminated
     array and its length is determined dynamically. The terminating
-    nul-character is not considered part of the string.
+    null character is not considered part of the string.
 
     QString makes a deep copy of the string data. The unicode data is copied as
     is and the Byte Order Mark is preserved if present.
@@ -4553,7 +4570,7 @@ int QString::indexOf(const QRegularExpression& re, int from) const
     expression \a re in the string, searching forward from index
     position \a from. Returns -1 if \a re didn't match anywhere.
 
-    If the match is successful and \a rmatch is not a null pointer, it also
+    If the match is successful and \a rmatch is not \nullptr, it also
     writes the results of the match into the QRegularExpressionMatch object
     pointed to by \a rmatch.
 
@@ -4604,7 +4621,7 @@ int QString::lastIndexOf(const QRegularExpression &re, int from) const
     expression \a re in the string, which starts before the index
     position \a from. Returns -1 if \a re didn't match anywhere.
 
-    If the match is successful and \a rmatch is not a null pointer, it also
+    If the match is successful and \a rmatch is not \nullptr, it also
     writes the results of the match into the QRegularExpressionMatch object
     pointed to by \a rmatch.
 
@@ -4655,14 +4672,14 @@ bool QString::contains(const QRegularExpression &re) const
     Returns \c true if the regular expression \a re matches somewhere in this
     string; otherwise returns \c false.
 
-    If the match is successful and \a match is not a null pointer, it also
+    If the match is successful and \a rmatch is not \nullptr, it also
     writes the results of the match into the QRegularExpressionMatch object
-    pointed to by \a match.
+    pointed to by \a rmatch.
 
     \sa QRegularExpression::match()
 */
 
-bool QString::contains(const QRegularExpression &re, QRegularExpressionMatch *match) const
+bool QString::contains(const QRegularExpression &re, QRegularExpressionMatch *rmatch) const
 {
     if (!re.isValid()) {
         qWarning("QString::contains: invalid QRegularExpression object");
@@ -4670,8 +4687,8 @@ bool QString::contains(const QRegularExpression &re, QRegularExpressionMatch *ma
     }
     QRegularExpressionMatch m = re.match(*this);
     bool hasMatch = m.hasMatch();
-    if (hasMatch && match)
-        *match = qMove(m);
+    if (hasMatch && rmatch)
+        *rmatch = qMove(m);
     return hasMatch;
 }
 
@@ -5867,7 +5884,7 @@ QString QString::trimmed_helper(QString &str)
 
     The return value is of type QCharRef, a helper class for QString.
     When you get an object of type QCharRef, you can use it as if it
-    were a QChar &. If you assign to it, the assignment will apply to
+    were a reference to a QChar. If you assign to it, the assignment will apply to
     the character in the QString from which you got the reference.
 
     \sa at()
@@ -10333,8 +10350,8 @@ ownership of it, no memory is freed when instances are destroyed.
 /*!
     \fn bool QStringRef::isNull() const
 
-    Returns \c true if string() returns a null pointer or a pointer to a
-    null string; otherwise returns \c true.
+    Returns \c true if this string reference does not reference a string or if
+    the string it references is null (i.e. QString::isNull() is true).
 
     \sa size()
 */

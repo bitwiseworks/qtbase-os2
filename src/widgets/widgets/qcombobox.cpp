@@ -896,11 +896,6 @@ QStyleOptionComboBox QComboBoxPrivateContainer::comboStyleOption() const
     \fn void QComboBox::currentIndexChanged(const QString &text)
     \since 4.1
 
-    \obsolete
-
-    Use currentTextChanged(const QString &) or currentIndexChanged(int)
-    instead.
-
     This signal is sent whenever the currentIndex in the combobox
     changes either through user interaction or programmatically.  The
     item's \a text is passed.
@@ -2616,7 +2611,7 @@ bool QComboBoxPrivate::showNativePopup()
 
 /*!
     Displays the list of items in the combobox. If the list is empty
-    then the no items will be shown.
+    then no items will be shown.
 
     If you reimplement this function to show a custom pop-up, make
     sure you call hidePopup() to reset the internal state.

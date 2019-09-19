@@ -1,4 +1,4 @@
-/****************************************************************************
+﻿/****************************************************************************
 **
 ** Copyright (C) 2017 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
@@ -1190,7 +1190,7 @@ void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
     q->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea);
     q->setAttribute(Qt::WA_WState_Hidden);
 
-    //give potential windows a bigger "pre-initial" size; create_sys() will give them a new size later
+    //give potential windows a bigger "pre-initial" size; create() will give them a new size later
     data.crect = parentWidget ? QRect(0,0,100,30) : QRect(0,0,640,480);
     focus_next = focus_prev = q;
 
@@ -1255,27 +1255,19 @@ void QWidgetPrivate::createRecursively()
 /*!
     Creates a new widget window.
 
-    The parameter \a window is ignored in Qt 5. Please use
-    QWindow::fromWinId() to create a QWindow wrapping a foreign
-    window and pass it to QWidget::createWindowContainer() instead.
-
-    Initializes the window (sets the geometry etc.) if \a
-    initializeWindow is true. If \a initializeWindow is false, no
-    initialization is performed. This parameter only makes sense if \a
-    window is a valid window.
-
-    Destroys the old window if \a destroyOldWindow is true. If \a
-    destroyOldWindow is false, you are responsible for destroying the
-    window yourself (using platform native code).
-
-    The QWidget constructor calls create(0,true,true) to create a
-    window for this widget.
+    The parameters \a window, \a initializeWindow, and \a destroyOldWindow
+    are ignored in Qt 5. Please use QWindow::fromWinId() to create a
+    QWindow wrapping a foreign window and pass it to
+    QWidget::createWindowContainer() instead.
 
     \sa createWindowContainer(), QWindow::fromWinId()
 */
 
 void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
 {
+    Q_UNUSED(initializeWindow);
+    Q_UNUSED(destroyOldWindow);
+
     Q_D(QWidget);
     if (Q_UNLIKELY(window))
         qWarning("QWidget::create(): Parameter 'window' does not have any effect.");
@@ -1335,7 +1327,7 @@ void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
     d->updateIsOpaque();
 
     setAttribute(Qt::WA_WState_Created);                        // set created flag
-    d->create_sys(window, initializeWindow, destroyOldWindow);
+    d->create();
 
     // a real toplevel window needs a backing store
     if (isWindow() && windowType() != Qt::Desktop) {
@@ -1404,13 +1396,9 @@ void q_createNativeChildrenAndSetParent(const QWidget *parentWidget)
 
 }
 
-void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyOldWindow)
+void QWidgetPrivate::create()
 {
     Q_Q(QWidget);
-
-    Q_UNUSED(window);
-    Q_UNUSED(initializeWindow);
-    Q_UNUSED(destroyOldWindow);
 
     if (!q->testAttribute(Qt::WA_NativeWindow) && !q->isWindow())
         return; // we only care about real toplevels
@@ -2583,23 +2571,39 @@ void QWidgetPrivate::createWinId()
 /*!
 \internal
 Ensures that the widget is set on the screen point is on. This is handy getting a correct
-size hint before a resize in e.g QMenu and QToolTip
+size hint before a resize in e.g QMenu and QToolTip.
+Returns if the screen was changed.
 */
 
-void QWidgetPrivate::setScreenForPoint(const QPoint &pos)
+bool QWidgetPrivate::setScreenForPoint(const QPoint &pos)
 {
     Q_Q(QWidget);
     if (!q->isWindow())
-        return;
-    // Find the screen for pos and make the widget undertand it is on that screen.
+        return false;
+    // Find the screen for pos and make the widget understand it is on that screen.
+    return setScreen(QGuiApplication::screenAt(pos));
+}
+
+/*!
+\internal
+Ensures that the widget's QWindow is set to be on the given \a screen.
+Returns true if the screen was changed.
+*/
+
+bool QWidgetPrivate::setScreen(QScreen *screen)
+{
+    Q_Q(QWidget);
+    if (!screen || !q->isWindow())
+        return false;
     const QScreen *currentScreen = windowHandle() ? windowHandle()->screen() : nullptr;
-    QScreen *actualScreen = QGuiApplication::screenAt(pos);
-    if (actualScreen && currentScreen != actualScreen) {
+    if (currentScreen != screen) {
         if (!windowHandle()) // Try to create a window handle if not created.
             createWinId();
         if (windowHandle())
-            windowHandle()->setScreen(actualScreen);
+            windowHandle()->setScreen(screen);
+        return true;
     }
+    return false;
 }
 
 /*!
@@ -6432,8 +6436,18 @@ void QWidget::setFocusProxy(QWidget * w)
         }
     }
 
+    QWidget *oldDeepestFocusProxy = d_func()->deepestFocusProxy();
+    if (!oldDeepestFocusProxy)
+        oldDeepestFocusProxy = this;
+    const bool changingAppFocusWidget = (QApplicationPrivate::focus_widget == oldDeepestFocusProxy);
+
     d->createExtra();
     d->extra->focus_proxy = w;
+
+    if (changingAppFocusWidget) {
+        QWidget *newDeepestFocusProxy = d_func()->deepestFocusProxy();
+        QApplicationPrivate::focus_widget = newDeepestFocusProxy ? newDeepestFocusProxy : this;
+    }
 }
 
 
@@ -7003,37 +7017,41 @@ void QWidget::setTabOrder(QWidget* first, QWidget *second)
                 lastFocusChild = focusNext;
         }
     };
+    auto setPrev = [](QWidget *w, QWidget *prev)
+    {
+        w->d_func()->focus_prev = prev;
+    };
+    auto setNext = [](QWidget *w, QWidget *next)
+    {
+        w->d_func()->focus_next = next;
+    };
 
-    QWidget *lastFocusChildOfFirst, *lastFocusChildOfSecond;
-    determineLastFocusChild(first, lastFocusChildOfFirst);
+    // remove the second widget from the chain
+    QWidget *lastFocusChildOfSecond;
     determineLastFocusChild(second, lastFocusChildOfSecond);
-
-    // If the tab order is already correct, exit early
-    if (lastFocusChildOfFirst == second ||
-        lastFocusChildOfFirst->d_func()->focus_next == second) {
-        return;
+    {
+        QWidget *oldPrev = second->d_func()->focus_prev;
+        QWidget *prevWithFocus = oldPrev;
+        while (prevWithFocus->focusPolicy() == Qt::NoFocus)
+            prevWithFocus = prevWithFocus->d_func()->focus_prev;
+        // only widgets between first and second -> all is fine
+        if (prevWithFocus == first)
+            return;
+        QWidget *oldNext = lastFocusChildOfSecond->d_func()->focus_next;
+        setPrev(oldNext, oldPrev);
+        setNext(oldPrev, oldNext);
     }
 
-    // Note that we need to handle two different sections in the tab chain; The section
-    // that 'first' belongs to (firstSection), where we are about to insert 'second', and
-    // the section that 'second' used be a part of (secondSection). When we pull 'second'
-    // out of the second section and insert it into the first, we also need to ensure
-    // that we leave the second section in a connected state.
-    QWidget *firstChainOldSecond = lastFocusChildOfFirst->d_func()->focus_next;
-    QWidget *secondChainNewFirst = second->d_func()->focus_prev;
-    QWidget *secondChainNewSecond = lastFocusChildOfSecond->d_func()->focus_next;
-
-    // Insert 'second' after 'first'
-    lastFocusChildOfFirst->d_func()->focus_next = second;
-    second->d_func()->focus_prev = lastFocusChildOfFirst;
-
-    // The widget that used to be 'second' in the first section, should now become 'third'
-    lastFocusChildOfSecond->d_func()->focus_next = firstChainOldSecond;
-    firstChainOldSecond->d_func()->focus_prev = lastFocusChildOfSecond;
-
-    // Repair the second section after we pulled 'second' out of it
-    secondChainNewFirst->d_func()->focus_next = secondChainNewSecond;
-    secondChainNewSecond->d_func()->focus_prev = secondChainNewFirst;
+    // insert the second widget into the chain
+    QWidget *lastFocusChildOfFirst;
+    determineLastFocusChild(first, lastFocusChildOfFirst);
+    {
+        QWidget *oldNext = lastFocusChildOfFirst->d_func()->focus_next;
+        setPrev(second, lastFocusChildOfFirst);
+        setNext(lastFocusChildOfFirst, second);
+        setPrev(oldNext, lastFocusChildOfSecond);
+        setNext(lastFocusChildOfSecond, oldNext);
+    }
 }
 
 /*!\internal
@@ -7433,6 +7451,17 @@ QByteArray QWidget::saveGeometry() const
     return array;
 }
 
+static void checkRestoredGeometry(const QRect &availableGeometry, QRect *restoredGeometry,
+                                  int frameHeight)
+{
+    if (!restoredGeometry->intersects(availableGeometry)) {
+        restoredGeometry->moveBottom(qMin(restoredGeometry->bottom(), availableGeometry.bottom()));
+        restoredGeometry->moveLeft(qMax(restoredGeometry->left(), availableGeometry.left()));
+        restoredGeometry->moveRight(qMin(restoredGeometry->right(), availableGeometry.right()));
+    }
+    restoredGeometry->moveTop(qMax(restoredGeometry->top(), availableGeometry.top() + frameHeight));
+}
+
 /*!
     \since 4.2
 
@@ -7487,7 +7516,7 @@ bool QWidget::restoreGeometry(const QByteArray &geometry)
     quint8 fullScreen;
     qint32 restoredScreenWidth = 0;
 
-    stream >> restoredFrameGeometry
+    stream >> restoredFrameGeometry // Only used for sanity checks in version 0
            >> restoredNormalGeometry
            >> restoredScreenNumber
            >> maximized
@@ -7517,8 +7546,6 @@ bool QWidget::restoreGeometry(const QByteArray &geometry)
     }
 
     const int frameHeight = 20;
-    if (!restoredFrameGeometry.isValid())
-        restoredFrameGeometry = QRect(QPoint(0,0), sizeHint());
 
     if (!restoredNormalGeometry.isValid())
         restoredNormalGeometry = QRect(QPoint(0, frameHeight), sizeHint());
@@ -7538,23 +7565,11 @@ bool QWidget::restoreGeometry(const QByteArray &geometry)
     // - (Mac only) The window is higher than the available geometry. It must
     //   be possible to bring the size grip on screen by moving the window.
 #if 0 // Used to be included in Qt4 for Q_WS_MAC
-    restoredFrameGeometry.setHeight(qMin(restoredFrameGeometry.height(), availableGeometry.height()));
     restoredNormalGeometry.setHeight(qMin(restoredNormalGeometry.height(), availableGeometry.height() - frameHeight));
 #endif
 
-    if (!restoredFrameGeometry.intersects(availableGeometry)) {
-        restoredFrameGeometry.moveBottom(qMin(restoredFrameGeometry.bottom(), availableGeometry.bottom()));
-        restoredFrameGeometry.moveLeft(qMax(restoredFrameGeometry.left(), availableGeometry.left()));
-        restoredFrameGeometry.moveRight(qMin(restoredFrameGeometry.right(), availableGeometry.right()));
-    }
-    restoredFrameGeometry.moveTop(qMax(restoredFrameGeometry.top(), availableGeometry.top()));
-
-    if (!restoredNormalGeometry.intersects(availableGeometry)) {
-        restoredNormalGeometry.moveBottom(qMin(restoredNormalGeometry.bottom(), availableGeometry.bottom()));
-        restoredNormalGeometry.moveLeft(qMax(restoredNormalGeometry.left(), availableGeometry.left()));
-        restoredNormalGeometry.moveRight(qMin(restoredNormalGeometry.right(), availableGeometry.right()));
-    }
-    restoredNormalGeometry.moveTop(qMax(restoredNormalGeometry.top(), availableGeometry.top() + frameHeight));
+    checkRestoredGeometry(availableGeometry, &restoredGeometry, frameHeight);
+    checkRestoredGeometry(availableGeometry, &restoredNormalGeometry, frameHeight);
 
     if (maximized || fullScreen) {
         // set geometry before setting the window state to make
@@ -11325,7 +11340,7 @@ void QWidget::setAttribute(Qt::WidgetAttribute attribute, bool on)
             // windowModality property and then reshown.
         }
         if (testAttribute(Qt::WA_WState_Created)) {
-            // don't call setModal_sys() before create_sys()
+            // don't call setModal_sys() before create()
             d->setModal_sys();
         }
         break;
@@ -11450,10 +11465,9 @@ void QWidget::setAttribute(Qt::WidgetAttribute attribute, bool on)
         }
         break;
     case Qt::WA_TranslucentBackground:
-        if (on) {
+        if (on)
             setAttribute(Qt::WA_NoSystemBackground);
-            d->updateIsTranslucent();
-        }
+        d->updateIsTranslucent();
 
         break;
     case Qt::WA_AcceptTouchEvents:

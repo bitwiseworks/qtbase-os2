@@ -161,10 +161,18 @@ void tst_QPainterPath::clear()
     p1.clear();
     QCOMPARE(p1, p2);
 
+    p1.lineTo(50, 50);
+    QPainterPath p3;
+    QCOMPARE(p1.elementCount(), 2);
+    p3.lineTo(50, 50);
+    QCOMPARE(p1, p3);
+
     QCOMPARE(p1.fillRule(), Qt::OddEvenFill);
     p1.setFillRule(Qt::WindingFill);
+    QVERIFY(p1 != p3);
     p1.clear();
-    QCOMPARE(p1.fillRule(), Qt::WindingFill);
+    QCOMPARE(p1.fillRule(), Qt::OddEvenFill);
+    QCOMPARE(p1, p2);
 }
 
 void tst_QPainterPath::reserveAndCapacity()
@@ -189,6 +197,10 @@ void tst_QPainterPath::reserveAndCapacity()
 
     p.reserve(0);
     QVERIFY(p.capacity() >= 1000);
+
+    QPainterPath p2;
+    p2.reserve(10);
+    QVERIFY(p.capacity() >= 10);
 }
 
 Q_DECLARE_METATYPE(QPainterPath)

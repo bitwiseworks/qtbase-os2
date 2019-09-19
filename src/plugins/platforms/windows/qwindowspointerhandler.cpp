@@ -80,13 +80,12 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
     *result = 0;
     const quint32 pointerId = GET_POINTERID_WPARAM(msg.wParam);
 
-    POINTER_INPUT_TYPE pointerType;
-    if (!QWindowsContext::user32dll.getPointerType(pointerId, &pointerType)) {
+    if (!QWindowsContext::user32dll.getPointerType(pointerId, &m_pointerType)) {
         qWarning() << "GetPointerType() failed:" << qt_error_string();
         return false;
     }
 
-    switch (pointerType) {
+    switch (m_pointerType) {
     case QT_PT_POINTER:
     case QT_PT_MOUSE:
     case QT_PT_TOUCHPAD: {
@@ -269,7 +268,10 @@ static Qt::MouseButtons queryMouseButtons()
 
 static QWindow *getWindowUnderPointer(QWindow *window, QPoint globalPos)
 {
-    QWindow *currentWindowUnderPointer = QWindowsScreen::windowAt(globalPos, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+    QWindowsWindow *platformWindow = static_cast<QWindowsWindow *>(window->handle());
+
+    QWindow *currentWindowUnderPointer = platformWindow->hasMouseCapture() ?
+                QWindowsScreen::windowAt(globalPos, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT) : window;
 
     while (currentWindowUnderPointer && currentWindowUnderPointer->flags() & Qt::WindowTransparentForInput)
         currentWindowUnderPointer = currentWindowUnderPointer->parent();
@@ -334,6 +336,12 @@ QTouchDevice *QWindowsPointerHandler::ensureTouchDevice()
     if (!m_touchDevice)
         m_touchDevice = createTouchDevice();
     return m_touchDevice;
+}
+
+void QWindowsPointerHandler::clearEvents()
+{
+    m_lastEventType = QEvent::None;
+    m_lastEventButton = Qt::NoButton;
 }
 
 void QWindowsPointerHandler::handleCaptureRelease(QWindow *window,
@@ -614,6 +622,9 @@ bool QWindowsPointerHandler::translatePenEvent(QWindow *window, HWND hwnd, QtWin
         if (m_needsEnterOnPointerUpdate) {
             m_needsEnterOnPointerUpdate = false;
             if (window != m_currentWindow) {
+                // make sure we subscribe to leave events for this window
+                trackLeave(hwnd);
+
                 QWindowSystemInterface::handleEnterEvent(window, localPos, globalPos);
                 m_currentWindow = window;
                 if (QWindowsWindow *wumPlatformWindow = QWindowsWindow::windowsWindowOf(target))
@@ -672,7 +683,7 @@ bool QWindowsPointerHandler::translateMouseWheelEvent(QWindow *window,
 
     QPoint localPos = QWindowsGeometryHint::mapFromGlobal(receiver, globalPos);
 
-    QWindowSystemInterface::handleWheelEvent(window, localPos, globalPos, QPoint(), angleDelta, keyModifiers);
+    QWindowSystemInterface::handleWheelEvent(receiver, localPos, globalPos, QPoint(), angleDelta, keyModifiers);
     return true;
 }
 
@@ -716,17 +727,46 @@ bool QWindowsPointerHandler::translateMouseEvent(QWindow *window,
     }
 
     Qt::MouseEventSource source = Qt::MouseEventNotSynthesized;
-    if (isMouseEventSynthesizedFromPenOrTouch()) {
+    // Following the logic of the old mouse handler, only events synthesized
+    // for touch screen are marked as such. On some systems, using the bit 7 of
+    // the extra msg info for checking if synthesized for touch does not work,
+    // so we use the pointer type of the last pointer message.
+    if (isMouseEventSynthesizedFromPenOrTouch() && m_pointerType == QT_PT_TOUCH) {
         if (QWindowsIntegration::instance()->options() & QWindowsIntegration::DontPassOsMouseEventsSynthesizedFromTouch)
             return false;
         source = Qt::MouseEventSynthesizedBySystem;
     }
 
     const MouseEvent mouseEvent = eventFromMsg(msg);
+    Qt::MouseButtons mouseButtons;
+
+    if (mouseEvent.type >= QEvent::NonClientAreaMouseMove && mouseEvent.type <= QEvent::NonClientAreaMouseButtonDblClick)
+        mouseButtons = queryMouseButtons();
+    else
+        mouseButtons = mouseButtonsFromKeyState(msg.wParam);
+
+    // When the left/right mouse buttons are pressed over the window title bar
+    // WM_NCLBUTTONDOWN/WM_NCRBUTTONDOWN messages are received. But no UP
+    // messages are received on release, only WM_NCMOUSEMOVE/WM_MOUSEMOVE.
+    // We detect it and generate the missing release events here. (QTBUG-75678)
+    // The last event vars are cleared on QWindowsContext::handleExitSizeMove()
+    // to avoid generating duplicated release events.
+    if (m_lastEventType == QEvent::NonClientAreaMouseButtonPress
+            && (mouseEvent.type == QEvent::NonClientAreaMouseMove || mouseEvent.type == QEvent::MouseMove)
+            && (m_lastEventButton & mouseButtons) == 0) {
+            if (mouseEvent.type == QEvent::NonClientAreaMouseMove) {
+                QWindowSystemInterface::handleFrameStrutMouseEvent(window, localPos, globalPos, mouseButtons, m_lastEventButton,
+                                                                   QEvent::NonClientAreaMouseButtonRelease, keyModifiers, source);
+            } else {
+                QWindowSystemInterface::handleMouseEvent(window, localPos, globalPos, mouseButtons, m_lastEventButton,
+                                                         QEvent::MouseButtonRelease, keyModifiers, source);
+            }
+    }
+    m_lastEventType = mouseEvent.type;
+    m_lastEventButton = mouseEvent.button;
 
     if (mouseEvent.type >= QEvent::NonClientAreaMouseMove && mouseEvent.type <= QEvent::NonClientAreaMouseButtonDblClick) {
-        const Qt::MouseButtons nonclientButtons = queryMouseButtons();
-        QWindowSystemInterface::handleFrameStrutMouseEvent(window, localPos, globalPos, nonclientButtons,
+        QWindowSystemInterface::handleFrameStrutMouseEvent(window, localPos, globalPos, mouseButtons,
                                                            mouseEvent.button, mouseEvent.type, keyModifiers, source);
         return false; // Allow further event processing
     }
@@ -741,8 +781,6 @@ bool QWindowsPointerHandler::translateMouseEvent(QWindow *window,
         }
         return true;
     }
-
-    const Qt::MouseButtons mouseButtons = mouseButtonsFromKeyState(msg.wParam);
 
     handleCaptureRelease(window, currentWindowUnderPointer, hwnd, mouseEvent.type, mouseButtons);
     handleEnterLeave(window, currentWindowUnderPointer, globalPos);

@@ -797,7 +797,7 @@ static bool check_parent_thread(QObject *parent,
 
     The destructor of a parent object destroys all child objects.
 
-    Setting \a parent to 0 constructs an object with no parent. If the
+    Setting \a parent to \nullptr constructs an object with no parent. If the
     object is a widget, it will become a top-level window.
 
     \sa parent(), findChild(), findChildren()
@@ -2167,6 +2167,8 @@ void QObject::removeEventFilter(QObject *obj)
 */
 
 /*!
+    \threadsafe
+
     Schedules this object for deletion.
 
     The object will be deleted when control returns to the event
@@ -3382,7 +3384,7 @@ bool QMetaObject::disconnectOne(const QObject *sender, int signal_index,
 
 /*!
     \internal
-    Helper function to remove the connection from the senders list and setting the receivers to 0
+    Helper function to remove the connection from the senders list and set the receivers to \nullptr
  */
 bool QMetaObjectPrivate::disconnectHelper(QObjectPrivate::Connection *c,
                                           const QObject *receiver, int method_index, void **slot,

@@ -49,12 +49,20 @@
 
 QT_BEGIN_NAMESPACE
 
-class QNSWindowBackingStore : public QRasterBackingStore
+class QCocoaBackingStore : public QRasterBackingStore
+{
+protected:
+    QCocoaBackingStore(QWindow *window);
+    QCFType<CGColorSpaceRef> colorSpace() const;
+};
+
+class QNSWindowBackingStore : public QCocoaBackingStore
 {
 public:
     QNSWindowBackingStore(QWindow *window);
     ~QNSWindowBackingStore();
 
+    void resize(const QSize &size, const QRegion &staticContents) override;
     void flush(QWindow *, const QRegion &, const QPoint &) override;
 
 private:
@@ -63,7 +71,7 @@ private:
     void redrawRoundedBottomCorners(CGRect) const;
 };
 
-class QCALayerBackingStore : public QPlatformBackingStore
+class QCALayerBackingStore : public QCocoaBackingStore
 {
 public:
     QCALayerBackingStore(QWindow *window);
@@ -76,9 +84,12 @@ public:
     void endPaint() override;
 
     void flush(QWindow *, const QRegion &, const QPoint &) override;
+#ifndef QT_NO_OPENGL
     void composeAndFlush(QWindow *window, const QRegion &region, const QPoint &offset,
         QPlatformTextureList *textures, bool translucentBackground) override;
+#endif
 
+    QImage toImage() const override;
     QPlatformGraphicsBuffer *graphicsBuffer() const override;
 
 private:

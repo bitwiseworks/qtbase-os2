@@ -1038,10 +1038,27 @@ QByteArray qUncompress(const uchar* data, int nbytes)
     \snippet code/src_corelib_tools_qbytearray.cpp 5
 
     All functions except isNull() treat null byte arrays the same as
-    empty byte arrays. For example, data() returns a pointer to a
-    '\\0' character for a null byte array (\e not a null pointer),
+    empty byte arrays. For example, data() returns a valid pointer
+    (\e not nullptr) to a '\\0' character for a byte array
     and QByteArray() compares equal to QByteArray(""). We recommend
     that you always use isEmpty() and avoid isNull().
+
+    \section1 Maximum size and out-of-memory conditions
+
+    The current version of QByteArray is limited to just under 2 GB (2^31
+    bytes) in size. The exact value is architecture-dependent, since it depends
+    on the overhead required for managing the data block, but is no more than
+    32 bytes. Raw data blocks are also limited by the use of \c int type in the
+    current version to 2 GB minus 1 byte.
+
+    In case memory allocation fails, QByteArray will throw a \c std::bad_alloc
+    exception. Out of memory conditions in the Qt containers are the only case
+    where Qt will throw exceptions.
+
+    Note that the operating system may impose further limits on applications
+    holding a lot of allocated memory, especially large, contiguous blocks.
+    Such considerations, the configuration of such behavior or any mitigation
+    are outside the scope of the QByteArray API.
 
     \section1 Notes on Locale
 
@@ -1055,12 +1072,11 @@ QByteArray qUncompress(const uchar* data, int nbytes)
     \section2 8-bit Character Comparisons
 
     In QByteArray, the notion of uppercase and lowercase and of which
-    character is greater than or less than another character is
-    locale dependent. This affects functions that support a case
+    character is greater than or less than another character is done
+    in the Latin-1 locale. This affects functions that support a case
     insensitive option or that compare or lowercase or uppercase
     their arguments. Case insensitive operations and comparisons will
-    be accurate if both strings contain only ASCII characters. (If \c
-    $LC_CTYPE is set, most Unix systems do "the right thing".)
+    be accurate if both strings contain only Latin-1 characters.
     Functions that this affects include contains(), indexOf(),
     lastIndexOf(), operator<(), operator<=(), operator>(),
     operator>=(), isLower(), isUpper(), toLower() and toUpper().

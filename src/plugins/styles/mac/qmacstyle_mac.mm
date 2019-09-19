@@ -137,32 +137,14 @@
 #include <qpa/qplatformtheme.h>
 #include <QtGui/private/qcoregraphics_p.h>
 
+#include <cmath>
+
 QT_USE_NAMESPACE
 
 static QWindow *qt_getWindow(const QWidget *widget)
 {
     return widget ? widget->window()->windowHandle() : 0;
 }
-
-@interface QT_MANGLE_NAMESPACE(NotificationReceiver) : NSObject
-@end
-
-QT_NAMESPACE_ALIAS_OBJC_CLASS(NotificationReceiver);
-
-@implementation NotificationReceiver
-
-- (void)scrollBarStyleDidChange:(NSNotification *)notification
-{
-    Q_UNUSED(notification);
-
-    // purge destroyed scroll bars:
-    QMacStylePrivate::scrollBars.removeAll(QPointer<QObject>());
-
-    QEvent event(QEvent::StyleChange);
-    for (const auto &o : QMacStylePrivate::scrollBars)
-        QCoreApplication::sendEvent(o, &event);
-}
-@end
 
 @interface QT_MANGLE_NAMESPACE(QIndeterminateProgressIndicator) : NSProgressIndicator
 
@@ -532,6 +514,37 @@ static bool setupSlider(NSSlider *slider, const QStyleOptionSlider *sl)
     }
 
     return true;
+}
+
+static void fixStaleGeometry(NSSlider *slider)
+{
+    // If it's later fixed in AppKit, this function is not needed.
+    // On macOS Mojave we suddenly have NSSliderCell with a cached
+    // (and stale) geometry, thus its -drawKnob, -drawBarInside:flipped:,
+    // -drawTickMarks fail to render the slider properly. Setting the number
+    // of tickmarks triggers an update in geometry.
+
+    Q_ASSERT(slider);
+
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::MacOSMojave)
+        return;
+
+    NSSliderCell *cell = slider.cell;
+    const NSRect barRect = [cell barRectFlipped:NO];
+    const NSSize sliderSize = slider.frame.size;
+    CGFloat difference = 0.;
+    if (slider.vertical)
+        difference = std::abs(sliderSize.height - barRect.size.height);
+    else
+        difference = std::abs(sliderSize.width - barRect.size.width);
+
+    if (difference > 6.) {
+        // Stale ...
+        const auto nOfTicks = slider.numberOfTickMarks;
+        // Non-zero, different from nOfTicks to force update
+        slider.numberOfTickMarks = nOfTicks + 10;
+        slider.numberOfTickMarks = nOfTicks;
+    }
 }
 
 static bool isInMacUnifiedToolbarArea(QWindow *window, int windowY)
@@ -2065,23 +2078,34 @@ void QMacStylePrivate::resolveCurrentNSView(QWindow *window) const
 QMacStyle::QMacStyle()
     : QCommonStyle(*new QMacStylePrivate)
 {
-    Q_D(QMacStyle);
     QMacAutoReleasePool pool;
 
-    d->receiver = [[NotificationReceiver alloc] init];
-    [[NSNotificationCenter defaultCenter] addObserver:d->receiver
-                                             selector:@selector(scrollBarStyleDidChange:)
-                                                 name:NSPreferredScrollerStyleDidChangeNotification
-                                               object:nil];
+    static QMacNotificationObserver scrollbarStyleObserver(nil,
+        NSPreferredScrollerStyleDidChangeNotification, []() {
+            // Purge destroyed scroll bars
+            QMacStylePrivate::scrollBars.removeAll(QPointer<QObject>());
+
+            QEvent event(QEvent::StyleChange);
+            for (const auto &o : QMacStylePrivate::scrollBars)
+                QCoreApplication::sendEvent(o, &event);
+    });
+
+#if QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_14)
+    Q_D(QMacStyle);
+    // FIXME: Tie this logic into theme change, or even polish/unpolish
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSMojave) {
+        d->appearanceObserver = QMacKeyValueObserver(NSApp, @"effectiveAppearance", [this] {
+            Q_D(QMacStyle);
+            for (NSView *b : d->cocoaControls)
+                [b release];
+            d->cocoaControls.clear();
+        });
+    }
+#endif
 }
 
 QMacStyle::~QMacStyle()
 {
-    Q_D(QMacStyle);
-    QMacAutoReleasePool pool;
-
-    [[NSNotificationCenter defaultCenter] removeObserver:d->receiver];
-    [d->receiver release];
 }
 
 void QMacStyle::polish(QPalette &)
@@ -2148,10 +2172,9 @@ void QMacStyle::unpolish(QWidget* w)
 #if QT_CONFIG(menu)
         qobject_cast<QMenu*>(w) &&
 #endif
-        !w->testAttribute(Qt::WA_SetPalette)) {
-        QPalette pal = qApp->palette(w);
-        w->setPalette(pal);
-        w->setAttribute(Qt::WA_SetPalette, false);
+        !w->testAttribute(Qt::WA_SetPalette))
+    {
+        w->setPalette(QPalette());
         w->setWindowOpacity(1.0);
     }
 
@@ -2167,9 +2190,9 @@ void QMacStyle::unpolish(QWidget* w)
 #if QT_CONFIG(tabbar)
     if (qobject_cast<QTabBar*>(w)) {
         if (!w->testAttribute(Qt::WA_SetFont))
-            w->setFont(qApp->font(w));
+            w->setFont(QFont());
         if (!w->testAttribute(Qt::WA_SetPalette))
-            w->setPalette(qApp->palette(w));
+            w->setPalette(QPalette());
     }
 #endif
 
@@ -2565,11 +2588,12 @@ int QMacStyle::pixelMetric(PixelMetric metric, const QStyleOption *opt, const QW
 
 QPalette QMacStyle::standardPalette() const
 {
-    QPalette pal = QCommonStyle::standardPalette();
-    pal.setColor(QPalette::Disabled, QPalette::Dark, QColor(191, 191, 191));
-    pal.setColor(QPalette::Active, QPalette::Dark, QColor(191, 191, 191));
-    pal.setColor(QPalette::Inactive, QPalette::Dark, QColor(191, 191, 191));
-    return pal;
+    auto platformTheme = QGuiApplicationPrivate::platformTheme();
+    auto styleNames = platformTheme->themeHint(QPlatformTheme::StyleNames);
+    if (styleNames.toStringList().contains("macintosh"))
+        return *platformTheme->palette();
+    else
+        return QStyle::standardPalette();
 }
 
 int QMacStyle::styleHint(StyleHint sh, const QStyleOption *opt, const QWidget *w,
@@ -3115,7 +3139,9 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
             theStroker.setCapStyle(Qt::FlatCap);
             theStroker.setDashPattern(QVector<qreal>() << 1 << 2);
             path = theStroker.createStroke(path);
-            p->fillPath(path, QColor(0, 0, 0, 119));
+            const auto dark = qt_mac_applicationIsInDarkMode() ? opt->palette.dark().color().darker()
+                                                               : QColor(0, 0, 0, 119);
+            p->fillPath(path, dark);
         }
         break;
     case PE_FrameWindow:
@@ -4290,12 +4316,15 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                                                      alpha:pc.alphaF()];
 
                     s = qt_mac_removeMnemonics(s);
-                    const auto textRect = CGRectMake(xpos, yPos, mi->rect.width() - xm - tabwidth + 1, mi->rect.height());
 
                     QMacCGContext cgCtx(p);
                     d->setupNSGraphicsContext(cgCtx, YES);
 
-                    [s.toNSString() drawInRect:textRect
+                    // Draw at point instead of in rect, as the rect we've computed for the menu item
+                    // is based on the font metrics we got from HarfBuzz, so we may risk having CoreText
+                    // line-break the string if it doesn't fit the given rect. It's better to draw outside
+                    // the rect and possibly overlap something than to have part of the text disappear.
+                    [s.toNSString() drawAtPoint:CGPointMake(xpos, yPos)
                                 withAttributes:@{ NSFontAttributeName:f, NSForegroundColorAttributeName:c,
                                                   NSObliquenessAttributeName: [NSNumber numberWithDouble: myFont.italic() ? 0.3 : 0.0]}];
 
@@ -5322,6 +5351,8 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 #endif
                 {
                     [slider calcSize];
+                    if (!hasDoubleTicks)
+                        fixStaleGeometry(slider);
                     NSSliderCell *cell = slider.cell;
 
                     const int numberOfTickMarks = slider.numberOfTickMarks;
@@ -5331,10 +5362,10 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 
                     const CGRect barRect = [cell barRectFlipped:hasTicks];
                     if (drawBar) {
+                        [cell drawBarInside:barRect flipped:!verticalFlip];
                         // This ain't HIG kosher: force unfilled bar look.
                         if (hasDoubleTicks)
                             slider.numberOfTickMarks = numberOfTickMarks;
-                        [cell drawBarInside:barRect flipped:!verticalFlip];
                     }
 
                     if (hasTicks && drawTicks) {
@@ -6126,8 +6157,9 @@ QSize QMacStyle::sizeFromContents(ContentsType ct, const QStyleOption *opt,
     switch (ct) {
 #if QT_CONFIG(spinbox)
     case CT_SpinBox:
-        if (qstyleoption_cast<const QStyleOptionSpinBox *>(opt)) {
-            const int buttonWidth = 20; // FIXME Use subControlRect()
+        if (const QStyleOptionSpinBox *vopt = qstyleoption_cast<const QStyleOptionSpinBox *>(opt)) {
+            const bool hasButtons = (vopt->buttonSymbols != QAbstractSpinBox::NoButtons);
+            const int buttonWidth = hasButtons ? proxy()->subControlRect(CC_SpinBox, vopt, SC_SpinBoxUp, widget).width() : 0;
             sz += QSize(buttonWidth, 0);
         }
         break;
