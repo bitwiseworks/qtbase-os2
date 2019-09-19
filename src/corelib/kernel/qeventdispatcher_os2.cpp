@@ -637,11 +637,16 @@ QEventDispatcherOS2::QEventDispatcherOS2(QObject *parent)
 
 QEventDispatcherOS2::~QEventDispatcherOS2()
 {
+    // Destroy the message queue as late as possible (see #closingDown).
+    Q_D(QEventDispatcherOS2);
+    d->destroyMsgQueue();
 }
 
 bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 {
     Q_D(QEventDispatcherOS2);
+
+    TRACE(V(flags));
 
     Q_ASSERT(d->hmq);
 
@@ -654,8 +659,6 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
     QMSG waitMsg;
     bool haveWaitMsg = false;
-
-    TRACE(V(flags));
 
     // Memorize new flags for window procs called by WinDispatchMsg and for processTimersAndSockets.
     QEventLoop::ProcessEventsFlags oldFlags = d->flags;
@@ -993,8 +996,11 @@ void QEventDispatcherOS2::startingUp()
 
 void QEventDispatcherOS2::closingDown()
 {
-    Q_D(QEventDispatcherOS2);
-    d->destroyMsgQueue();
+    // QGuiApplication calls this too early, before letting QCoreApplication call
+    // post routines (i.e. those added with qAddPostRoutine). These routines may
+    // still want to use the event loop so we should keep it working and postpone
+    // destroyMsgQueue until our own destruction. Note that QApplication is free
+    // from this problem as it calls post routines on its own before this method.
 }
 
 /*****************************************************************************
