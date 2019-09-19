@@ -91,7 +91,7 @@ static bool monitorData(HMONITOR hMonitor, QWindowsScreenData *data)
     } else {
         if (const HDC hdc = CreateDC(info.szDevice, nullptr, nullptr, nullptr)) {
             const QDpi dpi = monitorDPI(hMonitor);
-            data->dpi = dpi.first ? dpi : deviceDPI(hdc);
+            data->dpi = dpi.first > 0 ? dpi : deviceDPI(hdc);
             data->depth = GetDeviceCaps(hdc, BITSPIXEL);
             data->format = data->depth == 16 ? QImage::Format_RGB16 : QImage::Format_RGB32;
             data->physicalSizeMM = QSizeF(GetDeviceCaps(hdc, HORZSIZE), GetDeviceCaps(hdc, VERTSIZE));
@@ -240,7 +240,8 @@ QWindow *QWindowsScreen::topLevelAt(const QPoint &point) const
     QWindow *result = nullptr;
     if (QWindow *child = QWindowsScreen::windowAt(point, CWP_SKIPINVISIBLE))
         result = QWindowsWindow::topLevelOf(child);
-    qCDebug(lcQpaWindows) <<__FUNCTION__ << point << result;
+    if (QWindowsContext::verbose > 1)
+        qCDebug(lcQpaWindows) <<__FUNCTION__ << point << result;
     return result;
 }
 
@@ -250,7 +251,8 @@ QWindow *QWindowsScreen::windowAt(const QPoint &screenPoint, unsigned flags)
     if (QPlatformWindow *bw = QWindowsContext::instance()->
             findPlatformWindowAt(GetDesktopWindow(), screenPoint, flags))
         result = bw->window();
-    qCDebug(lcQpaWindows) <<__FUNCTION__ << screenPoint << " returns " << result;
+    if (QWindowsContext::verbose > 1)
+        qCDebug(lcQpaWindows) <<__FUNCTION__ << screenPoint << " returns " << result;
     return result;
 }
 
@@ -301,23 +303,28 @@ void QWindowsScreen::handleChanges(const QWindowsScreenData &newData)
         m_data.hMonitor = newData.hMonitor;
     }
 
-    if (m_data.geometry != newData.geometry || m_data.availableGeometry != newData.availableGeometry) {
-        m_data.geometry = newData.geometry;
-        m_data.availableGeometry = newData.availableGeometry;
-        QWindowSystemInterface::handleScreenGeometryChange(screen(),
-                                                           newData.geometry, newData.availableGeometry);
-    }
-    if (!qFuzzyCompare(m_data.dpi.first, newData.dpi.first)
-        || !qFuzzyCompare(m_data.dpi.second, newData.dpi.second)) {
-        m_data.dpi = newData.dpi;
+    // QGuiApplicationPrivate::processScreenGeometryChange() checks and emits
+    // DPI and orientation as well, so, assign new values and emit DPI first.
+    const bool geometryChanged = m_data.geometry != newData.geometry
+        || m_data.availableGeometry != newData.availableGeometry;
+    const bool dpiChanged = !qFuzzyCompare(m_data.dpi.first, newData.dpi.first)
+        || !qFuzzyCompare(m_data.dpi.second, newData.dpi.second);
+    const bool orientationChanged = m_data.orientation != newData.orientation;
+    m_data.dpi = newData.dpi;
+    m_data.orientation = newData.orientation;
+    m_data.geometry = newData.geometry;
+    m_data.availableGeometry = newData.availableGeometry;
+
+    if (dpiChanged) {
         QWindowSystemInterface::handleScreenLogicalDotsPerInchChange(screen(),
                                                                      newData.dpi.first,
                                                                      newData.dpi.second);
     }
-    if (m_data.orientation != newData.orientation) {
-        m_data.orientation = newData.orientation;
-        QWindowSystemInterface::handleScreenOrientationChange(screen(),
-                                                              newData.orientation);
+    if (orientationChanged)
+       QWindowSystemInterface::handleScreenOrientationChange(screen(), newData.orientation);
+    if (geometryChanged) {
+        QWindowSystemInterface::handleScreenGeometryChange(screen(),
+                                                           newData.geometry, newData.availableGeometry);
     }
 }
 
@@ -432,6 +439,12 @@ QPlatformScreen::SubpixelAntialiasingType QWindowsScreen::subpixelAntialiasingTy
 */
 
 QWindowsScreenManager::QWindowsScreenManager() = default;
+
+
+bool QWindowsScreenManager::isSingleScreen()
+{
+    return QWindowsContext::instance()->screenManager().screens().size() < 2;
+}
 
 /*!
     \brief Triggers synchronization of screens (WM_DISPLAYCHANGE).

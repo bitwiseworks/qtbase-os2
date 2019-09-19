@@ -73,6 +73,7 @@
 #endif
 #include "qpushbutton.h"
 #include "qtooltip.h"
+#include <qwindow.h>
 #include <private/qpushbutton_p.h>
 #include <private/qaction_p.h>
 #include <private/qguiapplication_p.h>
@@ -199,7 +200,7 @@ void QMenuPrivate::init()
     q->setAttribute(Qt::WA_X11NetWmWindowTypePopupMenu);
     defaultMenuAction = menuAction = new QAction(q);
     menuAction->d_func()->menu = q;
-    QObject::connect(menuAction, &QAction::changed, [=] {
+    QObject::connect(menuAction, &QAction::changed, [this] {
         if (!tornPopup.isNull())
             tornPopup->updateWindowTitle();
     });
@@ -1485,6 +1486,8 @@ void QMenuPrivate::_q_platformMenuAboutToShow()
 {
     Q_Q(QMenu);
 
+    emit q->aboutToShow();
+
 #ifdef Q_OS_OSX
     if (platformMenu) {
         const auto actions = q->actions();
@@ -1498,8 +1501,6 @@ void QMenuPrivate::_q_platformMenuAboutToShow()
         }
     }
 #endif
-
-    emit q->aboutToShow();
 }
 
 bool QMenuPrivate::hasMouseMoved(const QPoint &globalPos)
@@ -2328,8 +2329,20 @@ void QMenu::popup(const QPoint &p, QAction *atAction)
     d->motions = 0;
     d->doChildEffects = true;
     d->updateLayoutDirection();
-    // Ensure that we get correct sizeHints by placing this window on the right screen.
-    d->setScreenForPoint(p);
+
+    // Ensure that we get correct sizeHints by placing this window on the correct screen.
+    // However if the QMenu was constructed with a QDesktopScreenWidget as its parent,
+    // then initialScreenIndex was set, so we should respect that for the lifetime of this menu.
+    // Use d->popupScreen to remember, because initialScreenIndex will be reset after the first showing.
+    const int screenIndex = d->topData()->initialScreenIndex;
+    if (screenIndex >= 0)
+        d->popupScreen = screenIndex;
+    if (auto s = QGuiApplication::screens().value(d->popupScreen)) {
+        if (d->setScreen(s))
+            d->itemsDirty = true;
+    } else if (d->setScreenForPoint(p)) {
+        d->itemsDirty = true;
+    }
 
     const bool contextMenu = d->isContextMenu();
     if (d->lastContextMenu != contextMenu) {

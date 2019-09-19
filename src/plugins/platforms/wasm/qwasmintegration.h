@@ -34,6 +34,7 @@
 
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformscreen.h>
+#include <qpa/qplatforminputcontext.h>
 
 #include <QtCore/qhash.h>
 
@@ -74,6 +75,9 @@ public:
     QPlatformTheme *createPlatformTheme(const QString &name) const override;
     QPlatformServices *services() const override;
     QPlatformClipboard *clipboard() const override;
+    void initialize() override;
+    QPlatformInputContext *inputContext() const override;
+
     QWasmClipboard *getWasmClipboard() { return m_clipboard; }
 
     static QWasmIntegration *get() { return s_instance; }
@@ -83,6 +87,7 @@ public:
     void removeScreen(const QString &canvasId);
     void resizeScreen(const QString &canvasId);
     void resizeAllScreens();
+    void updateDpi();
 
 private:
     mutable QWasmFontDatabase *m_fontDb;
@@ -91,6 +96,8 @@ private:
 
     QHash<QString, QWasmScreen *> m_screens;
     mutable QWasmClipboard *m_clipboard;
+    qreal m_fontDpi = -1;
+    mutable QScopedPointer<QPlatformInputContext> m_inputContext;
     static QWasmIntegration *s_instance;
 };
 

@@ -49,8 +49,10 @@
 #include <QtGui/qscreen.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QtCore/qcoreapplication.h>
+#include <qpa/qplatforminputcontextfactory_p.h>
 
 #include <emscripten/bind.h>
+#include <emscripten/val.h>
 
 // this is where EGL headers are pulled in, make sure it is last
 #include "qwasmscreen.h"
@@ -81,12 +83,18 @@ static void resizeCanvasElement(emscripten::val canvas)
     QWasmIntegration::get()->resizeScreen(canvasId);
 }
 
+static void qtUpdateDpi()
+{
+    QWasmIntegration::get()->updateDpi();
+}
+
 EMSCRIPTEN_BINDINGS(qtQWasmIntegraton)
 {
     function("qtBrowserBeforeUnload", &browserBeforeUnload);
     function("qtAddCanvasElement", &addCanvasElement);
     function("qtRemoveCanvasElement", &removeCanvasElement);
     function("qtResizeCanvasElement", &resizeCanvasElement);
+    function("qtUpdateDpi", &qtUpdateDpi);
 }
 
 QWasmIntegration *QWasmIntegration::s_instance;
@@ -160,6 +168,7 @@ bool QWasmIntegration::hasCapability(QPlatformIntegration::Capability cap) const
     case RasterGLSurface: return false; // to enable this you need to fix qopenglwidget and quickwidget for wasm
     case MultipleWindows: return true;
     case WindowManagement: return true;
+    case OpenGLOnRasterSurface: return true;
     default: return QPlatformIntegration::hasCapability(cap);
     }
 }
@@ -188,6 +197,18 @@ QPlatformOpenGLContext *QWasmIntegration::createPlatformOpenGLContext(QOpenGLCon
     return new QWasmOpenGLContext(context->format());
 }
 #endif
+
+void QWasmIntegration::initialize()
+{
+    QString icStr = QPlatformInputContextFactory::requested();
+    if (!icStr.isNull())
+        m_inputContext.reset(QPlatformInputContextFactory::create(icStr));
+}
+
+QPlatformInputContext *QWasmIntegration::inputContext() const
+{
+    return m_inputContext.data();
+}
 
 QPlatformOffscreenSurface *QWasmIntegration::createPlatformOffscreenSurface(QOffscreenSurface *surface) const
 {
@@ -266,6 +287,16 @@ void QWasmIntegration::removeScreen(const QString &canvasId)
 void QWasmIntegration::resizeScreen(const QString &canvasId)
 {
     m_screens.value(canvasId)->updateQScreenAndCanvasRenderSize();
+}
+
+void QWasmIntegration::updateDpi()
+{
+    emscripten::val dpi = emscripten::val::module_property("qtFontDpi");
+    if (dpi.isUndefined())
+        return;
+    qreal dpiValue = dpi.as<qreal>();
+    for (QWasmScreen *screen : m_screens)
+        QWindowSystemInterface::handleScreenLogicalDotsPerInchChange(screen->screen(), dpiValue, dpiValue);
 }
 
 void QWasmIntegration::resizeAllScreens()

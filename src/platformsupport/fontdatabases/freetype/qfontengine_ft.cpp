@@ -1061,7 +1061,7 @@ QFontEngineFT::Glyph *QFontEngineFT::loadGlyph(QGlyphSet *set, uint glyph,
                      || matrix.xy != 0
                      || matrix.yx != 0;
 
-    if (transform || (format != Format_Mono && !embeddedbitmap && !isScalableBitmap()))
+    if (transform || obliquen || (format != Format_Mono && !embeddedbitmap && !isScalableBitmap()))
         load_flags |= FT_LOAD_NO_BITMAP;
 
     FT_Error err = FT_Load_Glyph(face, glyph, load_flags);
@@ -2105,8 +2105,10 @@ QImage QFontEngineFT::alphaRGBMapForGlyph(glyph_t g, QFixed subPixelPosition, co
     return QFontEngine::alphaRGBMapForGlyph(g, subPixelPosition, t);
 }
 
-QImage QFontEngineFT::bitmapForGlyph(glyph_t g, QFixed subPixelPosition, const QTransform &t)
+QImage QFontEngineFT::bitmapForGlyph(glyph_t g, QFixed subPixelPosition, const QTransform &t, const QColor &color)
 {
+    Q_UNUSED(color);
+
     Glyph *glyph = loadGlyphFor(g, subPixelPosition, defaultFormat, t);
     if (glyph == nullptr)
         return QImage();

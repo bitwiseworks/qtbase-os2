@@ -147,9 +147,34 @@
 
     ulong timestamp = [theEvent timestamp] * 1000;
 
-    auto eventType = cocoaEvent2QtMouseEvent(theEvent);
-    qCInfo(lcQpaMouse) << "Frame-strut" << eventType << "at" << qtWindowPoint << "with" << m_frameStrutButtons << "in" << self.window;
-    QWindowSystemInterface::handleFrameStrutMouseEvent(m_platformWindow->window(), timestamp, qtWindowPoint, qtScreenPoint, m_frameStrutButtons);
+    const auto button = cocoaButton2QtButton(theEvent);
+    auto eventType = [&]() {
+        switch (theEvent.type) {
+        case NSEventTypeLeftMouseDown:
+        case NSEventTypeRightMouseDown:
+        case NSEventTypeOtherMouseDown:
+            return QEvent::NonClientAreaMouseButtonPress;
+
+        case NSEventTypeLeftMouseUp:
+        case NSEventTypeRightMouseUp:
+        case NSEventTypeOtherMouseUp:
+            return QEvent::NonClientAreaMouseButtonRelease;
+
+        case NSEventTypeLeftMouseDragged:
+        case NSEventTypeRightMouseDragged:
+        case NSEventTypeOtherMouseDragged:
+            return QEvent::NonClientAreaMouseMove;
+
+        default:
+            break;
+        }
+
+        return QEvent::None;
+    }();
+
+    qCInfo(lcQpaMouse) << eventType << "at" << qtWindowPoint << "with" << m_frameStrutButtons << "in" << self.window;
+    QWindowSystemInterface::handleFrameStrutMouseEvent(m_platformWindow->window(),
+        timestamp, qtWindowPoint, qtScreenPoint, m_frameStrutButtons, button, eventType);
 }
 @end
 
@@ -252,20 +277,19 @@
     nativeDrag->setLastMouseEvent(theEvent, self);
 
     const auto modifiers = [QNSView convertKeyModifiers:theEvent.modifierFlags];
-    const auto buttons = currentlyPressedMouseButtons();
     auto button = cocoaButton2QtButton(theEvent);
     if (button == Qt::LeftButton && m_sendUpAsRightButton)
         button = Qt::RightButton;
     const auto eventType = cocoaEvent2QtMouseEvent(theEvent);
 
     if (eventType == QEvent::MouseMove)
-        qCDebug(lcQpaMouse) << eventType << "at" << qtWindowPoint << "with" << buttons;
+        qCDebug(lcQpaMouse) << eventType << "at" << qtWindowPoint << "with" << m_buttons;
     else
-        qCInfo(lcQpaMouse) << eventType << "of" << button << "at" << qtWindowPoint << "with" << buttons;
+        qCInfo(lcQpaMouse) << eventType << "of" << button << "at" << qtWindowPoint << "with" << m_buttons;
 
     QWindowSystemInterface::handleMouseEvent(targetView->m_platformWindow->window(),
                                              timestamp, qtWindowPoint, qtScreenPoint,
-                                             buttons, button, eventType, modifiers);
+                                             m_buttons, button, eventType, modifiers);
 }
 
 - (bool)handleMouseDownEvent:(NSEvent *)theEvent
@@ -472,12 +496,15 @@
     // uses the legacy cursorRect API, so the cursor is reset to the arrow
     // cursor. See rdar://34183708
 
-    if (self.cursor && self.cursor != NSCursor.currentCursor) {
-        qCInfo(lcQpaMouse) << "Updating cursor for" << self << "to" << self.cursor;
+    auto previousCursor = NSCursor.currentCursor;
+
+    if (self.cursor)
         [self.cursor set];
-    } else {
+    else
         [super cursorUpdate:theEvent];
-    }
+
+    if (NSCursor.currentCursor != previousCursor)
+        qCInfo(lcQpaMouse) << "Cursor update for" << self << "resulted in new cursor" << NSCursor.currentCursor;
 }
 
 - (void)mouseMovedImpl:(NSEvent *)theEvent

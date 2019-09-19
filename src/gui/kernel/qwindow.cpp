@@ -218,6 +218,12 @@ QWindow::~QWindow()
     QGuiApplicationPrivate::window_list.removeAll(this);
     if (!QGuiApplicationPrivate::is_app_closing)
         QGuiApplicationPrivate::instance()->modalWindowList.removeOne(this);
+
+    // focus_window is normally cleared in destroy(), but the window may in
+    // some cases end up becoming the focus window again. Clear it again
+    // here as a workaround. See QTBUG-75326.
+    if (QGuiApplicationPrivate::focus_window == this)
+        QGuiApplicationPrivate::focus_window = 0;
 }
 
 void QWindowPrivate::init(QScreen *targetScreen)
@@ -1682,9 +1688,9 @@ void QWindow::setGeometry(const QRect &rect)
   chicken and egg problem here: we cannot convert to native coordinates
   before we know which screen we are on.
 */
-QScreen *QWindowPrivate::screenForGeometry(const QRect &newGeometry)
+QScreen *QWindowPrivate::screenForGeometry(const QRect &newGeometry) const
 {
-    Q_Q(QWindow);
+    Q_Q(const QWindow);
     QScreen *currentScreen = q->screen();
     QScreen *fallback = currentScreen;
     QPoint center = newGeometry.center();
@@ -2554,6 +2560,10 @@ QPoint QWindow::mapToGlobal(const QPoint &pos) const
         && (d->platformWindow->isForeignWindow() || d->platformWindow->isEmbedded())) {
         return QHighDpi::fromNativeLocalPosition(d->platformWindow->mapToGlobal(QHighDpi::toNativeLocalPosition(pos, this)), this);
     }
+
+    if (QHighDpiScaling::isActive())
+        return QHighDpiScaling::mapPositionToGlobal(pos, d->globalPosition(), this);
+
     return pos + d->globalPosition();
 }
 
@@ -2574,6 +2584,10 @@ QPoint QWindow::mapFromGlobal(const QPoint &pos) const
         && (d->platformWindow->isForeignWindow() || d->platformWindow->isEmbedded())) {
         return QHighDpi::fromNativeLocalPosition(d->platformWindow->mapFromGlobal(QHighDpi::toNativeLocalPosition(pos, this)), this);
     }
+
+    if (QHighDpiScaling::isActive())
+        return QHighDpiScaling::mapPositionFromGlobal(pos, d->globalPosition(), this);
+
     return pos - d->globalPosition();
 }
 
@@ -2862,7 +2876,7 @@ void QWindow::setVulkanInstance(QVulkanInstance *instance)
 }
 
 /*!
-    \return the associated Vulkan instance or \c null if there is none.
+    \return the associated Vulkan instance if any was set, otherwise \nullptr.
  */
 QVulkanInstance *QWindow::vulkanInstance() const
 {

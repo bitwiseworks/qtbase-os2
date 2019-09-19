@@ -48,8 +48,21 @@
 
 QT_BEGIN_NAMESPACE
 
-QNSWindowBackingStore::QNSWindowBackingStore(QWindow *window)
+QCocoaBackingStore::QCocoaBackingStore(QWindow *window)
     : QRasterBackingStore(window)
+{
+}
+
+QCFType<CGColorSpaceRef> QCocoaBackingStore::colorSpace() const
+{
+    NSView *view = static_cast<QCocoaWindow *>(window()->handle())->view();
+    return QCFType<CGColorSpaceRef>::constructFromGet(view.window.colorSpace.CGColorSpace);
+}
+
+// ----------------------------------------------------------------------------
+
+QNSWindowBackingStore::QNSWindowBackingStore(QWindow *window)
+    : QCocoaBackingStore(window)
 {
 }
 
@@ -69,6 +82,24 @@ QImage::Format QNSWindowBackingStore::format() const
         return QImage::Format_ARGB32_Premultiplied;
 
     return QRasterBackingStore::format();
+}
+
+void QNSWindowBackingStore::resize(const QSize &size, const QRegion &staticContents)
+{
+    qCDebug(lcQpaBackingStore) << "Resize requested to" << size;
+    QRasterBackingStore::resize(size, staticContents);
+
+    // The window shadow rendered by AppKit is based on the shape/content of the
+    // NSWindow surface. Technically any flush of the backingstore can result in
+    // a potentially new shape of the window, and would need a shadow invalidation,
+    // but this is likely too expensive to do at every flush for the few cases where
+    // clients change the shape dynamically. One case where we do know that the shadow
+    // likely needs invalidation, if the window has partially transparent content,
+    // is after a resize, where AppKit's default shadow may be based on the previous
+    // window content.
+    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window()->handle());
+    if (cocoaWindow->isContentView() && !cocoaWindow->isOpaque())
+        cocoaWindow->m_needsInvalidateShadow = true;
 }
 
 /*!
@@ -157,11 +188,10 @@ void QNSWindowBackingStore::flush(QWindow *window, const QRegion &region, const 
     Q_ASSERT_X(graphicsContext, "QCocoaBackingStore",
         "Focusing the view should give us a current graphics context");
 
-    // Prevent potentially costly color conversion by assigning the display color space
-    // to the backingstore image. This does not copy the underlying image data.
-    CGColorSpaceRef displayColorSpace = view.window.screen.colorSpace.CGColorSpace;
+    // Tag backingstore image with color space based on the window.
+    // Note: This does not copy the underlying image data.
     QCFType<CGImageRef> cgImage = CGImageCreateCopyWithColorSpace(
-        QCFType<CGImageRef>(m_image.toCGImage()), displayColorSpace);
+        QCFType<CGImageRef>(m_image.toCGImage()), colorSpace());
 
     // Create temporary image to use for blitting, without copying image data
     NSImage *backingStoreImage = [[[NSImage alloc] initWithCGImage:cgImage size:NSZeroSize] autorelease];
@@ -217,6 +247,7 @@ void QNSWindowBackingStore::flush(QWindow *window, const QRegion &region, const 
 
     QCocoaWindow *topLevelCocoaWindow = static_cast<QCocoaWindow *>(topLevelWindow->handle());
     if (Q_UNLIKELY(topLevelCocoaWindow->m_needsInvalidateShadow)) {
+        qCDebug(lcQpaBackingStore) << "Invalidating window shadow for" << topLevelCocoaWindow;
         [topLevelView.window invalidateShadow];
         topLevelCocoaWindow->m_needsInvalidateShadow = false;
     }
@@ -273,20 +304,8 @@ void QNSWindowBackingStore::redrawRoundedBottomCorners(CGRect windowRect) const
 
 // ----------------------------------------------------------------------------
 
-// https://stackoverflow.com/a/52722575/2761869
-template<class R>
-struct backwards_t {
-  R r;
-  constexpr auto begin() const { using std::rbegin; return rbegin(r); }
-  constexpr auto begin() { using std::rbegin; return rbegin(r); }
-  constexpr auto end() const { using std::rend; return rend(r); }
-  constexpr auto end() { using std::rend; return rend(r); }
-};
-template<class R>
-constexpr backwards_t<R> backwards(R&& r) { return {std::forward<R>(r)}; }
-
 QCALayerBackingStore::QCALayerBackingStore(QWindow *window)
-    : QPlatformBackingStore(window)
+    : QCocoaBackingStore(window)
 {
     qCDebug(lcQpaBackingStore) << "Creating QCALayerBackingStore for" << window;
     m_buffers.resize(1);
@@ -394,10 +413,11 @@ void QCALayerBackingStore::ensureBackBuffer()
 
 bool QCALayerBackingStore::recreateBackBufferIfNeeded()
 {
-    const qreal devicePixelRatio = window()->devicePixelRatio();
+    const QCocoaWindow *platformWindow = static_cast<QCocoaWindow *>(window()->handle());
+    const qreal devicePixelRatio = platformWindow->devicePixelRatio();
     QSize requestedBufferSize = m_requestedSize * devicePixelRatio;
 
-    const NSView *backingStoreView = static_cast<QCocoaWindow *>(window()->handle())->view();
+    const NSView *backingStoreView = platformWindow->view();
     Q_UNUSED(backingStoreView);
 
     auto bufferSizeMismatch = [&](const QSize requested, const QSize actual) {
@@ -424,11 +444,7 @@ bool QCALayerBackingStore::recreateBackBufferIfNeeded()
             << "based on requested" << m_requestedSize << "and dpr =" << devicePixelRatio;
 
         static auto pixelFormat = QImage::toPixelFormat(QImage::Format_ARGB32_Premultiplied);
-
-        NSView *view = static_cast<QCocoaWindow *>(window()->handle())->view();
-        auto colorSpace = QCFType<CGColorSpaceRef>::constructFromGet(view.window.screen.colorSpace.CGColorSpace);
-
-        m_buffers.back().reset(new GraphicsBuffer(requestedBufferSize, devicePixelRatio, pixelFormat, colorSpace));
+        m_buffers.back().reset(new GraphicsBuffer(requestedBufferSize, devicePixelRatio, pixelFormat, colorSpace()));
         return true;
     }
 
@@ -523,6 +539,7 @@ void QCALayerBackingStore::flush(QWindow *flushedWindow, const QRegion &region, 
     // the window server.
 }
 
+#ifndef QT_NO_OPENGL
 void QCALayerBackingStore::composeAndFlush(QWindow *window, const QRegion &region, const QPoint &offset,
                                     QPlatformTextureList *textures, bool translucentBackground)
 {
@@ -530,6 +547,22 @@ void QCALayerBackingStore::composeAndFlush(QWindow *window, const QRegion &regio
         return;
 
     QPlatformBackingStore::composeAndFlush(window, region, offset, textures, translucentBackground);
+}
+#endif
+
+QImage QCALayerBackingStore::toImage() const
+{
+    if (!const_cast<QCALayerBackingStore*>(this)->prepareForFlush())
+        return QImage();
+
+    // We need to make a copy here, as the returned image could be used just
+    // for reading, in which case it won't detach, and then the underlying
+    // image data might change under the feet of the client when we re-use
+    // the buffer at a later point.
+    m_buffers.back()->lock(QPlatformGraphicsBuffer::SWReadAccess);
+    QImage imageCopy = m_buffers.back()->asImage()->copy();
+    m_buffers.back()->unlock();
+    return imageCopy;
 }
 
 QPlatformGraphicsBuffer *QCALayerBackingStore::graphicsBuffer() const

@@ -179,6 +179,8 @@ DEFINEFUNC(ASN1_TIME *, X509_getm_notAfter, X509 *a, a, return nullptr, return)
 DEFINEFUNC(long, X509_get_version, X509 *a, a, return -1, return)
 DEFINEFUNC(EVP_PKEY *, X509_get_pubkey, X509 *a, a, return nullptr, return)
 DEFINEFUNC2(void, X509_STORE_set_verify_cb, X509_STORE *a, a, X509_STORE_CTX_verify_cb verify_cb, verify_cb, return, DUMMYARG)
+DEFINEFUNC3(int, X509_STORE_set_ex_data, X509_STORE *a, a, int idx, idx, void *data, data, return 0, return)
+DEFINEFUNC2(void *, X509_STORE_get_ex_data, X509_STORE *r, r, int idx, idx, return nullptr, return)
 DEFINEFUNC(STACK_OF(X509) *, X509_STORE_CTX_get0_chain, X509_STORE_CTX *a, a, return nullptr, return)
 DEFINEFUNC3(void, CRYPTO_free, void *str, str, const char *file, file, int line, line, return, DUMMYARG)
 DEFINEFUNC(long, OpenSSL_version_num, void, DUMMYARG, return 0, return)
@@ -253,6 +255,8 @@ DEFINEFUNC(int, CRYPTO_num_locks, DUMMYARG, DUMMYARG, return 0, return)
 DEFINEFUNC(void, CRYPTO_set_locking_callback, void (*a)(int, int, const char *, int), a, return, DUMMYARG)
 DEFINEFUNC(void, CRYPTO_set_id_callback, unsigned long (*a)(), a, return, DUMMYARG)
 DEFINEFUNC(void, CRYPTO_free, void *a, a, return, DUMMYARG)
+DEFINEFUNC3(int, CRYPTO_set_ex_data, CRYPTO_EX_DATA *ad, ad, int idx, idx, void *val, val, return 0, return)
+DEFINEFUNC2(void *, CRYPTO_get_ex_data, const CRYPTO_EX_DATA *ad, ad, int idx, idx, return nullptr, return)
 DEFINEFUNC(unsigned long, ERR_peek_last_error, DUMMYARG, DUMMYARG, return 0, return)
 DEFINEFUNC(void, ERR_free_strings, void, DUMMYARG, return, DUMMYARG)
 DEFINEFUNC(void, EVP_CIPHER_CTX_cleanup, EVP_CIPHER_CTX *a, a, return, DUMMYARG)
@@ -519,6 +523,7 @@ DEFINEFUNC2(int, X509_STORE_CTX_set_purpose, X509_STORE_CTX *a, a, int b, b, ret
 DEFINEFUNC(int, X509_STORE_CTX_get_error, X509_STORE_CTX *a, a, return -1, return)
 DEFINEFUNC(int, X509_STORE_CTX_get_error_depth, X509_STORE_CTX *a, a, return -1, return)
 DEFINEFUNC(X509 *, X509_STORE_CTX_get_current_cert, X509_STORE_CTX *a, a, return nullptr, return)
+DEFINEFUNC(X509_STORE *, X509_STORE_CTX_get0_store, X509_STORE_CTX *ctx, ctx, return nullptr, return)
 DEFINEFUNC(X509_STORE_CTX *, X509_STORE_CTX_new, DUMMYARG, DUMMYARG, return nullptr, return)
 DEFINEFUNC2(void *, X509_STORE_CTX_get_ex_data, X509_STORE_CTX *ctx, ctx, int idx, idx, return nullptr, return)
 DEFINEFUNC(int, SSL_get_ex_data_X509_STORE_CTX_idx, DUMMYARG, DUMMYARG, return -1, return)
@@ -895,8 +900,25 @@ static QPair<QLibrary*, QLibrary*> loadOpenSsl()
     //  macOS's /usr/lib/libssl.dylib, /usr/lib/libcrypto.dylib will be picked up in the third
     //    attempt, _after_ <bundle>/Contents/Frameworks has been searched.
     //  iOS does not ship a system libssl.dylib, libcrypto.dylib in the first place.
+# if defined(Q_OS_ANDROID)
+    // OpenSSL 1.1.x must be suffixed otherwise it will use the system libcrypto.so libssl.so which on API-21 are OpenSSL 1.0 not 1.1
+    auto openSSLSuffix = [](const QByteArray &defaultSuffix = {}) {
+        auto suffix = qgetenv("ANDROID_OPENSSL_SUFFIX");
+        if (suffix.isEmpty())
+            return defaultSuffix;
+        return suffix;
+    };
+#  if QT_CONFIG(opensslv11)
+    static QString suffix = QString::fromLatin1(openSSLSuffix("_1_1"));
+#  else
+    static QString suffix = QString::fromLatin1(openSSLSuffix());
+#  endif
+    libssl->setFileNameAndVersion(QLatin1String("ssl") + suffix, -1);
+    libcrypto->setFileNameAndVersion(QLatin1String("crypto") + suffix, -1);
+# else
     libssl->setFileNameAndVersion(QLatin1String("ssl"), -1);
     libcrypto->setFileNameAndVersion(QLatin1String("crypto"), -1);
+# endif
     if (libcrypto->load() && libssl->load()) {
         // libssl.so.0 and libcrypto.so.0 found
         return pair;
@@ -1008,6 +1030,8 @@ bool q_resolveOpenSslSymbols()
     RESOLVEFUNC(X509_get_version)
     RESOLVEFUNC(X509_get_pubkey)
     RESOLVEFUNC(X509_STORE_set_verify_cb)
+    RESOLVEFUNC(X509_STORE_set_ex_data)
+    RESOLVEFUNC(X509_STORE_get_ex_data)
     RESOLVEFUNC(CRYPTO_free)
     RESOLVEFUNC(OpenSSL_version_num)
     RESOLVEFUNC(OpenSSL_version)
@@ -1079,6 +1103,8 @@ bool q_resolveOpenSslSymbols()
     RESOLVEFUNC(CRYPTO_num_locks)
     RESOLVEFUNC(CRYPTO_set_id_callback)
     RESOLVEFUNC(CRYPTO_set_locking_callback)
+    RESOLVEFUNC(CRYPTO_set_ex_data)
+    RESOLVEFUNC(CRYPTO_get_ex_data)
     RESOLVEFUNC(ERR_peek_last_error)
     RESOLVEFUNC(ERR_free_strings)
     RESOLVEFUNC(EVP_CIPHER_CTX_cleanup)
@@ -1334,6 +1360,7 @@ bool q_resolveOpenSslSymbols()
     RESOLVEFUNC(X509_STORE_CTX_get_error)
     RESOLVEFUNC(X509_STORE_CTX_get_error_depth)
     RESOLVEFUNC(X509_STORE_CTX_get_current_cert)
+    RESOLVEFUNC(X509_STORE_CTX_get0_store)
     RESOLVEFUNC(X509_cmp)
     RESOLVEFUNC(X509_STORE_CTX_get_ex_data)
 

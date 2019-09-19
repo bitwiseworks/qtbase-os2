@@ -518,7 +518,6 @@ bool
 ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
 {
     ProStringList tmp;
-    bool did_preprocess = false;
 
     //HEADER
     const int pbVersion = pbuilderVersion();
@@ -736,7 +735,6 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
         QFile mkf(mkfile);
         if(mkf.open(QIODevice::WriteOnly | QIODevice::Text)) {
             writingUnixMakefileGenerator = true;
-            did_preprocess = true;
             debug_msg(1, "pbuilder: Creating file: %s", mkfile.toLatin1().constData());
             QTextStream mkt(&mkf);
             writeHeader(mkt);
@@ -827,6 +825,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
     }
 
     if(!project->isActiveConfig("staticlib")) { //DUMP LIBRARIES
+        const ProStringList defaultLibDirs = project->values("QMAKE_DEFAULT_LIBDIRS");
         ProStringList &libdirs = project->values("QMAKE_PBX_LIBPATHS"),
               &frameworkdirs = project->values("QMAKE_FRAMEWORKPATH");
         static const char * const libs[] = { "LIBS", "LIBS_PRIVATE",
@@ -945,8 +944,10 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                     }
                     if(slsh != -1) {
                         const QString path = QFileInfo(library.left(slsh)).absoluteFilePath();
-                        if(!path.isEmpty() && !libdirs.contains(path))
+                        if (!path.isEmpty() && !libdirs.contains(path)
+                            && !defaultLibDirs.contains(path)) {
                             libdirs += path;
+                        }
                     }
                     library = fileFixify(library, FileFixifyFromOutdir | FileFixifyAbsolute);
                     QString key = keyFor(library);
