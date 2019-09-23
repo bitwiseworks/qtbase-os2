@@ -2054,8 +2054,13 @@ static inline bool canUseFastMatrixPath(const qreal cx, const qreal cy, const qs
     qreal fy = (data->m22 * cy + data->m12 * cx + data->dy) * fixed_scale;
     qreal minc = std::min(fx, fy);
     qreal maxc = std::max(fx, fy);
+#if defined(Q_OS_OS2) // https://github.com/psmedley/gcc/issues/34
+    fx += ::trunc(data->m11 * fixed_scale) * length;
+    fy += ::trunc(data->m12 * fixed_scale) * length;
+#else
     fx += std::trunc(data->m11 * fixed_scale) * length;
     fy += std::trunc(data->m12 * fixed_scale) * length;
+#endif
     minc = std::min(minc, std::min(fx, fy));
     maxc = std::max(maxc, std::max(fx, fy));
 
