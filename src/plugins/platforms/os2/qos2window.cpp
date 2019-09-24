@@ -252,9 +252,9 @@ QOS2Window::QOS2Window(QWindow *window)
     }
 
     const bool isTopLevel = window->isTopLevel();
-    const bool isPopup = type == Qt::Popup || type == Qt::ToolTip;
-    const bool isDialog = ((type == Qt::Dialog) || (type == Qt::Sheet) || (type == Qt::MSWindowsFixedSizeDialogHint));
-    const bool isTool = ((type == Qt::Tool) || (type == Qt::Drawer));
+    const bool isPopup = type == Qt::Popup || type == Qt::ToolTip || type == Qt::SplashScreen || (flags & Qt::FramelessWindowHint);
+    const bool isDialog = (type == Qt::Dialog) || (type == Qt::Sheet) || (flags & Qt::MSWindowsFixedSizeDialogHint);
+    const bool isTool = (type == Qt::Tool) || (type == Qt::Drawer);
 
     const QWindow *parent = isTopLevel ? window->transientParent() : window->parent();
 
@@ -271,7 +271,7 @@ QOS2Window::QOS2Window(QWindow *window)
 
     const char *className;
 
-    if (isPopup || type == Qt::ToolTip) {
+    if (isPopup) {
         className = "Qt5.QPopup";
         static bool IsClassNameRegistered = false;
         if (Q_UNLIKELY(!IsClassNameRegistered))
@@ -293,9 +293,9 @@ QOS2Window::QOS2Window(QWindow *window)
     // Flip y coordinate.
     y = (isTopLevel ? QOS2Screen::Height() : parent->height()) - (y + cy);
 
-    // Fix top level window flags in case only the type flags are passed (taken from qwindowswindow.cpp).
+    // Fix top level window flags in case only the type flags are passed (based on qwindowswindow.cpp).
     if (isTopLevel) {
-        switch (flags) {
+        switch (type) {
         case Qt::Window:
             flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint
                   |Qt::WindowMaximizeButtonHint|Qt::WindowCloseButtonHint;
@@ -304,11 +304,11 @@ QOS2Window::QOS2Window(QWindow *window)
         case Qt::Tool:
             flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint;
             break;
+        case Qt::SplashScreen:
+            flags |= Qt::FramelessWindowHint;
         default:
             break;
         }
-        if ((flags & Qt::WindowType_Mask) == Qt::SplashScreen)
-            flags |= Qt::FramelessWindowHint;
     }
 
     if (title.isEmpty() && flags & Qt::WindowTitleHint)
@@ -320,6 +320,9 @@ QOS2Window::QOS2Window(QWindow *window)
     // and owner and store it in mHwndFrame. Note that for popups mHwndFrame
     // will be equal to mHwnd (to unify control over top-level windows). Child
     // windows will have mHwndFrame set to NULLHANDLE to distinguish them.
+
+    // Note also that Qt::FramelessWindowHint forces the popup mode as it's not
+    // possible to have a fameless WC_FRAME (its minimal frame width is 1px).
 
     if (isTopLevel && !isPopup) {
         ULONG frameStyle = 0;
@@ -447,8 +450,16 @@ QOS2Window::QOS2Window(QWindow *window)
         WinSetWindowPtr(mHwnd, WinData_QOS2Window, this);
 
         // Position the frame window second time to make the client geometry match the request.
-        x -= swp.x;
-        y -= swp.y;
+        // Note that if original x and y (in Qt coords) are zero, we assume it's a default
+        // position (like QWindowCreationContext does) and avoid moving the frame beyond the top
+        // left corner of the screen (this would hide the title bar etc.).
+        if (rect.x() == 0 && rect.y() == 0) {
+            // Compensate for y-coordinate flipping.
+            y -= swp.y + mFrameMargins.top();
+        } else {
+            x -= swp.x;
+            y -= swp.y;
+        }
         cx += swp.x + mFrameMargins.right();
         cy += swp.y + mFrameMargins.top();
         WinSetWindowPos(mHwndFrame, NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
