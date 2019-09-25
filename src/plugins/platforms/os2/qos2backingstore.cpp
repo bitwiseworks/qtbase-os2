@@ -43,6 +43,8 @@
 #include "qos2screen.h"
 #include "qos2window.h"
 
+#include <QtGui/qpainter.h>
+
 QT_BEGIN_NAMESPACE
 
 namespace {
@@ -148,6 +150,25 @@ void QOS2BackingStore::resize(const QSize &size, const QRegion &staticContents)
     }
 
     qCInfo(lcQpaBackingStore) << size << staticContents << mImage;
+}
+
+void QOS2BackingStore::beginPaint(const QRegion &region)
+{
+    // Ideally, widgets requesting translucency should check whether the actual QWindow::format
+    // supports it and act accordingly (e.g. paint the appropriate background themselves if not)
+    // but in reality even Qt own widgets (e.g. QSplashScreen) don't do that. This forces us to
+    // always check for the requested format and paint the image white if translucency is needed
+    // (to avoid previous QImage data in non-opaque areas to appear on the screen).
+    bool hasAlpha = window()->requestedFormat().hasAlpha();
+
+    qCInfo(lcQpaBackingStore) << region << DV(hasAlpha);
+
+    if (hasAlpha) {
+        QPainter p(&mImage);
+        const QColor blank = Qt::white;
+        for (const QRect &r : region)
+            p.fillRect(r, blank);
+    }
 }
 
 QT_END_NAMESPACE
