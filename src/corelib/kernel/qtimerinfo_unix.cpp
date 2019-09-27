@@ -211,15 +211,16 @@ static timespec roundToMillisecond(timespec val)
     // worst case scenario is that the first trigger of a 1-ms timer is 0.999 ms late
 
     int ns = val.tv_nsec % (1000 * 1000);
-    val.tv_nsec += 1000 * 1000 - ns;
+    if (ns)
+        val.tv_nsec += 1000 * 1000 - ns;
     return normalizedTimespec(val);
 }
 
 #ifdef QTIMERINFO_DEBUG
-QDebug operator<<(QDebug s, timeval tv)
+QDebug operator<<(QDebug s, timespec tv)
 {
     QDebugStateSaver saver(s);
-    s.nospace() << tv.tv_sec << "." << qSetFieldWidth(6) << qSetPadChar(QChar(48)) << tv.tv_usec << reset;
+    s.nospace() << tv.tv_sec << "." << qSetFieldWidth(6) << qSetPadChar(QChar(48)) << tv.tv_nsec << reset;
     return s;
 }
 QDebug operator<<(QDebug s, Qt::TimerType t)
@@ -634,11 +635,11 @@ int QTimerInfoList::activateTimers()
         float diff;
         if (currentTime < currentTimerInfo->expected) {
             // early
-            timeval early = currentTimerInfo->expected - currentTime;
-            diff = -(early.tv_sec + early.tv_usec / 1000000.0);
+            timespec early = currentTimerInfo->expected - currentTime;
+            diff = -(early.tv_sec + early.tv_nsec / 1000000000.0);
         } else {
-            timeval late = currentTime - currentTimerInfo->expected;
-            diff = late.tv_sec + late.tv_usec / 1000000.0;
+            timespec late = currentTime - currentTimerInfo->expected;
+            diff = late.tv_sec + late.tv_nsec / 1000000000.0;
         }
         currentTimerInfo->cumulativeError += diff;
         ++currentTimerInfo->count;

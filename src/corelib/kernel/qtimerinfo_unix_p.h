@@ -71,7 +71,7 @@ struct QTimerInfo {
     QTimerInfo **activateRef; // - ref from activateTimers
 
 #ifdef QTIMERINFO_DEBUG
-    timeval expected; // when timer is expected to fire
+    timespec expected; // when timer is expected to fire
     float cumulativeError;
     uint count;
 #endif
