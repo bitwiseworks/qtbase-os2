@@ -83,9 +83,13 @@ tst_QNetworkInterface::~tst_QNetworkInterface()
 
 bool tst_QNetworkInterface::isIPv6Working()
 {
+#ifndef QT_NO_IPV6
     QUdpSocket socket;
     socket.connectToHost(QHostAddress::LocalHostIPv6, 1234);
     return socket.state() == QAbstractSocket::ConnectedState || socket.waitForConnected(100);
+#else
+    return false;
+#endif
 }
 
 void tst_QNetworkInterface::initTestCase()
