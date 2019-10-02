@@ -33,7 +33,7 @@
 
 #include <algorithm>
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 #  include <unistd.h>
 #  include <sys/types.h>
 #  include <sys/wait.h>
@@ -63,7 +63,7 @@ private:
     QString getDefaultPrinterFromSystem();
     QStringList getPrintersFromSystem();
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     QString getOutputFromCommand(const QStringList& command);
 #endif // Q_OS_UNIX
 #endif
@@ -89,7 +89,7 @@ QString tst_QPrinterInfo::getDefaultPrinterFromSystem()
 #ifdef Q_OS_WIN32
     // TODO "cscript c:\windows\system32\prnmngr.vbs -g"
 #endif // Q_OS_WIN32
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     QStringList command;
     command << "lpstat" << "-d";
     QString output = getOutputFromCommand(command);
@@ -115,7 +115,7 @@ QStringList tst_QPrinterInfo::getPrintersFromSystem()
 #ifdef Q_OS_WIN32
     // TODO "cscript c:\windows\system32\prnmngr.vbs -l"
 #endif // Q_OS_WIN32
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
     QStringList command;
     command << "lpstat" << "-p";
     QString output = getOutputFromCommand(command);
@@ -133,7 +133,7 @@ QStringList tst_QPrinterInfo::getPrintersFromSystem()
     return ans;
 }
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_UNIXLIKE
 // This function does roughly the same as the `command substitution` in
 // the shell.
 QString getOutputFromCommandInternal(const QStringList &command)

@@ -246,7 +246,7 @@ public:
         return QByteArray();
     }
 
-#if (defined Q_OS_MACOS) || (defined Q_OS_UNIX && QT_CONFIG(cups))
+#if (defined Q_OS_MACOS) || (defined Q_OS_UNIXLIKE && QT_CONFIG(cups))
 
     // PPD utilities shared by CUPS and Mac plugins requiring CUPS headers
     // May turn into a proper internal QPpd class if enough shared between Mac and CUPS,

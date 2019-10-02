@@ -1,4 +1,5 @@
 TARGET = cupsprintersupport
+os2:TARGET_SHORT = cupsprn
 MODULE = cupsprintersupport
 
 QT += core-private gui-private printsupport printsupport-private
