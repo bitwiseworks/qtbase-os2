@@ -418,9 +418,11 @@ QOS2Window::QOS2Window(QWindow *window)
         // Associate mFrameHwnd with this instance.
         sKnownWindows.insert(mHwndFrame, this);
 
-        // Position the frame window first time to have the client window
-        // resized and grab frame margins (we don't trust SV_CXSIZEBORDER et al
-        // as the actual frame size depends on many factors).
+        // Position the frame window first time to have the client window resized and grab frame
+        // margins (we don't trust SV_CXSIZEBORDER et al as the actual frame size depends on many
+        // factors). Note that we use an artificial size of 300 x 200 for that which is big enough
+        // to include the frame (it appears that the usual frame dimentions including the title bar
+        // are QMargins(4, 27, 4, 5) and the minimum title bar width (with l/r farmes) is 168 px).
         ULONG fl = SWP_SIZE | SWP_MOVE;
         HWND hwndBehind = NULLHANDLE;
         if ((flags & Qt::WindowStaysOnTopHint) || (type == Qt::ToolTip)) {
@@ -433,7 +435,7 @@ QOS2Window::QOS2Window(QWindow *window)
             hwndBehind = HWND_BOTTOM;
             fl |= SWP_ZORDER;
         }
-        WinSetWindowPos(mHwndFrame, hwndBehind, x, y, cx, cy, fl);
+        WinSetWindowPos(mHwndFrame, hwndBehind, 0, 0, 300, 200, fl);
 
         SWP fswp, swp;
         WinQueryWindowPos(mHwndFrame, &fswp);
@@ -545,7 +547,7 @@ void QOS2Window::setGeometry(const QRect &rect)
         WinSetWindowUShort(mHwndFrame, QWS_CXRESTORE, cx);
         WinSetWindowUShort(mHwndFrame, QWS_CYRESTORE, cy);
     } else {
-        WinSetWindowPos(mHwndFrame, NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
+        WinSetWindowPos(mainHwnd(), NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
     }
 }
 
