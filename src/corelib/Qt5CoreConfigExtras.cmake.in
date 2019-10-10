@@ -108,6 +108,7 @@ set(QT_LIBINFIX \"$${QT_LIBINFIX}\")
 !!ENDIF
 
 !!IF !isEmpty(CMAKE_WINDOWS_BUILD)
+!!IF isEmpty(CMAKE_OS2_BUILD)
 set(Qt5Core_QTMAIN_LIBRARIES Qt5::WinMain)
 
 if (NOT TARGET Qt5::WinMain)
@@ -164,6 +165,7 @@ if (NOT TARGET Qt5::WinMain)
         unset(_isPolicyNEW)
     endif()
 endif()
+!!ENDIF
 !!ENDIF
 
 get_filename_component(_Qt5CoreConfigDir ${CMAKE_CURRENT_LIST_FILE} PATH)
