@@ -1263,6 +1263,7 @@ void UnixMakefileGenerator::init2()
             ar_cmd.append("$(AR) $(TARGETA) $(OBJECTS)");
 
         if (project->isActiveConfig("os2")) {
+            project->values("PRL_TARGET").prepend(prefix + project->first("TARGET"));
             ProString dll = project->first("TARGET_SHORT");
             if (dll.isEmpty())
                 dll = prefix + project->first("TARGET");
