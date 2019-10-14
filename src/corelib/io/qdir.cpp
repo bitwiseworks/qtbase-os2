@@ -816,6 +816,21 @@ QString QDir::absoluteFilePath(const QString &fileName) const
 #ifdef Q_OS_DOSLIKE
     // Handle the "absolute except for drive" case (i.e. \blah not c:\blah):
     if (fileName.startsWith(QLatin1Char('/')) || fileName.startsWith(QLatin1Char('\\'))) {
+#ifdef Q_OS_OS2
+        // We may have kLIBC path rewriters that rewrite paths like /tmp and
+        // /@unixroot to real paths. The only known way to detect such a path
+        // is to run it through _abspath and compare the result. If it's the
+        // same then it's a rewrite. Note that _abspath returns Unix separators.
+        QByteArray nativeFileName = QFile::encodeName(QDir::fromNativeSeparators(fileName));
+        char buf[PATH_MAX * 2 + 1];
+        if (_abspath(buf, nativeFileName.constData(), sizeof(buf)) == 0) {
+            if (nativeFileName.compare(buf, Qt::CaseInsensitive) == 0)
+                return fileName;
+        } else {
+            qErrnoWarning("_abspath() failed for '%s'", nativeFileName.constData());
+            return QString();
+        }
+#endif
         // Combine absoluteDirPath's drive with fileName
         const int drive = drivePrefixLength(absoluteDirPath);
         if (Q_LIKELY(drive))

@@ -1401,6 +1401,10 @@ void tst_QDir::absoluteFilePath_data()
     QTest::newRow("Drive-UNC") << "c:/side/town" << "//host/share/path" << "//host/share/path";
     QTest::newRow("Drive-LTUNC") << "c:/side/town" << "\\/leaning\\toothpick/path" << "\\/leaning\\toothpick/path";
     QTest::newRow("Drive-abs") << "c:/side/town" << "/my/way/home" << "c:/my/way/home";
+#if defined(Q_OS_OS2)
+    QTest::newRow("Path rewrite 1") << "c:/os2" << "/@unixroot/usr" << "/@unixroot/usr";
+    QTest::newRow("Path rewrite 2") << "c:/os2" << "/@unixroot-nonexistent" << "c:/@unixroot-nonexistent";
+#endif
 #endif
 
     QTest::newRow("0") << DRIVE "/etc" << "/passwd" << DRIVE "/passwd";
@@ -1438,6 +1442,9 @@ void tst_QDir::absolutePath_data()
     QTest::newRow("3") << "\\\\machine\\share\\dir1" << "//machine/share/dir1";
     QTest::newRow("4") << "c:/machine/share/dir1" << "c:/machine/share/dir1";
     QTest::newRow("5") << "c:\\machine\\share\\dir1" << "c:/machine/share/dir1";
+#if defined(Q_OS_OS2)
+    QTest::newRow("Path rewrite 1") << "/@unixroot/usr" << "/@unixroot/usr";
+#endif
 #endif
     //test dirty paths are cleaned (QTBUG-19995)
     QTest::newRow("/home/qt/.") << QDir::rootPath() + "home/qt/." << QDir::rootPath() + "home/qt";
