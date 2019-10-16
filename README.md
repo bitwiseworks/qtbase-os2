@@ -12,7 +12,7 @@ The current version of the port implements all major parts of the `QtBase` modul
 
 These limitations will be addressed in future versions of the OS/2 port (except OpenGL and IPv6 which are unlikely to be supported in the near future due to limitations of OS/2 itself).
 
-Please refer to `CHANGELOG.md` for a list of changes from release to release.
+Please refer to `CHANGELOG.md` for a list of OS/2-specific changes from release to release.
 
 ## Installation
 
@@ -24,7 +24,7 @@ yum install qt5-qtbase-examples
 
 If you have ArcaOS and prefer a GUI installer, then you should launch *Arca Noae Package Manager* located in the `Computer` > `Install/Remove` folder on your desktop, select `YUM` > `Quick install..` from the main menu, type `qt5-qtbase-examples` in the entry field and press `Enter`.
 
-Once successfully installed, all Qt 5 example applications may be found in the `Programs` > `bitwiseworks Apps and Ports` > `Qt 5 Base Examples` folder on your desktop.
+Once successfully installed, all Qt 5 Base example applications may be found in the `Programs` > `bitwiseworks Apps and Ports` > `Qt 5 Examples` folder on your desktop.
 
 ## Help and Support
 
