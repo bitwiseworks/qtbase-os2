@@ -27,6 +27,7 @@ darwin:!no_app_extension_api_only: CONFIG += app_extension_api_only
 !no_cxx_module:isEmpty(CXX_MODULE) {
     CXX_MODULE = $$TARGET
     TARGET = declarative_$${TARGET}
+    !isEmpty(TARGET_SHORT):TARGET_SHORT = d$${TARGET_SHORT}
 }
 isEmpty(TARGETPATH): TARGETPATH = $$eval(QT.$${CXX_MODULE}.name)
 
