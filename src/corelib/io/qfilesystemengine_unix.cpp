@@ -211,6 +211,8 @@ static inline typename QtPrivate::QEnableIf<(&T::st_atim, &T::st_mtim, true)>::T
     modification->tv_usec = p->st_mtim.tv_nsec / 1000;
 }
 
+#  ifndef st_atimespec
+// if "st_atimespec" is defined, this would create a duplicate definition
 template <typename T>
 static inline typename QtPrivate::QEnableIf<(&T::st_atimespec, &T::st_mtimespec, true)>::Type get(const T *p, struct timeval *access, struct timeval *modification)
 {
@@ -220,6 +222,7 @@ static inline typename QtPrivate::QEnableIf<(&T::st_atimespec, &T::st_mtimespec,
     modification->tv_sec = p->st_mtimespec.tv_sec;
     modification->tv_usec = p->st_mtimespec.tv_nsec / 1000;
 }
+#  endif
 
 #  ifndef st_atimensec
 // if "st_atimensec" is defined, this would expand to invalid C++
