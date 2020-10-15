@@ -667,11 +667,36 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     d->processedTimers = false;
 
     // We need to return true if we processed any posted events (some tests, e.g.
-    // tst_QEventDispatcher::sendPostedEvents) expect that. See qGlobalqGlobalPostedEventsCount and
+    // tst_QEventDispatcher::sendPostedEvents) expect that. See qGlobalPostedEventsCount and
     // QCoreApplicationPrivate::sendPostedEvents for more info on the below code.
-    retVal = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
-    if (retVal)
+    uint postedCount = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
+    TRACE(V(postedCount));
+    if (postedCount) {
         QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
+        // Below, we use the following logic to detect if any posted events were *actually* sent.
+        // If, after calling sendPostedEvents we still have some posted events, this means that
+        // either processing these events resulted in new posted events (d->threadData->canWait will
+        // be false in this case) or some events were QEvent::DeferredDelete and they were reposted
+        // by sendPostedEvents (for processing later on an outer event loop). Such a synthetic
+        // reposting should *not* prevent this event loop from entering the wait state - otherwise
+        // it will spin in a tight cycle with 100% CPU load until terminated. To detect if there
+        // were any "normal" events besides DeferredDelete, we compare the number of posted events
+        // before and after. If d->threadData->canWait is false, there is no way to detect if we
+        // sent any "normal" posted event or not (w/o changing the QCoreApplicationPrivate code).
+        // Just pretend that we did hoping it will not break anything else. Note that we call
+        // canWaitLocked *after* grabbing the new posted event count (to keep them in sync).
+        uint postedCountAfter = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
+        bool canWaitLocked = d->threadData->canWaitLocked();
+        TRACE(V(postedCountAfter) << V(canWaitLocked));
+        if (canWaitLocked) {
+            Q_ASSERT(postedCount >= postedCountAfter);
+            // If before is greater than after, then we sent "normal" posted events.
+            retVal = postedCount > postedCountAfter;
+        } else {
+            // Pretend we sent some "normal" posted event.
+            retVal = true;
+        }
+    }
 
     do {
         bool quit = false;
@@ -761,7 +786,11 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                    && (flags & QEventLoop::WaitForMoreEvents)
                    && d->threadData->canWaitLocked()
                    && !d->interrupt.load());
-        TRACE(V(canWait));
+        TRACE(V(canWait) << V(retVal) <<
+              "zeroTimerCount" << d->timerList.zeroTimerCount() <<
+              "WaitForMoreEvents" << !!(flags & QEventLoop::WaitForMoreEvents) <<
+              "canWaitLocked" << d->threadData->canWaitLocked() <<
+              "interrupt" << d->interrupt.load());
         if (canWait) {
             emit aboutToBlock();
             WinGetMsg(d->hab, &waitMsg, 0, 0, 0);
