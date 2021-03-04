@@ -124,7 +124,7 @@
 #define QT_VSNPRINTF            ::vsnprintf
 #define QT_SNPRINTF             ::snprintf
 
-#define QT_SOCKLEN_T            int
+#define QT_SOCKLEN_T            socklen_t
 
 #define QT_SOCKET_CONNECT       ::connect
 #define QT_SOCKET_BIND          ::bind
