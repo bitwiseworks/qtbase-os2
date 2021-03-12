@@ -11,7 +11,7 @@ SUBDIRS=\
    macplist \
    networkselftest \
    qaccessibility \
-   # qaccessibilitylinux \ # QTBUG-44434
+   # qaccessibilitylinux # QTBUG-44434 \
    qaccessibilitymac \
    qcomplextext \
    qfocusevent \
@@ -68,7 +68,4 @@ winrt|!qtHaveModule(gui)|!qtConfig(accessibility): SUBDIRS -= qaccessibility
 android: SUBDIRS += \
     android
 
-qtConfig(xkbcommon): {
-    SUBDIRS += \
-        xkbkeyboard
-}
+qtHaveModule(gui):qtConfig(xkbcommon): SUBDIRS += xkbkeyboard

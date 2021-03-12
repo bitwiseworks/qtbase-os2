@@ -46,6 +46,7 @@
 #include "qapplication.h"
 #include "qvariant.h"
 #include "qdebug.h"
+#include "private/qapplication_p.h"
 #include "private/qlayoutengine_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -258,7 +259,7 @@ void QScrollArea::setWidget(QWidget *widget)
         return;
 
     delete d->widget;
-    d->widget = 0;
+    d->widget = nullptr;
     d->hbar->setValue(0);
     d->vbar->setValue(0);
     if (widget->parentWidget() != d->viewport)
@@ -284,9 +285,9 @@ QWidget *QScrollArea::takeWidget()
 {
     Q_D(QScrollArea);
     QWidget *w = d->widget;
-    d->widget = 0;
+    d->widget = nullptr;
     if (w)
-        w->setParent(0);
+        w->setParent(nullptr);
     return w;
 }
 
@@ -300,7 +301,7 @@ bool QScrollArea::event(QEvent *e)
         d->updateScrollBars();
     }
 #ifdef QT_KEYPAD_NAVIGATION
-    else if (QApplication::keypadNavigationEnabled()) {
+    else if (QApplicationPrivate::keypadNavigationEnabled()) {
         if (e->type() == QEvent::Show)
             QApplication::instance()->installEventFilter(this);
         else if (e->type() == QEvent::Hide)
@@ -319,7 +320,7 @@ bool QScrollArea::eventFilter(QObject *o, QEvent *e)
     Q_D(QScrollArea);
 #ifdef QT_KEYPAD_NAVIGATION
     if (d->widget && o != d->widget && e->type() == QEvent::FocusIn
-            && QApplication::keypadNavigationEnabled()) {
+            && QApplicationPrivate::keypadNavigationEnabled()) {
         if (o->isWidgetType())
             ensureWidgetVisible(static_cast<QWidget *>(o));
     }
@@ -489,14 +490,14 @@ void QScrollArea::ensureWidgetVisible(QWidget *childWidget, int xmargin, int yma
     if (focusRect.width() > visibleRect.width())
         d->hbar->setValue(focusRect.center().x() - d->viewport->width() / 2);
     else if (focusRect.right() > visibleRect.right())
-        d->hbar->setValue(focusRect.right() - d->viewport->width());
+        d->hbar->setValue(focusRect.right() - d->viewport->width() + 1);
     else if (focusRect.left() < visibleRect.left())
         d->hbar->setValue(focusRect.left());
 
     if (focusRect.height() > visibleRect.height())
         d->vbar->setValue(focusRect.center().y() - d->viewport->height() / 2);
     else if (focusRect.bottom() > visibleRect.bottom())
-        d->vbar->setValue(focusRect.bottom() - d->viewport->height());
+        d->vbar->setValue(focusRect.bottom() - d->viewport->height() + 1);
     else if (focusRect.top() < visibleRect.top())
         d->vbar->setValue(focusRect.top());
 }

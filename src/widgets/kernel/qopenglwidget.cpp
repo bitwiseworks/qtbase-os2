@@ -379,7 +379,7 @@ QT_BEGIN_NAMESPACE
   This is naturally not the only possible solution. One alternative is to use
   the \l{QOpenGLContext::aboutToBeDestroyed()}{aboutToBeDestroyed()} signal of
   QOpenGLContext. By connecting a slot, using direct connection, to this signal,
-  it is possible to perform cleanup whenever the the underlying native context
+  it is possible to perform cleanup whenever the underlying native context
   handle, or the entire QOpenGLContext instance, is going to be released. The
   following snippet is in principle equivalent to the previous one:
 
@@ -555,16 +555,16 @@ class QOpenGLWidgetPrivate : public QWidgetPrivate
     Q_DECLARE_PUBLIC(QOpenGLWidget)
 public:
     QOpenGLWidgetPrivate()
-        : context(0),
-          fbo(0),
-          resolvedFbo(0),
-          surface(0),
+        : context(nullptr),
+          fbo(nullptr),
+          resolvedFbo(nullptr),
+          surface(nullptr),
           initialized(false),
           fakeHidden(false),
           inBackingStorePaint(false),
           hasBeenComposed(false),
           flushPending(false),
-          paintDevice(0),
+          paintDevice(nullptr),
           updateBehavior(QOpenGLWidget::NoPartialUpdate),
           requestedSamples(0),
           inPaintGL(false),
@@ -704,11 +704,11 @@ void QOpenGLWidgetPrivate::reset()
         q->makeCurrent();
 
     delete paintDevice;
-    paintDevice = 0;
+    paintDevice = nullptr;
     delete fbo;
-    fbo = 0;
+    fbo = nullptr;
     delete resolvedFbo;
-    resolvedFbo = 0;
+    resolvedFbo = nullptr;
 
     if (initialized)
         q->doneCurrent();
@@ -717,9 +717,9 @@ void QOpenGLWidgetPrivate::reset()
     // the context's aboutToBeDestroyed() may still call makeCurrent()
     // to perform some cleanup.
     delete context;
-    context = 0;
+    context = nullptr;
     delete surface;
-    surface = 0;
+    surface = nullptr;
     initialized = fakeHidden = inBackingStorePaint = false;
 }
 
@@ -732,9 +732,9 @@ void QOpenGLWidgetPrivate::recreateFbo()
     context->makeCurrent(surface);
 
     delete fbo;
-    fbo = 0;
+    fbo = nullptr;
     delete resolvedFbo;
-    resolvedFbo = 0;
+    resolvedFbo = nullptr;
 
     int samples = requestedSamples;
     QOpenGLExtensions *extfuncs = static_cast<QOpenGLExtensions *>(context->functions());
@@ -788,10 +788,12 @@ void QOpenGLWidgetPrivate::initialize()
     if (initialized)
         return;
 
-    // Get our toplevel's context with which we will share in order to make the
-    // texture usable by the underlying window's backingstore.
+    // If no global shared context get our toplevel's context with which we
+    // will share in order to make the texture usable by the underlying window's backingstore.
     QWidget *tlw = q->window();
-    QOpenGLContext *shareContext = get(tlw)->shareContext();
+    QOpenGLContext *shareContext = qt_gl_global_share_context();
+    if (!shareContext)
+        shareContext = get(tlw)->shareContext();
     // If shareContext is null, showing content on-screen will not work.
     // However, offscreen rendering and grabFramebuffer() will stay fully functional.
 
@@ -1325,7 +1327,7 @@ QImage QOpenGLWidget::grabFramebuffer()
 }
 
 /*!
-  \internal
+  \reimp
 */
 int QOpenGLWidget::metric(QPaintDevice::PaintDeviceMetric metric) const
 {
@@ -1333,11 +1335,8 @@ int QOpenGLWidget::metric(QPaintDevice::PaintDeviceMetric metric) const
     if (d->inBackingStorePaint)
         return QWidget::metric(metric);
 
-    QWidget *tlw = window();
-    QWindow *window = tlw ? tlw->windowHandle() : 0;
-    QScreen *screen = tlw && tlw->windowHandle() ? tlw->windowHandle()->screen() : 0;
-    if (!screen && QGuiApplication::primaryScreen())
-        screen = QGuiApplication::primaryScreen();
+    auto window = d->windowHandle(QWidgetPrivate::WindowHandleMode::TopLevel);
+    QScreen *screen = window ? window->screen() : QGuiApplication::primaryScreen();
 
     const float dpmx = qt_defaultDpiX() * 100. / 2.54;
     const float dpmy = qt_defaultDpiY() * 100. / 2.54;
@@ -1398,7 +1397,7 @@ int QOpenGLWidget::metric(QPaintDevice::PaintDeviceMetric metric) const
 }
 
 /*!
-  \internal
+  \reimp
 */
 QPaintDevice *QOpenGLWidget::redirected(QPoint *p) const
 {
@@ -1410,7 +1409,7 @@ QPaintDevice *QOpenGLWidget::redirected(QPoint *p) const
 }
 
 /*!
-  \internal
+  \reimp
 */
 QPaintEngine *QOpenGLWidget::paintEngine() const
 {
@@ -1422,20 +1421,20 @@ QPaintEngine *QOpenGLWidget::paintEngine() const
         return QWidget::paintEngine();
 
     if (!d->initialized)
-        return 0;
+        return nullptr;
 
     return d->paintDevice->paintEngine();
 }
 
 /*!
-  \internal
+  \reimp
 */
 bool QOpenGLWidget::event(QEvent *e)
 {
     Q_D(QOpenGLWidget);
     switch (e->type()) {
     case QEvent::WindowChangeInternal:
-        if (qGuiApp->testAttribute(Qt::AA_ShareOpenGLContexts))
+        if (QCoreApplication::testAttribute(Qt::AA_ShareOpenGLContexts))
             break;
         if (d->initialized)
             d->reset();
@@ -1448,7 +1447,7 @@ bool QOpenGLWidget::event(QEvent *e)
         {
             // Special case: did grabFramebuffer() for a hidden widget that then became visible.
             // Recreate all resources since the context now needs to share with the TLW's.
-            if (!qGuiApp->testAttribute(Qt::AA_ShareOpenGLContexts))
+            if (!QCoreApplication::testAttribute(Qt::AA_ShareOpenGLContexts))
                 d->reset();
         }
         if (!d->initialized && !size().isEmpty() && window()->windowHandle()) {

@@ -64,7 +64,7 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
         return 0;
 
     // optimization: exactly one bit is set
-    if ((controls & (controls - 1)) == 0) {
+    if (qPopulationCount(uint(controls)) == 1) {
         array[0] = QSizePolicy::ControlType(uint(controls));
         return 1;
     }
@@ -372,7 +372,7 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
     We include a small example where we customize the drawing of item
     backgrounds.
 
-    \snippet customviewstyle.cpp 0
+    \snippet customviewstyle/customviewstyle.cpp 0
 
     The primitive element PE_PanelItemViewItem is responsible for
     painting the background of items, and is called from
@@ -560,7 +560,7 @@ QRect QStyle::itemPixmapRect(const QRect &rect, int alignment, const QPixmap &pi
         x += w - pixmapWidth;
     else if ((alignment & Qt::AlignHCenter) == Qt::AlignHCenter)
         x += w/2 - pixmapWidth/2;
-    else if ((alignment & Qt::AlignLeft) != Qt::AlignLeft && QApplication::isRightToLeft())
+    else if ((alignment & Qt::AlignLeft) != Qt::AlignLeft && QGuiApplication::isRightToLeft())
         x += w - pixmapWidth;
     result = QRect(x, y, pixmapWidth, pixmapHeight);
     return result;
@@ -624,10 +624,10 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
                             const QPixmap &pixmap) const
 {
     qreal scale = pixmap.devicePixelRatio();
-    QRect aligned = alignedRect(QApplication::layoutDirection(), QFlag(alignment), pixmap.size() / scale, rect);
+    QRect aligned = alignedRect(QGuiApplication::layoutDirection(), QFlag(alignment), pixmap.size() / scale, rect);
     QRect inter = aligned.intersected(rect);
 
-    painter->drawPixmap(inter.x(), inter.y(), pixmap, inter.x() - aligned.x(), inter.y() - aligned.y(), inter.width() * scale, inter.height() *scale);
+    painter->drawPixmap(inter.x(), inter.y(), pixmap, inter.x() - aligned.x(), inter.y() - aligned.y(), qRound(inter.width() * scale), qRound(inter.height() *scale));
 }
 
 /*!
@@ -1012,6 +1012,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value SE_PushButtonFocusRect  Area for the focus rect (usually
         larger than the contents rect).
     \value SE_PushButtonLayoutItem  Area that counts for the parent layout.
+    \value SE_PushButtonBevel [since 5.15] Area used for the bevel of the button.
 
     \value SE_CheckBoxIndicator  Area for the state indicator (e.g., check mark).
     \value SE_CheckBoxContents  Area for the label (text or pixmap).
@@ -1074,7 +1075,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
 
     \value SE_TreeViewDisclosureItem Area for the actual disclosure item in a tree branch.
 
-    \value SE_DialogButtonBoxLayoutItem  Area that counts for the parent layout.
+    \omitvalue SE_DialogButtonBoxLayoutItem
 
     \value SE_GroupBoxLayoutItem  Area that counts for the parent layout.
 
@@ -1120,6 +1121,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \header \li Sub Element \li QStyleOption Subclass
     \row \li \l SE_PushButtonContents   \li \l QStyleOptionButton
     \row \li \l SE_PushButtonFocusRect  \li \l QStyleOptionButton
+    \row \li \l SE_PushButtonBevel      \li \l QStyleOptionButton
     \row \li \l SE_CheckBoxIndicator    \li \l QStyleOptionButton
     \row \li \l SE_CheckBoxContents     \li \l QStyleOptionButton
     \row \li \l SE_CheckBoxFocusRect    \li \l QStyleOptionButton
@@ -1835,7 +1837,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value SH_LineEdit_PasswordMaskDelay  Determines the delay before visible character is masked
     with password character, in milliseconds. This enum value was added in Qt 5.4.
 
-    \value SH_Table_GridLineColor The RGB value of the grid for a table.
+    \value SH_Table_GridLineColor The RGBA value of the grid for a table.
 
     \value SH_UnderlineShortcut  Whether shortcuts are underlined.
 
@@ -2101,6 +2103,20 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value SP_MediaVolume Icon indicating a volume control.
     \value SP_MediaVolumeMuted Icon indicating a muted volume control.
     \value SP_LineEditClearButton Icon for a standard clear button in a QLineEdit. This enum value was added in Qt 5.2.
+    \value SP_DialogYesToAllButton Icon for a standard YesToAll button in a QDialogButtonBox.
+        This enum value was added in Qt 5.14.
+    \value SP_DialogNoToAllButton Icon for a standard NoToAll button in a QDialogButtonBox.
+        This enum value was added in Qt 5.14.
+    \value SP_DialogSaveAllButton Icon for a standard SaveAll button in a QDialogButtonBox.
+       This enum value was added in Qt 5.14.
+    \value SP_DialogAbortButton Icon for a standard Abort button in a QDialogButtonBox.
+       This enum value was added in Qt 5.14.
+    \value SP_DialogRetryButton Icon for a standard Retry button in a QDialogButtonBox.
+       This enum value was added in Qt 5.14.
+    \value SP_DialogIgnoreButton Icon for a standard Ignore button in a QDialogButtonBox.
+       This enum value was added in Qt 5.14.
+    \value SP_RestoreDefaultsButton Icon for a standard RestoreDefaults button in a QDialogButtonBox.
+       This enum value was added in Qt 5.14.
     \value SP_CustomBase  Base value for custom standard pixmaps;
     custom values must be greater than this value.
 
@@ -2348,14 +2364,14 @@ QPalette QStyle::standardPalette() const
 
     \fn int QStyle::layoutSpacing(QSizePolicy::ControlType control1,
                                   QSizePolicy::ControlType control2, Qt::Orientation orientation,
-                                  const QStyleOption *option = 0, const QWidget *widget = 0) const
+                                  const QStyleOption *option = nullptr, const QWidget *widget = nullptr) const
 
     Returns the spacing that should be used between \a control1 and
     \a control2 in a layout. \a orientation specifies whether the
     controls are laid out side by side or stacked vertically. The \a
     option parameter can be used to pass extra information about the
     parent widget. The \a widget parameter is optional and can also
-    be used if \a option is 0.
+    be used if \a option is \nullptr.
 
     This function is called by the layout system. It is used only if
     PM_LayoutHorizontalSpacing or PM_LayoutVerticalSpacing returns a
@@ -2372,7 +2388,7 @@ QPalette QStyle::standardPalette() const
     controls are laid out side by side or stacked vertically. The \a
     option parameter can be used to pass extra information about the
     parent widget. The \a widget parameter is optional and can also
-    be used if \a option is 0.
+    be used if \a option is \nullptr.
 
     \a controls1 and \a controls2 are OR-combination of zero or more
     \l{QSizePolicy::ControlTypes}{control types}.

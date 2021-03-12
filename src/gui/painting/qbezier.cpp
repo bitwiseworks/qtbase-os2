@@ -47,27 +47,11 @@
 
 #include <private/qnumeric_p.h>
 
+#include <tuple> // for std::tie()
+
 QT_BEGIN_NAMESPACE
 
 //#define QDEBUG_BEZIER
-
-/*!
-  \internal
-*/
-QBezier QBezier::fromPoints(const QPointF &p1, const QPointF &p2,
-                            const QPointF &p3, const QPointF &p4)
-{
-    QBezier b;
-    b.x1 = p1.x();
-    b.y1 = p1.y();
-    b.x2 = p2.x();
-    b.y2 = p2.y();
-    b.x3 = p3.x();
-    b.y3 = p3.y();
-    b.x4 = p4.x();
-    b.y4 = p4.y();
-    return b;
-}
 
 /*!
   \internal
@@ -122,10 +106,10 @@ void QBezier::addToPolygon(QPolygonF *polygon, qreal bezier_flattening_threshold
     int levels[10];
     beziers[0] = *this;
     levels[0] = 9;
-    QBezier *b = beziers;
-    int *lvl = levels;
+    int top = 0;
 
-    while (b >= beziers) {
+    while (top >= 0) {
+        QBezier *b = &beziers[top];
         // check if we can pop the top bezier curve from the stack
         qreal y4y1 = b->y4 - b->y1;
         qreal x4x1 = b->x4 - b->x1;
@@ -139,17 +123,15 @@ void QBezier::addToPolygon(QPolygonF *polygon, qreal bezier_flattening_threshold
                 qAbs(b->x1 - b->x3) + qAbs(b->y1 - b->y3);
             l = 1.;
         }
-        if (d < bezier_flattening_threshold*l || *lvl == 0) {
+        if (d < bezier_flattening_threshold * l || levels[top] == 0) {
             // good enough, we pop it off and add the endpoint
             polygon->append(QPointF(b->x4, b->y4));
-            --b;
-            --lvl;
+            --top;
         } else {
             // split, second half of the polygon goes lower into the stack
-            b->split(b+1, b);
-            lvl[1] = --lvl[0];
-            ++b;
-            ++lvl;
+            std::tie(b[1], b[0]) = b->split();
+            levels[top + 1] = --levels[top];
+            ++top;
         }
     }
 }
@@ -160,10 +142,10 @@ void QBezier::addToPolygon(QDataBuffer<QPointF> &polygon, qreal bezier_flattenin
     int levels[10];
     beziers[0] = *this;
     levels[0] = 9;
-    QBezier *b = beziers;
-    int *lvl = levels;
+    int top = 0;
 
-    while (b >= beziers) {
+    while (top >= 0) {
+        QBezier *b = &beziers[top];
         // check if we can pop the top bezier curve from the stack
         qreal y4y1 = b->y4 - b->y1;
         qreal x4x1 = b->x4 - b->x1;
@@ -177,17 +159,15 @@ void QBezier::addToPolygon(QDataBuffer<QPointF> &polygon, qreal bezier_flattenin
                 qAbs(b->x1 - b->x3) + qAbs(b->y1 - b->y3);
             l = 1.;
         }
-        if (d < bezier_flattening_threshold*l || *lvl == 0) {
+        if (d < bezier_flattening_threshold * l || levels[top] == 0) {
             // good enough, we pop it off and add the endpoint
             polygon.add(QPointF(b->x4, b->y4));
-            --b;
-            --lvl;
+            --top;
         } else {
             // split, second half of the polygon goes lower into the stack
-            b->split(b+1, b);
-            lvl[1] = --lvl[0];
-            ++b;
-            ++lvl;
+            std::tie(b[1], b[0]) = b->split();
+            levels[top + 1] = --levels[top];
+            ++top;
         }
     }
 }
@@ -305,6 +285,8 @@ static ShiftResult shift(const QBezier *orig, QBezier *shifted, qreal offset, qr
     QPointF points_shifted[4];
 
     QLineF prev = QLineF(QPointF(), points[1] - points[0]);
+    if (!prev.length())
+        return Discard;
     QPointF prev_normal = prev.normalVector().unitVector().p2();
 
     points_shifted[0] = points[0] + offset * prev_normal;
@@ -440,7 +422,7 @@ redo:
                 o += 2;
             --b;
         } else {
-            b->split(b+1, b);
+            std::tie(b[1], b[0]) = b->split();
             ++b;
         }
     }
@@ -482,8 +464,6 @@ qreal QBezier::length(qreal error) const
 
 void QBezier::addIfClose(qreal *length, qreal error) const
 {
-    QBezier left, right;     /* bez poly splits */
-
     qreal len = qreal(0.0);  /* arc length */
     qreal chord;             /* chord length */
 
@@ -494,9 +474,9 @@ void QBezier::addIfClose(qreal *length, qreal error) const
     chord = QLineF(QPointF(x1, y1),QPointF(x4, y4)).length();
 
     if((len-chord) > error) {
-        split(&left, &right);                 /* split in two */
-        left.addIfClose(length, error);       /* try left side */
-        right.addIfClose(length, error);      /* try right side */
+        const auto halves = split();                  /* split in two */
+        halves.first.addIfClose(length, error);       /* try left side */
+        halves.second.addIfClose(length, error);      /* try right side */
         return;
     }
 

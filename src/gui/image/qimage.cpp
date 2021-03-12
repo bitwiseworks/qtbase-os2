@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
@@ -38,8 +38,10 @@
 ****************************************************************************/
 
 #include "qimage.h"
-#include "qdatastream.h"
+
 #include "qbuffer.h"
+#include "qdatastream.h"
+#include "qcolortransform.h"
 #include "qmap.h"
 #include "qmatrix.h"
 #include "qtransform.h"
@@ -54,6 +56,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <qpa/qplatformpixmap.h>
+#include <private/qcolortransform_p.h>
 #include <private/qdrawhelper_p.h>
 #include <private/qmemrotate_p.h>
 #include <private/qimagescale_p.h>
@@ -66,11 +69,18 @@
 #include <private/qimage_p.h>
 #include <private/qfont_p.h>
 
+#if QT_CONFIG(thread)
+#include "qsemaphore.h"
+#include "qthreadpool.h"
+#endif
+
+#include <qtgui_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
 
 static inline bool isLocked(QImageData *data)
 {
-    return data != 0 && data->is_locked;
+    return data != nullptr && data->is_locked;
 }
 
 #if defined(Q_CC_DEC) && defined(__alpha) && (__DECCXX_VER-0 >= 50190001)
@@ -96,15 +106,15 @@ static int next_qimage_serial_number()
 }
 
 QImageData::QImageData()
-    : ref(0), width(0), height(0), depth(0), nbytes(0), devicePixelRatio(1.0), data(0),
+    : ref(0), width(0), height(0), depth(0), nbytes(0), devicePixelRatio(1.0), data(nullptr),
       format(QImage::Format_ARGB32), bytes_per_line(0),
       ser_no(next_qimage_serial_number()),
       detach_no(0),
       dpmx(qt_defaultDpiX() * 100 / qreal(2.54)),
       dpmy(qt_defaultDpiY() * 100 / qreal(2.54)),
       offset(0, 0), own_data(true), ro_data(false), has_alpha_clut(false),
-      is_cached(false), is_locked(false), cleanupFunction(0), cleanupInfo(0),
-      paintEngine(0)
+      is_cached(false), is_locked(false), cleanupFunction(nullptr), cleanupInfo(nullptr),
+      paintEngine(nullptr)
 {
 }
 
@@ -119,6 +129,8 @@ QImageData * QImageData::create(const QSize &size, QImage::Format format)
 {
     if (size.isEmpty() || format == QImage::Format_Invalid)
         return nullptr;                             // invalid parameter(s)
+
+    Q_TRACE_SCOPE(QImageData_create, size, format);
 
     int width = size.width();
     int height = size.height();
@@ -167,7 +179,7 @@ QImageData::~QImageData()
     delete paintEngine;
     if (data && own_data)
         free(data);
-    data = 0;
+    data = nullptr;
 }
 
 #if defined(_M_ARM)
@@ -284,6 +296,7 @@ bool QImageData::checkForAlphaPixels() const
     case QImage::Format_RGB555:
     case QImage::Format_RGB666:
     case QImage::Format_RGB888:
+    case QImage::Format_BGR888:
     case QImage::Format_RGBX8888:
     case QImage::Format_BGR30:
     case QImage::Format_RGB30:
@@ -713,10 +726,11 @@ bool QImageData::checkForAlphaPixels() const
     \value Format_Grayscale8 The image is stored using an 8-bit grayscale format. (added in Qt 5.5)
     \value Format_Grayscale16 The image is stored using an 16-bit grayscale format. (added in Qt 5.13)
     \value Format_RGBX64     The image is stored using a 64-bit halfword-ordered RGB(x) format (16-16-16-16).
-                             This is the same as the Format_RGBX64 except alpha must always be 65535. (added in Qt 5.12)
+                             This is the same as the Format_RGBA64 except alpha must always be 65535. (added in Qt 5.12)
     \value Format_RGBA64     The image is stored using a 64-bit halfword-ordered RGBA format (16-16-16-16). (added in Qt 5.12)
     \value Format_RGBA64_Premultiplied    The image is stored using a premultiplied 64-bit halfword-ordered
                              RGBA format (16-16-16-16). (added in Qt 5.12)
+    \value Format_BGR888     The image is stored using a 24-bit BGR format. (added in Qt 5.14)
 
     \note Drawing into a QImage with QImage::Format_Indexed8 is not
     supported.
@@ -738,10 +752,10 @@ bool QImageData::checkForAlphaPixels() const
     \sa isNull()
 */
 
-QImage::QImage() Q_DECL_NOEXCEPT
+QImage::QImage() noexcept
     : QPaintDevice()
 {
-    d = 0;
+    d = nullptr;
 }
 
 /*!
@@ -950,7 +964,7 @@ QImage::QImage(const uchar *data, int width, int height, int bytesPerLine, Forma
 QImage::QImage(const QString &fileName, const char *format)
     : QPaintDevice()
 {
-    d = 0;
+    d = nullptr;
     load(fileName, format);
 }
 
@@ -976,10 +990,10 @@ extern bool qt_read_xpm_image_or_array(QIODevice *device, const char * const *so
 QImage::QImage(const char * const xpm[])
     : QPaintDevice()
 {
-    d = 0;
+    d = nullptr;
     if (!xpm)
         return;
-    if (!qt_read_xpm_image_or_array(0, xpm, *this))
+    if (!qt_read_xpm_image_or_array(nullptr, xpm, *this))
         // Issue: Warning because the constructor may be ambigious
         qWarning("QImage::QImage(), XPM is not supported");
 }
@@ -998,7 +1012,7 @@ QImage::QImage(const QImage &image)
     : QPaintDevice()
 {
     if (image.paintingActive() || isLocked(image.d)) {
-        d = 0;
+        d = nullptr;
         image.copy().swap(*this);
     } else {
         d = image.d;
@@ -1062,7 +1076,7 @@ int QImage::devType() const
 */
 QImage::operator QVariant() const
 {
-    return QVariant(QVariant::Image, this);
+    return QVariant(QMetaType::QImage, this);
 }
 
 /*!
@@ -1079,10 +1093,10 @@ QImage::operator QVariant() const
 void QImage::detach()
 {
     if (d) {
-        if (d->is_cached && d->ref.load() == 1)
+        if (d->is_cached && d->ref.loadRelaxed() == 1)
             QImagePixmapCleanupHooks::executeImageHooks(cacheKey());
 
-        if (d->ref.load() != 1 || d->ro_data)
+        if (d->ref.loadRelaxed() != 1 || d->ro_data)
             *this = copy();
 
         if (d)
@@ -1103,6 +1117,7 @@ static void copyMetadata(QImageData *dst, const QImageData *src)
     // Doesn't copy colortable and alpha_clut, or offset.
     copyPhysicalMetadata(dst, src);
     dst->text = src->text;
+    dst->colorSpace = src->colorSpace;
 }
 
 static void copyMetadata(QImage *dst, const QImage &src)
@@ -1148,6 +1163,7 @@ static void copyMetadata(QImage *dst, const QImage &src)
 */
 QImage QImage::copy(const QRect& r) const
 {
+    Q_TRACE_SCOPE(QImage_copy, r);
     if (!d)
         return QImage();
 
@@ -1392,7 +1408,7 @@ void QImage::setColorTable(const QVector<QRgb> colors)
 #if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
     d->colortable = colors;
 #else
-    d->colortable = qMove(const_cast<QVector<QRgb>&>(colors));
+    d->colortable = std::move(const_cast<QVector<QRgb>&>(colors));
 #endif
     d->has_alpha_clut = false;
     for (int i = 0; i < d->colortable.size(); ++i) {
@@ -1587,13 +1603,13 @@ void QImage::setColor(int i, QRgb c)
 uchar *QImage::scanLine(int i)
 {
     if (!d)
-        return 0;
+        return nullptr;
 
     detach();
 
     // In case detach() ran out of memory
     if (!d)
-        return 0;
+        return nullptr;
 
     return d->data + i * d->bytes_per_line;
 }
@@ -1604,7 +1620,7 @@ uchar *QImage::scanLine(int i)
 const uchar *QImage::scanLine(int i) const
 {
     if (!d)
-        return 0;
+        return nullptr;
 
     Q_ASSERT(i >= 0 && i < height());
     return d->data + i * d->bytes_per_line;
@@ -1615,7 +1631,9 @@ const uchar *QImage::scanLine(int i) const
     Returns a pointer to the pixel data at the scanline with index \a
     i. The first scanline is at index 0.
 
-    The scanline data is aligned on a 32-bit boundary.
+    The scanline data is as minimum 32-bit aligned. For 64-bit formats
+    it follows the native alignment of 64-bit integers (64-bit for most
+    platforms, but notably 32-bit on i386).
 
     Note that QImage uses \l{Implicit Data Sharing} {implicit data
     sharing}, but this function does \e not perform a deep copy of the
@@ -1627,7 +1645,7 @@ const uchar *QImage::scanLine(int i) const
 const uchar *QImage::constScanLine(int i) const
 {
     if (!d)
-        return 0;
+        return nullptr;
 
     Q_ASSERT(i >= 0 && i < height());
     return d->data + i * d->bytes_per_line;
@@ -1647,12 +1665,12 @@ const uchar *QImage::constScanLine(int i) const
 uchar *QImage::bits()
 {
     if (!d)
-        return 0;
+        return nullptr;
     detach();
 
     // In case detach ran out of memory...
     if (!d)
-        return 0;
+        return nullptr;
 
     return d->data;
 }
@@ -1666,7 +1684,7 @@ uchar *QImage::bits()
 */
 const uchar *QImage::bits() const
 {
-    return d ? d->data : 0;
+    return d ? d->data : nullptr;
 }
 
 
@@ -1682,7 +1700,7 @@ const uchar *QImage::bits() const
 */
 const uchar *QImage::constBits() const
 {
-    return d ? d->data : 0;
+    return d ? d->data : nullptr;
 }
 
 /*!
@@ -1906,10 +1924,10 @@ void QImage::invertPixels(InvertMode mode)
     // Inverting premultiplied pixels would produce invalid image data.
     if (hasAlphaChannel() && qPixelLayouts[d->format].premultiplied) {
         if (depth() > 32) {
-            if (!d->convertInPlace(QImage::Format_RGBA64, 0))
+            if (!d->convertInPlace(QImage::Format_RGBA64, { }))
                 *this = convertToFormat(QImage::Format_RGBA64);
         } else {
-            if (!d->convertInPlace(QImage::Format_ARGB32, 0))
+            if (!d->convertInPlace(QImage::Format_ARGB32, { }))
                 *this = convertToFormat(QImage::Format_ARGB32);
         }
     }
@@ -1976,7 +1994,7 @@ void QImage::invertPixels(InvertMode mode)
     }
 
     if (originalFormat != d->format) {
-        if (!d->convertInPlace(originalFormat, 0))
+        if (!d->convertInPlace(originalFormat, { }))
             *this = convertToFormat(originalFormat);
     }
 }
@@ -2054,27 +2072,6 @@ QImage::Format QImage::format() const
     \sa {Image Formats}
 */
 
-static bool highColorPrecision(QImage::Format format)
-{
-    // Formats with higher color precision than ARGB32_Premultiplied.
-    switch (format) {
-    case QImage::Format_ARGB32:
-    case QImage::Format_RGBA8888:
-    case QImage::Format_BGR30:
-    case QImage::Format_RGB30:
-    case QImage::Format_A2BGR30_Premultiplied:
-    case QImage::Format_A2RGB30_Premultiplied:
-    case QImage::Format_RGBX64:
-    case QImage::Format_RGBA64:
-    case QImage::Format_RGBA64_Premultiplied:
-    case QImage::Format_Grayscale16:
-        return true;
-    default:
-        break;
-    }
-    return false;
-}
-
 /*!
     \internal
 */
@@ -2086,9 +2083,11 @@ QImage QImage::convertToFormat_helper(Format format, Qt::ImageConversionFlags fl
     if (format == Format_Invalid || d->format == Format_Invalid)
         return QImage();
 
+    const QPixelLayout *destLayout = &qPixelLayouts[format];
     Image_Converter converter = qimage_converter_map[d->format][format];
     if (!converter && format > QImage::Format_Indexed8 && d->format > QImage::Format_Indexed8) {
-        if (highColorPrecision(format) && highColorPrecision(d->format)) {
+        if (qt_highColorPrecision(d->format, !destLayout->hasAlphaChannel)
+                && qt_highColorPrecision(format, !hasAlphaChannel())) {
             converter = convert_generic_to_rgb64;
         } else
             converter = convert_generic;
@@ -2155,12 +2154,7 @@ static QImage convertWithPalette(const QImage &src, QImage::Format format,
     QImage dest(src.size(), format);
     dest.setColorTable(clut);
 
-    QString textsKeys = src.text();
-    const auto textKeyList = textsKeys.splitRef(QLatin1Char('\n'), QString::SkipEmptyParts);
-    for (const auto &textKey : textKeyList) {
-        const auto textKeySplitted = textKey.split(QLatin1String(": "));
-        dest.setText(textKeySplitted[0].toString(), textKeySplitted[1].toString());
-    }
+    QImageData::get(dest)->text = QImageData::get(src)->text;
 
     int h = src.height();
     int w = src.width();
@@ -2832,6 +2826,8 @@ QImage QImage::scaled(const QSize& s, Qt::AspectRatioMode aspectMode, Qt::Transf
     if (newSize == size())
         return *this;
 
+    Q_TRACE_SCOPE(QImage_scaled, s, aspectMode, mode);
+
     QTransform wm = QTransform::fromScale((qreal)newSize.width() / width(), (qreal)newSize.height() / height());
     QImage img = transformed(wm, mode);
     return img;
@@ -2859,6 +2855,8 @@ QImage QImage::scaledToWidth(int w, Qt::TransformationMode mode) const
     }
     if (w <= 0)
         return QImage();
+
+    Q_TRACE_SCOPE(QImage_scaledToWidth, w, mode);
 
     qreal factor = (qreal) w / width();
     QTransform wm = QTransform::fromScale(factor, factor);
@@ -2888,13 +2886,21 @@ QImage QImage::scaledToHeight(int h, Qt::TransformationMode mode) const
     if (h <= 0)
         return QImage();
 
+    Q_TRACE_SCOPE(QImage_scaledToHeight, h, mode);
+
     qreal factor = (qreal) h / height();
     QTransform wm = QTransform::fromScale(factor, factor);
     return transformed(wm, mode);
 }
 
 
+#if QT_DEPRECATED_SINCE(5, 15)
+
 /*!
+    \obsolete
+
+    Use trueMatrix(const QTransform &matrix, int w, int h) instead.
+
     \fn QMatrix QImage::trueMatrix(const QMatrix &matrix, int width, int height)
 
     Returns the actual matrix used for transforming an image with the
@@ -2916,6 +2922,10 @@ QMatrix QImage::trueMatrix(const QMatrix &matrix, int w, int h)
 }
 
 /*!
+    \obsolete
+
+    Use transformed(const QTransform &matrix, Qt::TransformationMode mode) instead.
+
     Returns a copy of the image that is transformed using the given
     transformation \a matrix and transformation \a mode.
 
@@ -2939,6 +2949,8 @@ QImage QImage::transformed(const QMatrix &matrix, Qt::TransformationMode mode) c
 {
     return transformed(QTransform(matrix), mode);
 }
+
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 /*!
     Builds and returns a 1-bpp mask from the alpha buffer in this
@@ -3040,11 +3052,11 @@ QImage QImage::createHeuristicMask(bool clipTight) const
     while(!done) {
         done = true;
         ypn = m.scanLine(0);
-        ypc = 0;
+        ypc = nullptr;
         for (y = 0; y < h; y++) {
             ypp = ypc;
             ypc = ypn;
-            ypn = (y == h-1) ? 0 : m.scanLine(y+1);
+            ypn = (y == h-1) ? nullptr : m.scanLine(y+1);
             const QRgb *p = (const QRgb *)scanLine(y);
             for (x = 0; x < w; x++) {
                 // slowness here - it's possible to do six of these tests
@@ -3066,11 +3078,11 @@ QImage QImage::createHeuristicMask(bool clipTight) const
 
     if (!clipTight) {
         ypn = m.scanLine(0);
-        ypc = 0;
+        ypc = nullptr;
         for (y = 0; y < h; y++) {
             ypp = ypc;
             ypc = ypn;
-            ypn = (y == h-1) ? 0 : m.scanLine(y+1);
+            ypn = (y == h-1) ? nullptr : m.scanLine(y+1);
             const QRgb *p = (const QRgb *)scanLine(y);
             for (x = 0; x < w; x++) {
                 if ((*p & 0x00ffffff) != background) {
@@ -3364,7 +3376,7 @@ void QImage::mirrored_inplace(bool horizontal, bool vertical)
     \sa {QImage#Image Transformations}{Image Transformations}
 */
 
-inline void rgbSwapped_generic(int width, int height, const QImage *src, QImage *dst, const QPixelLayout* layout)
+static inline void rgbSwapped_generic(int width, int height, const QImage *src, QImage *dst, const QPixelLayout* layout)
 {
     const RbSwapFunc func = layout->rbSwap;
     if (!func) {
@@ -3388,6 +3400,8 @@ QImage QImage::rgbSwapped_helper() const
 {
     if (isNull())
         return *this;
+
+    Q_TRACE_SCOPE(QImage_rgbSwapped_helper);
 
     QImage res;
 
@@ -3696,8 +3710,8 @@ QImage QImage::fromData(const uchar *data, int size, const char *format)
 /*!
     Saves the image to the file with the given \a fileName, using the
     given image file \a format and \a quality factor. If \a format is
-    0, QImage will attempt to guess the format by looking at \a fileName's
-    suffix.
+    \nullptr, QImage will attempt to guess the format by looking at
+    \a fileName's suffix.
 
     The \a quality factor must be in the range 0 to 100 or -1. Specify
     0 to obtain small compressed files, 100 for large uncompressed
@@ -4071,7 +4085,7 @@ void QImage::setText(const QString &key, const QString &value)
     \obsolete
 
     Returns the text recorded for the given \a key in the given \a
-    language, or in a default language if \a language is 0.
+    language, or in a default language if \a language is \nullptr.
 
     Use text() instead.
 
@@ -4098,7 +4112,7 @@ void QImage::setText(const QString &key, const QString &value)
 
     Sets the image text to the given \a text and associate it with the
     given \a key. The text is recorded in the specified \a language,
-    or in a default language if \a language is 0.
+    or in a default language if \a language is \nullptr.
 
     Use setText() instead.
 
@@ -4112,7 +4126,7 @@ void QImage::setText(const QString &key, const QString &value)
     \l{http://www.libpng.org/pub/png/spec/1.2/png-1.2-pdg.html#C.Anc-text}
     {the PNG specification}. \a s can be any text. \a lang should
     specify the language code (see
-    \l{http://www.rfc-editor.org/rfc/rfc1766.txt}{RFC 1766}) or 0.
+    \l{http://www.rfc-editor.org/rfc/rfc1766.txt}{RFC 1766}) or \nullptr.
     \endomit
 */
 
@@ -4135,15 +4149,15 @@ void QImage::setText(const QString &key, const QString &value)
 QPaintEngine *QImage::paintEngine() const
 {
     if (!d)
-        return 0;
+        return nullptr;
 
     if (!d->paintEngine) {
         QPaintDevice *paintDevice = const_cast<QImage *>(this);
-        QPaintEngine *paintEngine = 0;
         QPlatformIntegration *platformIntegration = QGuiApplicationPrivate::platformIntegration();
         if (platformIntegration)
-            paintEngine = platformIntegration->createImagePaintEngine(paintDevice);
-        d->paintEngine = paintEngine ? paintEngine : new QRasterPaintEngine(paintDevice);
+            d->paintEngine = platformIntegration->createImagePaintEngine(paintDevice);
+       if (!d->paintEngine)
+            d->paintEngine = new QRasterPaintEngine(paintDevice);
     }
 
     return d->paintEngine;
@@ -4418,42 +4432,33 @@ qint64 QImage::cacheKey() const
 
 bool QImage::isDetached() const
 {
-    return d && d->ref.load() == 1;
+    return d && d->ref.loadRelaxed() == 1;
 }
 
 
 /*!
-    \obsolete
     Sets the alpha channel of this image to the given \a alphaChannel.
 
-    If \a alphaChannel is an 8 bit grayscale image, the intensity values are
-    written into this buffer directly. Otherwise, \a alphaChannel is converted
-    to 32 bit and the intensity of the RGB pixel values is used.
+    If \a alphaChannel is an 8 bit alpha image, the alpha values are
+    used directly. Otherwise, \a alphaChannel is converted to 8 bit
+    grayscale and the intensity of the pixel values is used.
 
-    Note that the image will be converted to the Format_ARGB32_Premultiplied
-    format if the function succeeds.
+    If the image already has an alpha channel, the existing alpha channel
+    is multiplied with the new one. If the image doesn't have an alpha
+    channel it will be converted to a format that does.
 
-    Use one of the composition modes in QPainter::CompositionMode instead.
+    The operation is similar to painting \a alphaChannel as an alpha image
+    over this image using \c QPainter::CompositionMode_DestinationIn.
 
-    \warning This function is expensive.
-
-    \sa alphaChannel(), {QImage#Image Transformations}{Image
-    Transformations}, {QImage#Image Formats}{Image Formats}
+    \sa hasAlphaChannel(), alphaChannel(),
+        {QImage#Image Transformations}{Image Transformations},
+        {QImage#Image Formats}{Image Formats}
 */
 
 void QImage::setAlphaChannel(const QImage &alphaChannel)
 {
-    if (!d)
+    if (!d || alphaChannel.isNull())
         return;
-
-    int w = d->width;
-    int h = d->height;
-
-    if (w != alphaChannel.d->width || h != alphaChannel.d->height) {
-        qWarning("QImage::setAlphaChannel: "
-                 "Alpha channel must have same dimensions as the target image");
-        return;
-    }
 
     if (d->paintEngine && d->paintEngine->isActive()) {
         qWarning("QImage::setAlphaChannel: "
@@ -4461,61 +4466,32 @@ void QImage::setAlphaChannel(const QImage &alphaChannel)
         return;
     }
 
-    if (d->format == QImage::Format_ARGB32_Premultiplied)
+    const Format alphaFormat = qt_alphaVersionForPainting(d->format);
+    if (d->format == alphaFormat)
         detach();
     else
-        *this = convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        convertTo(alphaFormat);
 
     if (isNull())
         return;
 
-    // Slight optimization since alphachannels are returned as 8-bit grays.
-    if (alphaChannel.format() == QImage::Format_Alpha8 ||( alphaChannel.d->depth == 8 && alphaChannel.isGrayscale())) {
-        const uchar *src_data = alphaChannel.d->data;
-        uchar *dest_data = d->data;
-        for (int y=0; y<h; ++y) {
-            const uchar *src = src_data;
-            QRgb *dest = (QRgb *)dest_data;
-            for (int x=0; x<w; ++x) {
-                int alpha = *src;
-                int destAlpha = qt_div_255(alpha * qAlpha(*dest));
-                *dest = ((destAlpha << 24)
-                         | (qt_div_255(qRed(*dest) * alpha) << 16)
-                         | (qt_div_255(qGreen(*dest) * alpha) << 8)
-                         | (qt_div_255(qBlue(*dest) * alpha)));
-                ++dest;
-                ++src;
-            }
-            src_data += alphaChannel.d->bytes_per_line;
-            dest_data += d->bytes_per_line;
-        }
+    QImage sourceImage;
+    if (alphaChannel.format() == QImage::Format_Alpha8 || (alphaChannel.d->depth == 8 && alphaChannel.isGrayscale()))
+        sourceImage = alphaChannel;
+    else
+        sourceImage = alphaChannel.convertToFormat(QImage::Format_Grayscale8);
+    if (!sourceImage.reinterpretAsFormat(QImage::Format_Alpha8))
+        return;
 
-    } else {
-        const QImage sourceImage = alphaChannel.convertToFormat(QImage::Format_RGB32);
-        if (sourceImage.isNull())
-            return;
-        const uchar *src_data = sourceImage.d->data;
-        uchar *dest_data = d->data;
-        for (int y=0; y<h; ++y) {
-            const QRgb *src = (const QRgb *) src_data;
-            QRgb *dest = (QRgb *) dest_data;
-            for (int x=0; x<w; ++x) {
-                int alpha = qGray(*src);
-                int destAlpha = qt_div_255(alpha * qAlpha(*dest));
-                *dest = ((destAlpha << 24)
-                         | (qt_div_255(qRed(*dest) * alpha) << 16)
-                         | (qt_div_255(qGreen(*dest) * alpha) << 8)
-                         | (qt_div_255(qBlue(*dest) * alpha)));
-                ++dest;
-                ++src;
-            }
-            src_data += sourceImage.d->bytes_per_line;
-            dest_data += d->bytes_per_line;
-        }
-    }
+    QPainter painter(this);
+    if (sourceImage.size() != size())
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.drawImage(rect(), sourceImage);
 }
 
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
     \obsolete
 
@@ -4605,6 +4581,7 @@ QImage QImage::alphaChannel() const
 
     return image;
 }
+#endif
 
 /*!
     Returns \c true if the image has a format that respects the alpha
@@ -4686,12 +4663,14 @@ QImage QImage::smoothScaled(int w, int h) const {
     case QImage::Format_RGBX8888:
 #endif
     case QImage::Format_RGBA8888_Premultiplied:
+#if QT_CONFIG(raster_64bit)
     case QImage::Format_RGBX64:
     case QImage::Format_RGBA64_Premultiplied:
         break;
     case QImage::Format_RGBA64:
         src = src.convertToFormat(QImage::Format_RGBA64_Premultiplied);
         break;
+#endif
     default:
         if (src.hasAlphaChannel())
             src = src.convertToFormat(QImage::Format_ARGB32_Premultiplied);
@@ -4796,6 +4775,8 @@ QImage QImage::transformed(const QTransform &matrix, Qt::TransformationMode mode
 {
     if (!d)
         return QImage();
+
+    Q_TRACE_SCOPE(QImage_transformed, matrix, mode);
 
     // source image data
     int ws = width();
@@ -4949,13 +4930,165 @@ QTransform QImage::trueMatrix(const QTransform &matrix, int w, int h)
     return matrix * QTransform().translate(-delta.x(), -delta.y());
 }
 
+/*!
+    \since 5.14
+
+    Sets the image color space to \a colorSpace without performing any conversions on image data.
+
+    \sa colorSpace()
+*/
+void QImage::setColorSpace(const QColorSpace &colorSpace)
+{
+    if (!d)
+        return;
+    if (d->colorSpace == colorSpace)
+        return;
+    if (!isDetached()) // Detach only if shared, not for read-only data.
+        detach();
+    d->colorSpace = colorSpace;
+}
+
+/*!
+    \since 5.14
+
+    Converts the image to \a colorSpace.
+
+    If the image has no valid color space, the method does nothing.
+
+    \sa convertedToColorSpace(), setColorSpace()
+*/
+void QImage::convertToColorSpace(const QColorSpace &colorSpace)
+{
+    if (!d)
+        return;
+    if (!d->colorSpace.isValid())
+        return;
+    if (!colorSpace.isValid()) {
+        qWarning() << "QImage::convertToColorSpace: Output colorspace is not valid";
+        return;
+    }
+    detach();
+    applyColorTransform(d->colorSpace.transformationToColorSpace(colorSpace));
+    d->colorSpace = colorSpace;
+}
+
+/*!
+    \since 5.14
+
+    Returns the image converted to \a colorSpace.
+
+    If the image has no valid color space, a null QImage is returned.
+
+    \sa convertToColorSpace()
+*/
+QImage QImage::convertedToColorSpace(const QColorSpace &colorSpace) const
+{
+    if (!d || !d->colorSpace.isValid() || !colorSpace.isValid())
+        return QImage();
+    QImage image = copy();
+    image.convertToColorSpace(colorSpace);
+    return image;
+}
+
+/*!
+    \since 5.14
+
+    Returns the color space of the image if a color space is defined.
+*/
+QColorSpace QImage::colorSpace() const
+{
+    if (!d)
+        return QColorSpace();
+    return d->colorSpace;
+}
+
+/*!
+    \since 5.14
+
+    Applies the color transformation \a transform to all pixels in the image.
+*/
+void QImage::applyColorTransform(const QColorTransform &transform)
+{
+    QImage::Format oldFormat = format();
+    if (depth() > 32) {
+        if (format() != QImage::Format_RGBX64 && format() != QImage::Format_RGBA64
+                && format() != QImage::Format_RGBA64_Premultiplied)
+            *this = std::move(*this).convertToFormat(QImage::Format_RGBA64);
+    } else if (format() != QImage::Format_ARGB32 && format() != QImage::Format_RGB32
+                && format() != QImage::Format_ARGB32_Premultiplied) {
+        if (hasAlphaChannel())
+            *this = std::move(*this).convertToFormat(QImage::Format_ARGB32);
+        else
+            *this = std::move(*this).convertToFormat(QImage::Format_RGB32);
+    }
+
+    QColorTransformPrivate::TransformFlags flags = QColorTransformPrivate::Unpremultiplied;
+    switch (format()) {
+    case Format_ARGB32_Premultiplied:
+    case Format_RGBA64_Premultiplied:
+        flags = QColorTransformPrivate::Premultiplied;
+        break;
+    case Format_RGB32:
+    case Format_RGBX64:
+        flags = QColorTransformPrivate::InputOpaque;
+        break;
+    case Format_ARGB32:
+    case Format_RGBA64:
+        break;
+    default:
+        Q_UNREACHABLE();
+    }
+
+    std::function<void(int,int)> transformSegment;
+
+    if (depth() > 32) {
+        transformSegment = [&](int yStart, int yEnd) {
+            for (int y = yStart; y < yEnd; ++y) {
+                QRgba64 *scanline = reinterpret_cast<QRgba64 *>(scanLine(y));
+                transform.d->apply(scanline, scanline, width(), flags);
+            }
+        };
+    } else {
+        transformSegment = [&](int yStart, int yEnd) {
+            for (int y = yStart; y < yEnd; ++y) {
+                QRgb *scanline = reinterpret_cast<QRgb *>(scanLine(y));
+                transform.d->apply(scanline, scanline, width(), flags);
+            }
+        };
+    }
+
+#if QT_CONFIG(thread) && !defined(Q_OS_WASM)
+    int segments = sizeInBytes() / (1<<16);
+    segments = std::min(segments, height());
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments > 1 && !threadPool->contains(QThread::currentThread())) {
+        QSemaphore semaphore;
+        int y = 0;
+        for (int i = 0; i < segments; ++i) {
+            int yn = (height() - y) / (segments - i);
+            threadPool->start([&, y, yn]() {
+                transformSegment(y, y + yn);
+                semaphore.release(1);
+            });
+            y += yn;
+        }
+        semaphore.acquire(segments);
+    } else
+#endif
+        transformSegment(0, height());
+
+    if (oldFormat != format())
+        *this = std::move(*this).convertToFormat(oldFormat);
+}
+
+
 bool QImageData::convertInPlace(QImage::Format newFormat, Qt::ImageConversionFlags flags)
 {
     if (format == newFormat)
         return true;
 
     // No in-place conversion if we have to detach
-    if (ref.load() > 1 || !own_data)
+    if (ref.loadRelaxed() > 1 || !own_data)
         return false;
 
     InPlace_Image_Converter converter = qimage_inplace_converter_map[format][newFormat];
@@ -5418,13 +5551,26 @@ static Q_CONSTEXPR QPixelFormat pixelformats[] = {
                     /*PREMULTIPLIED*/     QPixelFormat::NotPremultiplied,
                     /*INTERPRETATION*/    QPixelFormat::UnsignedShort,
                     /*BYTE ORDER*/        QPixelFormat::CurrentSystemEndian),
+        //QImage::Format_BGR888:
+        QPixelFormat(QPixelFormat::BGR,
+                    /*RED*/                8,
+                    /*GREEN*/              8,
+                    /*BLUE*/               8,
+                    /*FOURTH*/             0,
+                    /*FIFTH*/              0,
+                    /*ALPHA*/              0,
+                    /*ALPHA USAGE*/       QPixelFormat::IgnoresAlpha,
+                    /*ALPHA POSITION*/    QPixelFormat::AtBeginning,
+                    /*PREMULTIPLIED*/     QPixelFormat::NotPremultiplied,
+                    /*INTERPRETATION*/    QPixelFormat::UnsignedByte,
+                    /*BYTE ORDER*/        QPixelFormat::CurrentSystemEndian),
 };
 Q_STATIC_ASSERT(sizeof(pixelformats) / sizeof(*pixelformats) == QImage::NImageFormats);
 
 /*!
     Returns the QImage::Format as a QPixelFormat
 */
-QPixelFormat QImage::pixelFormat() const Q_DECL_NOTHROW
+QPixelFormat QImage::pixelFormat() const noexcept
 {
     return toPixelFormat(format());
 }
@@ -5432,7 +5578,7 @@ QPixelFormat QImage::pixelFormat() const Q_DECL_NOTHROW
 /*!
     Converts \a format into a QPixelFormat
 */
-QPixelFormat QImage::toPixelFormat(QImage::Format format) Q_DECL_NOTHROW
+QPixelFormat QImage::toPixelFormat(QImage::Format format) noexcept
 {
     Q_ASSERT(static_cast<int>(format) < NImageFormats);
     return pixelformats[format];
@@ -5441,7 +5587,7 @@ QPixelFormat QImage::toPixelFormat(QImage::Format format) Q_DECL_NOTHROW
 /*!
     Converts \a format into a QImage::Format
 */
-QImage::Format QImage::toImageFormat(QPixelFormat format) Q_DECL_NOTHROW
+QImage::Format QImage::toImageFormat(QPixelFormat format) noexcept
 {
     for (int i = 0; i < NImageFormats; i++) {
         if (format == pixelformats[i])
@@ -5457,7 +5603,7 @@ Q_GUI_EXPORT void qt_imageTransform(QImage &src, QImageIOHandler::Transformation
     if (orient == QImageIOHandler::TransformationRotate270) {
         src = rotated270(src);
     } else {
-        src = qMove(src).mirrored(orient & QImageIOHandler::TransformationMirror,
+        src = std::move(src).mirrored(orient & QImageIOHandler::TransformationMirror,
                                   orient & QImageIOHandler::TransformationFlip);
         if (orient & QImageIOHandler::TransformationRotate90)
             src = rotated90(src);

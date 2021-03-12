@@ -349,21 +349,21 @@ void tst_QDir::mkdirRmdir_data()
     QTest::addColumn<QString>("path");
     QTest::addColumn<bool>("recurse");
 
-    QStringList dirs;
-    dirs << "testdir/one"
-         << "testdir/two/three/four"
-         << "testdir/../testdir/three";
-    QTest::newRow("plain") << QDir::currentPath() + "/" + dirs.at(0) << false;
-    QTest::newRow("recursive") << QDir::currentPath() + "/" + dirs.at(1) << true;
-    QTest::newRow("with-..") << QDir::currentPath() + "/" + dirs.at(2) << false;
+    const struct {
+        const char *name; // shall have a prefix added
+        const char *path; // relative
+        bool recurse;
+    } cases[] = {
+        { "plain", "testdir/one", false },
+        { "recursive", "testdir/two/three/four", true },
+        { "with-..", "testdir/../testdir/three", false },
+    };
 
-    QTest::newRow("relative-plain") << dirs.at(0) << false;
-    QTest::newRow("relative-recursive") << dirs.at(1) << true;
-    QTest::newRow("relative-with-..") << dirs.at(2) << false;
-
-    // Ensure that none of these directories already exist
-    for (int i = 0; i < dirs.count(); ++i)
-        QVERIFY(!QFile::exists(dirs.at(i)));
+    for (const auto &it : cases) {
+        QVERIFY(!QFile::exists(it.path));
+        QTest::addRow("absolute-%s", it.name) << (QDir::currentPath() + "/") + it.path << it.recurse;
+        QTest::addRow("relative-%s", it.name) << QString::fromLatin1(it.path) << it.recurse;
+    }
 }
 
 void tst_QDir::mkdirRmdir()
@@ -528,7 +528,7 @@ void tst_QDir::removeRecursivelyFailure()
 
 #ifdef Q_OS_UNIX
     QFile dirAsFile(path); // yay, I have to use QFile to change a dir's permissions...
-    QVERIFY(dirAsFile.setPermissions(QFile::Permissions(0))); // no permissions
+    QVERIFY(dirAsFile.setPermissions({})); // no permissions
 
     QVERIFY(!QDir().rmdir(path));
     QDir dir(path);
@@ -1268,6 +1268,7 @@ tst_QDir::cleanPath_data()
     QTest::newRow("drive-above-root") << "A:/.." << "A:/..";
     QTest::newRow("unc-server-up") << "//server/path/.." << "//server";
     QTest::newRow("unc-server-above-root") << "//server/.." << "//server/..";
+    QTest::newRow("longpath") << "\\\\?\\d:\\" << "d:/";
 #else
     QTest::newRow("data15") << "//c:/foo" << "/c:/foo";
 #endif // non-windows
@@ -1745,6 +1746,7 @@ void tst_QDir::nativeSeparators()
     QCOMPARE(QDir::toNativeSeparators(QLatin1String("\\")), QString("\\"));
     QCOMPARE(QDir::fromNativeSeparators(QLatin1String("/")), QString("/"));
     QCOMPARE(QDir::fromNativeSeparators(QLatin1String("\\")), QString("/"));
+    QCOMPARE(QDir::fromNativeSeparators(QLatin1String("\\\\?\\C:\\")), QString("C:/"));
 #else
     QCOMPARE(QDir::toNativeSeparators(QLatin1String("/")), QString("/"));
     QCOMPARE(QDir::toNativeSeparators(QLatin1String("\\")), QString("\\"));
@@ -1784,9 +1786,9 @@ void tst_QDir::searchPaths()
 {
     QFETCH(QString, filename);
     QFETCH(QString, searchPathPrefixes);
-    QStringList searchPathPrefixList = searchPathPrefixes.split(";", QString::SkipEmptyParts);
+    QStringList searchPathPrefixList = searchPathPrefixes.split(";", Qt::SkipEmptyParts);
     QFETCH(QString, searchPaths);
-    QStringList searchPathsList = searchPaths.split(";", QString::SkipEmptyParts);
+    QStringList searchPathsList = searchPaths.split(";", Qt::SkipEmptyParts);
     QFETCH(QString, expectedAbsolutePath);
     bool exists = !expectedAbsolutePath.isEmpty();
 

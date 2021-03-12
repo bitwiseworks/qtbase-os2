@@ -66,6 +66,12 @@
     Qt also offers a \l{foreach} keyword that make it very
     easy to iterate over all the items stored in a container.
 
+    \note Since Qt 5.14, range constructors are available for most of the
+    container classes. QMultiMap is a notable exception. Their use is
+    encouraged in place of the various from/to methods. For example:
+
+    \snippet code/doc_src_containers.cpp 25
+
     \section1 The Container Classes
 
     Qt provides the following sequential containers: QList,
@@ -116,6 +122,10 @@
     positions in memory. Inserting at the front or in the middle of
     a vector can be quite slow, because it can lead to large numbers
     of items having to be moved by one position in memory.
+
+    \row \li \l{QVarLengthArray}<T, Prealloc>
+    \li This provides a low-level variable-length array. It can be used
+    instead of QVector in places where speed is particularly important.
 
     \row \li \l{QStack}<T>
     \li This is a convenience subclass of QVector that provides
@@ -616,15 +626,11 @@
 
     \section1 Other Container-Like Classes
 
-    Qt includes three template classes that resemble containers in
+    Qt includes other template classes that resemble containers in
     some respects. These classes don't provide iterators and cannot
     be used with the \c foreach keyword.
 
     \list
-    \li QVarLengthArray<T, Prealloc> provides a low-level
-       variable-length array. It can be used instead of QVector in
-       places where speed is particularly important.
-
     \li QCache<Key, T> provides a cache to store objects of a certain
        type T associated with keys of type Key.
 
@@ -666,7 +672,7 @@
     \li \b{Logarithmic time:} O(log \e n). A function that runs in
        logarithmic time is a function whose running time is
        proportional to the logarithm of the number of items in the
-       container. One example is qBinaryFind().
+       container. One example is the binary search algorithm.
 
     \li \b{Linear time:} O(\e n). A function that runs in linear time
        will execute in a time directly proportional to the number of

@@ -52,12 +52,16 @@
 //
 
 #include "QtCore/qcoreapplication.h"
+#if QT_CONFIG(commandlineparser)
+#include "QtCore/qcommandlineoption.h"
+#endif
 #include "QtCore/qtranslator.h"
 #if QT_CONFIG(settings)
 #include "QtCore/qsettings.h"
 #endif
 #ifndef QT_NO_QOBJECT
 #include "private/qobject_p.h"
+#include "private/qlocking_p.h"
 #endif
 
 #ifdef Q_OS_MACOS
@@ -84,6 +88,11 @@ public:
     };
 
     QCoreApplicationPrivate(int &aargc,  char **aargv, uint flags);
+
+    // If not inheriting from QObjectPrivate: force this class to be polymorphic
+#ifdef QT_NO_QOBJECT
+    virtual
+#endif
     ~QCoreApplicationPrivate();
 
     void init();
@@ -98,6 +107,10 @@ public:
     static void initLocale();
 
     static bool checkInstance(const char *method);
+
+#if QT_CONFIG(commandlineparser)
+    virtual void addQtOptions(QList<QCommandLineOption> *options);
+#endif
 
 #ifndef QT_NO_QOBJECT
     bool sendThroughApplicationEventFilters(QObject *, QEvent *);
@@ -128,6 +141,15 @@ public:
 
     static void checkReceiverThread(QObject *receiver);
     void cleanupThreadData();
+
+    struct QPostEventListLocker
+    {
+        QThreadData *threadData;
+        std::unique_lock<QMutex> locker;
+
+        void unlock() { locker.unlock(); }
+    };
+    static QPostEventListLocker lockThreadPostEventList(QObject *object);
 #endif // QT_NO_QOBJECT
 
     int &argc;
@@ -149,7 +171,7 @@ public:
     QString cachedApplicationDirPath;
     static QString *cachedApplicationFilePath;
     static void setApplicationFilePath(const QString &path);
-    static inline void clearApplicationFilePath() { delete cachedApplicationFilePath; cachedApplicationFilePath = 0; }
+    static inline void clearApplicationFilePath() { delete cachedApplicationFilePath; cachedApplicationFilePath = nullptr; }
 
 #ifndef QT_NO_QOBJECT
     void execCleanup();

@@ -103,7 +103,11 @@ protected:
 #endif
     void handleExposeEvent(QExposeEvent *);
     void handleWindowStateChangedEvent(QWindowStateChangeEvent *event);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#else
     bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
+#endif
 #if QT_CONFIG(tabletevent)
     void handleTabletEvent(QTabletEvent *);
 #endif
@@ -121,7 +125,6 @@ private slots:
 private:
     void repaintWindow();
     bool updateSize();
-    bool updatePos();
     void updateMargins();
     void updateNormalGeometry();
 

@@ -108,14 +108,14 @@ static QString generateInterfaceXml(const QMetaObject *mo, int flags, int method
             if (!signature)
                 continue;
 
-            retval += QString::fromLatin1("    <property name=\"%1\" type=\"%2\" access=\"%3\"")
+            retval += QLatin1String("    <property name=\"%1\" type=\"%2\" access=\"%3\"")
                       .arg(QLatin1String(mp.name()),
                            QLatin1String(signature),
                            accessAsString(mp.isReadable(), mp.isWritable()));
 
-            if (QDBusMetaType::signatureToType(signature) == QVariant::Invalid) {
+            if (QDBusMetaType::signatureToType(signature) == QMetaType::UnknownType) {
                 const char *typeName = QMetaType::typeName(typeId);
-                retval += QString::fromLatin1(">\n      <annotation name=\"org.qtproject.QtDBus.QtTypeName\" value=\"%3\"/>\n    </property>\n")
+                retval += QLatin1String(">\n      <annotation name=\"org.qtproject.QtDBus.QtTypeName\" value=\"%3\"/>\n    </property>\n")
                           .arg(typeNameToXml(typeName));
             } else {
                 retval += QLatin1String("/>\n");
@@ -157,12 +157,12 @@ static QString generateInterfaceXml(const QMetaObject *mo, int flags, int method
         if (typeId != QMetaType::UnknownType && typeId != QMetaType::Void) {
             const char *typeName = QDBusMetaType::typeToSignature(typeId);
             if (typeName) {
-                xml += QString::fromLatin1("      <arg type=\"%1\" direction=\"out\"/>\n")
+                xml += QLatin1String("      <arg type=\"%1\" direction=\"out\"/>\n")
                        .arg(typeNameToXml(typeName));
 
                 // do we need to describe this argument?
-                if (QDBusMetaType::signatureToType(typeName) == QVariant::Invalid)
-                    xml += QString::fromLatin1("      <annotation name=\"org.qtproject.QtDBus.QtTypeName.Out0\" value=\"%1\"/>\n")
+                if (QDBusMetaType::signatureToType(typeName) == QMetaType::UnknownType)
+                    xml += QLatin1String("      <annotation name=\"org.qtproject.QtDBus.QtTypeName.Out0\" value=\"%1\"/>\n")
                         .arg(typeNameToXml(QMetaType::typeName(typeId)));
             } else {
                 qWarning() << "Unsupported return type" << typeId << QMetaType::typeName(typeId) << "in method" << mm.name();
@@ -199,7 +199,7 @@ static QString generateInterfaceXml(const QMetaObject *mo, int flags, int method
 
             QString name;
             if (!names.at(j - 1).isEmpty())
-                name = QString::fromLatin1("name=\"%1\" ").arg(QLatin1String(names.at(j - 1)));
+                name = QLatin1String("name=\"%1\" ").arg(QLatin1String(names.at(j - 1)));
 
             bool isOutput = isSignal || j > inputCount;
 
@@ -208,7 +208,7 @@ static QString generateInterfaceXml(const QMetaObject *mo, int flags, int method
                                      qUtf16Printable(name), signature, isOutput ? "out" : "in");
 
             // do we need to describe this argument?
-            if (QDBusMetaType::signatureToType(signature) == QVariant::Invalid) {
+            if (QDBusMetaType::signatureToType(signature) == QMetaType::UnknownType) {
                 const char *typeName = QMetaType::typeName(types.at(j));
                 xml += QString::fromLatin1("      <annotation name=\"org.qtproject.QtDBus.QtTypeName.%1%2\" value=\"%3\"/>\n")
                        .arg(isOutput ? QLatin1String("Out") : QLatin1String("In"))
@@ -233,7 +233,7 @@ static QString generateInterfaceXml(const QMetaObject *mo, int flags, int method
                                  " value=\"true\"/>\n");
 
         retval += xml;
-        retval += QString::fromLatin1("    </%1>\n")
+        retval += QLatin1String("    </%1>\n")
                   .arg(isSignal ? QLatin1String("signal") : QLatin1String("method"));
     }
 
@@ -256,7 +256,7 @@ QString qDBusGenerateMetaObjectXml(QString interface, const QMetaObject *mo,
 
     if (xml.isEmpty())
         return QString();       // don't add an empty interface
-    return QString::fromLatin1("  <interface name=\"%1\">\n%2  </interface>\n")
+    return QLatin1String("  <interface name=\"%1\">\n%2  </interface>\n")
         .arg(interface, xml);
 }
 #if 0
@@ -285,7 +285,7 @@ QString qDBusGenerateMetaObjectXml(QString interface, const QMetaObject *mo, con
                 interface.prepend(QLatin1Char('.')).prepend(QCoreApplication::instance()->applicationName());
                 QStringList domainName =
                     QCoreApplication::instance()->organizationDomain().split(QLatin1Char('.'),
-                                                                             QString::SkipEmptyParts);
+                                                                             Qt::SkipEmptyParts);
                 if (domainName.isEmpty())
                     interface.prepend(QLatin1String("local."));
                 else

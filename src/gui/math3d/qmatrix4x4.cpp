@@ -187,7 +187,10 @@ QMatrix4x4::QMatrix4x4(const float *values, int cols, int rows)
     flagBits = General;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
+    \obsolete
+
     Constructs a 4x4 matrix from a conventional Qt 2D affine
     transformation \a matrix.
 
@@ -218,6 +221,7 @@ QMatrix4x4::QMatrix4x4(const QMatrix& matrix)
     m[3][3] = 1.0f;
     flagBits = Translation | Scale | Rotation2D;
 }
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 /*!
     Constructs a 4x4 matrix from the conventional Qt 2D
@@ -1659,7 +1663,12 @@ void QMatrix4x4::copyDataTo(float *values) const
             values[row * 4 + col] = float(m[col][row]);
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
+    \obsolete
+
+    Use toTransform() instead.
+
     Returns the conventional Qt 2D affine transformation matrix that
     corresponds to this matrix.  It is assumed that this matrix
     only contains 2D affine transformation elements.
@@ -1672,6 +1681,7 @@ QMatrix QMatrix4x4::toAffine() const
                    m[1][0], m[1][1],
                    m[3][0], m[3][1]);
 }
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 /*!
     Returns the conventional Qt 2D transformation matrix that
@@ -2007,7 +2017,7 @@ void QMatrix4x4::optimize()
 */
 QMatrix4x4::operator QVariant() const
 {
-    return QVariant(QVariant::Matrix4x4, this);
+    return QVariant(QMetaType::QMatrix4x4, this);
 }
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -2037,12 +2047,12 @@ QDebug operator<<(QDebug dbg, const QMatrix4x4 &m)
     }
 
     // Output in row-major order because it is more human-readable.
-    dbg.nospace() << "QMatrix4x4(type:" << bits.constData() << endl
+    dbg.nospace() << "QMatrix4x4(type:" << bits.constData() << Qt::endl
         << qSetFieldWidth(10)
-        << m(0, 0) << m(0, 1) << m(0, 2) << m(0, 3) << endl
-        << m(1, 0) << m(1, 1) << m(1, 2) << m(1, 3) << endl
-        << m(2, 0) << m(2, 1) << m(2, 2) << m(2, 3) << endl
-        << m(3, 0) << m(3, 1) << m(3, 2) << m(3, 3) << endl
+        << m(0, 0) << m(0, 1) << m(0, 2) << m(0, 3) << Qt::endl
+        << m(1, 0) << m(1, 1) << m(1, 2) << m(1, 3) << Qt::endl
+        << m(2, 0) << m(2, 1) << m(2, 2) << m(2, 3) << Qt::endl
+        << m(3, 0) << m(3, 1) << m(3, 2) << m(3, 3) << Qt::endl
         << qSetFieldWidth(0) << ')';
     return dbg;
 }

@@ -262,8 +262,8 @@ private:
     The scroller uses the global QAbstractAnimation timer to generate its QScrollEvents. This
     can be changed with QScrollerProperties::FrameRate on a per-QScroller basis.
 
-    Several examples in the \c scroller examples directory show how QScroller,
-    QScrollEvent and the scroller gesture can be used.
+    The \l {Dir View Example} shows one way to use a QScroller with a QTreeView.
+    An example in the \c scroller examples directory also demonstrates QScroller.
 
     Even though this kinetic scroller has a large number of settings available via
     QScrollerProperties, we recommend that you leave them all at their default, platform optimized
@@ -300,7 +300,7 @@ QScroller *QScroller::scroller(QObject *target)
 {
     if (!target) {
         qWarning("QScroller::scroller() was called with a null target.");
-        return 0;
+        return nullptr;
     }
 
     if (qt_allScrollers()->contains(target))
@@ -476,7 +476,7 @@ void QScroller::ungrabGesture(QObject *target)
 
     QGestureRecognizer::unregisterRecognizer(sp->recognizerType);
     // do not delete the recognizer. The QGestureManager is doing this.
-    sp->recognizer = 0;
+    sp->recognizer = nullptr;
 }
 
 #endif // QT_NO_GESTURES
@@ -502,7 +502,7 @@ QScroller::~QScroller()
 #ifndef QT_NO_GESTURES
     QGestureRecognizer::unregisterRecognizer(d->recognizerType);
     // do not delete the recognizer. The QGestureManager is doing this.
-    d->recognizer = 0;
+    d->recognizer = nullptr;
 #endif
     qt_allScrollers()->remove(d->target);
     qt_activeScrollers()->removeOne(this);
@@ -879,7 +879,7 @@ void QScroller::setSnapPositionsY(qreal first, qreal interval)
 QScrollerPrivate::QScrollerPrivate(QScroller *q, QObject *_target)
     : target(_target)
 #ifndef QT_NO_GESTURES
-    , recognizer(0)
+    , recognizer(nullptr)
     , recognizerType(Qt::CustomGesture)
 #endif
     , state(QScroller::Inactive)
@@ -900,7 +900,7 @@ QScrollerPrivate::QScrollerPrivate(QScroller *q, QObject *_target)
 
 void QScrollerPrivate::init()
 {
-    setDpiFromWidget(0);
+    setDpiFromWidget(nullptr);
     monotonicTimer.start();
 }
 
@@ -1031,7 +1031,8 @@ void QScrollerPrivate::setDpi(const QPointF &dpi)
 */
 void QScrollerPrivate::setDpiFromWidget(QWidget *widget)
 {
-    const QScreen *screen = QGuiApplication::screens().at(QApplication::desktop()->screenNumber(widget));
+    const QScreen *screen = widget ? widget->screen() : QGuiApplication::primaryScreen();
+    Q_ASSERT(screen);
     setDpi(QPointF(screen->physicalDotsPerInchX(), screen->physicalDotsPerInchY()));
 }
 

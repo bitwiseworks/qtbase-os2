@@ -51,6 +51,7 @@
 #include "qqnxabstractvirtualkeyboard.h"
 #include "qqnxservices.h"
 
+#include "qqnxforeignwindow.h"
 #include "qqnxrasterwindow.h"
 #if !defined(QT_NO_OPENGL)
 #include "qqnxeglwindow.h"
@@ -147,6 +148,7 @@ static inline int getContextCapabilities(const QStringList &paramList)
 
 QQnxIntegration::QQnxIntegration(const QStringList &paramList)
     : QPlatformIntegration()
+    , m_screenContextId(256, 0)
     , m_screenEventThread(0)
     , m_navigatorEventHandler(new QQnxNavigatorEventHandler())
     , m_virtualKeyboard(0)
@@ -168,6 +170,9 @@ QQnxIntegration::QQnxIntegration(const QStringList &paramList)
 #if QT_CONFIG(draganddrop)
     , m_drag(new QSimpleDrag())
 #endif
+#if QT_CONFIG(opengl)
+    , m_eglDisplay(EGL_NO_DISPLAY)
+#endif
 {
     ms_instance = this;
     m_options = parseOptions(paramList);
@@ -178,6 +183,11 @@ QQnxIntegration::QQnxIntegration(const QStringList &paramList)
         qFatal("%s - Screen: Failed to create screen context - Error: %s (%i)",
                Q_FUNC_INFO, strerror(errno), errno);
     }
+    screen_get_context_property_cv(m_screenContext,
+                                   SCREEN_PROPERTY_ID,
+                                   m_screenContextId.size(),
+                                   m_screenContextId.data());
+    m_screenContextId.resize(strlen(m_screenContextId.constData()));
 
 #if QT_CONFIG(qqnx_pps)
     // Create/start navigator event notifier
@@ -188,9 +198,8 @@ QQnxIntegration::QQnxIntegration(const QStringList &paramList)
     QMetaObject::invokeMethod(m_navigatorEventNotifier, "start", Qt::QueuedConnection);
 #endif
 
-#if !defined(QT_NO_OPENGL)
-    // Initialize global OpenGL resources
-    QQnxGLContext::initializeContext();
+#if QT_CONFIG(opengl)
+    createEglDisplay();
 #endif
 
     // Create/start event thread
@@ -277,9 +286,8 @@ QQnxIntegration::~QQnxIntegration()
     // Close connection to QNX composition manager
     screen_destroy_context(m_screenContext);
 
-#if !defined(QT_NO_OPENGL)
-    // Cleanup global OpenGL resources
-    QQnxGLContext::shutdownContext();
+#if QT_CONFIG(opengl)
+    destroyEglDisplay();
 #endif
 
 #if QT_CONFIG(qqnx_pps)
@@ -310,6 +318,7 @@ bool QQnxIntegration::hasCapability(QPlatformIntegration::Capability cap) const
     qIntegrationDebug();
     switch (cap) {
     case MultipleWindows:
+    case ForeignWindows:
     case ThreadedPixmaps:
         return true;
 #if !defined(QT_NO_OPENGL)
@@ -321,6 +330,18 @@ bool QQnxIntegration::hasCapability(QPlatformIntegration::Capability cap) const
     default:
         return QPlatformIntegration::hasCapability(cap);
     }
+}
+
+QPlatformWindow *QQnxIntegration::createForeignWindow(QWindow *window, WId nativeHandle) const
+{
+    screen_window_t screenWindow = reinterpret_cast<screen_window_t>(nativeHandle);
+    if (this->window(screenWindow)) {
+        qWarning() << "QWindow already created for foreign window"
+                   << screenWindow;
+        return nullptr;
+    }
+
+    return new QQnxForeignWindow(window, m_screenContext, screenWindow);
 }
 
 QPlatformWindow *QQnxIntegration::createPlatformWindow(QWindow *window) const
@@ -478,7 +499,7 @@ QPlatformServices * QQnxIntegration::services() const
     return m_services;
 }
 
-QWindow *QQnxIntegration::window(screen_window_t qnxWindow)
+QWindow *QQnxIntegration::window(screen_window_t qnxWindow) const
 {
     qIntegrationDebug();
     QMutexLocker locker(&m_windowMapperMutex);
@@ -587,12 +608,11 @@ QList<screen_display_t *> QQnxIntegration::sortDisplays(screen_display_t *availa
 
         // Move all displays with matching ID from the intermediate list
         // to the beginning of the ordered list
-        QMutableListIterator<screen_display_t *> iter(allDisplays);
-        while (iter.hasNext()) {
-            screen_display_t *display = iter.next();
+        for (auto it = allDisplays.begin(), end = allDisplays.end(); it != end; ++it) {
+            screen_display_t *display = *it;
             if (getIdOfDisplay(*display) == requestedValue) {
                 orderedDisplays.append(display);
-                iter.remove();
+                allDisplays.erase(it);
                 break;
             }
         }
@@ -706,6 +726,11 @@ screen_context_t QQnxIntegration::screenContext()
     return m_screenContext;
 }
 
+QByteArray QQnxIntegration::screenContextId()
+{
+    return m_screenContextId;
+}
+
 QQnxNavigatorEventHandler *QQnxIntegration::navigatorEventHandler()
 {
     return m_navigatorEventHandler;
@@ -716,5 +741,29 @@ bool QQnxIntegration::supportsNavigatorEvents() const
     // If QQNX_PPS is defined then we have navigator
     return m_navigator != 0;
 }
+
+#if QT_CONFIG(opengl)
+void QQnxIntegration::createEglDisplay()
+{
+    qIntegrationDebug();
+
+    // Initialize connection to EGL
+    m_eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (Q_UNLIKELY(m_eglDisplay == EGL_NO_DISPLAY))
+        qFatal("QQnxiIntegration: failed to obtain EGL display: %x", eglGetError());
+
+    EGLBoolean eglResult = eglInitialize(m_eglDisplay, 0, 0);
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
+        qFatal("QQnxIntegration: failed to initialize EGL display, err=%d", eglGetError());
+}
+
+void QQnxIntegration::destroyEglDisplay()
+{
+    qIntegrationDebug();
+
+    // Close connection to EGL
+    eglTerminate(m_eglDisplay);
+}
+#endif
 
 QT_END_NAMESPACE

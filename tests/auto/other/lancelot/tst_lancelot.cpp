@@ -85,6 +85,8 @@ private slots:
     void testRasterARGB8565PM();
     void testRasterGrayscale8_data();
     void testRasterGrayscale8();
+    void testRasterRGBA64PM_data();
+    void testRasterRGBA64PM();
 
 #ifndef QT_NO_OPENGL
     void testOpenGL_data();
@@ -127,7 +129,7 @@ void tst_Lancelot::initTestCase()
         QFile file(scriptsDir + fileName);
         file.open(QFile::ReadOnly);
         QByteArray cont = file.readAll();
-        scripts.insert(fileName, QString::fromUtf8(cont).split(QLatin1Char('\n'), QString::SkipEmptyParts));
+        scripts.insert(fileName, QString::fromUtf8(cont).split(QLatin1Char('\n'), Qt::SkipEmptyParts));
         scriptChecksums.insert(fileName, qChecksum(cont.constData(), cont.size()));
     }
 }
@@ -223,6 +225,17 @@ void tst_Lancelot::testRasterGrayscale8_data()
 void tst_Lancelot::testRasterGrayscale8()
 {
     runTestSuite(Raster, QImage::Format_Grayscale8);
+}
+
+
+void tst_Lancelot::testRasterRGBA64PM_data()
+{
+    setupTestSuite();
+}
+
+void tst_Lancelot::testRasterRGBA64PM()
+{
+    runTestSuite(Raster, QImage::Format_RGBA64_Premultiplied);
 }
 
 

@@ -145,7 +145,9 @@
 
 #include "QtWidgets/qscrollbar.h"
 #include "QtCore/qdir.h"
+#if QT_CONFIG(stringlistmodel)
 #include "QtCore/qstringlistmodel.h"
+#endif
 #if QT_CONFIG(dirmodel)
 #include "QtWidgets/qdirmodel.h"
 #endif
@@ -159,6 +161,7 @@
 #include "QtWidgets/qapplication.h"
 #include "QtGui/qevent.h"
 #include "QtWidgets/qdesktopwidget.h"
+#include <private/qapplication_p.h>
 #include <private/qdesktopwidget_p.h>
 #if QT_CONFIG(lineedit)
 #include "QtWidgets/qlineedit.h"
@@ -470,7 +473,7 @@ QMatchData QCompletionEngine::filterHistory()
     if (curParts.count() <= 1 || c->proxy->showAll || !source)
         return QMatchData();
 
-#if QT_CONFIG(dirmodel)
+#if QT_CONFIG(dirmodel) && QT_DEPRECATED_SINCE(5, 15)
     const bool isDirModel = (qobject_cast<QDirModel *>(source) != nullptr);
 #else
     const bool isDirModel = false;
@@ -594,7 +597,8 @@ QIndexMapper QSortedModelEngine::indexHint(QString part, const QModelIndex& pare
     const CacheItem::const_iterator it = map.lowerBound(part);
 
     // look backward for first valid hint
-    for(CacheItem::const_iterator it1 = it; it1-- != map.constBegin();) {
+    for (CacheItem::const_iterator it1 = it; it1 != map.constBegin();) {
+        --it1;
         const QMatchData& value = it1.value();
         if (value.isValid()) {
             if (order == Qt::AscendingOrder) {
@@ -754,7 +758,10 @@ int QUnsortedModelEngine::buildIndices(const QString& str, const QModelIndex& pa
         case Qt::MatchExactly:
         case Qt::MatchFixedString:
         case Qt::MatchCaseSensitive:
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         case Qt::MatchRegExp:
+QT_WARNING_POP
         case Qt::MatchWildcard:
         case Qt::MatchWrap:
         case Qt::MatchRecursive:
@@ -900,7 +907,7 @@ void QCompleterPrivate::_q_complete(QModelIndex index, bool highlighted)
         QModelIndex si = proxy->mapToSource(index);
         si = si.sibling(si.row(), column); // for clicked()
         completion = q->pathFromIndex(si);
-#if QT_CONFIG(dirmodel)
+#if QT_CONFIG(dirmodel) && QT_DEPRECATED_SINCE(5, 15)
         // add a trailing separator in inline
         if (mode == QCompleter::InlineCompletion) {
             if (qobject_cast<QDirModel *>(proxy->sourceModel()) && QFileInfo(completion).isDir())
@@ -1122,7 +1129,7 @@ void QCompleter::setModel(QAbstractItemModel *model)
         setPopup(d->popup); // set the model and make new connections
     if (oldModel && oldModel->QObject::parent() == this)
         delete oldModel;
-#if QT_CONFIG(dirmodel)
+#if QT_CONFIG(dirmodel) && QT_DEPRECATED_SINCE(5, 15)
     if (qobject_cast<QDirModel *>(model)) {
 #if defined(Q_OS_WIN)
         setCaseSensitivity(Qt::CaseInsensitive);
@@ -1259,7 +1266,7 @@ Qt::MatchFlags QCompleter::filterMode() const
 void QCompleter::setPopup(QAbstractItemView *popup)
 {
     Q_D(QCompleter);
-    Q_ASSERT(popup != 0);
+    Q_ASSERT(popup != nullptr);
     if (d->popup) {
         QObject::disconnect(d->popup->selectionModel(), nullptr, this, nullptr);
         QObject::disconnect(d->popup, nullptr, this, nullptr);
@@ -1414,7 +1421,7 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
             // widget lost focus, hide the popup
             if (d->widget && (!d->widget->hasFocus()
 #ifdef QT_KEYPAD_NAVIGATION
-                || (QApplication::keypadNavigationEnabled() && !d->widget->hasEditFocus())
+                || (QApplicationPrivate::keypadNavigationEnabled() && !d->widget->hasEditFocus())
 #endif
                 ))
                 d->popup->hide();
@@ -1432,7 +1439,7 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
         switch (key) {
 #ifdef QT_KEYPAD_NAVIGATION
         case Qt::Key_Select:
-            if (!QApplication::keypadNavigationEnabled())
+            if (!QApplicationPrivate::keypadNavigationEnabled())
                 break;
 #endif
         case Qt::Key_Return:
@@ -1462,7 +1469,7 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
     case QEvent::KeyRelease: {
         QKeyEvent *ke = static_cast<QKeyEvent *>(e);
-        if (QApplication::keypadNavigationEnabled() && ke->key() == Qt::Key_Back) {
+        if (QApplicationPrivate::keypadNavigationEnabled() && ke->key() == Qt::Key_Back) {
             // Send the event to the 'widget'. This is what we did for KeyPress, so we need
             // to do the same for KeyRelease, in case the widget's KeyPress event set
             // up something (such as a timer) that is relying on also receiving the
@@ -1479,7 +1486,7 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
 
     case QEvent::MouseButtonPress: {
 #ifdef QT_KEYPAD_NAVIGATION
-        if (QApplication::keypadNavigationEnabled()) {
+        if (QApplicationPrivate::keypadNavigationEnabled()) {
             // if we've clicked in the widget (or its descendant), let it handle the click
             QWidget *source = qobject_cast<QWidget *>(o);
             if (source) {
@@ -1504,7 +1511,7 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
 
     case QEvent::InputMethod:
     case QEvent::ShortcutOverride:
-        QApplication::sendEvent(d->widget, e);
+        QCoreApplication::sendEvent(d->widget, e);
         break;
 
     default:
@@ -1843,7 +1850,7 @@ QString QCompleter::pathFromIndex(const QModelIndex& index) const
         return QString();
     bool isDirModel = false;
     bool isFsModel = false;
-#if QT_CONFIG(dirmodel)
+#if QT_CONFIG(dirmodel) && QT_DEPRECATED_SINCE(5, 15)
     isDirModel = qobject_cast<QDirModel *>(d->proxy->sourceModel()) != nullptr;
 #endif
 #if QT_CONFIG(filesystemmodel)
@@ -1892,7 +1899,7 @@ QStringList QCompleter::splitPath(const QString& path) const
 {
     bool isDirModel = false;
     bool isFsModel = false;
-#if QT_CONFIG(dirmodel)
+#if QT_CONFIG(dirmodel) && QT_DEPRECATED_SINCE(5, 15)
     Q_D(const QCompleter);
     isDirModel = qobject_cast<QDirModel *>(d->proxy->sourceModel()) != nullptr;
 #endif

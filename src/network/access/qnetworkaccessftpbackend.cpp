@@ -75,13 +75,13 @@ QNetworkAccessFtpBackendFactory::create(QNetworkAccessManager::Operation op,
 
     default:
         // no, we can't handle this operation
-        return 0;
+        return nullptr;
     }
 
     QUrl url = request.url();
     if (url.scheme().compare(QLatin1String("ftp"), Qt::CaseInsensitive) == 0)
         return new QNetworkAccessFtpBackend;
-    return 0;
+    return nullptr;
 }
 
 class QNetworkAccessCachedFtpConnection: public QFtp, public QNetworkAccessCache::CacheableObject
@@ -99,10 +99,12 @@ public:
         connect(this, SIGNAL(done(bool)), this, SLOT(deleteLater()));
         close();
     }
+
+    using QFtp::clearError;
 };
 
 QNetworkAccessFtpBackend::QNetworkAccessFtpBackend()
-    : ftp(0), uploadDevice(0), totalBytes(0), helpId(-1), sizeId(-1), mdtmId(-1), pwdId(-1),
+    : ftp(nullptr), uploadDevice(nullptr), totalBytes(0), helpId(-1), sizeId(-1), mdtmId(-1), pwdId(-1),
     supportsSize(false), supportsMdtm(false), supportsPwd(false), state(Idle)
 {
 }
@@ -159,7 +161,7 @@ void QNetworkAccessFtpBackend::open()
     if (!objectCache->requestEntry(cacheKey, this,
                              SLOT(ftpConnectionReady(QNetworkAccessCache::CacheableObject*)))) {
         ftp = new QNetworkAccessCachedFtpConnection;
-#ifndef QT_NO_BEARERMANAGEMENT
+#ifndef QT_NO_BEARERMANAGEMENT // ### Qt6: Remove section
         //copy network session down to the QFtp
         ftp->setProperty("_q_networksession", property("_q_networksession"));
 #endif
@@ -213,7 +215,7 @@ void QNetworkAccessFtpBackend::disconnectFromFtp(CacheCleanupMode mode)
     state = Disconnecting;
 
     if (ftp) {
-        disconnect(ftp, 0, this, 0);
+        disconnect(ftp, nullptr, this, nullptr);
 
         QByteArray key = makeCacheKey(url());
         if (mode == RemoveCachedConnection) {
@@ -223,7 +225,7 @@ void QNetworkAccessFtpBackend::disconnectFromFtp(CacheCleanupMode mode)
             QNetworkAccessManagerPrivate::getObjectCache(this)->releaseEntry(key);
         }
 
-        ftp = 0;
+        ftp = nullptr;
     }
 }
 
@@ -282,7 +284,10 @@ void QNetworkAccessFtpBackend::ftpDone()
     }
 
     // check for errors:
-    if (ftp->error() != QFtp::NoError) {
+    if (state == CheckingFeatures && ftp->error() == QFtp::UnknownError) {
+        qWarning("QNetworkAccessFtpBackend: HELP command failed, ignoring it");
+        ftp->clearError();
+    } else if (ftp->error() != QFtp::NoError) {
         QString msg;
         if (operation() == QNetworkAccessManager::GetOperation)
             msg = tr("Error while downloading %1: %2");
@@ -357,7 +362,7 @@ void QNetworkAccessFtpBackend::ftpDone()
         QFtp::TransferType type = QFtp::Binary;
         if (operation() == QNetworkAccessManager::GetOperation) {
             setCachingEnabled(true);
-            ftp->get(url().path(), 0, type);
+            ftp->get(url().path(), nullptr, type);
         } else {
             ftp->put(uploadDevice, url().path(), type);
         }

@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <qobject.h>
 #include <qmetaobject.h>
+#include <qjsondocument.h>
 
 #include "using-namespaces.h"
 #include "assign-namespace.h"
@@ -71,6 +72,7 @@
 #include "grand-parent-gadget-class.h"
 #include "namespace.h"
 #include "cxx17-namespaces.h"
+#include "cxx-attributes.h"
 
 #ifdef Q_MOC_RUN
 // check that moc can parse these constructs, they are being used in Windows winsock2.h header
@@ -146,6 +148,17 @@ namespace TestQNamespace {
         Any = Flag1 | Flag2
     };
     Q_FLAG_NS(TestFlag2)
+}
+
+
+#define TESTEXPORTMACRO Q_DECL_EXPORT
+
+namespace TestExportNamespace {
+    Q_NAMESPACE_EXPORT(TESTEXPORTMACRO)
+    enum class MyEnum {
+        Key1, Key2
+    };
+    Q_ENUM_NS(MyEnum)
 }
 
 QT_USE_NAMESPACE
@@ -704,6 +717,9 @@ private slots:
     void optionsFileError();
     void testQNamespace();
     void cxx17Namespaces();
+    void cxxAttributes();
+    void mocJsonOutput();
+    void requiredProperties();
 
 signals:
     void sigWithUnsignedArg(unsigned foo);
@@ -1040,7 +1056,7 @@ void tst_Moc::testExtraDataForEnum()
     const QMetaObject *mobjUser = &EnumUserClass::staticMetaObject;
     QCOMPARE(mobjUser->enumeratorCount(), 0);
 
-    const QMetaObject * const *objects = mobjUser->d.relatedMetaObjects;
+    const auto *objects = mobjUser->d.relatedMetaObjects;
     QVERIFY(objects);
     QCOMPARE(objects[0], mobjSource);
     QVERIFY(!objects[1]);
@@ -1424,6 +1440,16 @@ void tst_Moc::environmentIncludePaths()
 // plugin_metadata.h contains a plugin which we register here. Since we're not building this
 // application as a plugin, we need top copy some of the initializer code found in qplugin.h:
 extern "C" QObject *qt_plugin_instance();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+extern "C" QPluginMetaData qt_plugin_query_metadata();
+class StaticPluginInstance{
+public:
+    StaticPluginInstance() {
+        QStaticPlugin plugin(qt_plugin_instance, qt_plugin_query_metadata);
+        qRegisterStaticPluginFunction(plugin);
+    }
+};
+#else
 extern "C" const char *qt_plugin_query_metadata();
 class StaticPluginInstance{
 public:
@@ -1432,6 +1458,7 @@ public:
         qRegisterStaticPluginFunction(plugin);
     }
 };
+#endif
 static StaticPluginInstance staticInstance;
 
 void tst_Moc::specifyMetaTagsFromCmdline() {
@@ -3555,10 +3582,9 @@ namespace QTBUG32933_relatedObjectsDontIncludeItself {
 void tst_Moc::QTBUG32933_relatedObjectsDontIncludeItself()
 {
     const QMetaObject *mo = &QTBUG32933_relatedObjectsDontIncludeItself::NS::Obj::staticMetaObject;
-    const QMetaObject * const *objects = mo->d.relatedMetaObjects;
+    const auto *objects = mo->d.relatedMetaObjects;
     // the related objects should be empty because the enums is in the same object.
     QVERIFY(!objects);
-
 }
 
 class UnrelatedClass : public QObject
@@ -3664,7 +3690,7 @@ void tst_Moc::relatedMetaObjectsNameConflict()
 
     // load all specified metaobjects int a set
     QSet<const QMetaObject*> dependency;
-    const QMetaObject *const *i = dependingObject->d.relatedMetaObjects;
+    const auto *i = dependingObject->d.relatedMetaObjects;
     while (*i) {
         dependency.insert(*i);
         ++i;
@@ -3811,6 +3837,7 @@ void tst_Moc::gadgetHierarchy()
 {
     QCOMPARE(NonGadgetParent::Derived::staticMetaObject.superClass(), static_cast<const QMetaObject*>(nullptr));
     QCOMPARE(GrandParentGadget::DerivedGadget::staticMetaObject.superClass(), &GrandParentGadget::BaseGadget::staticMetaObject);
+    QCOMPARE(GrandParentGadget::CRTPDerivedGadget::staticMetaObject.superClass(), &GrandParentGadget::BaseGadget::staticMetaObject);
 }
 
 void tst_Moc::optionsFileError_data()
@@ -3848,6 +3875,14 @@ static void checkEnum(const QMetaEnum &enumerator, const QByteArray &name, const
     }
 }
 
+class EnumFromNamespaceClass : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(FooNamespace::Enum1 prop READ prop CONSTANT)
+public:
+    FooNamespace::Enum1 prop() { return FooNamespace::Enum1::Key2; }
+};
+
 void tst_Moc::testQNamespace()
 {
     QCOMPARE(TestQNamespace::staticMetaObject.enumeratorCount(), 4);
@@ -3872,9 +3907,18 @@ void tst_Moc::testQNamespace()
     QCOMPARE(meta.enclosingMetaObject(), &TestQNamespace::staticMetaObject);
     QCOMPARE(meta.keyCount(), 2);
 
+    QCOMPARE(TestExportNamespace::staticMetaObject.enumeratorCount(), 1);
+    checkEnum(TestExportNamespace::staticMetaObject.enumerator(0), "MyEnum",
+        {{"Key1", 0}, {"Key2", 1}});
+
     QCOMPARE(FooNamespace::staticMetaObject.enumeratorCount(), 1);
     QCOMPARE(FooNamespace::FooNestedNamespace::staticMetaObject.enumeratorCount(), 2);
     QCOMPARE(FooNamespace::FooNestedNamespace::FooMoreNestedNamespace::staticMetaObject.enumeratorCount(), 1);
+
+    EnumFromNamespaceClass obj;
+    const QVariant prop = obj.property("prop");
+    QCOMPARE(prop.type(), QMetaType::Int);
+    QCOMPARE(prop.toInt(), int(FooNamespace::Enum1::Key2));
 }
 
 void tst_Moc::cxx17Namespaces()
@@ -3894,6 +3938,115 @@ void tst_Moc::cxx17Namespaces()
     QCOMPARE(QMetaEnum::fromType<CXX17Namespace::A::B::C::D::ClassInNamespace::GadEn>().name(), "GadEn");
     QCOMPARE(QMetaEnum::fromType<CXX17Namespace::A::B::C::D::ClassInNamespace::GadEn>().keyCount(), 1);
     QCOMPARE(QMetaEnum::fromType<CXX17Namespace::A::B::C::D::ClassInNamespace::GadEn>().value(0), 3);
+}
+
+void tst_Moc::cxxAttributes()
+{
+    auto so = CppAttribute::staticMetaObject;
+    QCOMPARE(so.className(), "CppAttribute");
+    QCOMPARE(so.enumeratorCount(), 0);
+    QVERIFY(so.indexOfSignal("deprecatedSignal") != 1);
+    for (auto a: {"deprecatedSlot", "deprecatedSlot2", "deprecatedReason", "deprecatedReasonWithLBRACK",
+                  "deprecatedReasonWith2LBRACK", "deprecatedReasonWithRBRACK", "deprecatedReasonWith2RBRACK",
+                  "slotWithArguments"
+#if !defined(_MSC_VER) || _MSC_VER >= 1912
+                  , "noreturnSlot", "noreturnSlot2", "returnInt", "noreturnDeprecatedSlot",
+                  "noreturnSlot3"
+#endif
+                  }) {
+        QVERIFY(so.indexOfSlot(a) != 1);
+    }
+
+    QCOMPARE(TestQNamespaceDeprecated::staticMetaObject.enumeratorCount(), 2);
+    checkEnum(TestQNamespaceDeprecated::staticMetaObject.enumerator(0), "TestEnum1",
+                {{"Key1", 11}, {"Key2", 12}, {"Key3", 13}, {"Key4", 14}, {"Key5", 15}, {"Key6", 16},
+                 {"Key7", 17}});
+    checkEnum(TestQNamespaceDeprecated::staticMetaObject.enumerator(1), "TestFlag1",
+                {{"None", 0}, {"Flag1", 1}, {"Flag2", 2}, {"Flag3", 3}, {"Any", 1 | 2 | 3}});
+
+    QCOMPARE(TestQNamespaceDeprecated::TestGadget::staticMetaObject.enumeratorCount(), 1);
+    checkEnum(TestQNamespaceDeprecated::TestGadget::staticMetaObject.enumerator(0), "TestGEnum1",
+                {{"Key1", 13}, {"Key2", 14}, {"Key3", 15}});
+
+    QMetaEnum meta = QMetaEnum::fromType<TestQNamespaceDeprecated::TestEnum1>();
+    QVERIFY(meta.isValid());
+    QCOMPARE(meta.name(), "TestEnum1");
+    QCOMPARE(meta.enclosingMetaObject(), &TestQNamespaceDeprecated::staticMetaObject);
+    QCOMPARE(meta.keyCount(), 7);
+}
+
+void tst_Moc::mocJsonOutput()
+{
+    const auto readFile = [](const QString &fileName) {
+        QFile f(fileName);
+        f.open(QIODevice::ReadOnly);
+        return QJsonDocument::fromJson(f.readAll());
+    };
+
+    const QString actualFile = QStringLiteral(":/allmocs.json");
+    const QString expectedFile = QStringLiteral(":/allmocs_baseline.json");
+
+    QVERIFY2(QFile::exists(actualFile), qPrintable(actualFile));
+    QVERIFY2(QFile::exists(expectedFile), qPrintable(expectedFile));
+
+    QJsonDocument actualOutput = readFile(QLatin1String(":/allmocs.json"));
+    QJsonDocument expectedOutput = readFile(QLatin1String(":/allmocs_baseline.json"));
+
+    const auto showPotentialDiff = [](const QJsonDocument &actual, const QJsonDocument &expected) -> QByteArray {
+#if defined(Q_OS_UNIX)
+        QByteArray actualStr = actual.toJson();
+        QByteArray expectedStr = expected.toJson();
+
+        QTemporaryFile actualFile;
+        if (!actualFile.open())
+            return "Error opening actual temp file";
+        actualFile.write(actualStr);
+        actualFile.flush();
+
+        QTemporaryFile expectedFile;
+        if (!expectedFile.open())
+            return "Error opening expected temp file";
+        expectedFile.write(expectedStr);
+        expectedFile.flush();
+
+        QProcess diffProc;
+        diffProc.setProgram("diff");
+        diffProc.setArguments(QStringList() << "-ub" << expectedFile.fileName() << actualFile.fileName());
+        diffProc.start();
+        if (!diffProc.waitForStarted())
+            return "Error waiting for diff process to start.";
+        if (!diffProc.waitForFinished())
+            return "Error waiting for diff process to finish.";
+        return diffProc.readAllStandardOutput();
+#else
+        return "Cannot launch diff. Please check allmocs.json and allmocs_baseline.json on disk.";
+#endif
+    };
+
+    QVERIFY2(actualOutput == expectedOutput, showPotentialDiff(actualOutput, expectedOutput).constData());
+}
+
+class RequiredTest :public QObject
+{
+    Q_OBJECT
+
+    Q_PROPERTY(int required MEMBER m_required REQUIRED)
+    Q_PROPERTY(int notRequired MEMBER m_notRequired)
+
+private:
+    int m_required;
+    int m_notRequired;
+};
+
+void tst_Moc::requiredProperties()
+{
+    QMetaObject mo = RequiredTest::staticMetaObject;
+    QMetaProperty required = mo.property(mo.indexOfProperty("required"));
+    QVERIFY(required.isValid());
+    QVERIFY(required.isRequired());
+    QMetaProperty notRequired = mo.property(mo.indexOfProperty("notRequired"));
+    QVERIFY(notRequired.isValid());
+    QVERIFY(!notRequired.isRequired());
 }
 
 QTEST_MAIN(tst_Moc)

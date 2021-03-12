@@ -291,14 +291,12 @@ void QSpacerItem::changeSize(int w, int h, QSizePolicy::Policy hPolicy,
 /*!
     Destructor.
 */
-QWidgetItem::~QWidgetItem() {}
+QWidgetItem::~QWidgetItem() = default;
 
 /*!
     Destroys the QLayoutItem.
 */
-QLayoutItem::~QLayoutItem()
-{
-}
+QLayoutItem::~QLayoutItem() = default;
 
 /*!
     Invalidates any cached information in this layout item.
@@ -362,7 +360,11 @@ QSpacerItem * QSpacerItem::spacerItem()
 
     \sa layout(), spacerItem()
 */
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 QWidget *QLayoutItem::widget()
+#else
+QWidget *QLayoutItem::widget() const
+#endif
 {
     return nullptr;
 }
@@ -370,7 +372,11 @@ QWidget *QLayoutItem::widget()
 /*!
     Returns the widget managed by this item.
 */
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 QWidget *QWidgetItem::widget()
+#else
+QWidget *QWidgetItem::widget() const
+#endif
 {
     return wid;
 }
@@ -502,6 +508,17 @@ void QWidgetItem::setGeometry(const QRect &rect)
     else if (!(align & Qt::AlignTop))
         y = y + (r.height() - s.height()) / 2;
 
+    // Make sure we don't move outside of the parent, e.g when styles demand
+    // surplus space that exceeds the available margins (f.ex macOS with QGroupBox)
+    if (x < 0) {
+        s.rwidth() += x;
+        x = 0;
+    }
+    if (y < 0) {
+        s.rheight() += y;
+        y = 0;
+    }
+
     wid->setGeometry(x, y, s.width(), s.height());
 }
 
@@ -580,7 +597,7 @@ Qt::Orientations QSpacerItem::expandingDirections() const
 Qt::Orientations QWidgetItem::expandingDirections() const
 {
     if (isEmpty())
-        return Qt::Orientations(0);
+        return {};
 
     Qt::Orientations e = wid->sizePolicy().expandingDirections();
     /*
@@ -761,7 +778,7 @@ QWidgetItemV2::QWidgetItemV2(QWidget *widget)
       q_cachedMaximumSize(Dirty, Dirty),
       q_firstCachedHfw(0),
       q_hfwCacheSize(0),
-      d(0)
+      d(nullptr)
 {
     QWidgetPrivate *wd = wid->d_func();
     if (!wd->widgetItem)
@@ -773,7 +790,7 @@ QWidgetItemV2::~QWidgetItemV2()
     if (wid) {
         auto *wd = static_cast<QWidgetPrivate *>(QObjectPrivate::get(wid));
         if (wd->widgetItem == this)
-            wd->widgetItem = 0;
+            wd->widgetItem = nullptr;
     }
 }
 

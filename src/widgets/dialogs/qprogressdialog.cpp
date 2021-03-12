@@ -49,6 +49,7 @@
 #include "qpushbutton.h"
 #include "qtimer.h"
 #include "qelapsedtimer.h"
+#include "qscopedvaluerollback.h"
 #include <private/qdialog_p.h>
 #include <limits.h>
 
@@ -65,13 +66,14 @@ class QProgressDialogPrivate : public QDialogPrivate
     Q_DECLARE_PUBLIC(QProgressDialog)
 
 public:
-    QProgressDialogPrivate() : label(0), cancel(0), bar(0),
+    QProgressDialogPrivate() : label(nullptr), cancel(nullptr), bar(nullptr),
         shown_once(false),
         cancellation_flag(false),
         setValue_called(false),
+        processingEvents(false),
         showTime(defaultShowTime),
 #ifndef QT_NO_SHORTCUT
-        escapeShortcut(0),
+        escapeShortcut(nullptr),
 #endif
         useDefaultCancelText(false)
     {
@@ -92,6 +94,7 @@ public:
     bool shown_once;
     bool cancellation_flag;
     bool setValue_called;
+    bool processingEvents;
     QElapsedTimer starttime;
     int showTime;
     bool autoClose;
@@ -112,7 +115,7 @@ void QProgressDialogPrivate::init(const QString &labelText, const QString &cance
     label = new QLabel(labelText, q);
     bar = new QProgressBar(q);
     bar->setRange(min, max);
-    int align = q->style()->styleHint(QStyle::SH_ProgressDialog_TextLabelAlignment, 0, q);
+    int align = q->style()->styleHint(QStyle::SH_ProgressDialog_TextLabelAlignment, nullptr, q);
     label->setAlignment(Qt::Alignment(align));
     autoClose = true;
     autoReset = true;
@@ -132,12 +135,12 @@ void QProgressDialogPrivate::init(const QString &labelText, const QString &cance
 void QProgressDialogPrivate::layout()
 {
     Q_Q(QProgressDialog);
-    int sp = q->style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing, 0, q);
-    int mb = q->style()->pixelMetric(QStyle::PM_LayoutBottomMargin, 0, q);
-    int ml = qMin(q->width() / 10, q->style()->pixelMetric(QStyle::PM_LayoutLeftMargin, 0, q));
-    int mr = qMin(q->width() / 10, q->style()->pixelMetric(QStyle::PM_LayoutRightMargin, 0, q));
+    int sp = q->style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing, nullptr, q);
+    int mb = q->style()->pixelMetric(QStyle::PM_LayoutBottomMargin, nullptr, q);
+    int ml = qMin(q->width() / 10, q->style()->pixelMetric(QStyle::PM_LayoutLeftMargin, nullptr, q));
+    int mr = qMin(q->width() / 10, q->style()->pixelMetric(QStyle::PM_LayoutRightMargin, nullptr, q));
     const bool centered =
-        bool(q->style()->styleHint(QStyle::SH_ProgressDialog_CenterCancelButton, 0, q));
+        bool(q->style()->styleHint(QStyle::SH_ProgressDialog_CenterCancelButton, nullptr, q));
 
     int additionalSpacing = 0;
     QSize cs = cancel ? cancel->sizeHint() : QSize(0,0);
@@ -188,7 +191,7 @@ void QProgressDialogPrivate::_q_disconnectOnClose()
     if (receiverToDisconnectOnClose) {
         QObject::disconnect(q, SIGNAL(canceled()), receiverToDisconnectOnClose,
                             memberToDisconnectOnClose);
-        receiverToDisconnectOnClose = 0;
+        receiverToDisconnectOnClose = nullptr;
     }
     memberToDisconnectOnClose.clear();
 }
@@ -418,7 +421,7 @@ void QProgressDialog::setCancelButton(QPushButton *cancelButton)
     } else {
 #ifndef QT_NO_SHORTCUT
         delete d->escapeShortcut;
-        d->escapeShortcut = 0;
+        d->escapeShortcut = nullptr;
 #endif
     }
     d->adoptChildWidget(cancelButton);
@@ -450,7 +453,7 @@ void QProgressDialogPrivate::setCancelButtonText(const QString &cancelButtonText
             q->setCancelButton(new QPushButton(cancelButtonText, q));
         }
     } else {
-        q->setCancelButton(0);
+        q->setCancelButton(nullptr);
     }
     ensureSizeIsAtLeastSizeHint();
 }
@@ -492,7 +495,7 @@ void QProgressDialogPrivate::adoptChildWidget(QWidget *c)
         if (c->parentWidget() == q)
             c->hide(); // until after ensureSizeIsAtLeastSizeHint()
         else
-            c->setParent(q, 0);
+            c->setParent(q, { });
     }
     ensureSizeIsAtLeastSizeHint();
     if (c)
@@ -643,7 +646,7 @@ int QProgressDialog::value() const
 
   \warning If the progress dialog is modal
     (see QProgressDialog::QProgressDialog()),
-    setValue() calls QApplication::processEvents(), so take care that
+    setValue() calls QCoreApplication::processEvents(), so take care that
     this does not cause undesirable re-entrancy in your code. For example,
     don't use a QProgressDialog inside a paintEvent()!
 
@@ -658,8 +661,10 @@ void QProgressDialog::setValue(int progress)
     d->bar->setValue(progress);
 
     if (d->shown_once) {
-        if (isModal())
-            QApplication::processEvents();
+        if (isModal() && !d->processingEvents) {
+            const QScopedValueRollback<bool> guard(d->processingEvents, true);
+            QCoreApplication::processEvents();
+        }
     } else {
         if ((!d->setValue_called && progress == 0 /* for compat with Qt < 5.4 */) || progress == minimum()) {
             d->starttime.start();
@@ -708,14 +713,17 @@ void QProgressDialog::setValue(int progress)
 QSize QProgressDialog::sizeHint() const
 {
     Q_D(const QProgressDialog);
-    QSize sh = d->label ? d->label->sizeHint() : QSize(0, 0);
-    QSize bh = d->bar->sizeHint();
-    int margin = style()->pixelMetric(QStyle::PM_DefaultTopLevelMargin);
-    int spacing = style()->pixelMetric(QStyle::PM_DefaultLayoutSpacing);
-    int h = margin * 2 + bh.height() + sh.height() + spacing;
+    QSize labelSize = d->label ? d->label->sizeHint() : QSize(0, 0);
+    QSize barSize = d->bar->sizeHint();
+    int marginBottom = style()->pixelMetric(QStyle::PM_LayoutBottomMargin, 0, this);
+    int spacing = style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing, 0, this);
+    int marginLeft = style()->pixelMetric(QStyle::PM_LayoutLeftMargin, 0, this);
+    int marginRight = style()->pixelMetric(QStyle::PM_LayoutRightMargin, 0, this);
+
+    int height = marginBottom * 2 + barSize.height() + labelSize.height() + spacing;
     if (d->cancel)
-        h += d->cancel->sizeHint().height() + spacing;
-    return QSize(qMax(200, sh.width() + 2 * margin), h);
+        height += d->cancel->sizeHint().height() + spacing;
+    return QSize(qMax(200, labelSize.width() + marginLeft + marginRight), height);
 }
 
 /*!\reimp

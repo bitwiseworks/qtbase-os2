@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
@@ -84,7 +84,6 @@
 /*!
     \page qmake-overview.html
     \title Overview
-    \contentspage {qmake Manual}{Contents}
     \previouspage qmake Manual
     \nextpage Getting Started
 
@@ -158,7 +157,6 @@
 /*!
     \page qmake-project-files.html
     \title Creating Project Files
-    \contentspage {qmake Manual}{Contents}
     \previouspage Getting Started
     \nextpage Building Common Project Types
 
@@ -477,7 +475,6 @@
 /*!
     \page qmake-running.html
     \title Running qmake
-    \contentspage {qmake Manual}{Contents}
     \previouspage Building Common Project Types
     \nextpage Platform Notes
 
@@ -647,7 +644,6 @@
 /*!
     \page qmake-platform-notes.html
     \title Platform Notes
-    \contentspage {qmake Manual}{Contents}
     \previouspage Running qmake
     \nextpage qmake Language
 
@@ -798,8 +794,8 @@
     and \l{RC_ICONS}. The generated .rc file is automatically compiled and
     linked. Elements that are added to the .rc file are defined by the system
     variables \l{QMAKE_TARGET_COMPANY}, \l{QMAKE_TARGET_DESCRIPTION},
-    \l{QMAKE_TARGET_COPYRIGHT}, \l{QMAKE_TARGET_PRODUCT}, \l{RC_CODEPAGE},
-    \l{RC_ICONS}, \l{RC_LANG},and \l{VERSION}.
+    \l{QMAKE_TARGET_COPYRIGHT}, \l{QMAKE_TARGET_PRODUCT}, \l{QMAKE_MANIFEST},
+    \l{RC_CODEPAGE}, \l{RC_ICONS}, \l{RC_LANG} and \l{VERSION}.
 
     If these elements are not sufficient, qmake has the two system variables
     \l{RC_FILE} and \l{RES_FILE} that point directly to an externally created
@@ -863,7 +859,6 @@
 /*!
     \page qmake-reference.html
     \title Reference
-    \contentspage {qmake Manual}{Contents}
     \previouspage Configuring qmake
     \nextpage Variables
 
@@ -894,7 +889,6 @@
 /*!
     \page qmake-variable-reference.html
     \title Variables
-    \contentspage {qmake Manual}{Contents}
     \previouspage Reference
     \nextpage Replace Functions
     \keyword qmake Variable Reference
@@ -911,13 +905,235 @@
     to specify a list of libraries that each project needs to link against,
     and \c QMAKE_LIBS_X11 would be used to extend this list.
 
+    \target ANDROID_ABI
+    \section1 ANDROID_ABI
+
+    \note This variable applies only to Android targets.
+
+    Specifies the Android target ABI. Valid values are: armeabi-v7a, arm64-v8a,
+    x86, x86_64.
+
+    \target ANDROID_ABIS
+    \section1 ANDROID_ABIS
+
+    \note This variable applies only to Android targets.
+
+    Specifies a list of Android target ABIs. Valid values are: armeabi-v7a,
+    arm64-v8a, x86, x86_64.
+
+    You can provide the ABIs as a qmake argument:
+
+    \badcode
+    qmake ANDROID_ABIS="armeabi-v7a arm64-v8a"
+    \endcode
+
+    Or directly in the \c .pro file:
+
+    \badcode
+    ANDROID_ABIS = \
+        armeabi-v7a \
+        arm64-v8a
+    \endcode
+
+    \target ANDROID_API_VERSION
+    \section1 ANDROID_API_VERSION
+
+    \note This variable applies only to Android targets.
+
+    Specifies the Android API level number. For more information, see
+    \l{Android: Build Numbers}{Android Build Numbers}.
+
+    \target ANDROID_BUNDLED_JAR_DEPENDENCIES
+    \section1 ANDROID_BUNDLED_JAR_DEPENDENCIES
+
+    \note This variable applies only to Android modules.
+
+    This is useful when writing a Qt module. It specifies a list of pre-bundled
+    dependencies used by the module in a \c .jar format, for example:
+
+    \badcode
+    ANDROID_BUNDLED_JAR_DEPENDENCIES += jar/QtAndroid.jar
+    \endcode
+
+    \target ANDROID_DEPLOYMENT_DEPENDENCIES
+    \section1 ANDROID_DEPLOYMENT_DEPENDENCIES
+
+    \note This variable applies only to Android targets.
+
+    By default, \l androiddeployqt will detect the dependencies of your
+    application. However, since run-time usage of plugins cannot be detected,
+    there could be false positives, as your application might depend on any
+    plugin that is a potential dependency. If you want to minimize the size of
+    your \c APK, it's possible to override the automatic detection using the
+    this variable. This should contain a list of all Qt files which need to be
+    included, with paths relative to the Qt install root.
+
+    \note Only the Qt files specified with this variable are included. Failing
+    to include all the correct files can result in crashes. It's also important
+    to make sure the files are listed in the correct loading order. This variable
+    provides a way to override the automatic detection entirely, so if a library
+    is listed before its dependencies, it will fail to load on some devices.
+
+    \target ANDROID_DEPLOYMENT_SETTINGS_FILE
+    \section1 ANDROID_DEPLOYMENT_SETTINGS_FILE
+
+    \note This variable applies only to Android targets.
+
+    Specifies the path to the \c {android-deployment-settings.json} file needed
+    by \l androiddeployqt and \c androidtestrunner. This overrides the path to
+    the settings file generated by qmake, thus you have to make sure to provide
+    a valid settings file.
+
+    \target ANDROID_EXTRA_LIBS
+    \section1 ANDROID_EXTRA_LIBS
+
+    \note This variable applies only to Android targets.
+
+    A list of external libraries that will be copied into your application's
+    \c libs folder and loaded on start-up. This can be used, for instance,
+    to enable OpenSSL in your application. For more information, see
+    \l{Adding OpenSSL Support for Android}.
+
+    \target ANDROID_EXTRA_PLUGINS
+    \section1 ANDROID_EXTRA_PLUGINS
+
+    \note This variable applies only to Android targets.
+
+    Specifies a path to C++ plugins or resources that your application has to bundle
+    but that cannot be delivered through the assets system, such as QML plugins.
+    With this variable, \l androiddeployqt will make sure everything is packaged
+    and deployed properly.
+
+    \c ANDROID_EXTRA_PLUGINS must point to the directory where the extra plugin(s)
+    are built. In addition, the build directory structure must follow a naming
+    convention similar to Qt plugins, that is, \e {plugins/<plugin name>}.
+
+    The plugins libraries should have the name format \e {libplugins_<type>_<name>_<abi>.so}.
+    To achieve that the plugin pro file could be defined as follows:
+
+    \badcode
+    TEMPLATE = lib
+    CONFIG += plugin
+
+    PLUGIN_TYPE = imageformats
+    DESTDIR = $$top_builddir/plugins/myplugin
+    TARGET = $$qt5LibraryTarget(myplugin, "plugins/$$PLUGIN_TYPE/")
+    \endcode
+
+    with top_builddir defined in .qmake.conf as:
+    \badcode
+    top_builddir=$$shadowed($$PWD)
+    \endcode
+
+    This will ensure that the correct name mangling is applied to the plugin
+    library (\e plugins/myplugin/libplugins_imageformats_myplugin_armeabi-v7a.so).
+
+    Then, assuming an extra image format plugin \e myplugin is built as
+    \e {$$DESTDIR/plugins/myplugin/}, the following ensures it is packaged correctly:
+
+    \badcode
+    ANDROID_EXTRA_PLUGINS += $$top_builddir/plugins
+    \endcode
+
+    \target ANDROID_FEATURES
+    \section1 ANDROID_FEATURES
+
+    \note This variable applies only to Android modules.
+
+    Specifies a module's features list:
+
+    \badcode
+    ANDROID_FEATURES += android.hardware.location.gps
+    \endcode
+
+    For more information, see \l{Android: <uses-feature>}{Android <uses-feature> Docs}.
+
+    \target ANDROID_LIB_DEPENDENCIES
+    \section1 ANDROID_LIB_DEPENDENCIES
+
+    \note This variable applies only to Android modules.
+
+    This is useful when writing a Qt module. It specifies a list of pre-built
+    dependencies used by the module, for example:
+
+    \badcode
+    ANDROID_LIB_DEPENDENCIES += \
+        plugins/libplugins_platforms_qtforandroid.so
+    \endcode
+
+    \target ANDROID_MIN_SDK_VERSION
+    \section1 ANDROID_MIN_SDK_VERSION
+
+    \note This variable applies only to Android targets.
+
+    Specifies the minimum Android API level for the project. By default, this
+    variable is set to API level 21.
+
+    \target ANDROID_PACKAGE_SOURCE_DIR
+    \section1 ANDROID_PACKAGE_SOURCE_DIR
+
+    \note This variable applies only to Android targets.
+
+    Specifies the path for a custom Android package template. The Android package
+    template contains:
+    \list
+        \li AndroidManifest.xml file
+        \li build.gradle file and other Gradle scripts
+        \li res/values/libs.xml file
+    \endlist
+
+    The path specified by this variable can contain custom Java classes under
+    \c src directory. By default, the \l androiddeployqt tool copies the
+    application template from the Qt for Android installation path into your
+    project's build directory, then it copies the contents of the path specified
+    by this variable on top of that, overwriting any existing files. For
+    instance, you can make a custom \c {AndroidManifest.xml} for your application,
+    then place this directly into the directory specified by this variable.
+
+    \target ANDROID_PERMISSIONS
+    \section1 ANDROID_PERMISSIONS
+
+    \note This variable applies only to Android modules.
+
+    Specifies a module's permissions list:
+
+    \badcode
+    ANDROID_PERMISSIONS += android.permission.ACCESS_FINE_LOCATION
+    \endcode
+
+    For more information, see \l{Android: <uses-permission>}{Android <uses-permission> Docs}.
+
+    \target ANDROID_TARGET_SDK_VERSION
+    \section1 ANDROID_TARGET_SDK_VERSION
+
+    \note This variable applies only to Android targets.
+
+    Specifies the target Android API level for the project. By default, this
+    variable is set to API level 28.
+
+    \target ANDROID_VERSION_CODE
+    \section1 ANDROID_VERSION_CODE
+
+    \note This variable applies only to Android targets.
+
+    Specifies the application's version number. For more information, see
+    \l{Android: App Versioning}{Android App Versioning}.
+
+    \target ANDROID_VERSION_NAME
+    \section1 ANDROID_VERSION_NAME
+
+    \note This variable applies only to Android targets.
+
+    Specifies the application's version in as a human readable string. For more
+    information, see \l{Android: App Versioning}{Android App Versioning}.
+
     \target CONFIG
     \section1 CONFIG
 
     Specifies project configuration and compiler options. The values are
     recognized internally by qmake and have special meaning.
 
-    The following \c CONFIG values control compilation flags:
+    The following \c CONFIG values control compiler and linker flags:
 
     \table
     \header \li Option   \li Description
@@ -936,7 +1152,9 @@
             file.
     \row    \li ordered  \li When using the \c subdirs template, this option
             specifies that the directories listed should be processed in the
-            order in which they are given.
+            order in which they are given. \note The use of this option is discouraged.
+            Specify dependencies as described in the \l{#SUBDIRS}{SUBDIRS}
+            variable documentation.
     \row    \li precompile_header \li Enables support for the use of
             \l{Using Precompiled Headers}{precompiled headers} in projects.
     \row    \li precompile_header_c (MSVC only) \li Enables support for the use of
@@ -946,6 +1164,8 @@
     \row    \li warn_off \li The compiler should output as few warnings as possible.
     \row    \li exceptions \li Exception support is enabled. Set by default.
     \row    \li exceptions_off \li Exception support is disabled.
+    \row    \li ltcg \li Link time code generation is enabled.
+            This option is off by default.
     \row    \li rtti \li RTTI support is enabled. By default, the compiler
             default is used.
     \row    \li rtti_off \li RTTI support is disabled. By default, the compiler
@@ -956,6 +1176,10 @@
             default is used.
     \row    \li thread \li Thread support is enabled. This is enabled when CONFIG
             includes \c qt, which is the default.
+    \row    \li utf8_source \li Specifies that the project's source files use the
+            UTF-8 encoding. By default, the compiler default is used.
+    \row    \li hide_symbols \li Set the default visibility of symbols in the binary
+            to hidden. By default, the compiler default is used.
     \row    \li c99 \li C99 support is enabled. This option has no effect if
             the compiler does not support C99, or can't select the C standard.
             By default, the compiler default is used.
@@ -992,6 +1216,22 @@
     \row    \li embed_translations \li Embed the generated translations from
             \c lrelease in the executable, under \l{QM_FILES_RESOURCE_PREFIX}.
             Requires \c lrelease to be set, too. Not set by default.
+    \row \li create_libtool \li Create a libtool .la file for the currently
+            built library.
+    \row \li create_pc \li Create a pkg-config .pc file for the currently built
+            library.
+    \row \li no_batch \li NMake only: Turn off generation of NMake batch rules
+            or inference rules.
+    \row \li skip_target_version_ext \li Suppress the automatic version number
+            appended to the DLL file name on Windows.
+    \row \li suppress_vcproj_warnings \li Suppress warnings of the VS project
+            generator.
+    \row \li windeployqt \li Automatically invoke windeployqt after linking,
+            and add the output as deployment items.
+    \row \li dont_recurse \li Suppress qmake recursion for the current
+            subproject.
+    \row \li no_include_pwd \li Do not add the current directory to
+            INCLUDEPATHS.
     \endtable
 
     When you use the \c debug_and_release option (which is the default under
@@ -1039,6 +1279,8 @@
         qmake will process all libraries linked to
         by the application and find their meta-information (see
         \l{LibDepend}{Library Dependencies} for more info).
+     \row \li no_install_prl \li This option disables the generation of
+        installation rules for generated .prl files.
      \endtable
 
     \note The \c create_prl option is required when \e {building} a
@@ -1085,6 +1327,15 @@
     \row \li designer \li The target is a plugin for \QD.
     \row \li no_lflags_merge \li Ensures that the list of libraries stored in the
          \c LIBS variable is not reduced to a list of unique values before it is used.
+    \row \li metatypes \li Create a \c {<name>_metatypes.json} file for the
+         current project. \c {<name>} is the all lowercase base name of
+         \l TARGET.
+    \row \li qmltypes \li Automatically register QML types defined in C++.
+         For more information, see \l {Defining QML Types from C++}.
+         Also, create a \c {<template>.qmltypes} file for the current
+         project. \c <template> will be \c plugins (plural, for historical
+         reasons) if \c plugin is set, or the value of \l TEMPLATE otherwise.
+         \c qmltypes implies \c metatypes.
     \endtable
 
     These options define specific features on Windows only:
@@ -1143,6 +1394,29 @@
     For example:
 
     \snippet code/doc_src_qmake-manual.pro 27
+
+    \target DEFINES_DEBUG
+    \section1 DEFINES_DEBUG
+
+    Specifies preprocessor defines for the debug configuration. The values of
+    this variable get added to \l{DEFINES} after the project is loaded. This
+    variable is typically set in \l{#QMAKESPEC}{qmake.conf} and rarely needs
+    to be modified.
+
+    This variable was introduced in Qt 5.13.2.
+
+    \target DEFINES_RELEASE
+    \section1 DEFINES_RELEASE
+
+    Specifies preprocessor defines for the release configuration. The values of
+    this variable get added to \l{DEFINES} after the project is loaded. This
+    variable is typically set in \l{#QMAKESPEC}{qmake.conf} and rarely needs
+    to be modified.
+
+    \note For MSVC mkspecs, this variable contains the value \c NDEBUG by
+    default.
+
+    This variable was introduced in Qt 5.13.2.
 
     \target DEF_FILE
     \section1 DEF_FILE
@@ -1291,7 +1565,7 @@
             \li Value
             \li Description
         \row
-            \li no_check_exists
+            \li no_check_exist
             \li If not set, qmake looks to see if the files to install actually
                 exist. If these files don't exist, qmake doesn’t create the
                 install rule. Use this config value if you need to install
@@ -1323,6 +1597,13 @@
 
     This variable is also used to specify which additional files will be
     deployed to embedded devices.
+
+    \target JAVA_HOME
+    \section1 JAVA_HOME
+
+    \note This variable is useful only to Android targets.
+
+    Specifies the JDK/OpenJDK installation path used for building the project.
 
     \target LEXIMPLS
     \section1 LEXIMPLS
@@ -1538,6 +1819,12 @@
     Specifies the target directory \c .qm files generated by
     \l{CONFIG}{CONFIG += lrelease} will be installed to. Does not have any
     effect if \l{CONFIG}{CONFIG += embed_translations} is set.
+
+    \target QML_IMPORT_PATH
+    \section1 QML_IMPORT_PATH
+
+    This variable is only used by \l{Qt Creator Manual}{Qt Creator}.
+    See \l{Qt Creator: Using QML Modules with Plugins} for details.
 
     \target QMAKE_systemvariable
     \section1 QMAKE
@@ -2502,6 +2789,14 @@
     This is only utilized if the \l{VERSION} or \l{RC_ICONS} variable is set
     and the \l{RC_FILE} and \l{RES_FILE} variables are not set.
 
+    \target QMAKE_MANIFEST
+    \section1 QMAKE_MANIFEST
+
+    Windows only. Specifies the manifest file for the project target.
+    This is only utilized if the \l{RC_FILE} and \l{RES_FILE} variables are not set.
+    Don't forget to remove embed_manifest_exe and embed_manifest_dll from
+    the CONFIG variable, otherwise it will conflict with the compiler generated one.
+
     \section1 QMAKE_TVOS_DEPLOYMENT_TARGET
 
     \note This variable is used on the tvOS platform only.
@@ -2523,6 +2818,40 @@
     Specifies the hard minimum version of watchOS that the application supports.
 
     For more information, see \l {Expressing Supported iOS Versions}.
+
+    \section1 QML_IMPORT_MAJOR_VERSION
+
+    Specifies the major version to be used for automatically generated QML type
+    registrations. For more information, see \l {Defining QML Types from C++}.
+
+    \section1 QML_IMPORT_MINOR_VERSION
+
+    When automatically registering QML types defined in C++, register an
+    additional version of the module using this minor version. Generally,
+    minor versions to be registered are inferred from the meta objects.
+
+    You can use this variable if the meta objects have not changed and you
+    still want to import a QML module with a newer minor version number. For
+    example, \c MyModule metaobjects are at \c 1.1 level, but you want to import
+    the module as \c 1.3.
+
+    \section1 QML_IMPORT_VERSION
+
+    Specifies \l QML_IMPORT_MAJOR_VERSION and \l QML_IMPORT_MINOR_VERSION as a
+    \c {<major>.<minor>} version string.
+
+    \section1 QML_IMPORT_NAME
+
+    Specifies the module name to be used for automatically generated QML type
+    registrations. For more information, see \l {Defining QML Types from C++}.
+
+    \section1 QML_FOREIGN_METATYPES
+
+    Specifies further JSON files with metatypes to be considered when generating
+    qmltypes files. Use this when external libraries provide types that are
+    exposed to QML, either directly or as base types or properties of other
+    types. Qt types will automatically be considered and don't have to be added
+    here.
 
     \section1 QT
 
@@ -2583,10 +2912,8 @@
 
     \section1 RC_FILE
 
-    Specifies the name of the resource file for the application.
-    The value of this variable is typically handled by
-    qmake or \l{#QMAKESPEC}{qmake.conf} and rarely
-    needs to be modified.
+    Windows only. Specifies the name of the Windows resource file (.rc) for the
+    target. See \l{Adding Windows Resource Files}.
 
     \target RC_CODEPAGE
     \section1 RC_CODEPAGE
@@ -2649,7 +2976,9 @@
 
     \section1 RES_FILE
 
-    Specifies the name of the compiled Windows resource file for the target.
+    Windows only. Specifies the name of the Windows resource compiler's output
+    file for this target. See \l{RC_FILE} and \l{Adding Windows Resource Files}.
+
     The value of this variable is typically handled by
     qmake or \l{#QMAKESPEC}{qmake.conf} and rarely
     needs to be modified.
@@ -2686,21 +3015,35 @@
 
     \snippet code/doc_src_qmake-manual.pro 50
 
-    If you need to ensure that the subdirectories are built in the order in
-    which they are specified, update the \l{#CONFIG}{CONFIG} variable to
-    include the \c ordered option:
+    If you need to ensure that the subdirectories are built in a particular
+    order, use the \c .depends modifier on the relevant \c SUBDIRS elements.
+
+    For example:
 
     \snippet code/doc_src_qmake-manual.pro 51
 
-    It is possible to modify this default behavior of \c SUBDIRS by giving
-    additional modifiers to \c SUBDIRS elements. Supported modifiers are:
+    The configuration above ensures that \c{my_library} is built before
+    \c{my_executable} and that \c{my_executable} is built before \c{tests}.
+    However, \c{doc} can be built in parallel with the other subdirectories,
+    thus speeding up the build process.
+
+    \note Multiple dependencies can be listed and they will all be built before
+    the target that depends on them.
+
+    \note Using \l{#CONFIG}{CONFIG += ordered} is discouraged as it can slow down
+    multi-core builds. Unlike the example shown above, all builds will happen
+    sequentially even if they don't have dependencies.
+
+    Beside defining the build order, it is possible to modify the default behavior
+    of \c SUBDIRS by giving additional modifiers to \c SUBDIRS elements.
+    Supported modifiers are:
 
     \table
     \header \li Modifier \li Effect
     \row \li .subdir     \li Use the specified subdirectory instead of \c SUBDIRS value.
     \row \li .file       \li Specify the subproject \c pro file explicitly. Cannot be
                         used in conjunction with \c .subdir modifier.
-    \row \li .depends    \li This subproject depends on specified subproject.
+    \row \li .depends    \li This subproject depends on specified subproject(s).
     \row \li .makefile   \li The makefile of subproject.
                         Available only on platforms that use makefiles.
     \row \li .target     \li Base string used for makefile targets related to this
@@ -2871,8 +3214,8 @@
     On desktop Windows, the default value is the value of the environment
     variable \c{WindowsSDKVersion}.
 
-    On WinRT, the default value is the value of the environment variable
-    \c{UCRTVERSION}.
+    On Universal Windows Platform (UWP), the default value is the value of the
+    environment variable \c{UCRTVERSION}.
 
     \target WINDOWS_TARGET_PLATFORM_MIN_VERSION
     \section1 WINDOWS_TARGET_PLATFORM_MIN_VERSION
@@ -2885,8 +3228,8 @@
     \target WINRT_MANIFEST
     \section1 WINRT_MANIFEST
 
-    Specifies parameters to be passed to the application manifest on \l{Qt for WinRT}{Windows
-    Runtime}. The allowed values are:
+    Specifies parameters to be passed to the application manifest on
+    \l{Qt for UWP}{UWP}. The allowed values are:
 
     \table
     \header
@@ -2921,7 +3264,6 @@
     \row
         \li foreground
         \li Tile foreground (text) color. Defaults to \c{light}.
-            This option is only available for Windows Store apps on Windows 8 and Windows RT.
     \row
         \li iconic_tile_icon
         \li Image file for the \c{iconic} tile template icon. Default provided by
@@ -2936,16 +3278,16 @@
             manifest's UUID, or generates a new UUID if none is present.
     \row
         \li logo_30x30
-        \li Logo image file of size 30x30 pixels. This is not supported on Windows Phone.
+        \li Logo image file of size 30x30 pixels.
     \row
         \li logo_41x41
-        \li Logo image file of size 41x41 pixels. This is only supported on Windows Phone.
+        \li Logo image file of size 41x41 pixels. This parameter is obsolete.
     \row
         \li logo_70x70
-        \li Logo image file of size 70x70 pixels. This is not supported on Windows Phone.
+        \li Logo image file of size 70x70 pixels.
     \row
         \li logo_71x71
-        \li Logo image file of size 71x71 pixels. This is only supported on Windows Phone.
+        \li Logo image file of size 71x71 pixels. This parameter is obsolete.
     \row
         \li logo_150x150
         \li Logo image file of size 150x150 pixels. This is supported on all Windows
@@ -2960,31 +3302,27 @@
             Store App platforms.
     \row
         \li logo_620x300
-        \li Splash screen image file of size 620x300 pixels. This is not supported on
-            Windows Phone.
+        \li Splash screen image file of size 620x300 pixels.
     \row
         \li logo_480x800
-        \li Splash screen image file of size 480x800 pixels. This is only supported on
-            Windows Phone.
+        \li Splash screen image file of size 480x800 pixels.
+            This parameter is obsolete.
     \row
         \li logo_large
         \li Large logo image file. This has to be 150x150 pixels. Supported on all
             Windows Store App platforms. Default provided by the mkspec.
     \row
         \li logo_medium
-        \li Medium logo image file. For Windows Phone the image must have a pixel size
-            of 71x71, for other Windows Store App platforms 70x70. Default provided by
-            the mkspec.
+        \li Medium logo image file. The image must have a pixel size of 70x70.
+            Default provided by the mkspec.
     \row
         \li logo_small
-        \li Small logo image file. For Windows Phone the image must have a pixel size
-            of 44x44, for other Windows Store App platforms 30x30. Default provided by
-            the mkspec.
+        \li Small logo image file. The image must have a pixel size of 30x30.
+            Default provided by the mkspec.
     \row
         \li logo_splash
-        \li Splash screen image file. For Windows Phone the image must have a pixel size
-            of 480x800, for other Windows Store App platforms 620x300. Default provided
-            by the mkspec.
+        \li Splash screen image file. The image must have a pixel size of
+            620x300. Default provided by the mkspec.
     \row
         \li logo_store
         \li Logo image file for Windows Store. Default provided by the mkspec.
@@ -2997,10 +3335,12 @@
         \li The name of the package as displayed to the user. Defaults to TARGET.
     \row
         \li phone_product_id
-        \li The GUID of the product. Defaults to the value of WINRT_MANIFEST.identity. (Windows Phone only)
+        \li The GUID of the product.
+            This parameter is obsolete.
     \row
         \li phone_publisher_id
-        \li The GUID of the publisher. Defaults to an invalid GUID. (Windows Phone only)
+        \li The GUID of the publisher.
+            This parameter is obsolete.
     \row
         \li publisher
         \li Display name of the publisher. Defaults to \c{Default publisher display name}.
@@ -3051,10 +3391,6 @@
     WINRT_MANIFEST.CONFIG += verbatim
     \endcode
 
-    \note The required image sizes of \e logo_small, \e logo_medium, and \e logo_large
-          depend on the target platform. The general descriptions are overwritten if a
-          description that specifies the size is provided.
-
     \target YACCSOURCES
     \section1 YACCSOURCES
 
@@ -3092,7 +3428,6 @@
 /*!
     \page qmake-function-reference.html
     \title Replace Functions
-    \contentspage {qmake Manual}{Contents}
     \previouspage Variables
     \nextpage Test Functions
     \keyword qmake Function Reference - Replace Functions
@@ -3626,7 +3961,6 @@
 /*!
     \page qmake-test-function-reference.html
     \title Test Functions
-    \contentspage {qmake Manual}{Contents}
     \previouspage Replace Functions
     \keyword qmake Function Reference - Test Functions
 
@@ -4048,7 +4382,6 @@
 
 /*!
     \page qmake-environment-reference.html
-    \contentspage {qmake Manual}{Contents}
     \previouspage Using Precompiled Headers
     \nextpage Reference
 
@@ -4200,7 +4533,6 @@
 /*!
     \page qmake-language.html
     \title qmake Language
-    \contentspage {qmake Manual}{Contents}
     \previouspage Platform Notes
     \nextpage Advanced Usage
 
@@ -4381,6 +4713,20 @@
 
     \snippet qmake/scopes.pro 4
 
+    If you need to mix both operators, you can use the \c if function to specify
+    operator precedence.
+
+    \snippet qmake/scopes.pro 5
+
+    The condition accepts the wildcard character to match a family of \c{CONFIG}
+    values or mkspec names.
+
+    \snippet qmake/scopes.pro 6
+
+    \note Historically, checking the mkspec name with wildcards like above was
+    qmake's way to check for the platform. Nowadays, we recommend to use values
+    that are defined by the mkspec in the \c QMAKE_PLATFORM variable.
+
     You can also provide alternative declarations to those within a scope by
     using an \c else scope. Each \c else scope is processed if the conditions
     for the preceding scopes are false.
@@ -4513,7 +4859,6 @@
 /*!
     \page qmake-advanced-usage.html
     \title Advanced Usage
-    \contentspage {qmake Manual}{Contents}
     \previouspage qmake Language
     \nextpage Using Precompiled Headers
 
@@ -4659,7 +5004,7 @@
 
     The definitions above define a qmake target called \c mytarget, containing a
     Makefile target called \c{.buildfile} which in turn is generated with the
-    \l{touchfunction}{touch()} function. Finally, the
+    \c touch command. Finally, the
     \c{.depends} member specifies that \c mytarget depends on \c mytarget2,
     another target that is defined afterwards. \c mytarget2 is a dummy target.
     It is only defined to echo some text to the console.
@@ -4796,6 +5141,11 @@
         \li The dependencies for the output only get generated from the depends
             member and from nowhere else.
     \row
+        \li dep_existing_only
+        \li Every dependency that is a result of .depend_command is checked for
+            existence. Non-existing dependencies are ignored.
+            This value was introduced in Qt 5.13.2.
+    \row
         \li dep_lines
         \li The output from the .depend_command is interpreted to be one file
             per line. The default is to split on whitespace and is maintained
@@ -4857,7 +5207,6 @@
 /*!
     \page qmake-precompiledheaders.html
     \title Using Precompiled Headers
-    \contentspage {qmake Manual}{Contents}
     \previouspage Advanced Usage
     \nextpage Configuring qmake
 
@@ -5075,7 +5424,6 @@
     \keyword qmake-getting-started
     \page qmake-tutorial.html
     \title Getting Started
-    \contentspage {qmake Manual}{Contents}
     \previouspage Overview
     \nextpage Creating Project Files
 
@@ -5244,7 +5592,6 @@
 /*!
     \page qmake-common-projects.html
     \title Building Common Project Types
-    \contentspage {qmake Manual}{Contents}
     \previouspage Creating Project Files
     \nextpage Running qmake
 
@@ -5371,8 +5718,8 @@
         \li The exit code of the test will be ignored during \c{make check}.
     \endtable
 
-    Testcases will often be written with \l{QTest} or \l{TestCase}, but
-    that is not a requirement to make use of \c{CONFIG+=testcase} and \c{make check}.
+    Test cases will often be written with \l{QTest} or \c{TestCase}, but
+    it is not a requirement to make use of \c{CONFIG+=testcase} and \c{make check}.
     The only primary requirement is that the test program exit with a zero exit code
     on success, and a non-zero exit code on failure.
 

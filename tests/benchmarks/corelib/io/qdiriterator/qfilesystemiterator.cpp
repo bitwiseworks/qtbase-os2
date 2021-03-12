@@ -218,8 +218,9 @@ void QFileSystemIteratorPrivate::pushSubDirectory(const QByteArray &path)
 
 #ifdef Q_OS_WIN
     wchar_t szSearchPath[MAX_PATH];
-    QString::fromLatin1(path).toWCharArray(szSearchPath);
-    wcscat(szSearchPath, L"\\*");
+    const int end = QString::fromLatin1(path + "\\*").toWCharArray(szSearchPath);
+    Q_ASSERT(end < MAX_PATH);
+    szSearchPath[end] = L'\0';
 #ifndef Q_OS_WINRT
     HANDLE dir = FindFirstFile(szSearchPath, &m_fileSearchResult);
 #else
@@ -322,7 +323,7 @@ bool QFileSystemIteratorPrivate::advanceHelper()
     if (m_entry->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         QByteArray ba = m_dirPaths.top();
         ba += '\\';
-        ba += QString::fromWCharArray(m_entry->cFileName);
+        ba += QString::fromWCharArray(m_entry->cFileName).toUtf8();
         pushSubDirectory(ba);
     }
 #else
@@ -642,7 +643,7 @@ QString QFileSystemIterator::filePath() const
     else if (d->m_entry) {
         ba += '/';
 #ifdef Q_OS_WIN
-        ba += QString::fromWCharArray(d->m_entry->cFileName);
+        ba += QString::fromWCharArray(d->m_entry->cFileName).toUtf8();
 #else
         ba += d->m_entry->d_name;
 #endif

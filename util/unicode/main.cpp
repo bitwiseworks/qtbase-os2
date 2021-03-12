@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the utils of the Qt Toolkit.
@@ -38,8 +38,8 @@
 #include <private/qunicodetables_p.h>
 #endif
 
-#define DATA_VERSION_S "10.0"
-#define DATA_VERSION_STR "QChar::Unicode_10_0"
+#define DATA_VERSION_S "13.0"
+#define DATA_VERSION_STR "QChar::Unicode_13_0"
 
 
 static QHash<QByteArray, QChar::UnicodeVersion> age_map;
@@ -69,6 +69,10 @@ static void initAgeMap()
         { QChar::Unicode_8_0,   "8.0" },
         { QChar::Unicode_9_0,   "9.0" },
         { QChar::Unicode_10_0,   "10.0" },
+        { QChar::Unicode_11_0,   "11.0" },
+        { QChar::Unicode_12_0,   "12.0" },
+        { QChar::Unicode_12_1,   "12.1" }, // UCD Revision 24
+        { QChar::Unicode_13_0,   "13.0" }, // UCD Revision 26
         { QChar::Unicode_Unassigned, 0 }
     };
     AgeMap *d = ageMap;
@@ -190,9 +194,9 @@ enum Direction {
     DirLRI = QChar::DirLRI,
     DirRLI = QChar::DirRLI,
     DirFSI = QChar::DirFSI,
-    DirPDI = QChar::DirPDI
+    DirPDI = QChar::DirPDI,
 
-    , Dir_Unassigned
+    Dir_Unassigned
 };
 
 static QHash<QByteArray, Direction> directionMap;
@@ -242,9 +246,9 @@ enum JoiningType {
     Joining_Dual,
     Joining_Right,
     Joining_Left,
-    Joining_Transparent
+    Joining_Transparent,
 
-    , Joining_Unassigned
+    Joining_Unassigned
 };
 
 static QHash<QByteArray, JoiningType> joining_map;
@@ -291,7 +295,8 @@ static const char *grapheme_break_class_string =
     "    Graphemebreak_E_Modifier,\n"
     "    Graphemebreak_Glue_After_Zwj,\n"
     "    Graphemebreak_E_Base_GAZ,\n"
-    "    NumGraphemeBreakClasses,\n"
+    "\n"
+    "    NumGraphemeBreakClasses\n"
     "};\n\n";
 
 enum GraphemeBreakClass {
@@ -377,7 +382,9 @@ static const char *word_break_class_string =
     "    WordBreak_E_Modifier,\n"
     "    WordBreak_Glue_After_Zwj,\n"
     "    WordBreak_E_Base_GAZ,\n"
-    "    NumWordBreakClasses,\n"
+    "    WordBreak_WSegSpace,\n"
+    "\n"
+    "    NumWordBreakClasses\n"
     "};\n\n";
 
 enum WordBreakClass {
@@ -403,6 +410,7 @@ enum WordBreakClass {
     WordBreak_E_Modifier,
     WordBreak_Glue_After_Zwj,
     WordBreak_E_Base_GAZ,
+    WordBreak_WSegSpace,
 
     WordBreak_Unassigned
 };
@@ -437,6 +445,7 @@ static void initWordBreak()
         { WordBreak_E_Modifier, "E_Modifier" },
         { WordBreak_Glue_After_Zwj, "Glue_After_Zwj" },
         { WordBreak_E_Base_GAZ, "E_Base_GAZ" },
+        { WordBreak_WSegSpace, "WSegSpace" },
         { WordBreak_Unassigned, 0 }
     };
     WordBreakList *d = breaks;
@@ -463,6 +472,7 @@ static const char *sentence_break_class_string =
     "    SentenceBreak_SContinue,\n"
     "    SentenceBreak_STerm,\n"
     "    SentenceBreak_Close,\n"
+    "\n"
     "    NumSentenceBreakClasses\n"
     "};\n\n";
 
@@ -480,9 +490,9 @@ enum SentenceBreakClass {
     SentenceBreak_ATerm,
     SentenceBreak_SContinue,
     SentenceBreak_STerm,
-    SentenceBreak_Close
+    SentenceBreak_Close,
 
-    , SentenceBreak_Unassigned
+    SentenceBreak_Unassigned
 };
 
 static QHash<QByteArray, SentenceBreakClass> sentence_break_map;
@@ -531,6 +541,7 @@ static const char *line_break_class_string =
     "    LineBreak_EB, LineBreak_EM, LineBreak_ZWJ,\n"
     "    LineBreak_SA, LineBreak_SG, LineBreak_SP,\n"
     "    LineBreak_CR, LineBreak_LF, LineBreak_BK,\n"
+    "\n"
     "    NumLineBreakClasses\n"
     "};\n\n";
 
@@ -776,6 +787,23 @@ static void initScriptMap()
         { QChar::Script_Nushu,                  "Nushu" },
         { QChar::Script_Soyombo,                "Soyombo" },
         { QChar::Script_ZanabazarSquare,        "ZanabazarSquare" },
+        // 12.1
+        { QChar::Script_Dogra,                  "Dogra" },
+        { QChar::Script_GunjalaGondi,           "GunjalaGondi" },
+        { QChar::Script_HanifiRohingya,         "HanifiRohingya" },
+        { QChar::Script_Makasar,                "Makasar" },
+        { QChar::Script_Medefaidrin,            "Medefaidrin" },
+        { QChar::Script_OldSogdian,             "OldSogdian" },
+        { QChar::Script_Sogdian,                "Sogdian" },
+        { QChar::Script_Elymaic,                "Elymaic" },
+        { QChar::Script_Nandinagari,            "Nandinagari" },
+        { QChar::Script_NyiakengPuachueHmong,   "NyiakengPuachueHmong" },
+        { QChar::Script_Wancho,                 "Wancho" },
+        // 13.0
+        { QChar::Script_Chorasmian,             "Chorasmian" },
+        { QChar::Script_DivesAkuru,             "DivesAkuru" },
+        { QChar::Script_KhitanSmallScript,      "KhitanSmallScript" },
+        { QChar::Script_Yezidi,                 "Yezidi" },
 
         // unhandled
         { QChar::Script_Unknown,                0 }
@@ -789,6 +817,15 @@ static void initScriptMap()
 
 // Keep this one in sync with the code in createPropertyInfo
 static const char *property_string =
+    "enum Case {\n"
+    "    LowerCase,\n"
+    "    UpperCase,\n"
+    "    TitleCase,\n"
+    "    CaseFold,\n"
+    "\n"
+    "    NumCases\n"
+    "};\n"
+    "\n"
     "struct Properties {\n"
     "    ushort category            : 8; /* 5 used */\n"
     "    ushort direction           : 8; /* 5 used */\n"
@@ -796,83 +833,50 @@ static const char *property_string =
     "    ushort joining             : 3;\n"
     "    signed short digitValue    : 5;\n"
     "    signed short mirrorDiff    : 16;\n"
-    "    ushort lowerCaseSpecial    : 1;\n"
-    "    signed short lowerCaseDiff : 15;\n"
-    "#ifdef Q_OS_WASM\n"
-    "    unsigned char              : 0; //wasm 64 packing trick\n"
-    "#endif\n"
-    "    ushort upperCaseSpecial    : 1;\n"
-    "    signed short upperCaseDiff : 15;\n"
-    "    ushort titleCaseSpecial    : 1;\n"
-    "    signed short titleCaseDiff : 15;\n"
-    "    ushort caseFoldSpecial     : 1;\n"
-    "    signed short caseFoldDiff  : 15;\n"
     "    ushort unicodeVersion      : 8; /* 5 used */\n"
     "    ushort nfQuickCheck        : 8;\n" // could be narrowed
     "#ifdef Q_OS_WASM\n"
     "    unsigned char              : 0; //wasm 64 packing trick\n"
     "#endif\n"
+    "    struct {\n"
+    "        ushort special    : 1;\n"
+    "        signed short diff : 15;\n"
+    "    } cases[NumCases];\n"
+    "#ifdef Q_OS_WASM\n"
+    "    unsigned char              : 0; //wasm 64 packing trick\n"
+    "#endif\n"
     "    ushort graphemeBreakClass  : 5; /* 5 used */\n"
     "    ushort wordBreakClass      : 5; /* 5 used */\n"
-    "    ushort sentenceBreakClass  : 8; /* 4 used */\n"
     "    ushort lineBreakClass      : 6; /* 6 used */\n"
+    "    ushort sentenceBreakClass  : 8; /* 4 used */\n"
     "    ushort script              : 8;\n"
     "};\n\n"
-    "Q_CORE_EXPORT const Properties * QT_FASTCALL properties(uint ucs4) Q_DECL_NOTHROW;\n"
-    "Q_CORE_EXPORT const Properties * QT_FASTCALL properties(ushort ucs2) Q_DECL_NOTHROW;\n"
-    "\n"
-    "struct LowercaseTraits\n"
-    "{\n"
-    "    static inline signed short caseDiff(const Properties *prop)\n"
-    "    { return prop->lowerCaseDiff; }\n"
-    "    static inline bool caseSpecial(const Properties *prop)\n"
-    "    { return prop->lowerCaseSpecial; }\n"
-    "};\n"
-    "\n"
-    "struct UppercaseTraits\n"
-    "{\n"
-    "    static inline signed short caseDiff(const Properties *prop)\n"
-    "    { return prop->upperCaseDiff; }\n"
-    "    static inline bool caseSpecial(const Properties *prop)\n"
-    "    { return prop->upperCaseSpecial; }\n"
-    "};\n"
-    "\n"
-    "struct TitlecaseTraits\n"
-    "{\n"
-    "    static inline signed short caseDiff(const Properties *prop)\n"
-    "    { return prop->titleCaseDiff; }\n"
-    "    static inline bool caseSpecial(const Properties *prop)\n"
-    "    { return prop->titleCaseSpecial; }\n"
-    "};\n"
-    "\n"
-    "struct CasefoldTraits\n"
-    "{\n"
-    "    static inline signed short caseDiff(const Properties *prop)\n"
-    "    { return prop->caseFoldDiff; }\n"
-    "    static inline bool caseSpecial(const Properties *prop)\n"
-    "    { return prop->caseFoldSpecial; }\n"
-    "};\n"
+    "Q_CORE_EXPORT const Properties * QT_FASTCALL properties(uint ucs4) noexcept;\n"
+    "Q_CORE_EXPORT const Properties * QT_FASTCALL properties(ushort ucs2) noexcept;\n"
     "\n";
 
 static const char *methods =
-    "Q_CORE_EXPORT GraphemeBreakClass QT_FASTCALL graphemeBreakClass(uint ucs4) Q_DECL_NOTHROW;\n"
-    "inline GraphemeBreakClass graphemeBreakClass(QChar ch) Q_DECL_NOTHROW\n"
+    "Q_CORE_EXPORT GraphemeBreakClass QT_FASTCALL graphemeBreakClass(uint ucs4) noexcept;\n"
+    "inline GraphemeBreakClass graphemeBreakClass(QChar ch) noexcept\n"
     "{ return graphemeBreakClass(ch.unicode()); }\n"
     "\n"
-    "Q_CORE_EXPORT WordBreakClass QT_FASTCALL wordBreakClass(uint ucs4) Q_DECL_NOTHROW;\n"
-    "inline WordBreakClass wordBreakClass(QChar ch) Q_DECL_NOTHROW\n"
+    "Q_CORE_EXPORT WordBreakClass QT_FASTCALL wordBreakClass(uint ucs4) noexcept;\n"
+    "inline WordBreakClass wordBreakClass(QChar ch) noexcept\n"
     "{ return wordBreakClass(ch.unicode()); }\n"
     "\n"
-    "Q_CORE_EXPORT SentenceBreakClass QT_FASTCALL sentenceBreakClass(uint ucs4) Q_DECL_NOTHROW;\n"
-    "inline SentenceBreakClass sentenceBreakClass(QChar ch) Q_DECL_NOTHROW\n"
+    "Q_CORE_EXPORT SentenceBreakClass QT_FASTCALL sentenceBreakClass(uint ucs4) noexcept;\n"
+    "inline SentenceBreakClass sentenceBreakClass(QChar ch) noexcept\n"
     "{ return sentenceBreakClass(ch.unicode()); }\n"
     "\n"
-    "Q_CORE_EXPORT LineBreakClass QT_FASTCALL lineBreakClass(uint ucs4) Q_DECL_NOTHROW;\n"
-    "inline LineBreakClass lineBreakClass(QChar ch) Q_DECL_NOTHROW\n"
+    "Q_CORE_EXPORT LineBreakClass QT_FASTCALL lineBreakClass(uint ucs4) noexcept;\n"
+    "inline LineBreakClass lineBreakClass(QChar ch) noexcept\n"
     "{ return lineBreakClass(ch.unicode()); }\n"
     "\n";
 
 static const int SizeOfPropertiesStruct = 20;
+
+static const QByteArray sizeOfPropertiesStructCheck =
+        "Q_STATIC_ASSERT(sizeof(Properties) == " + QByteArray::number(SizeOfPropertiesStruct) + ");\n\n";
 
 struct PropertyFlags {
     bool operator==(const PropertyFlags &o) const {
@@ -1399,12 +1403,18 @@ static void readArabicShaping()
             qFatal("%x: unassigned or unhandled joining type: %s", codepoint, l[2].constData());
             break;
         case Joining_Transparent:
-            if (d.p.category != QChar::Mark_NonSpacing && d.p.category != QChar::Mark_Enclosing && d.p.category != QChar::Other_Format) {
-                qFatal("%x: joining type '%s' was met; the current implementation needs to be revised!",
-                       codepoint, l[2].constData());
+            switch (d.p.category) {
+            case QChar::Mark_Enclosing:
+            case QChar::Mark_NonSpacing:
+            case QChar::Letter_Modifier:
+            case QChar::Other_Format:
+                break;
+            default:
+                qFatal("%x: joining type '%s' was met (category: %d); "
+                       "the current implementation needs to be revised!",
+                       codepoint, l[2].constData(), d.p.category);
             }
-            // fall through
-
+            Q_FALLTHROUGH();
         default:
             d.p.joining = QChar::JoiningType(joining);
             break;
@@ -2470,47 +2480,44 @@ static QByteArray createPropertyInfo()
 //     "        signed short mirrorDiff    : 16;\n"
         out += QByteArray::number( p.mirrorDiff );
         out += ", ";
-//     "        ushort lowerCaseSpecial    : 1;\n"
-//     "        signed short lowerCaseDiff : 15;\n"
-        out += QByteArray::number( p.lowerCaseSpecial );
-        out += ", ";
-        out += QByteArray::number( p.lowerCaseDiff );
-        out += ", ";
-//     "        ushort upperCaseSpecial    : 1;\n"
-//     "        signed short upperCaseDiff : 15;\n"
-        out += QByteArray::number( p.upperCaseSpecial );
-        out += ", ";
-        out += QByteArray::number( p.upperCaseDiff );
-        out += ", ";
-//     "        ushort titleCaseSpecial    : 1;\n"
-//     "        signed short titleCaseDiff : 15;\n"
-        out += QByteArray::number( p.titleCaseSpecial );
-        out += ", ";
-        out += QByteArray::number( p.titleCaseDiff );
-        out += ", ";
-//     "        ushort caseFoldSpecial     : 1;\n"
-//     "        signed short caseFoldDiff  : 15;\n"
-        out += QByteArray::number( p.caseFoldSpecial );
-        out += ", ";
-        out += QByteArray::number( p.caseFoldDiff );
-        out += ", ";
 //     "        ushort unicodeVersion      : 8; /* 5 used */\n"
         out += QByteArray::number( p.age );
         out += ", ";
-//     "    ushort nfQuickCheck        : 8;\n"
+//     "        ushort nfQuickCheck        : 8;\n"
         out += QByteArray::number( p.nfQuickCheck );
         out += ", ";
+//     "        struct {\n"
+//     "            ushort special    : 1;\n"
+//     "            signed short diff : 15;\n"
+//     "        } cases[NumCases];\n"
+        out += " { {";
+        out += QByteArray::number( p.lowerCaseSpecial );
+        out += ", ";
+        out += QByteArray::number( p.lowerCaseDiff );
+        out += "}, {";
+        out += QByteArray::number( p.upperCaseSpecial );
+        out += ", ";
+        out += QByteArray::number( p.upperCaseDiff );
+        out += "}, {";
+        out += QByteArray::number( p.titleCaseSpecial );
+        out += ", ";
+        out += QByteArray::number( p.titleCaseDiff );
+        out += "}, {";
+        out += QByteArray::number( p.caseFoldSpecial );
+        out += ", ";
+        out += QByteArray::number( p.caseFoldDiff );
+        out += "} }, ";
 //     "        ushort graphemeBreakClass  : 5; /* 5 used */\n"
 //     "        ushort wordBreakClass      : 5; /* 5 used */\n"
-//     "        ushort sentenceBreakClass  : 8; /* 4 used */\n"
 //     "        ushort lineBreakClass      : 6; /* 6 used */\n"
         out += QByteArray::number( p.graphemeBreakClass );
         out += ", ";
         out += QByteArray::number( p.wordBreakClass );
         out += ", ";
-        out += QByteArray::number( p.sentenceBreakClass );
-        out += ", ";
         out += QByteArray::number( p.lineBreakClass );
+        out += ", ";
+//     "        ushort sentenceBreakClass  : 8; /* 4 used */\n"
+        out += QByteArray::number( p.sentenceBreakClass );
         out += ", ";
 //     "        ushort script              : 8;\n"
         out += QByteArray::number( p.script );
@@ -2521,42 +2528,42 @@ static QByteArray createPropertyInfo()
     out += "\n};\n\n";
 
 
-    out += "Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(uint ucs4) Q_DECL_NOTHROW\n"
+    out += "Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(uint ucs4) noexcept\n"
            "{\n"
            "    return uc_properties + GET_PROP_INDEX(ucs4);\n"
            "}\n"
            "\n"
-           "Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(ushort ucs2) Q_DECL_NOTHROW\n"
+           "Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(ushort ucs2) noexcept\n"
            "{\n"
            "    return uc_properties + GET_PROP_INDEX_UCS2(ucs2);\n"
            "}\n"
            "\n"
-           "Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(uint ucs4) Q_DECL_NOTHROW\n"
+           "Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(uint ucs4) noexcept\n"
            "{\n"
            "    return qGetProp(ucs4);\n"
            "}\n"
            "\n"
-           "Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(ushort ucs2) Q_DECL_NOTHROW\n"
+           "Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(ushort ucs2) noexcept\n"
            "{\n"
            "    return qGetProp(ucs2);\n"
            "}\n\n";
 
-    out += "Q_CORE_EXPORT GraphemeBreakClass QT_FASTCALL graphemeBreakClass(uint ucs4) Q_DECL_NOTHROW\n"
+    out += "Q_CORE_EXPORT GraphemeBreakClass QT_FASTCALL graphemeBreakClass(uint ucs4) noexcept\n"
            "{\n"
            "    return static_cast<GraphemeBreakClass>(qGetProp(ucs4)->graphemeBreakClass);\n"
            "}\n"
            "\n"
-           "Q_CORE_EXPORT WordBreakClass QT_FASTCALL wordBreakClass(uint ucs4) Q_DECL_NOTHROW\n"
+           "Q_CORE_EXPORT WordBreakClass QT_FASTCALL wordBreakClass(uint ucs4) noexcept\n"
            "{\n"
            "    return static_cast<WordBreakClass>(qGetProp(ucs4)->wordBreakClass);\n"
            "}\n"
            "\n"
-           "Q_CORE_EXPORT SentenceBreakClass QT_FASTCALL sentenceBreakClass(uint ucs4) Q_DECL_NOTHROW\n"
+           "Q_CORE_EXPORT SentenceBreakClass QT_FASTCALL sentenceBreakClass(uint ucs4) noexcept\n"
            "{\n"
            "    return static_cast<SentenceBreakClass>(qGetProp(ucs4)->sentenceBreakClass);\n"
            "}\n"
            "\n"
-           "Q_CORE_EXPORT LineBreakClass QT_FASTCALL lineBreakClass(uint ucs4) Q_DECL_NOTHROW\n"
+           "Q_CORE_EXPORT LineBreakClass QT_FASTCALL lineBreakClass(uint ucs4) noexcept\n"
            "{\n"
            "    return static_cast<LineBreakClass>(qGetProp(ucs4)->lineBreakClass);\n"
            "}\n"
@@ -2832,7 +2839,7 @@ static QByteArray createLigatureInfo()
             QList<Ligature> l = ligatureHashes.value(uc);
             if (!l.isEmpty()) {
                 Q_ASSERT(!QChar::requiresSurrogates(uc));
-                qSort(l); // needed for bsearch in ligatureHelper code
+                std::sort(l.begin(), l.end()); // needed for bsearch in ligatureHelper code
 
                 ligatures.append(l.size());
                 for (int j = 0; j < l.size(); ++j) {
@@ -2864,7 +2871,7 @@ static QByteArray createLigatureInfo()
             QList<Ligature> l = ligatureHashes.value(uc);
             if (!l.isEmpty()) {
                 Q_ASSERT(QChar::requiresSurrogates(uc));
-                qSort(l); // needed for bsearch in ligatureHelper code
+                std::sort(l.begin(), l.end()); // needed for bsearch in ligatureHelper code
 
                 ligatures.append(l.size());
                 for (int j = 0; j < l.size(); ++j) {
@@ -3044,7 +3051,7 @@ int main(int, char **)
     QByteArray header =
         "/****************************************************************************\n"
         "**\n"
-        "** Copyright (C) 2016 The Qt Company Ltd.\n"
+        "** Copyright (C) 2020 The Qt Company Ltd.\n"
         "** Contact: https://www.qt.io/licensing/\n"
         "**\n"
         "** This file is part of the QtCore module of the Qt Toolkit.\n"
@@ -3096,7 +3103,7 @@ int main(int, char **)
         "// We mean it.\n"
         "//\n\n";
 
-    QFile f("../../src/corelib/tools/qunicodetables.cpp");
+    QFile f("../../src/corelib/text/qunicodetables.cpp");
     f.open(QFile::WriteOnly|QFile::Truncate);
     f.write(header);
     f.write(note);
@@ -3116,7 +3123,7 @@ int main(int, char **)
     f.write("QT_END_NAMESPACE\n");
     f.close();
 
-    f.setFileName("../../src/corelib/tools/qunicodetables_p.h");
+    f.setFileName("../../src/corelib/text/qunicodetables_p.h");
     f.open(QFile::WriteOnly | QFile::Truncate);
     f.write(header);
     f.write(note);
@@ -3129,6 +3136,7 @@ int main(int, char **)
     f.write("#define UNICODE_DATA_VERSION " DATA_VERSION_STR "\n\n");
     f.write("namespace QUnicodeTables {\n\n");
     f.write(property_string);
+    f.write(sizeOfPropertiesStructCheck);
     f.write(grapheme_break_class_string);
     f.write(word_break_class_string);
     f.write(sentence_break_class_string);

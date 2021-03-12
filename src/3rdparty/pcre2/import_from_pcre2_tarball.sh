@@ -1,7 +1,7 @@
 #! /bin/sh
 #############################################################################
 ##
-## Copyright (C) 2016 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+## Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 ## Contact: https://www.qt.io/licensing/
 ##
 ## This file is the build configuration utility of the Qt Toolkit.
@@ -103,6 +103,8 @@ FILES="
     src/pcre2_pattern_info.c
     src/pcre2_script_run.c
     src/pcre2_serialize.c
+    src/pcre2_jit_neon_inc.h
+    src/pcre2_jit_simd_inc.h
     src/pcre2_string_utils.c
     src/pcre2_study.c
     src/pcre2_substitute.c

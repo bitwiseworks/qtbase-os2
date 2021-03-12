@@ -48,20 +48,21 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-
 #include "settingstree.h"
 #include "variantdelegate.h"
 
-SettingsTree::SettingsTree(QWidget *parent)
-    : QTreeWidget(parent)
-    , autoRefresh(false)
-{
-    setItemDelegate(new VariantDelegate(this));
+#include <QApplication>
+#include <QHeaderView>
+#include <QScreen>
+#include <QSettings>
 
-    QStringList labels;
-    labels << tr("Setting") << tr("Type") << tr("Value");
-    setHeaderLabels(labels);
+SettingsTree::SettingsTree(QWidget *parent)
+    : QTreeWidget(parent),
+      m_typeChecker(new TypeChecker)
+{
+    setItemDelegate(new VariantDelegate(m_typeChecker, this));
+
+    setHeaderLabels({tr("Setting"), tr("Type"), tr("Value")});
     header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     header()->setSectionResizeMode(2, QHeaderView::Stretch);
@@ -77,9 +78,7 @@ SettingsTree::SettingsTree(QWidget *parent)
     connect(&refreshTimer, &QTimer::timeout, this, &SettingsTree::maybeRefresh);
 }
 
-SettingsTree::~SettingsTree()
-{
-}
+SettingsTree::~SettingsTree() = default;
 
 void SettingsTree::setSettingsObject(const SettingsPtr &newSettings)
 {
@@ -97,7 +96,7 @@ void SettingsTree::setSettingsObject(const SettingsPtr &newSettings)
 
 QSize SettingsTree::sizeHint() const
 {
-    const QRect availableGeometry = QApplication::desktop()->availableGeometry(this);
+    const QRect availableGeometry = screen()->availableGeometry();
     return QSize(availableGeometry.width() * 2 / 3, availableGeometry.height() * 2 / 3);
 }
 
@@ -137,7 +136,7 @@ void SettingsTree::refresh()
                this, &SettingsTree::updateSetting);
 
     settings->sync();
-    updateChildItems(0);
+    updateChildItems(nullptr);
 
     connect(this, &QTreeWidget::itemChanged,
             this, &SettingsTree::updateSetting);
@@ -212,9 +211,17 @@ void SettingsTree::updateChildItems(QTreeWidgetItem *parent)
         }
 
         QVariant value = settings->value(key);
-        if (value.type() == QVariant::Invalid) {
+        if (value.userType() == QMetaType::UnknownType) {
             child->setText(1, "Invalid");
         } else {
+            if (value.type() == QVariant::String) {
+                const QString stringValue = value.toString();
+                if (m_typeChecker->boolExp.match(stringValue).hasMatch()) {
+                    value.setValue(stringValue.compare("true", Qt::CaseInsensitive) == 0);
+                } else if (m_typeChecker->signedIntegerExp.match(stringValue).hasMatch())
+                    value.setValue(stringValue.toInt());
+            }
+
             child->setText(1, value.typeName());
         }
         child->setText(2, VariantDelegate::displayText(value));
@@ -228,7 +235,7 @@ void SettingsTree::updateChildItems(QTreeWidgetItem *parent)
 QTreeWidgetItem *SettingsTree::createItem(const QString &text,
                                           QTreeWidgetItem *parent, int index)
 {
-    QTreeWidgetItem *after = 0;
+    QTreeWidgetItem *after = nullptr;
     if (index != 0)
         after = childAt(parent, index - 1);
 
@@ -243,24 +250,18 @@ QTreeWidgetItem *SettingsTree::createItem(const QString &text,
     return item;
 }
 
-QTreeWidgetItem *SettingsTree::childAt(QTreeWidgetItem *parent, int index)
+QTreeWidgetItem *SettingsTree::childAt(QTreeWidgetItem *parent, int index) const
 {
-    if (parent)
-        return parent->child(index);
-    else
-        return topLevelItem(index);
+    return (parent ? parent->child(index) : topLevelItem(index));
 }
 
-int SettingsTree::childCount(QTreeWidgetItem *parent)
+int SettingsTree::childCount(QTreeWidgetItem *parent) const
 {
-    if (parent)
-        return parent->childCount();
-    else
-        return topLevelItemCount();
+    return (parent ? parent->childCount() : topLevelItemCount());
 }
 
 int SettingsTree::findChild(QTreeWidgetItem *parent, const QString &text,
-                            int startIndex)
+                            int startIndex) const
 {
     for (int i = startIndex; i < childCount(parent); ++i) {
         if (childAt(parent, i)->text(0) == text)

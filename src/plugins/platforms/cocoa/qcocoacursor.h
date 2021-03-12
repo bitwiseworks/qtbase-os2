@@ -56,12 +56,15 @@ public:
     void changeCursor(QCursor *cursor, QWindow *window) override;
     QPoint pos() const override;
     void setPos(const QPoint &position) override;
+
+    QSize size() const override;
+
 private:
     QHash<Qt::CursorShape, NSCursor *> m_cursors;
     NSCursor *convertCursor(QCursor *cursor);
     NSCursor *createCursorData(QCursor * cursor);
-    NSCursor *createCursorFromBitmap(const QBitmap *bitmap, const QBitmap *mask, const QPoint hotspot = QPoint());
-    NSCursor *createCursorFromPixmap(const QPixmap pixmap, const QPoint hotspot = QPoint());
+    NSCursor *createCursorFromBitmap(const QBitmap &bitmap, const QBitmap &mask, const QPoint hotspot = QPoint());
+    NSCursor *createCursorFromPixmap(const QPixmap &pixmap, const QPoint hotspot = QPoint());
 };
 
 QT_END_NAMESPACE

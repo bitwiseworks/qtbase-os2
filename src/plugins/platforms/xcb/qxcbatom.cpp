@@ -122,6 +122,7 @@ static const char *xcb_atomnames = {
     "_NET_WM_STATE_MODAL\0"
     "_NET_WM_STATE_STAYS_ON_TOP\0"
     "_NET_WM_STATE_DEMANDS_ATTENTION\0"
+    "_NET_WM_STATE_HIDDEN\0"
 
     "_NET_WM_USER_TIME\0"
     "_NET_WM_USER_TIME_WINDOW\0"
@@ -181,6 +182,7 @@ static const char *xcb_atomnames = {
     "XdndActionCopy\0"
     "XdndActionLink\0"
     "XdndActionMove\0"
+    "XdndActionAsk\0"
     "XdndActionPrivate\0"
 
     // Xkb
@@ -265,7 +267,7 @@ void QXcbAtom::initializeAllAtoms(xcb_connection_t *connection) {
         cookies[i] = xcb_intern_atom(connection, false, strlen(names[i]), names[i]);
 
     for (i = 0; i < QXcbAtom::NAtoms; ++i) {
-        xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(connection, cookies[i], 0);
+        xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(connection, cookies[i], nullptr);
         m_allAtoms[i] = reply->atom;
         free(reply);
     }

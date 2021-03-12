@@ -137,7 +137,7 @@ QGlyphRun::~QGlyphRun()
 */
 void QGlyphRun::detach()
 {
-    if (d->ref.load() != 1)
+    if (d->ref.loadRelaxed() != 1)
         d.detach();
 }
 
@@ -279,7 +279,7 @@ void QGlyphRun::clear()
 {
     detach();
     d->rawFont = QRawFont();
-    d->flags = 0;
+    d->flags = { };
 
     setPositions(QVector<QPointF>());
     setGlyphIndexes(QVector<quint32>());

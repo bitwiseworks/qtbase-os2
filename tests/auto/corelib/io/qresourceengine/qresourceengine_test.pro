@@ -1,7 +1,7 @@
 CONFIG += testcase
 TARGET = tst_qresourceengine
 
-QT = core testlib
+QT = core-private testlib
 SOURCES = tst_qresourceengine.cpp
 RESOURCES += testqrc/test.qrc
 
@@ -15,14 +15,15 @@ QMAKE_DISTCLEAN += $${runtime_resource.target}
 
 TESTDATA += \
     parentdir.txt \
-    testqrc/*
+    testqrc/* \
+    *.rcc
 GENERATED_TESTDATA = $${runtime_resource.target}
 
 android:!android-embedded {
     RESOURCES += android_testdata.qrc
 }
 
-win32 {
+win32:debug_and_release {
     CONFIG(debug, debug|release): LIBS += -Lstaticplugin/debug
     else: LIBS += -Lstaticplugin/release
 } else {

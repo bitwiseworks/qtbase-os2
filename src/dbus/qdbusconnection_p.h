@@ -115,7 +115,7 @@ public:
 
     struct Watcher
     {
-        Watcher(): watch(0), read(0), write(0) {}
+        Watcher(): watch(nullptr), read(nullptr), write(nullptr) {}
         DBusWatch *watch;
         QSocketNotifier *read;
         QSocketNotifier *write;
@@ -132,7 +132,7 @@ public:
 
     struct SignalHook
     {
-        inline SignalHook() : obj(0), midx(-1) { }
+        inline SignalHook() : obj(nullptr), midx(-1) { }
         QString service, path, signature;
         QObject* obj;
         int midx;
@@ -150,9 +150,9 @@ public:
     {
         typedef QVector<ObjectTreeNode> DataList;
 
-        inline ObjectTreeNode() : obj(0), flags(0) { }
+        inline ObjectTreeNode() : obj(nullptr), flags(0) { }
         inline ObjectTreeNode(const QString &n) // intentionally implicit
-            : name(n), obj(0), flags(0) { }
+            : name(n), obj(nullptr), flags(0) { }
         inline bool operator<(const QString &other) const
             { return name < other; }
         inline bool operator<(const QStringRef &other) const
@@ -173,7 +173,7 @@ public:
 
 public:
     // typedefs
-    typedef QMultiHash<int, Watcher> WatcherHash;
+    typedef QMultiHash<qintptr, Watcher> WatcherHash;
     typedef QHash<int, DBusTimeout *> TimeoutHash;
     typedef QVector<QDBusMessage> PendingMessageList;
 
@@ -194,7 +194,7 @@ public:
 
 public:
     // public methods are entry points from other objects
-    explicit QDBusConnectionPrivate(QObject *parent = 0);
+    explicit QDBusConnectionPrivate(QObject *parent = nullptr);
     ~QDBusConnectionPrivate();
 
     void createBusService();
@@ -276,6 +276,8 @@ private:
 
     void _q_newConnection(QDBusConnectionPrivate *newConnection);
 
+    void handleAuthentication();
+
 protected:
     void timerEvent(QTimerEvent *e) override;
 
@@ -283,8 +285,8 @@ public slots:
     // public slots
     void setDispatchEnabled(bool enable);
     void doDispatch();
-    void socketRead(int);
-    void socketWrite(int);
+    void socketRead(qintptr);
+    void socketWrite(qintptr);
     void objectDestroyed(QObject *o);
     void relaySignal(QObject *obj, const QMetaObject *, int signalId, const QVariantList &args);
     bool addSignalHook(const QString &key, const SignalHook &hook);
@@ -308,7 +310,11 @@ signals:
 
 public:
     QAtomicInt ref;
-    QDBusConnection::ConnectionCapabilities capabilities;
+    QAtomicInt capabilities;
+    QDBusConnection::ConnectionCapabilities connectionCapabilities() const
+    {
+        return (QDBusConnection::ConnectionCapabilities)capabilities.loadRelaxed();
+    }
     QString name;               // this connection's name
     QString baseService;        // this connection's base service
     QStringList serverConnectionNames;
@@ -341,6 +347,7 @@ public:
 
     bool anonymousAuthenticationAllowed;
     bool dispatchEnabled;               // protected by the dispatch lock, not the main lock
+    bool isAuthenticated;
 
 public:
     // static methods

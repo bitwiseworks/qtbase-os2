@@ -102,17 +102,7 @@ qtConfig(ssl) {
 
         qtConfig(ocsp): HEADERS += ssl/qocsp_p.h
 
-        qtConfig(opensslv11) {
-            HEADERS += ssl/qsslsocket_openssl11_symbols_p.h
-            SOURCES += ssl/qsslsocket_openssl11.cpp \
-                       ssl/qsslcontext_openssl11.cpp
-
-            QMAKE_CXXFLAGS += -DOPENSSL_API_COMPAT=0x10100000L
-        } else {
-            HEADERS += ssl/qsslsocket_opensslpre11_symbols_p.h
-            SOURCES += ssl/qsslsocket_opensslpre11.cpp \
-                       ssl/qsslcontext_opensslpre11.cpp
-        }
+        QMAKE_CXXFLAGS += -DOPENSSL_API_COMPAT=0x10100000L
 
         darwin:SOURCES += ssl/qsslsocket_mac_shared.cpp
 
@@ -125,9 +115,11 @@ qtConfig(ssl) {
         #   - libs in <OPENSSL_DIR>\lib\VC\static
         #   - configure: -openssl -openssl-linked -I <OPENSSL_DIR>\include -L <OPENSSL_DIR>\lib\VC\static OPENSSL_LIBS="-lUser32 -lAdvapi32 -lGdi32" OPENSSL_LIBS_DEBUG="-lssleay32MDd -llibeay32MDd" OPENSSL_LIBS_RELEASE="-lssleay32MD -llibeay32MD"
 
-        qtConfig(openssl-linked): \
-            QMAKE_USE_FOR_PRIVATE += openssl
-        else: \
+        qtConfig(openssl-linked): {
+            android {
+                build_pass|single_android_abi: LIBS_PRIVATE += -lssl_$${QT_ARCH} -lcrypto_$${QT_ARCH}
+            } else: QMAKE_USE_FOR_PRIVATE += openssl
+        } else: \
             QMAKE_USE_FOR_PRIVATE += openssl/nolink
         win32 {
             LIBS_PRIVATE += -lcrypt32

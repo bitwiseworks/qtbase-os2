@@ -44,6 +44,9 @@ static const EnumLookup specialCharactersEnumLookup[] =
 #if QT_VERSION >= 0x050000
     {QChar::Tabulation, "Tabulation"},
     {QChar::LineFeed, "LineFeed"},
+#  if QT_VERSION >= 0x050e00
+    {QChar::FormFeed, "FormFeed"},
+#  endif
     {QChar::CarriageReturn, "CarriageReturn"},
     {QChar::Space, "Space"},
 #endif
@@ -405,8 +408,8 @@ struct FormattingContext
 static void formatCharacter(QTextStream &str, const QChar &qc, FormattingContext &context)
 {
     const ushort unicode = qc.unicode();
-    str << "U+" << qSetFieldWidth(4) << qSetPadChar('0') << uppercasedigits << hex << unicode
-        << dec << qSetFieldWidth(0) << ' ';
+    str << "U+" << qSetFieldWidth(4) << qSetPadChar('0') << Qt::uppercasedigits
+        << Qt::hex << unicode << Qt::dec << qSetFieldWidth(0) << ' ';
 
     const EnumLookup *specialChar = enumLookup(unicode, specialCharactersEnumLookup, sizeof(specialCharactersEnumLookup) / sizeof(EnumLookup));
     if (specialChar)
@@ -474,7 +477,7 @@ QString dumpTextAsCode(const QString &text)
 {
     QString result;
     QTextStream str(&result);
-    str << "    QString result;\n" << hex << showbase;
+    str << "    QString result;\n" << Qt::hex << Qt::showbase;
     for (QChar c : text)
         str << "    result += QChar(" << c.unicode() << ");\n";
     str << '\n';

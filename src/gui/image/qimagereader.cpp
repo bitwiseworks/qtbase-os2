@@ -101,7 +101,7 @@
     This can be disabled by setting the environment variable
     \c QT_HIGHDPI_DISABLE_2X_IMAGE_LOADING.
 
-    \sa QImageWriter, QImageIOHandler, QImageIOPlugin, QMimeDatabase
+    \sa QImageWriter, QImageIOHandler, QImageIOPlugin, QMimeDatabase, QColorSpace
     \sa QImage::devicePixelRatio(), QPixmap::devicePixelRatio(), QIcon, QPainter::drawPixmap(), QPainter::drawImage(), Qt::AA_UseHighDpiPixmaps
 */
 
@@ -150,7 +150,7 @@
 // factory loader
 #include <qcoreapplication.h>
 #include <private/qfactoryloader_p.h>
-#include <QMutexLocker>
+#include <QtCore/private/qlocking_p.h>
 
 // for qt_getImageText
 #include <private/qimage_p.h>
@@ -179,15 +179,15 @@ static QImageIOHandler *createReadHandlerHelper(QIODevice *device,
                                                 bool ignoresFormatAndExtension)
 {
     if (!autoDetectImageFormat && format.isEmpty())
-        return 0;
+        return nullptr;
 
     QByteArray form = format.toLower();
-    QImageIOHandler *handler = 0;
+    QImageIOHandler *handler = nullptr;
     QByteArray suffix;
 
 #ifndef QT_NO_IMAGEFORMATPLUGIN
-    static QMutex mutex;
-    QMutexLocker locker(&mutex);
+    static QBasicMutex mutex;
+    const auto locker = qt_scoped_lock(mutex);
 
     typedef QMultiMap<int, QString> PluginKeyMap;
 
@@ -197,7 +197,7 @@ static QImageIOHandler *createReadHandlerHelper(QIODevice *device,
 
 #ifdef QIMAGEREADER_DEBUG
     qDebug() << "QImageReader::createReadHandler( device =" << (void *)device << ", format =" << format << "),"
-             << keyMap.size() << "plugins available: " << keyMap.values();
+             << keyMap.uniqueKeys().size() << "plugins available: " << keyMap;
 #endif
 
     int suffixPluginIndex = -1;
@@ -325,6 +325,29 @@ static QImageIOHandler *createReadHandlerHelper(QIODevice *device,
 #endif
     }
 
+    if (handler && device && !suffix.isEmpty()) {
+        Q_ASSERT(qobject_cast<QFile *>(device));
+        // We have a file claiming to be of a recognized format. Now confirm that
+        // the handler also recognizes the file contents.
+        const qint64 pos = device->pos();
+        handler->setDevice(device);
+        if (!form.isEmpty())
+            handler->setFormat(form);
+        bool canRead = handler->canRead();
+        device->seek(pos);
+        if (canRead) {
+            // ok, we're done.
+            return handler;
+        }
+#ifdef QIMAGEREADER_DEBUG
+        qDebug() << "QImageReader::createReadHandler: the" << suffix << "handler can not read this file";
+#endif
+        // File may still be valid, just with wrong suffix, so fall back to
+        // finding a handler based on contents, below.
+        delete handler;
+        handler = nullptr;
+    }
+
 #ifndef QT_NO_IMAGEFORMATPLUGIN
     if (!handler && (autoDetectImageFormat || ignoresFormatAndExtension)) {
         // check if any of our plugins recognize the file from its contents.
@@ -336,7 +359,7 @@ static QImageIOHandler *createReadHandlerHelper(QIODevice *device,
                 if (plugin && plugin->capabilities(device, QByteArray()) & QImageIOPlugin::CanRead) {
                     handler = plugin->create(device, testFormat);
 #ifdef QIMAGEREADER_DEBUG
-                    qDebug() << "QImageReader::createReadHandler: the" << keyMap.keys().at(i) << "plugin can read this data";
+                    qDebug() << "QImageReader::createReadHandler: the" << keyMap.value(i) << "plugin can read this data";
 #endif
                     break;
                 }
@@ -427,7 +450,7 @@ static QImageIOHandler *createReadHandlerHelper(QIODevice *device,
         qDebug("QImageReader::createReadHandler: no handlers found. giving up.");
 #endif
         // no handler: give up.
-        return 0;
+        return nullptr;
     }
 
     handler->setDevice(device);
@@ -477,9 +500,9 @@ public:
 QImageReaderPrivate::QImageReaderPrivate(QImageReader *qq)
     : autoDetectImageFormat(true), ignoresFormatAndExtension(false)
 {
-    device = 0;
+    device = nullptr;
     deleteDevice = false;
-    handler = 0;
+    handler = nullptr;
     quality = -1;
     imageReaderError = QImageReader::UnknownError;
     autoTransform = UsePluginDefault;
@@ -548,7 +571,7 @@ bool QImageReaderPrivate::initHandler()
     }
 
     // assign a handler
-    if (!handler && (handler = createReadHandlerHelper(device, format, autoDetectImageFormat, ignoresFormatAndExtension)) == 0) {
+    if (!handler && (handler = createReadHandlerHelper(device, format, autoDetectImageFormat, ignoresFormatAndExtension)) == nullptr) {
         imageReaderError = QImageReader::UnsupportedFormatError;
         errorString = QImageReader::tr("Unsupported image format");
         return false;
@@ -1066,7 +1089,7 @@ QList<QByteArray> QImageReader::supportedSubTypes() const
         return QList<QByteArray>();
 
     if (d->handler->supportsOption(QImageIOHandler::SupportedSubTypes))
-        return d->handler->option(QImageIOHandler::SupportedSubTypes).value< QList<QByteArray> >();
+        return qvariant_cast<QList<QByteArray> >(d->handler->option(QImageIOHandler::SupportedSubTypes));
     return QList<QByteArray>();
 }
 
@@ -1115,8 +1138,10 @@ bool QImageReader::autoTransform() const
     case QImageReaderPrivate::DoNotApplyTransform:
         return false;
     case QImageReaderPrivate::UsePluginDefault:
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         if (d->initHandler())
             return d->handler->supportsOption(QImageIOHandler::TransformedByDefault);
+#endif
         Q_FALLTHROUGH();
     default:
         break;
@@ -1124,8 +1149,10 @@ bool QImageReader::autoTransform() const
     return false;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
     \since 5.6
+    \obsolete Use QColorSpace conversion on the QImage instead.
 
     This is an image format specific function that forces images with
     gamma information to be gamma corrected to \a gamma. For image formats
@@ -1143,6 +1170,7 @@ void QImageReader::setGamma(float gamma)
 
 /*!
     \since 5.6
+    \obsolete Use QImage::colorSpace() and QColorSpace::gamma() instead.
 
     Returns the gamma level of the decoded image. If setGamma() has been
     called and gamma correction is supported it will return the gamma set.
@@ -1156,6 +1184,7 @@ float QImageReader::gamma() const
         return d->handler->option(QImageIOHandler::Gamma).toFloat();
     return 0.0;
 }
+#endif
 
 /*!
     Returns \c true if an image can be read for the device (i.e., the

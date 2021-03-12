@@ -144,7 +144,7 @@ static bool parseIp6(const QString &address, QIPAddressUtils::IPv6Address &addr,
     } else {
         scopeId->clear();
     }
-    return QIPAddressUtils::parseIp6(addr, tmp.constBegin(), tmp.constEnd()) == 0;
+    return QIPAddressUtils::parseIp6(addr, tmp.constBegin(), tmp.constEnd()) == nullptr;
 }
 
 bool QHostAddressPrivate::parse(const QString &ipString)
@@ -1333,7 +1333,7 @@ QDebug operator<<(QDebug d, const QHostAddress &address)
     \relates QHostAddress
     Returns a hash of the host address \a key, using \a seed to seed the calculation.
 */
-uint qHash(const QHostAddress &key, uint seed) Q_DECL_NOTHROW
+uint qHash(const QHostAddress &key, uint seed) noexcept
 {
     return qHashBits(key.d->a6.c, 16, seed);
 }

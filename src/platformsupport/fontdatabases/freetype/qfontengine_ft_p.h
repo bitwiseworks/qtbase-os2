@@ -116,11 +116,11 @@ private:
     friend class QFontEngineFT;
     friend class QtFreetypeData;
     friend struct QScopedPointerDeleter<QFreetypeFace>;
-    QFreetypeFace() : _lock(QMutex::Recursive) {}
+    QFreetypeFace() = default;
     ~QFreetypeFace() {}
     void cleanup();
     QAtomicInt ref;
-    QMutex _lock;
+    QRecursiveMutex _lock;
     QByteArray fontData;
 
     QFontEngine::Holder hbFace;
@@ -129,20 +129,6 @@ private:
 class QFontEngineFT : public QFontEngine
 {
 public:
-
-    /* we don't cache glyphs that are too large anyway, so we can make this struct rather small */
-    struct Glyph {
-        ~Glyph();
-        int linearAdvance : 22;
-        unsigned char width;
-        unsigned char height;
-        short x;
-        short y;
-        short advance;
-        signed char format;
-        uchar *data;
-    };
-
     struct GlyphInfo {
         int             linearAdvance;
         unsigned short  width;
@@ -241,11 +227,9 @@ private:
                                         QFixed subPixelPosition,
                                         const QTransform &matrix,
                                         QFontEngine::GlyphFormat format) override;
-    QImage *lockedAlphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition,
-                                   GlyphFormat neededFormat, const QTransform &t,
-                                   QPoint *offset) override;
+    Glyph *glyphData(glyph_t glyph, QFixed subPixelPosition,
+                     GlyphFormat neededFormat, const QTransform &t) override;
     bool hasInternalCaching() const override { return cacheEnabled; }
-    void unlockAlphaMapForGlyph() override;
     bool expectsGammaCorrectedBlending() const override;
 
     void removeGlyphFromCache(glyph_t glyph) override;
@@ -268,7 +252,7 @@ private:
     inline bool isScalableBitmap() const { return freetype->isScalableBitmap(); }
 
     inline Glyph *loadGlyph(uint glyph, QFixed subPixelPosition, GlyphFormat format = Format_None, bool fetchMetricsOnly = false, bool disableOutlineDrawing = false) const
-    { return loadGlyph(cacheEnabled ? &defaultGlyphSet : 0, glyph, subPixelPosition, format, fetchMetricsOnly, disableOutlineDrawing); }
+    { return loadGlyph(cacheEnabled ? &defaultGlyphSet : nullptr, glyph, subPixelPosition, format, fetchMetricsOnly, disableOutlineDrawing); }
     Glyph *loadGlyph(QGlyphSet *set, uint glyph, QFixed subPixelPosition, GlyphFormat = Format_None, bool fetchMetricsOnly = false, bool disableOutlineDrawing = false) const;
     Glyph *loadGlyphFor(glyph_t g, QFixed subPixelPosition, GlyphFormat format, const QTransform &t, bool fetchBoundingBox = false, bool disableOutlineDrawing = false);
 

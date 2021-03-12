@@ -40,6 +40,7 @@
 #include <qauthenticator.h>
 #include <qauthenticator_p.h>
 #include <qdebug.h>
+#include <qloggingcategory.h>
 #include <qhash.h>
 #include <qbytearray.h>
 #include <qcryptographichash.h>
@@ -52,22 +53,39 @@
 
 #ifdef Q_OS_WIN
 #include <qmutex.h>
-#include <private/qmutexpool_p.h>
 #include <rpc.h>
-#ifndef Q_OS_WINRT
+#endif
+
+#if QT_CONFIG(sspi) // SSPI
 #define SECURITY_WIN32 1
 #include <security.h>
-#endif
-#endif
+#elif QT_CONFIG(gssapi) // GSSAPI
+#if defined(Q_OS_DARWIN)
+#include <GSS/GSS.h>
+#else
+#include <gssapi/gssapi.h>
+#endif // Q_OS_DARWIN
+#endif // Q_CONFIG(sspi)
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcAuthenticator);
+Q_LOGGING_CATEGORY(lcAuthenticator, "qt.network.authenticator");
+
 static QByteArray qNtlmPhase1();
 static QByteArray qNtlmPhase3(QAuthenticatorPrivate *ctx, const QByteArray& phase2data);
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-static QByteArray qNtlmPhase1_SSPI(QAuthenticatorPrivate *ctx);
-static QByteArray qNtlmPhase3_SSPI(QAuthenticatorPrivate *ctx, const QByteArray& phase2data);
-#endif
+#if QT_CONFIG(sspi) // SSPI
+static bool q_SSPI_library_load();
+static QByteArray qSspiStartup(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate::Method method,
+                               const QString& host);
+static QByteArray qSspiContinue(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate::Method method,
+                                const QString& host, const QByteArray& challenge = QByteArray());
+#elif QT_CONFIG(gssapi) // GSSAPI
+static bool qGssapiTestGetCredentials(const QString &host);
+static QByteArray qGssapiStartup(QAuthenticatorPrivate *ctx, const QString& host);
+static QByteArray qGssapiContinue(QAuthenticatorPrivate *ctx,
+                                  const QByteArray& challenge = QByteArray());
+#endif // gssapi
 
 /*!
   \class QAuthenticator
@@ -90,6 +108,7 @@ static QByteArray qNtlmPhase3_SSPI(QAuthenticatorPrivate *ctx, const QByteArray&
     \li Basic
     \li NTLM version 2
     \li Digest-MD5
+    \li SPNEGO/Negotiate
   \endlist
 
   \target qauthenticator-options
@@ -133,6 +152,10 @@ static QByteArray qNtlmPhase3_SSPI(QAuthenticatorPrivate *ctx, const QByteArray&
 
   The Digest-MD5 authentication mechanism supports no outgoing options.
 
+  \section2 SPNEGO/Negotiate
+
+  This authentication mechanism currently supports no incoming or outgoing options.
+
   \sa QSslSocket
 */
 
@@ -141,7 +164,7 @@ static QByteArray qNtlmPhase3_SSPI(QAuthenticatorPrivate *ctx, const QByteArray&
   Constructs an empty authentication object.
 */
 QAuthenticator::QAuthenticator()
-    : d(0)
+    : d(nullptr)
 {
 }
 
@@ -158,7 +181,7 @@ QAuthenticator::~QAuthenticator()
     Constructs a copy of \a other.
 */
 QAuthenticator::QAuthenticator(const QAuthenticator &other)
-    : d(0)
+    : d(nullptr)
 {
     if (other.d)
         *this = other;
@@ -187,7 +210,7 @@ QAuthenticator &QAuthenticator::operator=(const QAuthenticator &other)
         d->options = other.d->options;
     } else if (d->phase == QAuthenticatorPrivate::Start) {
         delete d;
-        d = 0;
+        d = nullptr;
     }
     return *this;
 }
@@ -231,9 +254,11 @@ QString QAuthenticator::user() const
 */
 void QAuthenticator::setUser(const QString &user)
 {
-    detach();
-    d->user = user;
-    d->updateCredentials();
+    if (!d || d->user != user) {
+        detach();
+        d->user = user;
+        d->updateCredentials();
+    }
 }
 
 /*!
@@ -251,8 +276,10 @@ QString QAuthenticator::password() const
 */
 void QAuthenticator::setPassword(const QString &password)
 {
-    detach();
-    d->password = password;
+    if (!d || d->password != password) {
+        detach();
+        d->password = password;
+    }
 }
 
 /*!
@@ -282,8 +309,10 @@ QString QAuthenticator::realm() const
 */
 void QAuthenticator::setRealm(const QString &realm)
 {
-    detach();
-    d->realm = realm;
+    if (!d || d->realm != realm) {
+        detach();
+        d->realm = realm;
+    }
 }
 
 /*!
@@ -323,8 +352,10 @@ QVariantHash QAuthenticator::options() const
 */
 void QAuthenticator::setOption(const QString &opt, const QVariant &value)
 {
-    detach();
-    d->options.insert(opt, value);
+    if (option(opt) != value) {
+        detach();
+        d->options.insert(opt, value);
+    }
 }
 
 
@@ -339,21 +370,25 @@ bool QAuthenticator::isNull() const
     return !d;
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-class QNtlmWindowsHandles
+#if QT_CONFIG(sspi) // SSPI
+class QSSPIWindowsHandles
 {
 public:
     CredHandle credHandle;
     CtxtHandle ctxHandle;
 };
-#endif
+#elif QT_CONFIG(gssapi) // GSSAPI
+class QGssApiHandles
+{
+public:
+    gss_ctx_id_t gssCtx = nullptr;
+    gss_name_t targetName;
+};
+#endif // gssapi
 
 
 QAuthenticatorPrivate::QAuthenticatorPrivate()
     : method(None)
-    #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-    , ntlmWindowsHandles(0)
-    #endif
     , hasFailed(false)
     , phase(Start)
     , nonceCount(0)
@@ -363,13 +398,7 @@ QAuthenticatorPrivate::QAuthenticatorPrivate()
     nonceCount = 0;
 }
 
-QAuthenticatorPrivate::~QAuthenticatorPrivate()
-{
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-    if (ntlmWindowsHandles)
-        delete ntlmWindowsHandles;
-#endif
-}
+QAuthenticatorPrivate::~QAuthenticatorPrivate() = default;
 
 void QAuthenticatorPrivate::updateCredentials()
 {
@@ -394,8 +423,11 @@ void QAuthenticatorPrivate::updateCredentials()
     }
 }
 
-void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByteArray> > &values, bool isProxy)
+void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByteArray> > &values, bool isProxy, const QString &host)
 {
+#if !QT_CONFIG(gssapi)
+    Q_UNUSED(host);
+#endif
     const char *search = isProxy ? "proxy-authenticate" : "www-authenticate";
 
     method = None;
@@ -424,6 +456,18 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
         } else if (method < DigestMd5 && str.startsWith("digest")) {
             method = DigestMd5;
             headerVal = current.second.mid(7);
+        } else if (method < Negotiate && str.startsWith("negotiate")) {
+#if QT_CONFIG(sspi) || QT_CONFIG(gssapi) // if it's not supported then we shouldn't try to use it
+#if QT_CONFIG(gssapi)
+            // For GSSAPI there needs to be a KDC set up for the host (afaict).
+            // So let's only conditionally use it if we can fetch the credentials.
+            // Sadly it's a bit slow because it requires a DNS lookup.
+            if (!qGssapiTestGetCredentials(host))
+                continue;
+#endif
+            method = Negotiate;
+            headerVal = current.second.mid(10);
+#endif
         }
     }
 
@@ -432,19 +476,33 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
     challenge = headerVal.trimmed();
     QHash<QByteArray, QByteArray> options = parseDigestAuthenticationChallenge(challenge);
 
+    // Sets phase to Start if this updates our realm and sets the two locations where we store
+    // realm
+    auto privSetRealm = [this](QString newRealm) {
+        if (newRealm != realm) {
+            if (phase == Done)
+                phase = Start;
+            realm = newRealm;
+            this->options[QLatin1String("realm")] = realm;
+        }
+    };
+
     switch(method) {
     case Basic:
-        this->options[QLatin1String("realm")] = realm = QString::fromLatin1(options.value("realm"));
+        privSetRealm(QString::fromLatin1(options.value("realm")));
         if (user.isEmpty() && password.isEmpty())
             phase = Done;
         break;
     case Ntlm:
+    case Negotiate:
         // work is done in calculateResponse()
         break;
     case DigestMd5: {
-        this->options[QLatin1String("realm")] = realm = QString::fromLatin1(options.value("realm"));
-        if (options.value("stale").compare("true", Qt::CaseInsensitive) == 0)
+        privSetRealm(QString::fromLatin1(options.value("realm")));
+        if (options.value("stale").compare("true", Qt::CaseInsensitive) == 0) {
             phase = Start;
+            nonceCount = 0;
+        }
         if (user.isEmpty() && password.isEmpty())
             phase = Done;
         break;
@@ -456,33 +514,41 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
     }
 }
 
-QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMethod, const QByteArray &path)
+QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMethod, const QByteArray &path, const QString& host)
 {
+#if !QT_CONFIG(sspi) && !QT_CONFIG(gssapi)
+    Q_UNUSED(host);
+#endif
     QByteArray response;
-    const char *methodString = 0;
+    const char* methodString = nullptr;
     switch(method) {
     case QAuthenticatorPrivate::None:
         methodString = "";
         phase = Done;
         break;
     case QAuthenticatorPrivate::Basic:
-        methodString = "Basic ";
+        methodString = "Basic";
         response = user.toLatin1() + ':' + password.toLatin1();
         response = response.toBase64();
         phase = Done;
         break;
     case QAuthenticatorPrivate::DigestMd5:
-        methodString = "Digest ";
+        methodString = "Digest";
         response = digestMd5Response(challenge, requestMethod, path);
         phase = Done;
         break;
     case QAuthenticatorPrivate::Ntlm:
-        methodString = "NTLM ";
+        methodString = "NTLM";
         if (challenge.isEmpty()) {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if QT_CONFIG(sspi) // SSPI
             QByteArray phase1Token;
-            if (user.isEmpty()) // Only pull from system if no user was specified in authenticator
-                phase1Token = qNtlmPhase1_SSPI(this);
+            if (user.isEmpty()) { // Only pull from system if no user was specified in authenticator
+                phase1Token = qSspiStartup(this, method, host);
+            } else if (!q_SSPI_library_load()) {
+                // Since we're not running qSspiStartup we have to make sure the library is loaded
+                qWarning("Failed to load the SSPI libraries");
+                return "";
+            }
             if (!phase1Token.isEmpty()) {
                 response = phase1Token.toBase64();
                 phase = Phase2;
@@ -496,10 +562,10 @@ QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMet
                     phase = Phase2;
             }
         } else {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if QT_CONFIG(sspi) // SSPI
             QByteArray phase3Token;
-            if (ntlmWindowsHandles)
-                phase3Token = qNtlmPhase3_SSPI(this, QByteArray::fromBase64(challenge));
+            if (sspiWindowsHandles)
+                phase3Token = qSspiContinue(this, method, host, QByteArray::fromBase64(challenge));
             if (!phase3Token.isEmpty()) {
                 response = phase3Token.toBase64();
                 phase = Done;
@@ -509,11 +575,48 @@ QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMet
                 response = qNtlmPhase3(this, QByteArray::fromBase64(challenge)).toBase64();
                 phase = Done;
             }
+            challenge = "";
+        }
+
+        break;
+    case QAuthenticatorPrivate::Negotiate:
+        methodString = "Negotiate";
+        if (challenge.isEmpty()) {
+            QByteArray phase1Token;
+#if QT_CONFIG(sspi) // SSPI
+            phase1Token = qSspiStartup(this, method, host);
+#elif QT_CONFIG(gssapi) // GSSAPI
+            phase1Token = qGssapiStartup(this, host);
+#endif
+
+            if (!phase1Token.isEmpty()) {
+                response = phase1Token.toBase64();
+                phase = Phase2;
+            } else {
+                phase = Done;
+                return "";
+            }
+        } else {
+            QByteArray phase3Token;
+#if QT_CONFIG(sspi) // SSPI
+            phase3Token = qSspiContinue(this, method, host, QByteArray::fromBase64(challenge));
+#elif QT_CONFIG(gssapi) // GSSAPI
+            phase3Token = qGssapiContinue(this, QByteArray::fromBase64(challenge));
+#endif
+            if (!phase3Token.isEmpty()) {
+                response = phase3Token.toBase64();
+                phase = Done;
+                challenge = "";
+            } else {
+                phase = Done;
+                return "";
+            }
         }
 
         break;
     }
-    return QByteArray(methodString) + response;
+
+    return QByteArray::fromRawData(methodString, qstrlen(methodString)) + ' ' + response;
 }
 
 
@@ -699,9 +802,10 @@ QByteArray QAuthenticatorPrivate::digestMd5Response(const QByteArray &challenge,
     return credentials;
 }
 
-// ---------------------------- Digest Md5 code ----------------------------------------
+// ---------------------------- End of Digest Md5 code ---------------------------------
 
 
+// ---------------------------- NTLM code ----------------------------------------------
 
 /*
  * NTLM message flags.
@@ -1173,7 +1277,7 @@ QByteArray qEncodeHmacMd5(QByteArray &key, const QByteArray &message)
 static QByteArray qCreatev2Hash(const QAuthenticatorPrivate *ctx,
                                 QNtlmPhase3Block *phase3)
 {
-    Q_ASSERT(phase3 != 0);
+    Q_ASSERT(phase3 != nullptr);
     // since v2 Hash is need for both NTLMv2 and LMv2 it is calculated
     // only once and stored and reused
     if(phase3->v2Hash.size() == 0) {
@@ -1230,7 +1334,7 @@ static QByteArray qEncodeNtlmv2Response(const QAuthenticatorPrivate *ctx,
                                         const QNtlmPhase2Block& ch,
                                         QNtlmPhase3Block *phase3)
 {
-    Q_ASSERT(phase3 != 0);
+    Q_ASSERT(phase3 != nullptr);
     // return value stored in phase3
     qCreatev2Hash(ctx, phase3);
 
@@ -1297,7 +1401,7 @@ static QByteArray qEncodeLmv2Response(const QAuthenticatorPrivate *ctx,
                                       const QNtlmPhase2Block& ch,
                                       QNtlmPhase3Block *phase3)
 {
-    Q_ASSERT(phase3 != 0);
+    Q_ASSERT(phase3 != nullptr);
     // return value stored in phase3
     qCreatev2Hash(ctx, phase3);
 
@@ -1419,156 +1523,282 @@ static QByteArray qNtlmPhase3(QAuthenticatorPrivate *ctx, const QByteArray& phas
     return rc;
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+// ---------------------------- End of NTLM code ---------------------------------------
+
+#if QT_CONFIG(sspi) // SSPI
+// ---------------------------- SSPI code ----------------------------------------------
 // See http://davenport.sourceforge.net/ntlm.html
 // and libcurl http_ntlm.c
 
 // Handle of secur32.dll
-static HMODULE securityDLLHandle = NULL;
+static HMODULE securityDLLHandle = nullptr;
 // Pointer to SSPI dispatch table
-static PSecurityFunctionTable pSecurityFunctionTable = NULL;
+static PSecurityFunctionTable pSecurityFunctionTable = nullptr;
 
-
-static bool q_NTLM_SSPI_library_load()
+static bool q_SSPI_library_load()
 {
     static QBasicMutex mutex;
     QMutexLocker l(&mutex);
 
     // Initialize security interface
-    if (pSecurityFunctionTable == NULL) {
+    if (pSecurityFunctionTable == nullptr) {
         securityDLLHandle = LoadLibrary(L"secur32.dll");
-        if (securityDLLHandle != NULL) {
+        if (securityDLLHandle != nullptr) {
             INIT_SECURITY_INTERFACE pInitSecurityInterface =
                 reinterpret_cast<INIT_SECURITY_INTERFACE>(
                     reinterpret_cast<QFunctionPointer>(GetProcAddress(securityDLLHandle, "InitSecurityInterfaceW")));
-            if (pInitSecurityInterface != NULL)
+            if (pInitSecurityInterface != nullptr)
                 pSecurityFunctionTable = pInitSecurityInterface();
         }
     }
 
-    if (pSecurityFunctionTable == NULL)
+    if (pSecurityFunctionTable == nullptr)
         return false;
 
     return true;
 }
 
-// Phase 1:
-static QByteArray qNtlmPhase1_SSPI(QAuthenticatorPrivate *ctx)
+static QByteArray qSspiStartup(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate::Method method,
+                               const QString& host)
 {
-    QByteArray result;
+    if (!q_SSPI_library_load())
+        return QByteArray();
 
-    if (!q_NTLM_SSPI_library_load())
-        return result;
+    TimeStamp expiry; // For Windows 9x compatibility of SSPI calls
 
-    // 1. The client obtains a representation of the credential set
-    // for the user via the SSPI AcquireCredentialsHandle function.
-    if (!ctx->ntlmWindowsHandles)
-        ctx->ntlmWindowsHandles = new QNtlmWindowsHandles;
-    memset(&ctx->ntlmWindowsHandles->credHandle, 0, sizeof(CredHandle));
-    TimeStamp tsDummy;
+    if (!ctx->sspiWindowsHandles)
+        ctx->sspiWindowsHandles.reset(new QSSPIWindowsHandles);
+    memset(&ctx->sspiWindowsHandles->credHandle, 0, sizeof(CredHandle));
+
+    SEC_WINNT_AUTH_IDENTITY auth;
+    auth.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
+    bool useAuth = false;
+    if (method == QAuthenticatorPrivate::Negotiate && !ctx->user.isEmpty()) {
+        auth.Domain = const_cast<ushort *>(ctx->userDomain.utf16());
+        auth.DomainLength = ctx->userDomain.size();
+        auth.User = const_cast<ushort *>(ctx->user.utf16());
+        auth.UserLength = ctx->user.size();
+        auth.Password = const_cast<ushort *>(ctx->password.utf16());
+        auth.PasswordLength = ctx->password.size();
+        useAuth = true;
+    }
+
+    // Acquire our credentials handle
     SECURITY_STATUS secStatus = pSecurityFunctionTable->AcquireCredentialsHandle(
-        NULL, (SEC_WCHAR*)L"NTLM", SECPKG_CRED_OUTBOUND, NULL, NULL,
-        NULL, NULL, &ctx->ntlmWindowsHandles->credHandle, &tsDummy);
+            nullptr,
+            (SEC_WCHAR *)(method == QAuthenticatorPrivate::Negotiate ? L"Negotiate" : L"NTLM"),
+            SECPKG_CRED_OUTBOUND, nullptr, useAuth ? &auth : nullptr, nullptr, nullptr,
+            &ctx->sspiWindowsHandles->credHandle, &expiry
+    );
     if (secStatus != SEC_E_OK) {
-        delete ctx->ntlmWindowsHandles;
-        ctx->ntlmWindowsHandles = 0;
-        return result;
+        ctx->sspiWindowsHandles.reset(nullptr);
+        return QByteArray();
     }
 
-    // 2. The client calls the SSPI InitializeSecurityContext function
-    // to obtain an authentication request token (in our case, a Type 1 message).
-    // The client sends this token to the server.
-    SecBufferDesc desc;
-    SecBuffer buf;
-    desc.ulVersion = SECBUFFER_VERSION;
-    desc.cBuffers  = 1;
-    desc.pBuffers  = &buf;
-    buf.cbBuffer   = 0;
-    buf.BufferType = SECBUFFER_TOKEN;
-    buf.pvBuffer   = NULL;
-    ULONG attrs;
-
-    secStatus = pSecurityFunctionTable->InitializeSecurityContext(&ctx->ntlmWindowsHandles->credHandle, NULL,
-        const_cast<SEC_WCHAR*>(L"") /* host */,
-        ISC_REQ_ALLOCATE_MEMORY,
-        0, SECURITY_NETWORK_DREP,
-        NULL, 0,
-        &ctx->ntlmWindowsHandles->ctxHandle, &desc,
-        &attrs, &tsDummy);
-    if (secStatus == SEC_I_COMPLETE_AND_CONTINUE ||
-        secStatus == SEC_I_CONTINUE_NEEDED) {
-            pSecurityFunctionTable->CompleteAuthToken(&ctx->ntlmWindowsHandles->ctxHandle, &desc);
-    } else if (secStatus != SEC_E_OK) {
-        if ((const char*)buf.pvBuffer)
-            pSecurityFunctionTable->FreeContextBuffer(buf.pvBuffer);
-        pSecurityFunctionTable->FreeCredentialsHandle(&ctx->ntlmWindowsHandles->credHandle);
-        delete ctx->ntlmWindowsHandles;
-        ctx->ntlmWindowsHandles = 0;
-        return result;
-    }
-
-    result = QByteArray((const char*)buf.pvBuffer, buf.cbBuffer);
-    pSecurityFunctionTable->FreeContextBuffer(buf.pvBuffer);
-    return result;
+    return qSspiContinue(ctx, method, host);
 }
 
-// Phase 2:
-// 3. The server receives the token from the client, and uses it as input to the
-// AcceptSecurityContext SSPI function. This creates a local security context on
-// the server to represent the client, and yields an authentication response token
-// (the Type 2 message), which is sent to the client.
-
-// Phase 3:
-static QByteArray qNtlmPhase3_SSPI(QAuthenticatorPrivate *ctx, const QByteArray& phase2data)
+static QByteArray qSspiContinue(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate::Method method,
+                                  const QString &host, const QByteArray &challenge)
 {
-    // 4. The client receives the response token from the server and calls
-    // InitializeSecurityContext again, passing the server's token as input.
-    // This provides us with another authentication request token (the Type 3 message).
-    // The return value indicates that the security context was successfully initialized;
-    // the token is sent to the server.
-
     QByteArray result;
+    SecBuffer challengeBuf;
+    SecBuffer responseBuf;
+    SecBufferDesc challengeDesc;
+    SecBufferDesc responseDesc;
+    unsigned long attrs;
+    TimeStamp expiry; // For Windows 9x compatibility of SSPI calls
 
-    if (pSecurityFunctionTable == NULL)
-        return result;
-
-    SecBuffer type_2, type_3;
-    SecBufferDesc type_2_desc, type_3_desc;
-    ULONG attrs;
-    TimeStamp tsDummy; // For Windows 9x compatibility of SPPI calls
-
-    type_2_desc.ulVersion  = type_3_desc.ulVersion  = SECBUFFER_VERSION;
-    type_2_desc.cBuffers   = type_3_desc.cBuffers   = 1;
-    type_2_desc.pBuffers   = &type_2;
-    type_3_desc.pBuffers   = &type_3;
-
-    type_2.BufferType = SECBUFFER_TOKEN;
-    type_2.pvBuffer   = (PVOID)phase2data.data();
-    type_2.cbBuffer   = phase2data.length();
-    type_3.BufferType = SECBUFFER_TOKEN;
-    type_3.pvBuffer   = 0;
-    type_3.cbBuffer   = 0;
-
-    SECURITY_STATUS secStatus = pSecurityFunctionTable->InitializeSecurityContext(&ctx->ntlmWindowsHandles->credHandle,
-        &ctx->ntlmWindowsHandles->ctxHandle,
-        const_cast<SEC_WCHAR*>(L"") /* host */,
-        ISC_REQ_ALLOCATE_MEMORY,
-        0, SECURITY_NETWORK_DREP, &type_2_desc,
-        0, &ctx->ntlmWindowsHandles->ctxHandle, &type_3_desc,
-        &attrs, &tsDummy);
-
-    if (secStatus == SEC_E_OK && ((const char*)type_3.pvBuffer)) {
-        result = QByteArray((const char*)type_3.pvBuffer, type_3.cbBuffer);
-        pSecurityFunctionTable->FreeContextBuffer(type_3.pvBuffer);
+    if (!challenge.isEmpty())
+    {
+        // Setup the challenge "input" security buffer
+        challengeDesc.ulVersion = SECBUFFER_VERSION;
+        challengeDesc.cBuffers  = 1;
+        challengeDesc.pBuffers  = &challengeBuf;
+        challengeBuf.BufferType = SECBUFFER_TOKEN;
+        challengeBuf.pvBuffer   = (PVOID)(challenge.data());
+        challengeBuf.cbBuffer   = challenge.length();
     }
 
-    pSecurityFunctionTable->FreeCredentialsHandle(&ctx->ntlmWindowsHandles->credHandle);
-    pSecurityFunctionTable->DeleteSecurityContext(&ctx->ntlmWindowsHandles->ctxHandle);
-    delete ctx->ntlmWindowsHandles;
-    ctx->ntlmWindowsHandles = 0;
+    // Setup the response "output" security buffer
+    responseDesc.ulVersion = SECBUFFER_VERSION;
+    responseDesc.cBuffers  = 1;
+    responseDesc.pBuffers  = &responseBuf;
+    responseBuf.BufferType = SECBUFFER_TOKEN;
+    responseBuf.pvBuffer   = nullptr;
+    responseBuf.cbBuffer   = 0;
+
+    // Calculate target (SPN for Negotiate, empty for NTLM)
+    std::wstring targetNameW = (method == QAuthenticatorPrivate::Negotiate
+                                ? QLatin1String("HTTP/") + host : QString()).toStdWString();
+
+    // Generate our challenge-response message
+    SECURITY_STATUS secStatus = pSecurityFunctionTable->InitializeSecurityContext(
+                &ctx->sspiWindowsHandles->credHandle,
+                !challenge.isEmpty() ? &ctx->sspiWindowsHandles->ctxHandle : nullptr,
+                const_cast<wchar_t*>(targetNameW.data()),
+                ISC_REQ_ALLOCATE_MEMORY,
+                0, SECURITY_NATIVE_DREP,
+                !challenge.isEmpty() ? &challengeDesc : nullptr,
+                0, &ctx->sspiWindowsHandles->ctxHandle,
+                &responseDesc, &attrs,
+                &expiry
+    );
+
+    if (secStatus == SEC_I_COMPLETE_NEEDED || secStatus == SEC_I_COMPLETE_AND_CONTINUE) {
+        secStatus = pSecurityFunctionTable->CompleteAuthToken(&ctx->sspiWindowsHandles->ctxHandle,
+                                                              &responseDesc);
+    }
+
+    if (secStatus != SEC_I_COMPLETE_AND_CONTINUE && secStatus != SEC_I_CONTINUE_NEEDED) {
+        pSecurityFunctionTable->FreeCredentialsHandle(&ctx->sspiWindowsHandles->credHandle);
+        pSecurityFunctionTable->DeleteSecurityContext(&ctx->sspiWindowsHandles->ctxHandle);
+        ctx->sspiWindowsHandles.reset(nullptr);
+    }
+
+    result = QByteArray((const char*)responseBuf.pvBuffer, responseBuf.cbBuffer);
+    pSecurityFunctionTable->FreeContextBuffer(responseBuf.pvBuffer);
 
     return result;
 }
-#endif // Q_OS_WIN && !Q_OS_WINRT
+
+// ---------------------------- End of SSPI code ---------------------------------------
+
+#elif QT_CONFIG(gssapi) // GSSAPI
+
+// ---------------------------- GSSAPI code ----------------------------------------------
+// See postgres src/interfaces/libpq/fe-auth.c
+
+// Fetch all errors of a specific type
+static void q_GSSAPI_error_int(const char *message, OM_uint32 stat, int type)
+{
+    OM_uint32 minStat, msgCtx = 0;
+    gss_buffer_desc msg;
+
+    do {
+        gss_display_status(&minStat, stat, type, GSS_C_NO_OID, &msgCtx, &msg);
+        qCDebug(lcAuthenticator) << message << ": " << reinterpret_cast<const char*>(msg.value);
+        gss_release_buffer(&minStat, &msg);
+    } while (msgCtx);
+}
+
+// GSSAPI errors contain two parts; extract both
+static void q_GSSAPI_error(const char *message, OM_uint32 majStat, OM_uint32 minStat)
+{
+    // Fetch major error codes
+    q_GSSAPI_error_int(message, majStat, GSS_C_GSS_CODE);
+
+    // Add the minor codes as well
+    q_GSSAPI_error_int(message, minStat, GSS_C_MECH_CODE);
+}
+
+static gss_name_t qGSsapiGetServiceName(const QString &host)
+{
+    QByteArray serviceName = "HTTPS@" + host.toLocal8Bit();
+    gss_buffer_desc nameDesc = {static_cast<std::size_t>(serviceName.size()), serviceName.data()};
+
+    gss_name_t importedName;
+    OM_uint32 minStat;
+    OM_uint32 majStat = gss_import_name(&minStat, &nameDesc,
+                              GSS_C_NT_HOSTBASED_SERVICE, &importedName);
+
+    if (majStat != GSS_S_COMPLETE) {
+        q_GSSAPI_error("gss_import_name error", majStat, minStat);
+        return nullptr;
+    }
+    return importedName;
+}
+
+// Send initial GSS authentication token
+static QByteArray qGssapiStartup(QAuthenticatorPrivate *ctx, const QString &host)
+{
+    if (!ctx->gssApiHandles)
+        ctx->gssApiHandles.reset(new QGssApiHandles);
+
+    // Convert target name to internal form
+    gss_name_t name = qGSsapiGetServiceName(host);
+    if (name == nullptr) {
+        ctx->gssApiHandles.reset(nullptr);
+        return QByteArray();
+    }
+    ctx->gssApiHandles->targetName = name;
+
+    // Call qGssapiContinue with GSS_C_NO_CONTEXT to get initial packet
+    ctx->gssApiHandles->gssCtx = GSS_C_NO_CONTEXT;
+    return qGssapiContinue(ctx);
+}
+
+// Continue GSS authentication with next token as needed
+static QByteArray qGssapiContinue(QAuthenticatorPrivate *ctx, const QByteArray& challenge)
+{
+    OM_uint32 majStat, minStat, ignored;
+    QByteArray result;
+    gss_buffer_desc inBuf = {0, nullptr}; // GSS input token
+    gss_buffer_desc outBuf; // GSS output token
+
+    if (!challenge.isEmpty()) {
+        inBuf.value = const_cast<char*>(challenge.data());
+        inBuf.length = challenge.length();
+    }
+
+    majStat = gss_init_sec_context(&minStat,
+                                   GSS_C_NO_CREDENTIAL,
+                                   &ctx->gssApiHandles->gssCtx,
+                                   ctx->gssApiHandles->targetName,
+                                   GSS_C_NO_OID,
+                                   GSS_C_MUTUAL_FLAG,
+                                   0,
+                                   GSS_C_NO_CHANNEL_BINDINGS,
+                                   challenge.isEmpty() ? GSS_C_NO_BUFFER : &inBuf,
+                                   nullptr,
+                                   &outBuf,
+                                   nullptr,
+                                   nullptr);
+
+    if (outBuf.length != 0)
+        result = QByteArray(reinterpret_cast<const char*>(outBuf.value), outBuf.length);
+    gss_release_buffer(&ignored, &outBuf);
+
+    if (majStat != GSS_S_COMPLETE && majStat != GSS_S_CONTINUE_NEEDED) {
+        q_GSSAPI_error("gss_init_sec_context error", majStat, minStat);
+        gss_release_name(&ignored, &ctx->gssApiHandles->targetName);
+        if (ctx->gssApiHandles->gssCtx)
+            gss_delete_sec_context(&ignored, &ctx->gssApiHandles->gssCtx, GSS_C_NO_BUFFER);
+        ctx->gssApiHandles.reset(nullptr);
+    }
+
+    if (majStat == GSS_S_COMPLETE) {
+        gss_release_name(&ignored, &ctx->gssApiHandles->targetName);
+        ctx->gssApiHandles.reset(nullptr);
+    }
+
+    return result;
+}
+
+static bool qGssapiTestGetCredentials(const QString &host)
+{
+    gss_name_t serviceName = qGSsapiGetServiceName(host);
+    if (!serviceName)
+        return false; // Something was wrong with the service name, so skip this
+    OM_uint32 minStat;
+    gss_cred_id_t cred;
+    OM_uint32 majStat = gss_acquire_cred(&minStat, serviceName, GSS_C_INDEFINITE,
+                                         GSS_C_NO_OID_SET, GSS_C_INITIATE, &cred, nullptr,
+                                         nullptr);
+
+    OM_uint32 ignored;
+    gss_release_name(&ignored, &serviceName);
+    gss_release_cred(&ignored, &cred);
+
+    if (majStat != GSS_S_COMPLETE) {
+        q_GSSAPI_error("gss_acquire_cred", majStat, minStat);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------- End of GSSAPI code ----------------------------------------------
+
+#endif // gssapi
 
 QT_END_NAMESPACE

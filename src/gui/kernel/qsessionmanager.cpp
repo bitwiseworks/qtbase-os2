@@ -123,7 +123,11 @@ QSessionManagerPrivate::QSessionManagerPrivate(const QString &id,
                                                const QString &key)
     : QObjectPrivate()
 {
-    platformSessionManager = QGuiApplicationPrivate::platformIntegration()->createPlatformSessionManager(id, key);
+    if (qApp->testAttribute(Qt::AA_DisableSessionManager)) {
+        platformSessionManager = new QPlatformSessionManager(id, key);
+    } else {
+        platformSessionManager = QGuiApplicationPrivate::platformIntegration()->createPlatformSessionManager(id, key);
+    }
     Q_ASSERT_X(platformSessionManager, "Platform session management",
                "No platform session management, should use the default implementation");
 }
@@ -131,7 +135,7 @@ QSessionManagerPrivate::QSessionManagerPrivate(const QString &id,
 QSessionManagerPrivate::~QSessionManagerPrivate()
 {
     delete platformSessionManager;
-    platformSessionManager = 0;
+    platformSessionManager = nullptr;
 }
 
 QSessionManager::QSessionManager(QGuiApplication *app, QString &id, QString &key)

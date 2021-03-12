@@ -54,7 +54,7 @@ struct testDataSet
 QString charHexCsv2String(const QString &csv)
 {
     QString result;
-    foreach (const QString &charString, csv.split(QLatin1Char(','), QString::SkipEmptyParts)) {
+    foreach (const QString &charString, csv.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
         bool isOk;
         const uint charUInt = charString.toUInt(&isOk, 16);
         Q_ASSERT(isOk);
@@ -160,8 +160,6 @@ bool dumpHtml(const QString &pathName)
     QString platformName = QString::fromLatin1(
 #if defined(Q_OS_WIN)
             "Win32"
-#elif 0 // Used to be included in Qt4 for Q_WS_X11
-            "X11"
 #else
             ""
 #endif

@@ -54,6 +54,7 @@
 #include <QtNetwork/private/qtnetworkglobal_p.h>
 #include <qhash.h>
 #include <qbytearray.h>
+#include <qscopedpointer.h>
 #include <qstring.h>
 #include <qauthenticator.h>
 #include <qvariant.h>
@@ -61,14 +62,16 @@
 QT_BEGIN_NAMESPACE
 
 class QHttpResponseHeader;
-#ifdef Q_OS_WIN
-class QNtlmWindowsHandles;
+#if QT_CONFIG(sspi) // SSPI
+class QSSPIWindowsHandles;
+#elif QT_CONFIG(gssapi) // GSSAPI
+class QGssApiHandles;
 #endif
 
 class Q_AUTOTEST_EXPORT QAuthenticatorPrivate
 {
 public:
-    enum Method { None, Basic, Ntlm, DigestMd5 };
+    enum Method { None, Basic, Negotiate, Ntlm, DigestMd5, };
     QAuthenticatorPrivate();
     ~QAuthenticatorPrivate();
 
@@ -79,8 +82,10 @@ public:
     Method method;
     QString realm;
     QByteArray challenge;
-#ifdef Q_OS_WIN
-    QNtlmWindowsHandles *ntlmWindowsHandles;
+#if QT_CONFIG(sspi) // SSPI
+    QScopedPointer<QSSPIWindowsHandles> sspiWindowsHandles;
+#elif QT_CONFIG(gssapi) // GSSAPI
+    QScopedPointer<QGssApiHandles> gssApiHandles;
 #endif
     bool hasFailed; //credentials have been tried but rejected by server.
 
@@ -100,7 +105,7 @@ public:
     QString workstation;
     QString userDomain;
 
-    QByteArray calculateResponse(const QByteArray &method, const QByteArray &path);
+    QByteArray calculateResponse(const QByteArray &method, const QByteArray &path, const QString& host);
 
     inline static QAuthenticatorPrivate *getPrivate(QAuthenticator &auth) { return auth.d; }
     inline static const QAuthenticatorPrivate *getPrivate(const QAuthenticator &auth) { return auth.d; }
@@ -108,7 +113,7 @@ public:
     QByteArray digestMd5Response(const QByteArray &challenge, const QByteArray &method, const QByteArray &path);
     static QHash<QByteArray, QByteArray> parseDigestAuthenticationChallenge(const QByteArray &challenge);
 
-    void parseHttpResponse(const QList<QPair<QByteArray, QByteArray> >&, bool isProxy);
+    void parseHttpResponse(const QList<QPair<QByteArray, QByteArray> >&, bool isProxy, const QString &host);
     void updateCredentials();
 };
 

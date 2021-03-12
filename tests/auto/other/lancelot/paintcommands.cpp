@@ -31,6 +31,7 @@
 #include <qfile.h>
 #include <qfileinfo.h>
 #include <qpainter.h>
+#include <qpainterpath.h>
 #include <qbitmap.h>
 #include <qtextstream.h>
 #include <qtextlayout.h>
@@ -230,9 +231,9 @@ void PaintCommands::staticInit()
                       "begin_block <blockName>",
                       "begin_block blockName");
     DECL_PAINTCOMMAND("end_block", command_end_block,
-                      "^end_block$",
-                      "end_block",
-                      "end_block");
+                      "^end_block\\s*(\\w*)$",
+                      "end_block [blockName]",
+                      "end_block blockName");
     DECL_PAINTCOMMAND("repeat_block", command_repeat_block,
                       "^repeat_block\\s+(\\w*)$",
                       "repeat_block <blockName>",
@@ -365,6 +366,7 @@ void PaintCommands::staticInit()
                       "^gradient_setCoordinateMode\\s+(\\w*)$",
                       "gradient_setCoordinateMode <coordinate method enum>",
                       "gradient_setCoordinateMode ObjectBoundingMode");
+
     DECL_PAINTCOMMANDSECTION("drawing ops");
     DECL_PAINTCOMMAND("drawPoint", command_drawPoint,
                       "^drawPoint\\s+(-?[\\w.]*)\\s+(-?[\\w.]*)$",
@@ -454,6 +456,14 @@ void PaintCommands::staticInit()
                       "\n  - where t means tile"
                       "\n  - and s is an offset in the tile",
                       "drawTiledPixmap :/images/alpha.png ");
+    DECL_PAINTCOMMAND("fillRect", command_fillRect,
+                      "^fillRect\\s+(-?\\w*)\\s+(-?\\w*)\\s+(-?\\w*)\\s+(-?\\w*)\\s*(\\w*)?$",
+                      "fillRect <x> <y> <w> <h> [color]\n - Uses current brush if no color given",
+                      "fillRect 10 10 20 20 blue");
+    DECL_PAINTCOMMAND("fillRectF", command_fillRectF,
+                      "^fillRectF\\s+(-?[.\\w]*)\\s+(-?[.\\w]*)\\s+(-?[.\\w]*)\\s+(-?[.\\w]*)\\s*(\\w*)?$",
+                      "fillRectF <x> <y> <w> <h> [color]\n - Uses current brush if no color given",
+                      "fillRectF 10.5 10.5 20.2 20.2 blue");
 
     DECL_PAINTCOMMANDSECTION("painterPaths");
     DECL_PAINTCOMMAND("path_moveTo", command_path_moveTo,
@@ -735,6 +745,13 @@ void PaintCommands::runCommands()
     if (height <= 0)
         height = 800;
 
+    m_pathMap.clear();
+    m_imageMap.clear();
+    m_pixmapMap.clear();
+    m_regionMap.clear();
+    m_gradientStops.clear();
+    m_blockMap.clear();
+
     // paint background
     if (m_checkers_background) {
         QPixmap pm(20, 20);
@@ -874,7 +891,7 @@ void PaintCommands::command_import(QRegularExpressionMatch re)
     m_commands[m_currentCommandIndex] = QLatin1String("# import file (") + fileinfo.fileName()
         + QLatin1String(") start");
     QString rawContent = QString::fromUtf8(file->readAll());
-    QStringList importedData = rawContent.split('\n', QString::SkipEmptyParts);
+    QStringList importedData = rawContent.split('\n', Qt::SkipEmptyParts);
     importedData.append(QLatin1String("# import file (") + fileinfo.fileName() + QLatin1String(") end ---"));
     insertAt(m_currentCommandIndex, importedData);
 
@@ -892,6 +909,8 @@ void PaintCommands::command_begin_block(QRegularExpressionMatch re)
     const QString &blockName = re.captured(1);
     if (m_verboseMode)
         printf(" -(lance) begin_block (%s)\n", qPrintable(blockName));
+    if (m_blockMap.contains(blockName))
+        qFatal("Two blocks named (%s)", qPrintable(blockName));
 
     m_commands[m_currentCommandIndex] = QLatin1String("# begin block (") + blockName + QLatin1Char(')');
     QStringList newBlock;
@@ -1010,7 +1029,10 @@ void PaintCommands::command_drawPixmap(QRegularExpressionMatch re)
                qPrintable(re.captured(1)), pm.width(), pm.height(), pm.depth(),
                tx, ty, tw, th, sx, sy, sw, sh);
 
-    m_painter->drawPixmap(QRectF(tx, ty, tw, th), pm, QRectF(sx, sy, sw, sh));
+    if (!re.capturedLength(4))  // at most two coordinates specified
+        m_painter->drawPixmap(QPointF(tx, ty), pm);
+    else
+        m_painter->drawPixmap(QRectF(tx, ty, tw, th), pm, QRectF(sx, sy, sw, sh));
 }
 
 /***************************************************************************************************/
@@ -1057,7 +1079,10 @@ void PaintCommands::command_drawImage(QRegularExpressionMatch re)
         printf(" -(lance) drawImage('%s' dim=(%d, %d), (%f, %f, %f, %f), (%f, %f, %f, %f)\n",
                qPrintable(re.captured(1)), im.width(), im.height(), tx, ty, tw, th, sx, sy, sw, sh);
 
-    m_painter->drawImage(QRectF(tx, ty, tw, th), im, QRectF(sx, sy, sw, sh), Qt::OrderedDither | Qt::OrderedAlphaDither);
+    if (!re.capturedLength(4))  // at most two coordinates specified
+        m_painter->drawImage(QPointF(tx, ty), im);
+    else
+        m_painter->drawImage(QRectF(tx, ty, tw, th), im, QRectF(sx, sy, sw, sh));
 }
 
 /***************************************************************************************************/
@@ -1122,7 +1147,7 @@ void PaintCommands::command_drawPolygon(QRegularExpressionMatch re)
     static QRegularExpression separators("\\s");
     QStringList caps = re.capturedTexts();
     QString cap = caps.at(1);
-    QStringList numbers = cap.split(separators, QString::SkipEmptyParts);
+    QStringList numbers = cap.split(separators, Qt::SkipEmptyParts);
 
     QPolygonF array;
     for (int i=0; i + 1<numbers.size(); i+=2)
@@ -1138,7 +1163,7 @@ void PaintCommands::command_drawPolygon(QRegularExpressionMatch re)
 void PaintCommands::command_drawPolyline(QRegularExpressionMatch re)
 {
     static QRegularExpression separators("\\s");
-    QStringList numbers = re.captured(1).split(separators, QString::SkipEmptyParts);
+    QStringList numbers = re.captured(1).split(separators, Qt::SkipEmptyParts);
 
     QPolygonF array;
     for (int i=0; i + 1<numbers.size(); i+=2)
@@ -1202,7 +1227,7 @@ void PaintCommands::command_drawRoundRect(QRegularExpressionMatch re)
 
     QT_WARNING_PUSH
     QT_WARNING_DISABLE_DEPRECATED
-    m_painter->drawRoundRect(x, y, w, h, xs, ys);
+    m_painter->drawRoundedRect(x, y, w, h, xs, ys, Qt::RelativeSize);
     QT_WARNING_POP
 }
 
@@ -1325,6 +1350,46 @@ void PaintCommands::command_drawTextDocument(QRegularExpressionMatch re)
     m_painter->restore();
 }
 
+/***************************************************************************************************/
+void PaintCommands::command_fillRect(QRegularExpressionMatch re)
+{
+    QStringList caps = re.capturedTexts();
+    int x = convertToInt(caps.at(1));
+    int y = convertToInt(caps.at(2));
+    int w = convertToInt(caps.at(3));
+    int h = convertToInt(caps.at(4));
+
+    if (!caps.at(5).isEmpty()) {
+        QColor color = convertToColor(caps.at(5));
+        if (m_verboseMode)
+            printf(" -(lance) fillRect(%d, %d, %d, %d, %s)\n", x, y, w, h, qPrintable(color.name()));
+        m_painter->fillRect(x, y, w, h, color);
+    } else {
+        if (m_verboseMode)
+            printf(" -(lance) fillRect(%d, %d, %d, %d)\n", x, y, w, h);
+        m_painter->fillRect(x, y, w, h, m_painter->brush());
+    }
+}
+
+void PaintCommands::command_fillRectF(QRegularExpressionMatch re)
+{
+    QStringList caps = re.capturedTexts();
+    double x = convertToDouble(caps.at(1));
+    double y = convertToDouble(caps.at(2));
+    double w = convertToDouble(caps.at(3));
+    double h = convertToDouble(caps.at(4));
+
+    if (!caps.at(5).isEmpty()) {
+        QColor color = convertToColor(caps.at(5));
+        if (m_verboseMode)
+            printf(" -(lance) fillRectF(%.2f, %.2f, %.2f, %.2f, %s)\n", x, y, w, h, qPrintable(color.name()));
+        m_painter->fillRect(QRectF(x, y, w, h), color);
+    } else {
+        if (m_verboseMode)
+            printf(" -(lance) fillRectF(%.2f, %.2f, %.2f, %.2f)\n", x, y, w, h);
+        m_painter->fillRect(QRectF(x, y, w, h), m_painter->brush());
+    }
+}
 
 /***************************************************************************************************/
 void PaintCommands::command_noop(QRegularExpressionMatch)
@@ -1391,7 +1456,7 @@ void PaintCommands::command_path_addPolygon(QRegularExpressionMatch re)
     QStringList caps = re.capturedTexts();
     QString name = caps.at(1);
     QString cap = caps.at(2);
-    QStringList numbers = cap.split(separators, QString::SkipEmptyParts);
+    QStringList numbers = cap.split(separators, Qt::SkipEmptyParts);
 
     QPolygonF array;
     for (int i=0; i + 1<numbers.size(); i+=2)
@@ -2478,12 +2543,6 @@ void PaintCommands::command_surface_begin(QRegularExpressionMatch re)
         m_painter->fillRect(QRect(0, 0, qRound(w), qRound(h)), Qt::transparent);
         m_painter->restore();
 #endif
-#if 0 // Used to be included in Qt4 for Q_WS_X11
-    } else if (m_type == WidgetType) {
-        m_surface_pixmap = QPixmap(qRound(w), qRound(h));
-        m_surface_pixmap.fill(Qt::transparent);
-        m_painter = new QPainter(&m_surface_pixmap);
-#endif
     } else {
         QImage::Format surface_format;
         if (QImage::toPixelFormat(m_format).alphaUsage() != QPixelFormat::UsesAlpha)
@@ -2534,11 +2593,6 @@ void PaintCommands::command_surface_end(QRegularExpressionMatch)
         // Flush the pipeline:
         m_painter->beginNativePainting();
         m_painter->endNativePainting();
-#endif
-#if 0 // Used to be included in Qt4 for Q_WS_X11
-    } else if (m_type == WidgetType) {
-        m_painter->drawPixmap(m_surface_rect.topLeft(), m_surface_pixmap);
-        m_surface_pixmap = QPixmap();
 #endif
     } else {
         m_painter->drawImage(m_surface_rect, m_surface_image);
@@ -2633,7 +2687,7 @@ void PaintCommands::command_pen_setDashPattern(QRegularExpressionMatch re)
     static QRegularExpression separators("\\s");
     QStringList caps = re.capturedTexts();
     QString cap = caps.at(1);
-    QStringList numbers = cap.split(separators, QString::SkipEmptyParts);
+    QStringList numbers = cap.split(separators, Qt::SkipEmptyParts);
 
     QVector<qreal> pattern;
     for (int i=0; i<numbers.size(); ++i)
@@ -2669,7 +2723,7 @@ void PaintCommands::command_drawConvexPolygon(QRegularExpressionMatch re)
     static QRegularExpression separators("\\s");
     QStringList caps = re.capturedTexts();
     QString cap = caps.at(1);
-    QStringList numbers = cap.split(separators, QString::SkipEmptyParts);
+    QStringList numbers = cap.split(separators, Qt::SkipEmptyParts);
 
     QPolygonF array;
     for (int i=0; i + 1<numbers.size(); i+=2)

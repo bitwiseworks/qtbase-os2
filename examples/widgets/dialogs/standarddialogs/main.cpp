@@ -49,8 +49,8 @@
 ****************************************************************************/
 
 #include <QApplication>
+#include <QScreen>
 #include <QStyleHints>
-#include <QDesktopWidget>
 #include <QTranslator>
 #include <QLocale>
 #include <QLibraryInfo>
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationDisplayName(Dialog::tr("Standard Dialogs"));
 
 #ifndef QT_NO_TRANSLATION
-    QString translatorFileName = QLatin1String("qt_");
+    QString translatorFileName = QLatin1String("qtbase_");
     translatorFileName += QLocale::system().name();
     QTranslator *translator = new QTranslator(&app);
     if (translator->load(translatorFileName, QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
 
     Dialog dialog;
     if (!QGuiApplication::styleHints()->showIsFullScreen() && !QGuiApplication::styleHints()->showIsMaximized()) {
-        const QRect availableGeometry = QApplication::desktop()->availableGeometry(&dialog);
+        const QRect availableGeometry = dialog.screen()->availableGeometry();
         dialog.resize(availableGeometry.width() / 3, availableGeometry.height() * 2 / 3);
         dialog.move((availableGeometry.width() - dialog.width()) / 2,
                     (availableGeometry.height() - dialog.height()) / 2);

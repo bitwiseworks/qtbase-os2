@@ -73,15 +73,6 @@
 #endif
 
 GLWindow::GLWindow()
-    : m_texImageInput(0),
-      m_texImageTmp(0),
-      m_texImageProcessed(0),
-      m_shaderDisplay(0),
-      m_shaderComputeV(0),
-      m_shaderComputeH(0),
-      m_blurRadius(0.0f),
-      m_animate(true),
-      m_vao(0)
 {
     const float animationStart = 0.0;
     const float animationEnd = 10.0;
@@ -180,7 +171,7 @@ static const char *fsDisplaySource =
     "}\n";
 
 static const char *csComputeSourceV =
-        "#define COMPUTEPATCHSIZE 32 \n"
+        "#define COMPUTEPATCHSIZE 10 // Setting this to 10 to comply with MAX_COMPUTE_WORK_GROUP_INVOCATIONS for both OpenGL and OpenGLES - see QTBUG-79374 \n"
         "#define IMGFMT rgba8 \n"
         "layout (local_size_x = COMPUTEPATCHSIZE, local_size_y = COMPUTEPATCHSIZE) in;\n"
         "layout(binding=0, IMGFMT) uniform readonly highp image2D inputImage; // Use a sampler to improve performance  \n"
@@ -221,7 +212,7 @@ static const char *csComputeSourceV =
         "}\n";
 
 static const char *csComputeSourceH =
-        "#define COMPUTEPATCHSIZE 32 \n"
+        "#define COMPUTEPATCHSIZE 10 \n"
         "#define IMGFMT rgba8 \n"
         "layout (local_size_x = COMPUTEPATCHSIZE, local_size_y = COMPUTEPATCHSIZE) in;\n"
         "layout(binding=0, IMGFMT) uniform readonly highp image2D inputImage; // Use a sampler to improve performance  \n"
@@ -324,27 +315,18 @@ void GLWindow::initializeGL()
              << ((ctx->format().renderableType() == QSurfaceFormat::OpenGLES) ? (" GLES") : (" GL"))
              << " context";
 
-    if (m_texImageInput) {
-        delete m_texImageInput;
-        m_texImageInput = 0;
-    }
     QImage img(":/Qt-logo-medium.png");
     Q_ASSERT(!img.isNull());
+    delete m_texImageInput;
     m_texImageInput = new QOpenGLTexture(img.convertToFormat(QImage::Format_RGBA8888).mirrored());
 
-    if (m_texImageTmp) {
-        delete m_texImageTmp;
-        m_texImageTmp = 0;
-    }
+    delete m_texImageTmp;
     m_texImageTmp = new QOpenGLTexture(QOpenGLTexture::Target2D);
     m_texImageTmp->setFormat(m_texImageInput->format());
     m_texImageTmp->setSize(m_texImageInput->width(),m_texImageInput->height());
     m_texImageTmp->allocateStorage(QOpenGLTexture::RGBA,QOpenGLTexture::UInt8); // WTF?
 
-    if (m_texImageProcessed) {
-        delete m_texImageProcessed;
-        m_texImageProcessed = 0;
-    }
+    delete m_texImageProcessed;
     m_texImageProcessed = new QOpenGLTexture(QOpenGLTexture::Target2D);
     m_texImageProcessed->setFormat(m_texImageInput->format());
     m_texImageProcessed->setSize(m_texImageInput->width(),m_texImageInput->height());
@@ -354,10 +336,7 @@ void GLWindow::initializeGL()
     m_texImageProcessed->setMinificationFilter(QOpenGLTexture::Linear);
     m_texImageProcessed->setWrapMode(QOpenGLTexture::ClampToEdge);
 
-    if (m_shaderDisplay) {
-        delete m_shaderDisplay;
-        m_shaderDisplay = 0;
-    }
+    delete m_shaderDisplay;
     m_shaderDisplay = new QOpenGLShaderProgram;
     // Prepend the correct version directive to the sources. The rest is the
     // same, thanks to the common GLSL syntax.
@@ -365,18 +344,12 @@ void GLWindow::initializeGL()
     m_shaderDisplay->addShaderFromSourceCode(QOpenGLShader::Fragment, versionedShaderCode(fsDisplaySource));
     m_shaderDisplay->link();
 
-    if (m_shaderComputeV) {
-        delete m_shaderComputeV;
-        m_shaderComputeV = 0;
-    }
+    delete m_shaderComputeV;
     m_shaderComputeV = new QOpenGLShaderProgram;
     m_shaderComputeV->addShaderFromSourceCode(QOpenGLShader::Compute, versionedShaderCode(csComputeSourceV));
     m_shaderComputeV->link();
 
-    if (m_shaderComputeH) {
-        delete m_shaderComputeH;
-        m_shaderComputeH = 0;
-    }
+    delete m_shaderComputeH;
     m_shaderComputeH = new QOpenGLShaderProgram;
     m_shaderComputeH->addShaderFromSourceCode(QOpenGLShader::Compute, versionedShaderCode(csComputeSourceH));
     m_shaderComputeH->link();
@@ -408,7 +381,7 @@ void GLWindow::paintGL()
 
 
     // Process input image
-    QSize workGroups = getWorkGroups( 32, QSize(m_texImageInput->width(), m_texImageInput->height()));
+    QSize workGroups = getWorkGroups(10, QSize(m_texImageInput->width(), m_texImageInput->height()));
     // Pass 1
     f->glBindImageTexture(0, m_texImageInput->textureId(), 0, 0, 0,  GL_READ_WRITE, GL_RGBA8);
     f->glBindImageTexture(1, m_texImageTmp->textureId(), 0, 0, 0,  GL_READ_WRITE, GL_RGBA8);

@@ -58,11 +58,17 @@
 #include <sys/file.h>  // flock
 #endif
 
+#if defined(Q_OS_RTEMS) || defined(Q_OS_QNX)
+// flock() does not work in these OSes and produce warnings when we try to use
+#  undef LOCK_EX
+#  undef LOCK_NB
+#endif
+
 #include <sys/types.h> // kill
 #include <signal.h>    // kill
 #include <unistd.h>    // gethostname
 
-#if defined(Q_OS_OSX)
+#if defined(Q_OS_MACOS)
 #   include <libproc.h>
 #elif defined(Q_OS_LINUX)
 #   include <unistd.h>
@@ -169,7 +175,7 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
     if (qt_write_loop(fd, fileData.constData(), fileData.size()) < fileData.size()) {
         qt_safe_close(fd);
         if (!QFile::remove(fileName))
-            qWarning("QLockFile: Could not remove our own lock file %s.", qPrintable(fileName));
+            qWarning("QLockFile: Could not remove our own lock file %ls.", qUtf16Printable(fileName));
         return QLockFile::UnknownError; // partition full
     }
 
@@ -216,7 +222,7 @@ bool QLockFilePrivate::isProcessRunning(qint64 pid, const QString &appname)
 
 QString QLockFilePrivate::processNameByPid(qint64 pid)
 {
-#if defined(Q_OS_OSX)
+#if defined(Q_OS_MACOS)
     char name[1024];
     proc_name(pid, name, sizeof(name) / sizeof(char));
     return QFile::decodeName(name);

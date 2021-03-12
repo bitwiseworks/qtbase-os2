@@ -57,7 +57,7 @@ static const double RandomValueFP = double(0.3010463714599609);
 static void setRNGControl(uint v)
 {
 #ifdef QT_BUILD_INTERNAL
-    qt_randomdevice_control.store(v);
+    qt_randomdevice_control.storeRelaxed(v);
 #else
     Q_UNUSED(v);
 #endif
@@ -320,7 +320,7 @@ void tst_QRandomGenerator::generate32_data()
     QTest::newRow("fixed") << (RandomValue32 & RandomDataMask);
     QTest::newRow("global") << 0U;
 #ifdef QT_BUILD_INTERNAL
-    if (qt_has_hwrng())
+    if (qHasHwrng())
         QTest::newRow("hwrng") << uint(UseSystemRNG);
     QTest::newRow("system") << uint(UseSystemRNG | SkipHWRNG);
 #  ifdef HAVE_FALLBACK_ENGINE
@@ -511,7 +511,7 @@ void tst_QRandomGenerator::generateNonContiguous()
     QFETCH(uint, control);
     RandomGenerator rng(control);
 
-    QLinkedList<quint64> list = { 0, 0, 0, 0,  0, 0, 0, 0 };
+    std::list<quint64> list(8);
     auto longerArrayCheck = [&] {
         QRandomGenerator().generate(list.begin(), list.end());
         return find_if(list.begin(), list.end(), [&](quint64 cur) {
@@ -671,7 +671,7 @@ void tst_QRandomGenerator::qualityReal()
     RandomGenerator rng(control);
 
     enum {
-        SampleSize = 160,
+        SampleSize = 16000,
 
         // Expected value: sample size times proportion of the range:
         PerfectOctile = SampleSize / 8,
@@ -679,8 +679,8 @@ void tst_QRandomGenerator::qualityReal()
 
         // Variance is (1 - proportion of range) * expected; sqrt() for standard deviations.
         // Should usually be within twice that and almost never outside four times:
-        RangeHalf = 25,         // floor(4 * sqrt((1 - 0.5) * PerfectHalf))
-        RangeOctile = 16        // floor(4 * sqrt((1 - 0.125) * PerfectOctile))
+        RangeHalf = 252,         // floor(4 * sqrt((1 - 0.5) * PerfectHalf))
+        RangeOctile = 167        // floor(4 * sqrt((1 - 0.125) * PerfectOctile))
     };
 
     double data[SampleSize];
@@ -755,7 +755,7 @@ void tst_QRandomGenerator::stdUniformIntDistribution_data()
 
     auto newRow = [&](quint32 max) {
 #ifdef QT_BUILD_INTERNAL
-        if (qt_has_hwrng())
+        if (qHasHwrng())
             QTest::addRow("hwrng:%u", max) << uint(UseSystemRNG) << max;
         QTest::addRow("system:%u", max) << uint(UseSystemRNG | SkipHWRNG) << max;
 #  ifdef HAVE_FALLBACK_ENGINE
@@ -868,7 +868,7 @@ void tst_QRandomGenerator::stdUniformRealDistribution_data()
 
     auto newRow = [&](double min, double sup) {
 #ifdef QT_BUILD_INTERNAL
-        if (qt_has_hwrng())
+        if (qHasHwrng())
             QTest::addRow("hwrng:%g-%g", min, sup) << uint(UseSystemRNG) << min << sup;
         QTest::addRow("system:%g-%g", min, sup) << uint(UseSystemRNG | SkipHWRNG) << min << sup;
 #  ifdef HAVE_FALLBACK_ENGINE

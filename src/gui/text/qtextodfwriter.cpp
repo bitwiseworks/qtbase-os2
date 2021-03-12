@@ -70,7 +70,7 @@ static QString pixelToPoint(qreal pixels)
 // strategies
 class QOutputStrategy {
 public:
-    QOutputStrategy() : contentStream(0), counter(1) { }
+    QOutputStrategy() : contentStream(nullptr), counter(1) { }
     virtual ~QOutputStrategy() {}
     virtual void addFile(const QString &fileName, const QString &mimeType, const QByteArray &bytes) = 0;
 
@@ -240,7 +240,7 @@ void QTextOdfWriter::writeFrame(QXmlStreamWriter &writer, const QTextFrame *fram
     }
 
     QTextFrame::iterator iterator = frame->begin();
-    QTextFrame *child = 0;
+    QTextFrame *child = nullptr;
 
     int tableRow = -1;
     while (! iterator.atEnd()) {
@@ -358,7 +358,7 @@ void QTextOdfWriter::writeBlock(QXmlStreamWriter &writer, const QTextBlock &bloc
         int precedingSpaces = 0;
         int exportedIndex = 0;
         for (int i=0; i <= fragmentText.count(); ++i) {
-            QChar character = fragmentText[i];
+            QChar character = (i == fragmentText.count() ? QChar() : fragmentText.at(i));
             bool isSpace = character.unicode() == ' ';
 
             // find more than one space. -> <text:s text:c="2" />
@@ -437,7 +437,7 @@ static bool probeImageData(QIODevice *device, QImage *image, QString *mimeType, 
 void QTextOdfWriter::writeInlineCharacter(QXmlStreamWriter &writer, const QTextFragment &fragment) const
 {
     writer.writeStartElement(drawNS, QString::fromLatin1("frame"));
-    if (m_strategy == 0) {
+    if (m_strategy == nullptr) {
         // don't do anything.
     }
     else if (fragment.charFormat().isImageFormat()) {
@@ -455,9 +455,9 @@ void QTextOdfWriter::writeInlineCharacter(QXmlStreamWriter &writer, const QTextF
             name.prepend(QLatin1String("qrc"));
         QUrl url = QUrl(name);
         const QVariant variant = m_document->resource(QTextDocument::ImageResource, url);
-        if (variant.type() == QVariant::Image) {
+        if (variant.userType() == QMetaType::QImage) {
             image = qvariant_cast<QImage>(variant);
-        } else if (variant.type() == QVariant::ByteArray) {
+        } else if (variant.userType() == QMetaType::QByteArray) {
             data = variant.toByteArray();
 
             QBuffer buffer(&data);
@@ -523,9 +523,7 @@ void QTextOdfWriter::writeFormats(QXmlStreamWriter &writer, const QSet<int> &for
 {
     writer.writeStartElement(officeNS, QString::fromLatin1("automatic-styles"));
     QVector<QTextFormat> allStyles = m_document->allFormats();
-    QSetIterator<int> formatId(formats);
-    while(formatId.hasNext()) {
-        int formatIndex = formatId.next();
+    for (int formatIndex : formats) {
         QTextFormat textFormat = allStyles.at(formatIndex);
         switch (textFormat.type()) {
         case QTextFormat::CharFormat:
@@ -999,8 +997,8 @@ QTextOdfWriter::QTextOdfWriter(const QTextDocument &document, QIODevice *device)
     svgNS (QLatin1String("urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0")),
     m_document(&document),
     m_device(device),
-    m_strategy(0),
-    m_codec(0),
+    m_strategy(nullptr),
+    m_codec(nullptr),
     m_createArchive(true)
 {
 }
@@ -1057,7 +1055,7 @@ bool QTextOdfWriter::writeAll()
 
     // add objects for lists, frames and tables
     const QVector<QTextFormat> allFormats = m_document->allFormats();
-    const QList<int> copy = formats.toList();
+    const QList<int> copy = formats.values();
     for (auto index : copy) {
         QTextObject *object = m_document->objectForFormat(allFormats[index]);
         if (object) {
@@ -1095,7 +1093,7 @@ bool QTextOdfWriter::writeAll()
     writer.writeEndElement(); // document-content
     writer.writeEndDocument();
     delete m_strategy;
-    m_strategy = 0;
+    m_strategy = nullptr;
 
     return true;
 }

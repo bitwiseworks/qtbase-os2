@@ -55,7 +55,6 @@
 
 #ifndef QT_NO_PDF
 
-#include "QtGui/qmatrix.h"
 #include "QtCore/qstring.h"
 #include "QtCore/qvector.h"
 #include "private/qstroker_p.h"
@@ -168,6 +167,7 @@ class Q_GUI_EXPORT QPdfEngine : public QPaintEngine
     Q_DECLARE_PRIVATE(QPdfEngine)
     friend class QPdfWriter;
 public:
+    // keep in sync with QPagedPaintDevice::PdfVersion and QPdfEnginePrivate::writeHeader()::mapping!
     enum PdfVersion
     {
         Version_1_4,
@@ -185,6 +185,11 @@ public:
     int resolution() const;
 
     void setPdfVersion(PdfVersion version);
+
+    void setDocumentXmpMetadata(const QByteArray &xmpMetadata);
+    QByteArray documentXmpMetadata() const;
+
+    void addFileAttachment(const QString &fileName, const QByteArray &data, const QString &mimeType);
 
     // reimplementations QPaintEngine
     bool begin(QPaintDevice *pdev) override;
@@ -296,9 +301,10 @@ private:
     int createShadingFunction(const QGradient *gradient, int from, int to, bool reflect, bool alpha);
 
     void writeInfo();
-    int writeXmpMetaData();
+    int writeXmpDcumentMetaData();
     int writeOutputIntent();
     void writePageRoot();
+    void writeAttachmentRoot();
     void writeFonts();
     void embedFont(QFontSubset *font);
     qreal calcUserUnit() const;
@@ -323,11 +329,22 @@ private:
     inline int writeCompressed(const QByteArray &data) { return writeCompressed(data.constData(), data.length()); }
     int writeCompressed(QIODevice *dev);
 
+    struct AttachmentInfo
+    {
+        AttachmentInfo (const QString &fileName, const QByteArray &data, const QString &mimeType)
+            : fileName(fileName), data(data), mimeType(mimeType) {}
+        QString fileName;
+        QByteArray data;
+        QString mimeType;
+    };
+
     // various PDF objects
-    int pageRoot, catalog, info, graphicsState, patternColorSpace;
+    int pageRoot, embeddedfilesRoot, namesRoot, catalog, info, graphicsState, patternColorSpace;
     QVector<uint> pages;
     QHash<qint64, uint> imageCache;
     QHash<QPair<uint, uint>, uint > alphaCache;
+    QVector<AttachmentInfo> fileCache;
+    QByteArray xmpDocumentMetadata;
 };
 
 QT_END_NAMESPACE

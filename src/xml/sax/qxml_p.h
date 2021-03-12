@@ -46,6 +46,8 @@
 
 #include <stack>
 
+#if QT_DEPRECATED_SINCE(5, 15)
+
 QT_BEGIN_NAMESPACE
 
 //
@@ -58,6 +60,9 @@ QT_BEGIN_NAMESPACE
 //
 // We mean it.
 //
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 
 class QXmlSimpleReaderPrivate
 {
@@ -229,7 +234,7 @@ private:
     // for the DTD currently being parsed.
     static const int dtdRecursionLimit = 2;
     // The maximum amount of characters an entity value may contain, after expansion.
-    static const int entityCharacterLimit = 1024;
+    static const int entityCharacterLimit = 4096;
 
     const QString &string();
     void stringClear();
@@ -313,6 +318,10 @@ Q_DECLARE_TYPEINFO(QXmlSimpleReaderPrivate::XmlRef, Q_MOVABLE_TYPE);
 Q_DECLARE_TYPEINFO(QXmlSimpleReaderPrivate::ExternParameterEntity, Q_MOVABLE_TYPE);
 Q_DECLARE_TYPEINFO(QXmlSimpleReaderPrivate::ExternEntity, Q_MOVABLE_TYPE);
 
+QT_WARNING_POP
+
 QT_END_NAMESPACE
+
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 #endif // QXML_P_H

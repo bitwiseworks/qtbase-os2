@@ -52,6 +52,9 @@
 #include "qcocoamimetypes.h"
 #include "qcocoaaccessibility.h"
 #include "qcocoascreen.h"
+#if QT_CONFIG(sessionmanager)
+#  include "qcocoasessionmanager.h"
+#endif
 
 #include <qpa/qplatforminputcontextfactory_p.h>
 #include <qpa/qplatformaccessibility.h>
@@ -113,7 +116,7 @@ class QFontEngineFT;
 static QCocoaIntegration::Options parseOptions(const QStringList &paramList)
 {
     QCocoaIntegration::Options options;
-    foreach (const QString &param, paramList) {
+    for (const QString &param : paramList) {
 #ifndef QT_NO_FREETYPE
         if (param == QLatin1String("fontengine=freetype"))
             options |= QCocoaIntegration::UseFreeTypeFontEngine;
@@ -197,16 +200,6 @@ QCocoaIntegration::QCocoaIntegration(const QStringList &paramList)
         [cocoaApplication setMenu:[qtMenuLoader menu]];
     }
 
-    // The presentation options such as whether or not the dock and/or menu bar is
-    // hidden (automatically by the system) affects the main screen's available
-    // geometry. Since we're initializing the screens synchronously at application
-    // startup we need to ensure that the presentation options have been propagated
-    // to the screen before we read out its properties. Normally OS X does this in
-    // an asynchronous callback, but that's too late for us. We force the propagation
-    // by explicitly setting the presentation option to the magic 'default value',
-    // which will resolve to an actual value and result in screen invalidation.
-    cocoaApplication.presentationOptions = NSApplicationPresentationDefault;
-
     QCocoaScreen::initializeScreens();
 
     QMacInternalPasteboardMime::initializeMimeTypes();
@@ -254,6 +247,13 @@ QCocoaIntegration::Options QCocoaIntegration::options() const
 {
     return mOptions;
 }
+
+#if QT_CONFIG(sessionmanager)
+QPlatformSessionManager *QCocoaIntegration::createPlatformSessionManager(const QString &id, const QString &key) const
+{
+    return new QCocoaSessionManager(id, key);
+}
+#endif
 
 bool QCocoaIntegration::hasCapability(QPlatformIntegration::Capability cap) const
 {
@@ -472,19 +472,27 @@ QList<QCocoaWindow *> *QCocoaIntegration::popupWindowStack()
 
 void QCocoaIntegration::setApplicationIcon(const QIcon &icon) const
 {
-    NSImage *image = nil;
-    if (!icon.isNull()) {
-        NSSize size = [[[NSApplication sharedApplication] dockTile] size];
-        QPixmap pixmap = icon.pixmap(size.width, size.height);
-        image = static_cast<NSImage *>(qt_mac_create_nsimage(pixmap));
-    }
-    [[NSApplication sharedApplication] setApplicationIconImage:image];
-    [image release];
+    // Fall back to a size that looks good on the highest resolution screen available
+    auto fallbackSize = NSApp.dockTile.size.width * qGuiApp->devicePixelRatio();
+    NSApp.applicationIconImage = [NSImage imageFromQIcon:icon withSize:fallbackSize];
 }
 
 void QCocoaIntegration::beep() const
 {
     NSBeep();
+}
+
+void QCocoaIntegration::closePopups(QWindow *forWindow)
+{
+    for (auto it = m_popupWindowStack.begin(); it != m_popupWindowStack.end();) {
+        auto *popup = *it;
+        if (!forWindow || popup->window()->transientParent() == forWindow) {
+            it = m_popupWindowStack.erase(it);
+            QWindowSystemInterface::handleCloseEvent<QWindowSystemInterface::SynchronousDelivery>(popup->window());
+        } else {
+            ++it;
+        }
+    }
 }
 
 void QCocoaIntegration::focusWindowChanged(QWindow *focusWindow)

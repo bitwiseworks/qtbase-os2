@@ -29,12 +29,15 @@
 
 #include "qwasmcursor.h"
 #include "qwasmscreen.h"
+#include "qwasmstring.h"
 
 #include <QtCore/qdebug.h>
 #include <QtGui/qwindow.h>
 
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
+
+using namespace emscripten;
 
 void QWasmCursor::changeCursor(QCursor *windowCursor, QWindow *window)
 {
@@ -54,9 +57,9 @@ void QWasmCursor::changeCursor(QCursor *windowCursor, QWindow *window)
         htmlCursorName = "auto";
 
     // Set cursor on the canvas
-    QString canvasId = QWasmScreen::get(screen)->canvasId();
-    emscripten::val canvasStyle = emscripten::val::global(canvasId.toUtf8().constData())["style"];
-    canvasStyle.set("cursor", emscripten::val(htmlCursorName.constData()));
+    val canvas = QWasmScreen::get(screen)->canvas();
+    val canvasStyle = canvas["style"];
+    canvasStyle.set("cursor", val(htmlCursorName.constData()));
 }
 
 QByteArray QWasmCursor::cursorShapeToHtml(Qt::CursorShape shape)
@@ -68,6 +71,7 @@ QByteArray QWasmCursor::cursorShapeToHtml(Qt::CursorShape shape)
         cursorName = "default";
         break;
     case Qt::UpArrowCursor:
+        cursorName = "n-resize";
         break;
     case Qt::CrossCursor:
         cursorName = "crosshair";
@@ -91,7 +95,8 @@ QByteArray QWasmCursor::cursorShapeToHtml(Qt::CursorShape shape)
         cursorName = "nwse-resize";
         break;
     case Qt::SizeAllCursor:
-        break; // no equivalent?
+        cursorName = "move";
+        break;
     case Qt::BlankCursor:
         cursorName = "none";
         break;
@@ -111,18 +116,23 @@ QByteArray QWasmCursor::cursorShapeToHtml(Qt::CursorShape shape)
         cursorName = "help";
         break;
     case Qt::BusyCursor:
-        cursorName = "wait";
+        cursorName = "progress";
         break;
     case Qt::OpenHandCursor:
-        break; // no equivalent?
+        cursorName = "grab";
+        break;
     case Qt::ClosedHandCursor:
-        break; // no equivalent?
+        cursorName = "grabbing";
+        break;
     case Qt::DragCopyCursor:
-        break; // no equivalent?
+        cursorName = "copy";
+        break;
     case Qt::DragMoveCursor:
-        break; // no equivalent?
+        cursorName = "default";
+        break;
     case Qt::DragLinkCursor:
-        break; // no equivalent?
+        cursorName = "alias";
+        break;
     default:
         break;
     }

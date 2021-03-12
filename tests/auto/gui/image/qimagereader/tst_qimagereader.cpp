@@ -30,6 +30,7 @@
 #include <QtTest/QtTest>
 
 #include <QBuffer>
+#include <QColorSpace>
 #include <QDebug>
 #include <QImage>
 #include <QImageReader>
@@ -43,6 +44,8 @@
 #include <QTemporaryFile>
 
 #include <algorithm>
+
+// #define DEBUG_WRITE_OUTPUT
 
 typedef QMap<QString, QString> QStringMap;
 typedef QList<int> QIntList;
@@ -158,6 +161,9 @@ private slots:
     void saveFormat_data();
     void saveFormat();
 
+    void saveColorSpace_data();
+    void saveColorSpace();
+
     void readText_data();
     void readText();
 
@@ -166,6 +172,10 @@ private slots:
 
     void devicePixelRatio_data();
     void devicePixelRatio();
+
+    void xpmBufferOverflow();
+
+    void xbmBufferHandling();
 
 private:
     QString prefix;
@@ -458,24 +468,24 @@ void tst_QImageReader::setScaledClipRect_data()
     QTest::addColumn<QRect>("newRect");
     QTest::addColumn<QByteArray>("format");
 
-    QTest::newRow("BMP: colorful") << "colorful" << QRect(0, 0, 50, 50) << QByteArray("bmp");
-    QTest::newRow("BMP: test32bfv4") << "test32bfv4" << QRect(0, 0, 50, 50) << QByteArray("bmp");
-    QTest::newRow("BMP: test32v5") << "test32v5" << QRect(0, 0, 50, 50) << QByteArray("bmp");
-    QTest::newRow("BMP: font") << "font" << QRect(0, 0, 50, 50) << QByteArray("bmp");
-    QTest::newRow("XPM: marble") << "marble" << QRect(0, 0, 50, 50) << QByteArray("xpm");
-    QTest::newRow("PNG: kollada") << "kollada" << QRect(0, 0, 50, 50) << QByteArray("png");
-    QTest::newRow("PPM: teapot") << "teapot" << QRect(0, 0, 50, 50) << QByteArray("ppm");
-    QTest::newRow("PPM: runners") << "runners.ppm" << QRect(0, 0, 50, 50) << QByteArray("ppm");
-    QTest::newRow("PPM: test") << "test.ppm" << QRect(0, 0, 50, 50) << QByteArray("ppm");
-    QTest::newRow("XBM: gnus") << "gnus" << QRect(0, 0, 50, 50) << QByteArray("xbm");
+    QTest::newRow("BMP: colorful") << "colorful" << QRect(50, 20, 50, 50) << QByteArray("bmp");
+    QTest::newRow("BMP: test32bfv4") << "test32bfv4" << QRect(50, 20, 50, 50) << QByteArray("bmp");
+    QTest::newRow("BMP: test32v5") << "test32v5" << QRect(50, 20, 50, 50) << QByteArray("bmp");
+    QTest::newRow("BMP: font") << "font" << QRect(50, 20, 50, 50) << QByteArray("bmp");
+    QTest::newRow("XPM: marble") << "marble" << QRect(50, 20, 50, 50) << QByteArray("xpm");
+    QTest::newRow("PNG: kollada") << "kollada" << QRect(50, 20, 50, 50) << QByteArray("png");
+    QTest::newRow("PPM: teapot") << "teapot" << QRect(50, 20, 50, 50) << QByteArray("ppm");
+    QTest::newRow("PPM: runners") << "runners.ppm" << QRect(50, 20, 50, 50) << QByteArray("ppm");
+    QTest::newRow("PPM: test") << "test.ppm" << QRect(50, 20, 50, 50) << QByteArray("ppm");
+    QTest::newRow("XBM: gnus") << "gnus" << QRect(50, 20, 50, 50) << QByteArray("xbm");
 
-    QTest::newRow("JPEG: beavis") << "beavis" << QRect(0, 0, 50, 50) << QByteArray("jpeg");
+    QTest::newRow("JPEG: beavis") << "beavis" << QRect(50, 20, 50, 50) << QByteArray("jpeg");
 
-    QTest::newRow("GIF: earth") << "earth" << QRect(0, 0, 50, 50) << QByteArray("gif");
-    QTest::newRow("GIF: trolltech") << "trolltech" << QRect(0, 0, 50, 50) << QByteArray("gif");
+    QTest::newRow("GIF: earth") << "earth" << QRect(50, 20, 50, 50) << QByteArray("gif");
+    QTest::newRow("GIF: trolltech") << "trolltech" << QRect(50, 20, 50, 50) << QByteArray("gif");
 
-    QTest::newRow("SVG: rect") << "rect" << QRect(0, 0, 50, 50) << QByteArray("svg");
-    QTest::newRow("SVGZ: rect") << "rect" << QRect(0, 0, 50, 50) << QByteArray("svgz");
+    QTest::newRow("SVG: rect") << "rect" << QRect(50, 20, 50, 50) << QByteArray("svg");
+    QTest::newRow("SVGZ: rect") << "rect" << QRect(50, 20, 50, 50) << QByteArray("svgz");
 }
 
 void tst_QImageReader::setScaledClipRect()
@@ -491,7 +501,11 @@ void tst_QImageReader::setScaledClipRect()
     reader.setScaledClipRect(newRect);
     QImage image = reader.read();
     QVERIFY(!image.isNull());
-    QCOMPARE(image.rect(), newRect);
+    QCOMPARE(image.rect().translated(50, 20), newRect);
+#ifdef DEBUG_WRITE_OUTPUT
+    QString tempPath = QDir::temp().filePath(fileName) + QLatin1String(".png");
+    image.save(tempPath);
+#endif
 
     QImageReader originalReader(prefix + fileName);
     originalReader.setScaledSize(QSize(300, 300));
@@ -1071,7 +1085,7 @@ private slots:
     void acceptNewConnection()
     {
         serverSocket = server.nextPendingConnection();
-        connect(serverSocket, SIGNAL(error(QAbstractSocket::SocketError)),
+        connect(serverSocket, SIGNAL(errorOccurred(QAbstractSocket::SocketError)),
                 this, SLOT(remoteHostClosed()));
     }
 
@@ -1793,7 +1807,7 @@ static QByteArray msgIgnoreFormatAndExtensionFail(const QString &sourceFileName,
     QByteArray result = "Failure for '";
     result += sourceFileName.toLocal8Bit();
     result += "' as '";
-    result += targetFileName;
+    result += targetFileName.toLocal8Bit();
     result += "', detected as: '";
     result += detectedFormat.toLocal8Bit();
     result += '\'';
@@ -1815,7 +1829,7 @@ void tst_QImageReader::testIgnoresFormatAndExtension()
         tempPath += QLatin1Char('/');
 
     foreach (const QByteArray &f, formats) {
-        if (f == extension)
+        if (f == extension.toLocal8Bit())
             continue;
 
         QFile tmp(tempPath + name + QLatin1Char('_') + expected + QLatin1Char('.') + f);
@@ -1859,6 +1873,7 @@ void tst_QImageReader::saveFormat_data()
     QTest::newRow("Format_RGB555") << QImage::Format_RGB555;
     QTest::newRow("Format_ARGB8555_Premultiplied") << QImage::Format_ARGB8555_Premultiplied;
     QTest::newRow("Format_RGB888") << QImage::Format_RGB888;
+    QTest::newRow("Format_BGR888") << QImage::Format_BGR888;
     QTest::newRow("Format_RGB444") << QImage::Format_RGB444;
     QTest::newRow("Format_ARGB4444_Premultiplied") << QImage::Format_ARGB4444_Premultiplied;
     QTest::newRow("Format_RGBA64") << QImage::Format_RGBA64;
@@ -1883,6 +1898,40 @@ void tst_QImageReader::saveFormat()
     QCOMPARE(stored, converted);
 }
 
+void tst_QImageReader::saveColorSpace_data()
+{
+    QTest::addColumn<QColorSpace::NamedColorSpace>("namedColorSpace");
+
+    QTest::newRow("sRGB")         << QColorSpace::SRgb;
+    QTest::newRow("sRGB(linear)") << QColorSpace::SRgbLinear;
+    QTest::newRow("AdobeRGB")     << QColorSpace::AdobeRgb;
+    QTest::newRow("DisplayP3")    << QColorSpace::DisplayP3;
+    QTest::newRow("ProPhotoRgb")  << QColorSpace::ProPhotoRgb;
+}
+
+void tst_QImageReader::saveColorSpace()
+{
+    QFETCH(QColorSpace::NamedColorSpace, namedColorSpace);
+
+    QImage orig(":/images/kollada.png");
+
+    orig.setColorSpace(namedColorSpace);
+    QBuffer buf;
+    buf.open(QIODevice::WriteOnly);
+    QVERIFY(orig.save(&buf, "png"));
+    buf.close();
+    QImage stored = QImage::fromData(buf.buffer(), "png");
+
+    QCOMPARE(stored, orig);
+    QCOMPARE(stored.colorSpace(), orig.colorSpace());
+
+    buf.open(QIODevice::WriteOnly);
+    QVERIFY(orig.save(&buf, "jpeg"));
+    buf.close();
+    stored = QImage::fromData(buf.buffer(), "jpeg");
+
+    QCOMPARE(stored.colorSpace(), orig.colorSpace());
+}
 
 void tst_QImageReader::readText_data()
 {
@@ -2000,6 +2049,48 @@ void tst_QImageReader::devicePixelRatio()
     QImage img = r.read();
     QCOMPARE(img.size(), size);
     QCOMPARE(img.devicePixelRatio(), dpr);
+}
+
+void tst_QImageReader::xpmBufferOverflow()
+{
+    // Please note that the overflow only showed when Qt was configured with "-sanitize address".
+    QImageReader(":/images/oss-fuzz-23988.xpm").read();
+}
+
+void tst_QImageReader::xbmBufferHandling()
+{
+    uint8_t original_buffer[256];
+    for (int i = 0; i < 256; ++i)
+        original_buffer[i] = i;
+
+    QImage image(original_buffer, 256, 8, QImage::Format_MonoLSB);
+    image.setColorTable({0xff000000, 0xffffffff});
+
+    QByteArray buffer;
+    {
+        QBuffer buf(&buffer);
+        QImageWriter writer(&buf, "xbm");
+        writer.write(image);
+    }
+
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+
+    auto i = buffer.indexOf(',');
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                              ");
+#if 0   // Lines longer than 300 chars not supported currently
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+#endif
+
+    i = buffer.lastIndexOf("\n ");
+    buffer.truncate(i + 1);
+    buffer.append(QByteArray(297, ' '));
+    buffer.append("0x");
+    // Only check we get no buffer overflow
+    QImage::fromData(buffer, "xbm");
 }
 
 QTEST_MAIN(tst_QImageReader)

@@ -67,7 +67,6 @@ void foo()
 
 #include <algorithm>
 
-#include "qalgorithms.h"
 #include "qbitarray.h"
 #include "qbytearray.h"
 #include "qcache.h"
@@ -76,7 +75,7 @@ void foo()
 #include "qlist.h"
 #include "qmap.h"
 #include "qpair.h"
-#include "qregexp.h"
+#include "qregularexpression.h"
 #include "qset.h"
 #include "qstack.h"
 #include "qstring.h"
@@ -97,7 +96,9 @@ private slots:
     void typeinfo();
     void qstring();
     void list();
+#if QT_DEPRECATED_SINCE(5, 15)
     void linkedList();
+#endif
     void vector();
     void byteArray();
     void stack();
@@ -105,10 +106,14 @@ private slots:
     void map();
     void bitArray();
     void cache();
+#if QT_CONFIG(regularexpression)
     void regexp();
+#endif
     void pair();
     void sharableQList();
+#if QT_DEPRECATED_SINCE(5, 15)
     void sharableQLinkedList();
+#endif
     void sharableQVector();
     void sharableQMap();
     void sharableQHash();
@@ -120,8 +125,10 @@ private slots:
     void vector_stl();
     void list_stl_data();
     void list_stl();
+#if QT_DEPRECATED_SINCE(5, 15)
     void linkedlist_stl_data();
     void linkedlist_stl();
+#endif
     void q_init();
     void pointersize();
     void containerInstantiation();
@@ -189,16 +196,6 @@ void tst_Collections::list()
         QVERIFY(list.size() == 6);
         QVERIFY(list.end() - list.begin() == list.size());
 
-#if !defined(Q_CC_MSVC) && !defined(Q_CC_SUN)
-        QVERIFY(std::binary_search(list.begin(), list.end(), 2) == true);
-        QVERIFY(std::binary_search(list.begin(), list.end(), 9) == false);
-#endif
-        QVERIFY(qBinaryFind(list.begin(), list.end(), 2) == list.begin() + 1);
-        QVERIFY(qLowerBound(list.begin(), list.end(), 2) == list.begin() + 1);
-        QVERIFY(qUpperBound(list.begin(), list.end(), 2) == list.begin() + 2);
-        QVERIFY(qBinaryFind(list.begin(), list.end(), 9) == list.end());
-        QVERIFY(qLowerBound(list.begin(), list.end(), 9) == list.end());
-        QVERIFY(qUpperBound(list.begin(), list.end(), 9) == list.end());
         {
             int sum = 0;
             QListIterator<int> i(list);
@@ -580,73 +577,73 @@ void tst_Collections::list()
         list1 << 0 << 1 << 2 << 3;
         list1.removeFirst();
 
-        list1.swap(0, 0);
+        list1.swapItemsAt(0, 0);
         QVERIFY(list1 == QList<int>() << 1 << 2 << 3);
 
-        list1.swap(1, 1);
+        list1.swapItemsAt(1, 1);
         QVERIFY(list1 == QList<int>() << 1 << 2 << 3);
 
-        list1.swap(2, 2);
+        list1.swapItemsAt(2, 2);
         QVERIFY(list1 == QList<int>() << 1 << 2 << 3);
 
-        list1.swap(0, 1);
+        list1.swapItemsAt(0, 1);
         QVERIFY(list1 == QList<int>() << 2 << 1 << 3);
 
-        list1.swap(0, 2);
+        list1.swapItemsAt(0, 2);
         QVERIFY(list1 == QList<int>() << 3 << 1 << 2);
 
-        list1.swap(1, 2);
+        list1.swapItemsAt(1, 2);
         QVERIFY(list1 == QList<int>() << 3 << 2 << 1);
 
-        list1.swap(1, 2);
+        list1.swapItemsAt(1, 2);
         QVERIFY(list1 == QList<int>() << 3 << 1 << 2);
 
         QList<QString> list2;
         list2 << "1" << "2" << "3";
 
-        list2.swap(0, 0);
+        list2.swapItemsAt(0, 0);
         QVERIFY(list2 == QList<QString>() << "1" << "2" << "3");
 
-        list2.swap(1, 1);
+        list2.swapItemsAt(1, 1);
         QVERIFY(list2 == QList<QString>() << "1" << "2" << "3");
 
-        list2.swap(2, 2);
+        list2.swapItemsAt(2, 2);
         QVERIFY(list2 == QList<QString>() << "1" << "2" << "3");
 
-        list2.swap(0, 1);
+        list2.swapItemsAt(0, 1);
         QVERIFY(list2 == QList<QString>() << "2" << "1" << "3");
 
-        list2.swap(0, 2);
+        list2.swapItemsAt(0, 2);
         QVERIFY(list2 == QList<QString>() << "3" << "1" << "2");
 
-        list2.swap(1, 2);
+        list2.swapItemsAt(1, 2);
         QVERIFY(list2 == QList<QString>() << "3" << "2" << "1");
 
-        list2.swap(1, 2);
+        list2.swapItemsAt(1, 2);
         QVERIFY(list2 == QList<QString>() << "3" << "1" << "2");
 
         QList<double> list3;
         list3 << 1.0 << 2.0 << 3.0;
 
-        list3.swap(0, 0);
+        list3.swapItemsAt(0, 0);
         QVERIFY(list3 == QList<double>() << 1.0 << 2.0 << 3.0);
 
-        list3.swap(1, 1);
+        list3.swapItemsAt(1, 1);
         QVERIFY(list3 == QList<double>() << 1.0 << 2.0 << 3.0);
 
-        list3.swap(2, 2);
+        list3.swapItemsAt(2, 2);
         QVERIFY(list3 == QList<double>() << 1.0 << 2.0 << 3.0);
 
-        list3.swap(0, 1);
+        list3.swapItemsAt(0, 1);
         QVERIFY(list3 == QList<double>() << 2.0 << 1.0 << 3.0);
 
-        list3.swap(0, 2);
+        list3.swapItemsAt(0, 2);
         QVERIFY(list3 == QList<double>() << 3.0 << 1.0 << 2.0);
 
-        list3.swap(1, 2);
+        list3.swapItemsAt(1, 2);
         QVERIFY(list3 == QList<double>() << 3.0 << 2.0 << 1.0);
 
-        list3.swap(1, 2);
+        list3.swapItemsAt(1, 2);
         QVERIFY(list3 == QList<double>() << 3.0 << 1.0 << 2.0);
     }
 
@@ -745,8 +742,11 @@ void tst_Collections::list()
     }
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 void tst_Collections::linkedList()
 {
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     {
         QLinkedList<int> list;
         QVERIFY(list.isEmpty());
@@ -964,7 +964,9 @@ void tst_Collections::linkedList()
         QCOMPARE(a.endsWith(1), false);
         QCOMPARE(a.endsWith(2), true);
     }
+QT_WARNING_POP
 };
+#endif
 
 
 void tst_Collections::vector()
@@ -994,16 +996,8 @@ void tst_Collections::vector()
     v.append(2);
     QVERIFY(*v.begin() == 2);
     v.prepend(1);
-
-    v << 3 << 4 << 5 << 6;
-    QVERIFY(std::binary_search(v.begin(), v.end(), 2) == true);
-    QVERIFY(std::binary_search(v.begin(), v.end(), 9) == false);
-    QVERIFY(qBinaryFind(v.begin(), v.end(), 2) == v.begin() + 1);
-    QVERIFY(qLowerBound(v.begin(), v.end(), 2) == v.begin() + 1);
-    QVERIFY(qUpperBound(v.begin(), v.end(), 2) == v.begin() + 2);
-    QVERIFY(qBinaryFind(v.begin(), v.end(), 9) == v.end());
-    QVERIFY(qLowerBound(v.begin(), v.end(), 9) == v.end());
-    QVERIFY(qUpperBound(v.begin(), v.end(), 9) == v.end());
+    QVERIFY(*v.begin() == 1);
+    QVERIFY(*(v.begin() + 1) == 2);
 
     v.clear();
     v << 1 << 2 << 3;
@@ -1368,7 +1362,7 @@ void tst_Collections::hash()
     {
         typedef QHash<QString, QString> Hash;
         Hash hash;
-        QString key;
+        QString key = QLatin1String("  ");
         for (int i = 0; i < 10; ++i) {
             key[0] = i + '0';
             for (int j = 0; j < 10; ++j) {
@@ -2011,13 +2005,17 @@ void tst_Collections::qstring()
     QString nonNull = "";
     QVERIFY(null.left(10).isNull());
     QVERIFY(null.mid(0).isNull());
+    QVERIFY(null.isNull());
+    QVERIFY(!nonNull.isNull());
 
+#if QT_DEPRECATED_SINCE(5, 9)
     QVERIFY(null == QString::null);
     QVERIFY(QString::null  == null);
     QVERIFY(nonNull != QString::null);
     QVERIFY(QString::null != nonNull);
     QVERIFY(null == nonNull);
     QVERIFY(QString::null == QString::null);
+#endif
 
     QString fill = "123";
     fill.fill('a');
@@ -2285,13 +2283,15 @@ void tst_Collections::cache()
 
 }
 
+#if QT_CONFIG(regularexpression)
 void tst_Collections::regexp()
 {
-    QRegExp rx("^\\d\\d?$");
-    QVERIFY(rx.indexIn("123") == -1);
-    QVERIFY(rx.indexIn("-6") == -1);
-    QVERIFY(rx.indexIn("6") == 0) ;
+    QRegularExpression rx("^\\d\\d?$");
+    QVERIFY(!rx.match("123").hasMatch());
+    QVERIFY(!rx.match("-6").hasMatch());
+    QVERIFY(rx.match("6").hasMatch()) ;
 }
+#endif
 
 void tst_Collections::pair()
 {
@@ -2341,11 +2341,16 @@ void populate(QList<int> &container)
     container << 1 << 2 << 4 << 8;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 template <>
 void populate(QLinkedList<int> &container)
 {
     container << 1 << 2 << 4 << 8;
 }
+QT_WARNING_POP
+#endif
 
 template <>
 void populate(QVector<int> &container)
@@ -2425,7 +2430,7 @@ void testContainer()
         c1 = newInstance<Container>();
         QVERIFY(c1.size() == 4);
         QVERIFY(c1 == newInstance<Container>());
-        Container c2 = qMove(c1);
+        Container c2 = std::move(c1);
         QVERIFY(c2.size() == 4);
         QVERIFY(c2 == newInstance<Container>());
     }
@@ -2442,10 +2447,15 @@ void tst_Collections::sharableQList()
     TEST_SEQUENTIAL_CONTAINER(List);
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 void tst_Collections::sharableQLinkedList()
 {
     TEST_SEQUENTIAL_CONTAINER(LinkedList);
 }
+QT_WARNING_POP
+#endif
 
 void tst_Collections::sharableQVector()
 {
@@ -2531,14 +2541,18 @@ void tst_Collections::conversions()
         QCOMPARE(list2.size(), 4);
         QVERIFY(list2 == (QList<QString>() << STUFF));
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         QSet<QString> set1 = list1.toSet();
+#else
+        QSet<QString> set1(list1.begin(), list1.end());
+#endif
         QCOMPARE(set1.size(), 3);
         QVERIFY(set1.contains("A"));
         QVERIFY(set1.contains("B"));
         QVERIFY(set1.contains("C"));
         QVERIFY(!set1.contains("D"));
 
-        QList<QString> list3 = set1.toList();
+        QList<QString> list3 = set1.values();
         QCOMPARE(list3.size(), 3);
         QVERIFY(list3.contains("A"));
         QVERIFY(list3.contains("B"));
@@ -2546,9 +2560,11 @@ void tst_Collections::conversions()
         QVERIFY(!list3.contains("D"));
 
         QVERIFY(QList<int>().toVector().isEmpty());
-        QVERIFY(QList<int>().toSet().isEmpty());
         QVERIFY(QVector<int>().toList().isEmpty());
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
+        QVERIFY(QList<int>().toSet().isEmpty());
         QVERIFY(QSet<int>().toList().isEmpty());
+#endif
     }
 
     {
@@ -2563,14 +2579,22 @@ void tst_Collections::conversions()
         QCOMPARE(list2.size(), 4);
         QVERIFY(list2 == (QList<QString>() << STUFF));
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         QSet<QString> set1 = QSet<QString>::fromList(list1);
+#else
+        QSet<QString> set1(list1.begin(), list1.end());
+#endif
         QCOMPARE(set1.size(), 3);
         QVERIFY(set1.contains("A"));
         QVERIFY(set1.contains("B"));
         QVERIFY(set1.contains("C"));
         QVERIFY(!set1.contains("D"));
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         QList<QString> list3 = QList<QString>::fromSet(set1);
+#else
+        QList<QString> list3 = set1.values();
+#endif
         QCOMPARE(list3.size(), 3);
         QVERIFY(list3.contains("A"));
         QVERIFY(list3.contains("B"));
@@ -2578,9 +2602,11 @@ void tst_Collections::conversions()
         QVERIFY(!list3.contains("D"));
 
         QVERIFY(QVector<int>::fromList(QList<int>()).isEmpty());
-        QVERIFY(QSet<int>::fromList(QList<int>()).isEmpty());
         QVERIFY(QList<int>::fromVector(QVector<int>()).isEmpty());
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
+        QVERIFY(QSet<int>::fromList(QList<int>()).isEmpty());
         QVERIFY(QList<int>::fromSet(QSet<int>()).isEmpty());
+#endif
     }
 #undef STUFF
 }
@@ -2750,7 +2776,12 @@ void tst_Collections::constAndNonConstStlIterators()
 {
     testListLikeStlIterators<QList<int> >();
     testListLikeStlIterators<QStringList >();
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     testLinkedListLikeStlIterators<QLinkedList<int> >();
+QT_WARNING_POP
+#endif
     testListLikeStlIterators<QVector<int> >();
     testMapLikeStlIterators<QMap<QString, QString> >();
     testMapLikeStlIterators<QMultiMap<QString, QString> >();
@@ -2776,17 +2807,24 @@ void tst_Collections::vector_stl()
     for (int i = 0; i < elements.count(); ++i)
         vector << elements.at(i);
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
     std::vector<QString> stdVector = vector.toStdVector();
-
+#else
+    std::vector<QString> stdVector(vector.begin(), vector.end());
+#endif
     QCOMPARE(int(stdVector.size()), elements.size());
 
     std::vector<QString>::const_iterator it = stdVector.begin();
     for (uint j = 0; j < stdVector.size() && it != stdVector.end(); ++j, ++it)
         QCOMPARE(*it, vector[j]);
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
     QCOMPARE(QVector<QString>::fromStdVector(stdVector), vector);
+#endif
+    QCOMPARE(QVector<QString>(stdVector.begin(), stdVector.end()), vector);
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 void tst_Collections::linkedlist_stl_data()
 {
     list_stl_data();
@@ -2794,6 +2832,8 @@ void tst_Collections::linkedlist_stl_data()
 
 void tst_Collections::linkedlist_stl()
 {
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QFETCH(QStringList, elements);
 
     QLinkedList<QString> list;
@@ -2810,7 +2850,9 @@ void tst_Collections::linkedlist_stl()
         QCOMPARE(*it, *it2);
 
     QCOMPARE(QLinkedList<QString>::fromStdList(stdList), list);
+QT_WARNING_POP
 }
+#endif
 
 void tst_Collections::list_stl_data()
 {
@@ -2830,7 +2872,11 @@ void tst_Collections::list_stl()
     for (int i = 0; i < elements.count(); ++i)
         list << elements.at(i);
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
     std::list<QString> stdList = list.toStdList();
+#else
+    std::list<QString> stdList(list.begin(), list.end());
+#endif
 
     QCOMPARE(int(stdList.size()), elements.size());
 
@@ -2838,7 +2884,10 @@ void tst_Collections::list_stl()
     for (uint j = 0; j < stdList.size() && it != stdList.end(); ++j, ++it)
         QCOMPARE(*it, list[j]);
 
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
     QCOMPARE(QList<QString>::fromStdList(stdList), list);
+#endif
+    QCOMPARE(QList<QString>(stdList.begin(), stdList.end()), list);
 }
 
 template <typename T>
@@ -3052,6 +3101,10 @@ void tst_Collections::containerInstantiation()
     typedef QSet<EqualsComparable> Set;
     instantiateAssociative<Set, EqualsComparable>();
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
     //Instantiate QLinkedList member functions.
     typedef QLinkedList<EqualsComparable> LinkedList;
     instantiateSequence<LinkedList, EqualsComparable> ();
@@ -3060,6 +3113,8 @@ void tst_Collections::containerInstantiation()
         LinkedList list;
         list.removeAll(value);
     }
+QT_WARNING_POP
+#endif
 
     //Instantiate QList member functions.
     typedef QList<EqualsComparable> List;
@@ -3167,7 +3222,12 @@ void tst_Collections::containerTypedefs()
     testContainerTypedefs(QVector<int>());
     testContainerTypedefs(QStack<int>());
     testContainerTypedefs(QList<int>());
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     testContainerTypedefs(QLinkedList<int>());
+QT_WARNING_POP
+#endif
     testContainerTypedefs(QQueue<int>());
 
     testPairAssociativeContainerTypedefs(QMap<int, int>());
@@ -3189,7 +3249,12 @@ void tst_Collections::forwardDeclared()
     { typedef QMultiMap<Key1, T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
     { typedef QPair<T1, T2> C; C *x = 0; Q_UNUSED(x) }
     { typedef QList<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     { typedef QLinkedList<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
+QT_WARNING_POP
+#endif
     { typedef QVector<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) Q_UNUSED(i) Q_UNUSED(j) }
     { typedef QStack<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) Q_UNUSED(i) Q_UNUSED(j) }
     { typedef QQueue<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
@@ -3423,7 +3488,12 @@ void tst_Collections::QTBUG13079_collectionInsideCollection()
     QTBUG13079_collectionInsideCollectionImpl<QVector>();
     QTBUG13079_collectionInsideCollectionImpl<QStack>();
     QTBUG13079_collectionInsideCollectionImpl<QList>();
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QTBUG13079_collectionInsideCollectionImpl<QLinkedList>();
+QT_WARNING_POP
+#endif
     QTBUG13079_collectionInsideCollectionImpl<QQueue>();
 
     {

@@ -46,6 +46,7 @@
 
 #include <private/qdrawhelper_p.h>
 #include <qpainter.h>
+#include <qpainterpath.h>
 #include <qqueue.h>
 #include <qscreen.h>
 
@@ -123,14 +124,18 @@ private slots:
     void drawPath2();
     void drawPath3();
 
+#if QT_DEPRECATED_SINCE(5, 13)
     void drawRoundRect_data() { fillData(); }
     void drawRoundRect();
+#endif
+    void drawRoundedRect_data() { fillData(); }
+    void drawRoundedRect();
 
     void qimageFormats_data();
     void qimageFormats();
     void textOnTransparentImage();
 
-#ifndef QT_NO_WIDGETS
+#if !defined(QT_NO_WIDGETS) && QT_DEPRECATED_SINCE(5, 13)
     void initFrom();
 #endif
 
@@ -141,6 +146,7 @@ private slots:
 
     void disableEnableClipping();
     void setClipRect();
+    void clipRect();
     void setEqualClipRegionAndPath_data();
     void setEqualClipRegionAndPath();
 
@@ -153,10 +159,10 @@ private slots:
     void clippedLines();
     void clippedPolygon_data();
     void clippedPolygon();
-
     void clippedText();
 
     void clipBoundingRect();
+    void transformedClip();
 
     void setOpacity_data();
     void setOpacity();
@@ -185,10 +191,12 @@ private slots:
     void gradientPixelFormat_data();
     void gradientPixelFormat();
 
+#if QT_CONFIG(raster_64bit)
     void linearGradientRgb30_data();
     void linearGradientRgb30();
     void radialGradientRgb30_data();
     void radialGradientRgb30();
+#endif
 
     void fpe_pixmapTransform();
     void fpe_zeroLengthLines();
@@ -368,10 +376,10 @@ void tst_QPainter::getSetCheck()
 
     // bool QPainter::matrixEnabled()
     // void QPainter::setMatrixEnabled(bool)
-    obj1.setMatrixEnabled(false);
-    QCOMPARE(false, obj1.matrixEnabled());
-    obj1.setMatrixEnabled(true);
-    QCOMPARE(true, obj1.matrixEnabled());
+    obj1.setWorldMatrixEnabled(false);
+    QCOMPARE(false, obj1.worldMatrixEnabled());
+    obj1.setWorldMatrixEnabled(true);
+    QCOMPARE(true, obj1.worldMatrixEnabled());
 
     // bool QPainter::viewTransformEnabled()
     // void QPainter::setViewTransformEnabled(bool)
@@ -454,11 +462,6 @@ void tst_QPainter::drawPixmap_comp()
     QPixmap destPm(10, 10), srcPm(10, 10);
     destPm.fill(c1);
     srcPm.fill(c2);
-
-#if 0 // Used to be included in Qt4 for Q_WS_X11
-    if (!destPm.x11PictureHandle())
-        QSKIP("Requires XRender support");
-#endif
 
     QPainter p(&destPm);
     p.drawPixmap(0, 0, srcPm);
@@ -677,12 +680,14 @@ static QRect getPaintedSize(const QPixmap &pm, const QColor &background)
 }
 
 #ifndef QT_NO_WIDGETS
+
+#if QT_DEPRECATED_SINCE(5, 13)
 void tst_QPainter::initFrom()
 {
     QWidget *widget = new QWidget();
     QPalette pal = widget->palette();
-    pal.setColor(QPalette::Foreground, QColor(255, 0, 0));
-    pal.setBrush(QPalette::Background, QColor(0, 255, 0));
+    pal.setColor(QPalette::WindowText, QColor(255, 0, 0));
+    pal.setBrush(QPalette::Window, QColor(0, 255, 0));
     widget->setPalette(pal);
     widget->show();
 
@@ -696,11 +701,12 @@ void tst_QPainter::initFrom()
     p.initFrom(widget);
 
     QCOMPARE(p.font(), font);
-    QCOMPARE(p.pen().color(), pal.color(QPalette::Foreground));
-    QCOMPARE(p.background(), pal.background());
+    QCOMPARE(p.pen().color(), pal.color(QPalette::WindowText));
+    QCOMPARE(p.background(), pal.window());
 
     delete widget;
 }
+#endif
 
 void tst_QPainter::drawBorderPixmap()
 {
@@ -711,7 +717,7 @@ void tst_QPainter::drawBorderPixmap()
     QPainter p(&pm);
     p.setTransform(QTransform(-1,0,0,-1,173.5,153.5));
     qDrawBorderPixmap(&p, QRect(0,0,75,105), QMargins(39,39,39,39), src, QRect(0,0,79,79), QMargins(39,39,39,39),
-                       QTileRules(Qt::StretchTile,Qt::StretchTile), 0);
+                       QTileRules(Qt::StretchTile,Qt::StretchTile), { });
 }
 #endif
 
@@ -1544,6 +1550,7 @@ void tst_QPainter::drawClippedEllipse()
 
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 void tst_QPainter::drawRoundRect()
 {
     QFETCH(QRect, rect);
@@ -1578,6 +1585,42 @@ void tst_QPainter::drawRoundRect()
         QCOMPARE(painted.height(), rect.height() + increment);
     }
 }
+#endif
+
+void tst_QPainter::drawRoundedRect()
+{
+    QFETCH(QRect, rect);
+    QFETCH(bool, usePen);
+
+#ifdef Q_OS_DARWIN
+    if (QTest::currentDataTag() == QByteArray("rect(6, 12, 3, 14) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(6, 17, 3, 25) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(10, 6, 10, 3) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(10, 12, 10, 14) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(13, 45, 17, 80) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(13, 50, 17, 91) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(17, 6, 24, 3) with pen") ||
+        QTest::currentDataTag() == QByteArray("rect(24, 12, 38, 14) with pen"))
+        QSKIP("The Mac paint engine is off-by-one on certain rect sizes");
+#endif
+    QPixmap pixmap(rect.x() + rect.width() + 10,
+                   rect.y() + rect.height() + 10);
+    {
+        pixmap.fill(Qt::white);
+        QPainter p(&pixmap);
+        p.setRenderHint(QPainter::Qt4CompatiblePainting);
+        p.setPen(usePen ? QPen(Qt::black) : QPen(Qt::NoPen));
+        p.setBrush(Qt::black);
+        p.drawRoundedRect(rect, 25, 25, Qt::RelativeSize);
+        p.end();
+
+        int increment = usePen ? 1 : 0;
+
+        const QRect painted = getPaintedSize(pixmap, Qt::white);
+        QCOMPARE(painted.width(), rect.width() + increment);
+        QCOMPARE(painted.height(), rect.height() + increment);
+    }
+}
 
 void tst_QPainter::qimageFormats_data()
 {
@@ -1591,6 +1634,7 @@ void tst_QPainter::qimageFormats_data()
     QTest::newRow("Qimage::Format_RGB555") << QImage::Format_RGB555;
     QTest::newRow("Qimage::Format_ARGB8555_Premultiplied") << QImage::Format_ARGB8555_Premultiplied;
     QTest::newRow("Qimage::Format_RGB888") << QImage::Format_RGB888;
+    QTest::newRow("Qimage::Format_BGR888") << QImage::Format_BGR888;
     QTest::newRow("Qimage::Format_A2RGB30_Premultiplied") << QImage::Format_A2RGB30_Premultiplied;
     QTest::newRow("Qimage::Format_RGB30") << QImage::Format_RGB30;
 }
@@ -1660,9 +1704,16 @@ void tst_QPainter::combinedMatrix()
 
     p.translate(0.5, 0.5);
 
+    QTransform ct = p.combinedTransform();
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QMatrix cm = p.combinedMatrix();
+    QCOMPARE(cm, ct.toAffine());
+QT_WARNING_POP
+#endif
 
-    QPointF pt = QPointF(0, 0) * cm;
+    QPointF pt = QPointF(0, 0) * ct.toAffine();
 
     QCOMPARE(pt.x(), 48.0);
     QCOMPARE(pt.y(), 16.0);
@@ -1693,7 +1744,7 @@ void tst_QPainter::renderHints()
 
     // Turn off all...
     p.setRenderHints(QPainter::RenderHints(0xffffffff), false);
-    QCOMPARE(p.renderHints(), QPainter::RenderHints(0));
+    QCOMPARE(p.renderHints(), QPainter::RenderHints{});
 
     // Single set/get
     p.setRenderHint(QPainter::Antialiasing);
@@ -1778,6 +1829,42 @@ void tst_QPainter::setClipRect()
         p.setClipRect(QRectF(10.5, 10.5, 10.5, -10.5));
         QVERIFY(p.clipRegion().isEmpty());
     }
+}
+
+/*
+    Verify that the clipping works correctly.
+    The red outline should be covered by the blue rect on top and left,
+    while it should be clipped on the right and bottom and thus the red outline be visible
+
+    See: QTBUG-83229
+*/
+void tst_QPainter::clipRect()
+{
+    int width = 654;
+    int height = 480;
+    QRect rect(0, 0, width, height);
+
+    QImage image(width, height, QImage::Format_ARGB32);
+    QPainter p(&image);
+    qreal halfWidth = width / 2.0;
+    qreal halfHeight = height / 2.0;
+
+    QRectF clipRect = QRectF(halfWidth - halfWidth / 2.0, halfHeight - halfHeight / 2.0,
+                             halfWidth / 2.0, halfHeight / 2.0);
+
+    p.fillRect(rect, Qt::white);
+    p.setPen(Qt::red);
+    p.drawRect(clipRect);
+
+    p.setClipRect(clipRect, Qt::ReplaceClip);
+    p.fillRect(rect, Qt::blue);
+
+    p.end();
+
+    QCOMPARE(image.pixelColor(clipRect.left() + 1, clipRect.top()), QColor(Qt::blue));
+    QCOMPARE(image.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::blue));
+    QCOMPARE(image.pixelColor(clipRect.left() + 1, clipRect.bottom()), QColor(Qt::red));
+    QCOMPARE(image.pixelColor(clipRect.right(), clipRect.top() + 1), QColor(Qt::red));
 }
 
 /*
@@ -1977,7 +2064,7 @@ void tst_QPainter::clippedFillPath_data()
                                << pen2;
 
     path = QPainterPath();
-    path.addRoundRect(QRect(15, 15, 50, 50), 20);
+    path.addRoundedRect(QRect(15, 15, 50, 50), 20, Qt::RelativeSize);
     QTest::newRow("round rect 0") << QSize(100, 100) << path
                                   << QRect(15, 15, 49, 49)
                                   << QBrush(Qt::NoBrush)
@@ -2199,7 +2286,7 @@ void tst_QPainter::clippedPolygon()
 {
     QFETCH(QSize, imageSize);
     QFETCH(QPainterPath, path);
-    QPolygonF polygon = path.toFillPolygon();
+    QPolygonF polygon = path.toFillPolygon(QTransform());
     QFETCH(QRect, clipRect);
     QPainterPath clipPath;
     clipPath.addRect(clipRect);
@@ -3020,7 +3107,7 @@ void tst_QPainter::fpe_steepSlopes_data()
         const qreal dsin = 0.000014946676875461832484392500630665523431162000633776187896728515625;
         const qreal dcos = 0.9999999998882984630910186751862056553363800048828125;
 
-        const QTransform transform = QTransform(QMatrix(dcos, dsin, -dsin, dcos, 64, 64));
+        const QTransform transform = QTransform(dcos, dsin, -dsin, dcos, 64, 64);
         const QLineF line(2, 2, 2, 6);
 
         QTest::newRow("task 207147 aa") << transform << line << true;
@@ -3195,7 +3282,7 @@ void tst_QPainter::largeImagePainting()
         p.translate(4, 0);
     }
 
-    p.resetMatrix();
+    p.resetTransform();
 
     for (int i = 4; i < img.height(); i += 4) {
         p.translate(0, 4);
@@ -3946,6 +4033,7 @@ void tst_QPainter::gradientInterpolation()
     }
 }
 
+#if QT_CONFIG(raster_64bit)
 void tst_QPainter::linearGradientRgb30_data()
 {
     QTest::addColumn<QColor>("stop0");
@@ -4004,6 +4092,7 @@ void tst_QPainter::radialGradientRgb30()
         QVERIFY(qGray(p1.rgb()) >= qGray(p2.rgb()));
     }
 }
+#endif
 
 void tst_QPainter::drawPolygon()
 {
@@ -4016,7 +4105,7 @@ void tst_QPainter::drawPolygon()
     path.moveTo(2, 34);
     path.lineTo(34, 2);
 
-    QPolygonF poly = stroker.createStroke(path).toFillPolygon();
+    QPolygonF poly = stroker.createStroke(path).toFillPolygon(QTransform());
 
     img.fill(0xffffffff);
     QPainter p(&img);
@@ -4084,14 +4173,24 @@ void tst_QPainter::inactivePainter()
     p.setClipRegion(region);
     p.setClipping(true);
 
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.combinedMatrix();
+QT_WARNING_POP
+#endif
     p.combinedTransform();
 
     p.compositionMode();
     p.setCompositionMode(QPainter::CompositionMode_Plus);
 
     p.device();
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.deviceMatrix();
+QT_WARNING_POP
+#endif
     p.deviceTransform();
 
     p.font();
@@ -4115,7 +4214,12 @@ void tst_QPainter::inactivePainter()
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform, false);
 
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.resetMatrix();
+QT_WARNING_POP
+#endif
     p.resetTransform();
     p.rotate(1);
     p.scale(2, 2);
@@ -4131,8 +4235,13 @@ void tst_QPainter::inactivePainter()
     p.window();
     p.setWindow(QRect(10, 10, 620, 460));
 
+#if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.worldMatrix();
     p.setWorldMatrix(QMatrix().translate(43, 21), true);
+QT_WARNING_POP
+#endif
     p.setWorldMatrixEnabled(true);
 
     p.transform();
@@ -4533,6 +4642,53 @@ void tst_QPainter::clipBoundingRect()
 
 }
 
+void tst_QPainter::transformedClip()
+{
+    QImage img(8, 4, QImage::Format_ARGB32_Premultiplied);
+    QImage img2(img.size(), img.format());
+    QRect clip(0, 0, 2, 1);
+    QTransform xf;
+    xf.translate(0.2, 0);
+    xf.scale(2.2, 1);
+    // setClipRect(QRectF)
+    {
+        img.fill(Qt::green);
+        QPainter p(&img);
+        p.setTransform(xf);
+        p.setClipRect(QRectF(clip));
+        p.fillRect(img.rect(), Qt::white);
+    }
+    // setClipRect(QRect)
+    {
+        img2.fill(Qt::green);
+        QPainter p(&img2);
+        p.setTransform(xf);
+        p.setClipRect(clip);
+        p.fillRect(img2.rect(), Qt::white);
+        QCOMPARE(img, img2);
+    }
+    // setClipRegion
+    {
+        img2.fill(Qt::green);
+        QPainter p(&img2);
+        p.setTransform(xf);
+        p.setClipRegion(QRegion(clip) + QRect(0, 3, 1, 1));  // dummy extra rect to avoid single-rect codepath
+        p.fillRect(img2.rect(), Qt::white);
+        QCOMPARE(img.copy(0, 0, 8, 2), img2.copy(0, 0, 8, 2));
+    }
+    // setClipPath
+    {
+        img2.fill(Qt::green);
+        QPainter p(&img2);
+        p.setTransform(xf);
+        QPainterPath path;
+        path.addRect(clip);
+        p.setClipPath(path);
+        p.fillRect(img2.rect(), Qt::white);
+        QCOMPARE(img, img2);
+    }
+}
+
 #if defined(Q_OS_MAC)
 // Only Mac supports sub pixel positions in raster engine currently
 void tst_QPainter::drawText_subPixelPositionsInRaster_qtbug5053()
@@ -4884,14 +5040,18 @@ void tst_QPainter::blendARGBonRGB_data()
                                      << QPainter::CompositionMode_SourceOver << qRgba(255, 0, 0, 85) << 85;
     QTest::newRow("ARGB_PM over RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
                                         << QPainter::CompositionMode_SourceOver << qRgba(85, 0, 0, 85) << 85;
+#if QT_CONFIG(raster_64bit)
     QTest::newRow("ARGB source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
                                        << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 85) << 85;
     QTest::newRow("ARGB source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
                                        << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 120) << 85;
+#endif
     QTest::newRow("ARGB_PM source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
                                           << QPainter::CompositionMode_Source << qRgba(85, 0, 0, 85) << 85;
+#if QT_CONFIG(raster_64bit)
     QTest::newRow("ARGB_PM source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
                                           << QPainter::CompositionMode_Source << qRgba(180, 0, 0, 180) << 170;
+#endif
     QTest::newRow("ARGB source-in RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
                                           << QPainter::CompositionMode_SourceIn << qRgba(255, 0, 0, 85) << 85;
     QTest::newRow("ARGB_PM source-in RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied

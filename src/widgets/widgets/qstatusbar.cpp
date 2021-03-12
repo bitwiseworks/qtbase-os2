@@ -90,10 +90,6 @@ public:
 
     int savedStrut;
 
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    QPoint dragStart;
-#endif
-
     int indexToLastNonPermanentWidget() const
     {
         int i = items.size() - 1;
@@ -230,14 +226,14 @@ QRect QStatusBarPrivate::messageRect() const
     \sa setSizeGripEnabled()
 */
 QStatusBar::QStatusBar(QWidget * parent)
-    : QWidget(*new QStatusBarPrivate, parent, 0)
+    : QWidget(*new QStatusBarPrivate, parent, { })
 {
     Q_D(QStatusBar);
-    d->box = 0;
-    d->timer = 0;
+    d->box = nullptr;
+    d->timer = nullptr;
 
 #if QT_CONFIG(sizegrip)
-    d->resizer = 0;
+    d->resizer = nullptr;
     setSizeGripEnabled(true); // causes reformat()
 #else
     reformat();
@@ -455,7 +451,7 @@ void QStatusBar::setSizeGripEnabled(bool enabled)
             d->showSizeGrip = true;
         } else {
             delete d->resizer;
-            d->resizer = 0;
+            d->resizer = nullptr;
             d->showSizeGrip = false;
         }
         reformat();
@@ -501,7 +497,7 @@ void QStatusBar::reformat()
 
     int i;
     QStatusBarPrivate::SBItem* item;
-    for (i=0,item=0; i<d->items.size(); ++i) {
+    for (i=0,item=nullptr; i<d->items.size(); ++i) {
         item = d->items.at(i);
         if (!item || item->p)
             break;
@@ -512,7 +508,7 @@ void QStatusBar::reformat()
 
     l->addStretch(0);
 
-    for (item=0; i<d->items.size(); ++i) {
+    for (item=nullptr; i<d->items.size(); ++i) {
         item = d->items.at(i);
         if (!item)
             break;
@@ -560,7 +556,7 @@ void QStatusBar::showMessage(const QString &message, int timeout)
         d->timer->start(timeout);
     } else if (d->timer) {
         delete d->timer;
-        d->timer = 0;
+        d->timer = nullptr;
     }
     if (d->tempItem == message)
         return;
@@ -582,7 +578,7 @@ void QStatusBar::clearMessage()
         return;
     if (d->timer) {
         qDeleteInEventHandler(d->timer);
-        d->timer = 0;
+        d->timer = nullptr;
     }
     d->tempItem.clear();
     hideOrShow();
@@ -621,7 +617,7 @@ void QStatusBar::hideOrShow()
     Q_D(QStatusBar);
     bool haveMessage = !d->tempItem.isEmpty();
 
-    QStatusBarPrivate::SBItem* item = 0;
+    QStatusBarPrivate::SBItem* item = nullptr;
     for (int i=0; i<d->items.size(); ++i) {
         item = d->items.at(i);
         if (!item || item->p)
@@ -715,7 +711,7 @@ bool QStatusBar::event(QEvent *e)
         // Calculate new strut height and call reformat() if it has changed
         int maxH = fontMetrics().height();
 
-        QStatusBarPrivate::SBItem* item = 0;
+        QStatusBarPrivate::SBItem* item = nullptr;
         for (int i=0; i<d->items.size(); ++i) {
             item = d->items.at(i);
             if (!item)
@@ -735,7 +731,7 @@ bool QStatusBar::event(QEvent *e)
             update();
     }
     if (e->type() == QEvent::ChildRemoved) {
-        QStatusBarPrivate::SBItem* item = 0;
+        QStatusBarPrivate::SBItem* item = nullptr;
         for (int i=0; i<d->items.size(); ++i) {
             item = d->items.at(i);
             if (!item)
@@ -747,44 +743,7 @@ bool QStatusBar::event(QEvent *e)
         }
     }
 
-// On Mac OS X Leopard it is possible to drag the window by clicking
-// on the tool bar on most applications.
-#if 1 // Used to be excluded in Qt4 for Q_WS_MAC
     return QWidget::event(e);
-#else
-    // Enable drag-click only if the status bar is the status bar for a
-    // QMainWindow with a unifed toolbar.
-    if (parent() == 0 || qobject_cast<QMainWindow *>(parent()) == 0 ||
-        qobject_cast<QMainWindow *>(parent())->unifiedTitleAndToolBarOnMac() == false )
-        return QWidget::event(e);
-
-    // Check for mouse events.
-    QMouseEvent *mouseEvent;
-    if (e->type() == QEvent::MouseButtonPress ||
-        e->type() == QEvent::MouseMove ||
-        e->type() == QEvent::MouseButtonRelease) {
-        mouseEvent = static_cast <QMouseEvent*>(e);
-    } else {
-        return QWidget::event(e);
-    }
-
-    // The following is a standard mouse drag handler.
-    if (e->type() == QEvent::MouseButtonPress && (mouseEvent->button() == Qt::LeftButton)) {
-        d->dragStart = mouseEvent->pos();
-    } else if (e->type() == QEvent::MouseMove){
-        if (d->dragStart == QPoint())
-            return QWidget::event(e);
-        QPoint pos = mouseEvent->pos();
-        QPoint delta = (pos - d->dragStart);
-        window()->move(window()->pos() + delta);
-    } else if (e->type() == QEvent::MouseButtonRelease && (mouseEvent->button() == Qt::LeftButton)){
-        d->dragStart = QPoint();
-    } else {
-        return QWidget::event(e);
-    }
-
-    return true;
-#endif
 }
 
 QT_END_NAMESPACE

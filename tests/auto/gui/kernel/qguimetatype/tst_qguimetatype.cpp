@@ -191,11 +191,16 @@ template<> struct TestValueFactory<QMetaType::QTextLength> {
     static QTextLength *create() { return new QTextLength(QTextLength::PercentageLength, 50); }
 };
 template<> struct TestValueFactory<QMetaType::QTextFormat> {
-    static QTextFormat *create() { return new QTextFormat(QTextFormat::TableFormat); }
+    static QTextFormat *create() { return new QTextFormat(QTextFormat::FrameFormat); }
 };
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 template<> struct TestValueFactory<QMetaType::QMatrix> {
     static QMatrix *create() { return new QMatrix(10, 20, 30, 40, 50, 60); }
 };
+QT_WARNING_POP
+#endif
 template<> struct TestValueFactory<QMetaType::QTransform> {
     static QTransform *create() { return new QTransform(10, 20, 30, 40, 50, 60); }
 };

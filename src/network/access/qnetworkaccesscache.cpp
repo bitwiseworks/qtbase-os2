@@ -40,10 +40,11 @@
 #include "qnetworkaccesscache_p.h"
 #include "QtCore/qpointer.h"
 #include "QtCore/qdatetime.h"
-#include "QtCore/qqueue.h"
 #include "qnetworkaccessmanager_p.h"
 #include "qnetworkreply_p.h"
 #include "qnetworkrequest.h"
+
+#include <vector>
 
 QT_BEGIN_NAMESPACE
 
@@ -63,7 +64,7 @@ namespace {
 struct QNetworkAccessCache::Node
 {
     QDateTime timestamp;
-    QQueue<Receiver> receiverQueue;
+    std::vector<Receiver> receiverQueue;
     QByteArray key;
 
     Node *older, *newer;
@@ -72,7 +73,7 @@ struct QNetworkAccessCache::Node
     int useCount;
 
     Node()
-        : older(0), newer(0), object(0), useCount(0)
+        : older(nullptr), newer(nullptr), object(nullptr), useCount(0)
     { }
 };
 
@@ -102,7 +103,7 @@ void QNetworkAccessCache::CacheableObject::setShareable(bool enable)
 }
 
 QNetworkAccessCache::QNetworkAccessCache()
-    : oldest(0), newest(0)
+    : oldest(nullptr), newest(nullptr)
 {
 }
 
@@ -129,7 +130,7 @@ void QNetworkAccessCache::clear()
 
     timer.stop();
 
-    oldest = newest = 0;
+    oldest = newest = nullptr;
 }
 
 /*!
@@ -144,11 +145,11 @@ void QNetworkAccessCache::linkEntry(const QByteArray &key)
 
     Node *const node = &it.value();
     Q_ASSERT(node != oldest && node != newest);
-    Q_ASSERT(node->older == 0 && node->newer == 0);
+    Q_ASSERT(node->older == nullptr && node->newer == nullptr);
     Q_ASSERT(node->useCount == 0);
 
     if (newest) {
-        Q_ASSERT(newest->newer == 0);
+        Q_ASSERT(newest->newer == nullptr);
         newest->newer = node;
         node->older = newest;
     }
@@ -185,7 +186,7 @@ bool QNetworkAccessCache::unlinkEntry(const QByteArray &key)
     if (node->newer)
         node->newer->older = node->older;
 
-    node->newer = node->older = 0;
+    node->newer = node->older = nullptr;
     return wasOldest;
 }
 
@@ -234,9 +235,9 @@ void QNetworkAccessCache::timerEvent(QTimerEvent *)
 
     // fixup the list
     if (oldest)
-        oldest->older = 0;
+        oldest->older = nullptr;
     else
-        newest = 0;
+        newest = nullptr;
 
     updateTimer();
 }
@@ -276,11 +277,8 @@ bool QNetworkAccessCache::requestEntry(const QByteArray &key, QObject *target, c
     if (node->useCount > 0 && !node->object->shareable) {
         // object is not shareable and is in use
         // queue for later use
-        Q_ASSERT(node->older == 0 && node->newer == 0);
-        Receiver receiver;
-        receiver.object = target;
-        receiver.member = member;
-        node->receiverQueue.enqueue(receiver);
+        Q_ASSERT(node->older == nullptr && node->newer == nullptr);
+        node->receiverQueue.push_back({target, member});
 
         // request queued
         return true;
@@ -298,7 +296,7 @@ QNetworkAccessCache::CacheableObject *QNetworkAccessCache::requestEntryNow(const
 {
     NodeHash::Iterator it = hash.find(key);
     if (it == hash.end())
-        return 0;
+        return nullptr;
     if (it->useCount > 0) {
         if (it->object->shareable) {
             ++it->useCount;
@@ -306,7 +304,7 @@ QNetworkAccessCache::CacheableObject *QNetworkAccessCache::requestEntryNow(const
         }
 
         // object in use and not shareable
-        return 0;
+        return nullptr;
     }
 
     // entry not in use, let the caller have it
@@ -331,17 +329,19 @@ void QNetworkAccessCache::releaseEntry(const QByteArray &key)
     Q_ASSERT(node->useCount > 0);
 
     // are there other objects waiting?
-    if (!node->receiverQueue.isEmpty()) {
-        // queue another activation
-        Receiver receiver;
-        do {
-            receiver = node->receiverQueue.dequeue();
-        } while (receiver.object.isNull() && !node->receiverQueue.isEmpty());
+    const auto objectStillExists = [](const Receiver &r) { return !r.object.isNull(); };
 
-        if (!receiver.object.isNull()) {
-            emitEntryReady(node, receiver.object, receiver.member);
-            return;
-        }
+    auto &queue = node->receiverQueue;
+    auto qit = std::find_if(queue.begin(), queue.end(), objectStillExists);
+
+    const Receiver receiver = qit == queue.end() ? Receiver{} : std::move(*qit++) ;
+
+    queue.erase(queue.begin(), qit);
+
+    if (receiver.object) {
+        // queue another activation
+        emitEntryReady(node, receiver.object, receiver.member);
+        return;
     }
 
     if (!--node->useCount) {

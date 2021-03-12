@@ -31,7 +31,8 @@ INCLUDEPATH += \
     generators \
     generators/unix \
     generators/win32 \
-    generators/mac
+    generators/mac \
+    ../src/3rdparty/tinycbor/src
 
 SOURCES += \
     main.cpp \
@@ -96,7 +97,7 @@ HEADERS += \
 bp = $$shadowed(..)
 INCLUDEPATH += \
     $$bp/include $$bp/include/QtCore \
-    $$bp/include/QtCore/$$QT_VERSION $$bp/include/QtCore/$$QT_VERSION/QtCore
+    $$bp/include/QtCore/$$QT_VERSION $$bp/include/QtCore/$$QT_VERSION/QtCore \
     $$bp/src/corelib/global
 
 VPATH += \
@@ -115,6 +116,9 @@ SOURCES += \
     qbuffer.cpp \
     qbytearray.cpp \
     qbytearraymatcher.cpp \
+    qcalendar.cpp \
+    qcborstreamwriter.cpp \
+    qcborvalue.cpp \
     qcryptographichash.cpp \
     qdatetime.cpp \
     qdir.cpp \
@@ -127,16 +131,16 @@ SOURCES += \
     qfsfileengine.cpp \
     qfsfileengine_iterator.cpp \
     qglobal.cpp \
+    qgregoriancalendar.cpp \
     qhash.cpp \
     qiodevice.cpp \
-    qjson.cpp \
     qjsonarray.cpp \
+    qjsoncbor.cpp \
     qjsondocument.cpp \
     qjsonobject.cpp \
     qjsonparser.cpp \
     qjsonvalue.cpp \
     qlibraryinfo.cpp \
-    qlinkedlist.cpp \
     qlist.cpp \
     qlocale.cpp \
     qlocale_tools.cpp \
@@ -146,9 +150,9 @@ SOURCES += \
     qmetatype.cpp \
     qnumeric.cpp \
     qregexp.cpp \
+    qromancalendar.cpp \
     qsettings.cpp \
     qstring.cpp \
-    qstring_compat.cpp \
     qstringlist.cpp \
     qsystemerror.cpp \
     qtemporaryfile.cpp \
@@ -170,6 +174,12 @@ HEADERS += \
     qbuffer.h \
     qbytearray.h \
     qbytearraymatcher.h \
+    qcalendar.h \
+    qcalendarbackend_p.h \
+    qcalendarmath_p.h \
+    qcborstreamwriter.h \
+    qcborvalue.h \
+    qcborvalue_p.h \
     qchar.h \
     qcryptographichash.h \
     qdatetime.h \
@@ -180,36 +190,36 @@ HEADERS += \
     qfile.h \
     qfileinfo.h \
     qglobal.h \
+    qgregoriancalendar_p.h \
     qhash.h \
     qiodevice.h \
-    qjson.h \
+    qjson_p.h \
     qjsonarray.h \
     qjsondocument.h \
     qjsonobject.h \
-    qjsonparser.h \
+    qjsonparser_p.h \
     qjsonvalue.h \
-    qjsonwriter.h \
-    qlinkedlist.h \
+    qjsonwriter_p.h \
     qlist.h \
     qlocale.h \
     qlocale_tools_p.h \
-    qmalloc.h \
     qmap.h \
     qmetatype.h \
     qnumeric.h \
     qregexp.h \
+    qromancalendar_p.h \
     qstring.h \
     qstringlist.h \
     qstringmatcher.h \
     qsystemerror_p.h \
     qtemporaryfile.h \
     qtextstream.h \
-    qutfcodec.h \
+    qutfcodec_p.h \
     quuid.h \
     qvector.h \
     qversionnumber.h \
     qxmlstream.h \
-    qxmlutils.h
+    qxmlutils_p.h
 
 unix {
     SOURCES += \
@@ -221,7 +231,7 @@ unix {
     macos {
         SOURCES += \
             qcore_foundation.mm \
-            qcore_mac.cpp \
+            qcore_mac.mm \
             qoperatingsystemversion_darwin.mm \
             qsettings_mac.cpp
         LIBS += \

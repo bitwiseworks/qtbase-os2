@@ -30,6 +30,7 @@
 #include "qwasmopenglcontext.h"
 #include "qwasmintegration.h"
 #include <EGL/egl.h>
+#include <emscripten/val.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -50,9 +51,25 @@ QWasmOpenGLContext::QWasmOpenGLContext(const QSurfaceFormat &format)
 QWasmOpenGLContext::~QWasmOpenGLContext()
 {
     if (m_context) {
+        // Destroy GL context. Work around bug in emscripten_webgl_destroy_context
+        // which removes all event handlers on the canvas by temporarily removing
+        // emscripten's JSEvents global object.
+        emscripten::val jsEvents = emscripten::val::global("window")["JSEvents"];
+        emscripten::val::global("window").set("JSEvents", emscripten::val::undefined());
         emscripten_webgl_destroy_context(m_context);
+        emscripten::val::global("window").set("JSEvents", jsEvents);
         m_context = 0;
     }
+}
+
+bool QWasmOpenGLContext::isOpenGLVersionSupported(QSurfaceFormat format)
+{
+    // Version check: support WebGL 1 and 2:
+    // (ES) 2.0 -> WebGL 1.0
+    // (ES) 3.0 -> WebGL 2.0
+    // [we don't expect that new WebGL versions will be created]
+    return ((format.majorVersion() == 2 && format.minorVersion() == 0) ||
+           (format.majorVersion() == 3 && format.minorVersion() == 0));
 }
 
 bool QWasmOpenGLContext::maybeCreateEmscriptenContext(QPlatformSurface *surface)
@@ -81,14 +98,12 @@ EMSCRIPTEN_WEBGL_CONTEXT_HANDLE QWasmOpenGLContext::createEmscriptenContext(cons
     EmscriptenWebGLContextAttributes attributes;
     emscripten_webgl_init_context_attributes(&attributes); // Populate with default attributes
 
-    attributes.preferLowPowerToHighPerformance = false;
+    attributes.powerPreference = EM_WEBGL_POWER_PREFERENCE_HIGH_PERFORMANCE;
     attributes.failIfMajorPerformanceCaveat = false;
     attributes.antialias = true;
     attributes.enableExtensionsByDefault = true;
-
-    if (format.majorVersion() == 3) {
-        attributes.majorVersion = 2;
-    }
+    attributes.majorVersion = format.majorVersion() - 1;
+    attributes.minorVersion = format.minorVersion();
 
     // WebGL doesn't allow separate attach buffers to STENCIL_ATTACHMENT and DEPTH_ATTACHMENT
     // we need both or none
@@ -99,7 +114,8 @@ EMSCRIPTEN_WEBGL_CONTEXT_HANDLE QWasmOpenGLContext::createEmscriptenContext(cons
     attributes.depth = useDepthStencil;
     attributes.stencil = useDepthStencil;
 
-    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context(canvasId.toLocal8Bit().constData(), &attributes);
+    QByteArray convasSelector = "#" + canvasId.toUtf8();
+    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context(convasSelector.constData(), &attributes);
 
     return context;
 }
@@ -141,6 +157,9 @@ bool QWasmOpenGLContext::isSharing() const
 
 bool QWasmOpenGLContext::isValid() const
 {
+    if (!(isOpenGLVersionSupported(m_requestedFormat)))
+        return false;
+
     // Note: we get isValid() calls before we see the surface and can
     // create a native context, so no context is also a valid state.
     return !m_context || !emscripten_is_webgl_context_lost(m_context);

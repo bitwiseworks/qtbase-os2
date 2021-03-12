@@ -138,6 +138,17 @@ QT_BEGIN_NAMESPACE
     \sa y(), setX()
 */
 
+/*!
+    \fn QPoint::transposed() const
+    \since 5.14
+
+    Returns a point with x and y coordinates exchanged:
+    \code
+    QPoint{1, 2}.transposed() // {2, 1}
+    \endcode
+
+    \sa x(), y(), setX(), setY()
+*/
 
 /*!
     \fn int &QPoint::rx()
@@ -583,6 +594,18 @@ QDebug operator<<(QDebug dbg, const QPointF &p)
 */
 
 /*!
+    \fn QPointF::transposed() const
+    \since 5.14
+
+    Returns a point with x and y coordinates exchanged:
+    \code
+    QPointF{1.0, 2.0}.transposed() // {2.0, 1.0}
+    \endcode
+
+    \sa x(), y(), setX(), setY()
+*/
+
+/*!
     \fn qreal& QPointF::rx()
 
     Returns a reference to the x coordinate of this point.
@@ -739,14 +762,26 @@ QDebug operator<<(QDebug dbg, const QPointF &p)
     \fn bool operator==(const QPointF &p1, const QPointF &p2)
     \relates QPointF
 
-    Returns \c true if \a p1 is equal to \a p2; otherwise returns \c false.
+    Returns \c true if \a p1 is approximately equal to \a p2; otherwise
+    returns \c false.
+
+    \warning This function does not check for strict equality; instead,
+    it uses a fuzzy comparison to compare the points' coordinates.
+
+    \sa qFuzzyCompare
 */
 
 /*!
     \fn bool operator!=(const QPointF &p1, const QPointF &p2);
     \relates QPointF
 
-    Returns \c true if \a p1 is not equal to \a p2; otherwise returns \c false.
+    Returns \c true if \a p1 is sufficiently different from \a p2;
+    otherwise returns \c false.
+
+    \warning This function does not check for strict inequality; instead,
+    it uses a fuzzy comparison to compare the points' coordinates.
+
+    \sa qFuzzyCompare
 */
 
 #ifndef QT_NO_DATASTREAM

@@ -92,7 +92,7 @@ public:
     }
 
     void updatePlayer() {
-        int interval = qBound(20, watch.elapsed(), 250);
+        int interval = qBound(20ll, watch.elapsed(), 250ll);
         watch.start();
         angle += angleDelta * interval / 1000;
         qreal step = moveDelta * interval / 1000;
@@ -106,10 +106,10 @@ public:
     }
 
     void showFps() {
-        static QTime frameTick;
+        static QElapsedTimer frameTick;
         static int totalFrame = 0;
         if (!(totalFrame & 31)) {
-            int elapsed = frameTick.elapsed();
+            const qint64 elapsed = frameTick.elapsed();
             frameTick.start();
             int fps = 32 * 1000 / (1 + elapsed);
             setWindowTitle(QString("Raycasting (%1 FPS)").arg(fps));
@@ -255,11 +255,7 @@ public:
 protected:
 
     void resizeEvent(QResizeEvent*) {
-#if defined(Q_OS_WINCE_WM)
-        touchDevice = true;
-#else
         touchDevice = false;
-#endif
         if (touchDevice) {
             if (width() < height()) {
                 trackPad = QRect(0, height() / 2, width(), height() / 2);
@@ -359,7 +355,7 @@ protected:
     }
 
 private:
-    QTime watch;
+    QElapsedTimer watch;
     QBasicTimer ticker;
     QImage buffer;
     qreal angle;

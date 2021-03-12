@@ -106,7 +106,7 @@ static inline void compressMouseMove(MSG *msg)
                 // Extract the x,y coordinates from the lParam as we do in the WndProc
                 msg->pt.x = GET_X_LPARAM(mouseMsg.lParam);
                 msg->pt.y = GET_Y_LPARAM(mouseMsg.lParam);
-                ClientToScreen(msg->hwnd, &(msg->pt));
+                clientToScreen(msg->hwnd, &(msg->pt));
                 // Remove the mouse move message
                 PeekMessage(&mouseMsg, msg->hwnd, WM_MOUSEMOVE,
                             WM_MOUSEMOVE, PM_REMOVE);
@@ -124,10 +124,10 @@ static inline QTouchDevice *createTouchDevice()
         return nullptr;
     const int tabletPc = GetSystemMetrics(SM_TABLETPC);
     const int maxTouchPoints = GetSystemMetrics(SM_MAXIMUMTOUCHES);
-    qCDebug(lcQpaEvents) << "Digitizers:" << hex << showbase << (digitizers & ~NID_READY)
-        << "Ready:" << (digitizers & NID_READY) << dec << noshowbase
+    qCDebug(lcQpaEvents) << "Digitizers:" << Qt::hex << Qt::showbase << (digitizers & ~NID_READY)
+        << "Ready:" << (digitizers & NID_READY) << Qt::dec << Qt::noshowbase
         << "Tablet PC:" << tabletPc << "Max touch points:" << maxTouchPoints;
-    QTouchDevice *result = new QTouchDevice;
+    auto *result = new QTouchDevice;
     result->setType(digitizers & NID_INTEGRATED_TOUCH
                     ? QTouchDevice::TouchScreen : QTouchDevice::TouchPad);
     QTouchDevice::Capabilities capabilities = QTouchDevice::Position | QTouchDevice::Area | QTouchDevice::NormalizedPosition;
@@ -145,7 +145,6 @@ static inline QTouchDevice *createTouchDevice()
     Dispatches mouse and touch events. Separate for code cleanliness.
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsMouseHandler::QWindowsMouseHandler() = default;
@@ -165,14 +164,14 @@ void QWindowsMouseHandler::clearEvents()
 
 Qt::MouseButtons QWindowsMouseHandler::queryMouseButtons()
 {
-    Qt::MouseButtons result = nullptr;
+    Qt::MouseButtons result;
     const bool mouseSwapped = GetSystemMetrics(SM_SWAPBUTTON);
     if (GetAsyncKeyState(VK_LBUTTON) < 0)
         result |= mouseSwapped ? Qt::RightButton: Qt::LeftButton;
     if (GetAsyncKeyState(VK_RBUTTON) < 0)
         result |= mouseSwapped ? Qt::LeftButton : Qt::RightButton;
     if (GetAsyncKeyState(VK_MBUTTON) < 0)
-        result |= Qt::MidButton;
+        result |= Qt::MiddleButton;
     if (GetAsyncKeyState(VK_XBUTTON1) < 0)
         result |= Qt::XButton1;
     if (GetAsyncKeyState(VK_XBUTTON2) < 0)
@@ -216,11 +215,11 @@ static inline MouseEvent eventFromMsg(const MSG &msg)
     case WM_LBUTTONDBLCLK: // Qt QPA does not handle double clicks, send as press
         return {QEvent::MouseButtonPress, Qt::LeftButton};
     case WM_MBUTTONDOWN:
-        return {QEvent::MouseButtonPress, Qt::MidButton};
+        return {QEvent::MouseButtonPress, Qt::MiddleButton};
     case WM_MBUTTONUP:
-        return {QEvent::MouseButtonRelease, Qt::MidButton};
+        return {QEvent::MouseButtonRelease, Qt::MiddleButton};
     case WM_MBUTTONDBLCLK:
-        return {QEvent::MouseButtonPress, Qt::MidButton};
+        return {QEvent::MouseButtonPress, Qt::MiddleButton};
     case WM_RBUTTONDOWN:
         return {QEvent::MouseButtonPress, Qt::RightButton};
     case WM_RBUTTONUP:
@@ -242,11 +241,11 @@ static inline MouseEvent eventFromMsg(const MSG &msg)
     case WM_NCLBUTTONDBLCLK:
         return {QEvent::NonClientAreaMouseButtonPress, Qt::LeftButton};
     case WM_NCMBUTTONDOWN:
-        return {QEvent::NonClientAreaMouseButtonPress, Qt::MidButton};
+        return {QEvent::NonClientAreaMouseButtonPress, Qt::MiddleButton};
     case WM_NCMBUTTONUP:
-        return {QEvent::NonClientAreaMouseButtonRelease, Qt::MidButton};
+        return {QEvent::NonClientAreaMouseButtonRelease, Qt::MiddleButton};
     case WM_NCMBUTTONDBLCLK:
-        return {QEvent::NonClientAreaMouseButtonPress, Qt::MidButton};
+        return {QEvent::NonClientAreaMouseButtonPress, Qt::MiddleButton};
     case WM_NCRBUTTONDOWN:
         return {QEvent::NonClientAreaMouseButtonPress, Qt::RightButton};
     case WM_NCRBUTTONUP:
@@ -268,7 +267,13 @@ bool QWindowsMouseHandler::translateMouseEvent(QWindow *window, HWND hwnd,
     if (et == QtWindows::MouseWheelEvent)
         return translateMouseWheelEvent(window, hwnd, msg, result);
 
-    const QPoint winEventPosition(GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam));
+    QPoint winEventPosition(GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam));
+    if ((et & QtWindows::NonClientEventFlag) == 0 && QWindowsBaseWindow::isRtlLayout(hwnd))  {
+        RECT clientArea;
+        GetClientRect(hwnd, &clientArea);
+        winEventPosition.setX(clientArea.right - winEventPosition.x());
+    }
+
     QPoint clientPosition;
     QPoint globalPosition;
     if (et & QtWindows::NonClientEventFlag) {
@@ -300,7 +305,7 @@ bool QWindowsMouseHandler::translateMouseEvent(QWindow *window, HWND hwnd,
     // However, when tablet support is active, extraInfo is a packet serial number. This is not a problem
     // since we do not want to ignore mouse events coming from a tablet.
     // See https://msdn.microsoft.com/en-us/library/windows/desktop/ms703320.aspx
-    const quint64 extraInfo = quint64(GetMessageExtraInfo());
+    const auto extraInfo = quint64(GetMessageExtraInfo());
     if ((extraInfo & signatureMask) == miWpSignature) {
         if (extraInfo & 0x80) { // Bit 7 indicates touch event, else tablet pen.
             source = Qt::MouseEventSynthesizedBySystem;
@@ -364,7 +369,7 @@ bool QWindowsMouseHandler::translateMouseEvent(QWindow *window, HWND hwnd,
         return true;
     }
 
-    QWindowsWindow *platformWindow = static_cast<QWindowsWindow *>(window->handle());
+    auto *platformWindow = static_cast<QWindowsWindow *>(window->handle());
 
     // If the window was recently resized via mouse doubleclick on the frame or title bar,
     // we don't get WM_LBUTTONDOWN or WM_LBUTTONDBLCLK for the second click,
@@ -603,8 +608,8 @@ bool QWindowsMouseHandler::translateTouchEvent(QWindow *window, HWND,
                                                QtWindows::WindowsEventType,
                                                MSG msg, LRESULT *)
 {
-    typedef QWindowSystemInterface::TouchPoint QTouchPoint;
-    typedef QList<QWindowSystemInterface::TouchPoint> QTouchPointList;
+    using QTouchPoint = QWindowSystemInterface::TouchPoint;
+    using QTouchPointList = QList<QWindowSystemInterface::TouchPoint>;
 
     if (!QWindowsContext::instance()->initTouch()) {
         qWarning("Unable to initialize touch handling.");
@@ -624,7 +629,7 @@ bool QWindowsMouseHandler::translateTouchEvent(QWindow *window, HWND,
 
     QTouchPointList touchPoints;
     touchPoints.reserve(winTouchPointCount);
-    Qt::TouchPointStates allStates = nullptr;
+    Qt::TouchPointStates allStates;
 
     GetTouchInputInfo(reinterpret_cast<HTOUCHINPUT>(msg.lParam),
                       UINT(msg.wParam), winTouchInputs.data(), sizeof(TOUCHINPUT));

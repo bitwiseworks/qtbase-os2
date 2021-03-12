@@ -32,8 +32,6 @@ qtConfig(graphicseffect) {
 
 QMAKE_LIBS += $$QMAKE_LIBS_GUI
 
-contains(DEFINES,QT_EVAL):include($$QT_SOURCE_TREE/src/corelib/eval.pri)
-
 QMAKE_DYNAMIC_LIST_FILE = $$PWD/QtWidgets.dynlist
 
 # Code coverage with TestCocoon
@@ -47,3 +45,5 @@ testcocoon {
 MODULE_PLUGIN_TYPES += \
     styles
 load(qt_module)
+
+CONFIG += metatypes install_metatypes

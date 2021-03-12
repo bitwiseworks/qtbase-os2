@@ -34,6 +34,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QtDebug>
 #include <QtTest/QtTest>
 #include <QXmlDefaultHandler>
@@ -44,13 +45,18 @@ class tst_QXmlInputSource : public QObject
 {
     Q_OBJECT
 
+#if QT_DEPRECATED_SINCE(5, 15)
 private slots:
     void reset() const;
     void resetSimplified() const;
     void waitForReadyIODevice() const;
     void inputFromSlowDevice() const;
+#endif // QT_DEPRECATED_SINCE(5, 15)
 };
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
   \internal
   \since 4.4
@@ -169,7 +175,7 @@ private slots:
 
             if (isBody)
             {
-                body.append(line);
+                body.append(line.toUtf8());
                 bodyBytesRead += line.length();
             }
             else if (line == "\r\n")
@@ -259,7 +265,7 @@ public:
         // Delibrately wait a maximum of 10 seconds for the sake
         // of the test, so it doesn't unduly hang
         const int waitTime = qMax(10000, msecs);
-        QTime t;
+        QElapsedTimer t;
         t.start();
         while (t.elapsed() < waitTime) {
             QCoreApplication::processEvents();
@@ -290,6 +296,9 @@ void tst_QXmlInputSource::inputFromSlowDevice() const
     }
     QCOMPARE(data, expectedData);
 }
+
+QT_WARNING_POP
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 QTEST_MAIN(tst_QXmlInputSource)
 #include "tst_qxmlinputsource.moc"

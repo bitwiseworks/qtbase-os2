@@ -45,6 +45,7 @@
 #include <private/qtextdocument_p.h>
 #include <qtextlayout.h>
 #include <qpointer.h>
+#include <qscopedvaluerollback.h>
 #include <qtextobject.h>
 #include <qtextcursor.h>
 #include <qdebug.h>
@@ -68,14 +69,14 @@ public:
     void reformatBlocks(int from, int charsRemoved, int charsAdded);
     void reformatBlock(const QTextBlock &block);
 
-    inline void rehighlight(QTextCursor &cursor, QTextCursor::MoveOperation operation) {
-        inReformatBlocks = true;
+    inline void rehighlight(QTextCursor &cursor, QTextCursor::MoveOperation operation)
+    {
+        QScopedValueRollback<bool> bg(inReformatBlocks, true);
         cursor.beginEditBlock();
         int from = cursor.position();
         cursor.movePosition(operation);
         reformatBlocks(from, 0, cursor.position() - from);
         cursor.endEditBlock();
-        inReformatBlocks = false;
     }
 
     inline void _q_delayedRehighlight() {
@@ -298,7 +299,7 @@ QSyntaxHighlighter::QSyntaxHighlighter(QObject *parent)
     : QObject(*new QSyntaxHighlighterPrivate, parent)
 {
     if (parent && parent->inherits("QTextEdit")) {
-        QTextDocument *doc = parent->property("document").value<QTextDocument *>();
+        QTextDocument *doc = qvariant_cast<QTextDocument *>(parent->property("document"));
         if (doc)
             setDocument(doc);
     }
@@ -320,7 +321,7 @@ QSyntaxHighlighter::QSyntaxHighlighter(QTextDocument *parent)
 */
 QSyntaxHighlighter::~QSyntaxHighlighter()
 {
-    setDocument(0);
+    setDocument(nullptr);
 }
 
 /*!
@@ -600,7 +601,7 @@ QTextBlockUserData *QSyntaxHighlighter::currentBlockUserData() const
 {
     Q_D(const QSyntaxHighlighter);
     if (!d->currentBlock.isValid())
-        return 0;
+        return nullptr;
 
     return d->currentBlock.userData();
 }

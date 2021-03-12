@@ -32,6 +32,7 @@
 #include <QtCore/QTextStream>
 #include <QtCore/QSharedPointer>
 #include <QtCore/QDebug>
+#include <QtCore/QRect>
 #include <QtCore/QVector>
 
 #include <QtCore/qt_windows.h>
@@ -54,14 +55,76 @@ struct DumpContext {
 if (style & styleConstant) \
     str << ' ' << #styleConstant;
 
+static QTextStream &operator<<(QTextStream &str, const QPoint &p)
+{
+    str << p.x() << ", " << p.y();
+    return str;
+}
+
+static QTextStream &operator<<(QTextStream &str, const QSize &s)
+{
+    str << s.width() << 'x' << s.height();
+    return str;
+}
+
+static QTextStream &operator<<(QTextStream &str, const QRect &rect)
+{
+    str << rect.size() << Qt::forcesign << rect.x() << rect.y() << Qt::noforcesign;
+    return str;
+}
+
+static inline QSize qsizeFromRECT(const RECT &rect)
+{
+    return QSize(rect.right -rect.left, rect.bottom - rect.top);
+}
+
+static inline QRect qrectFromRECT(const RECT &rect)
+{
+    return QRect(QPoint(rect.left, rect.top), qsizeFromRECT(rect));
+}
+
+static QRect getFrameGeometry(HWND hwnd)
+{
+    RECT rect;
+    return GetWindowRect(hwnd, &rect) ? qrectFromRECT(rect) : QRect();
+}
+
+static QPoint getClientAreaScreenPos(HWND hwnd)
+{
+    POINT clientPos{0, 0};
+    return ClientToScreen(hwnd, &clientPos) ? QPoint(clientPos.x, clientPos.y) : QPoint();
+}
+
+static QRect getClientAreaGeometry(HWND hwnd)
+{
+    RECT clientRect;
+    return GetClientRect(hwnd, &clientRect)
+        ? QRect(getClientAreaScreenPos(hwnd), qsizeFromRECT(clientRect)) : QRect();
+}
+
+static bool isTopLevel(HWND hwnd)
+{
+    auto parent = GetParent(hwnd);
+    return !parent || parent == GetDesktopWindow();
+}
+
 static void formatNativeWindow(HWND hwnd, QTextStream &str)
 {
-    str << hex << showbase << quintptr(hwnd) << noshowbase << dec;
-    RECT rect;
-    if (GetWindowRect(hwnd, &rect)) {
-        str << ' ' << (rect.right - rect.left) << 'x' << (rect.bottom - rect.top)
-            << forcesign << rect.left << rect.top << noforcesign;
+    str << Qt::hex << Qt::showbase << quintptr(hwnd) << Qt::noshowbase << Qt::dec;
+
+    const bool topLevel = isTopLevel(hwnd);
+    if (topLevel)
+        str << " [top]";
+    const auto frameGeometry = getFrameGeometry(hwnd);
+    const auto clientGeometry = getClientAreaGeometry(hwnd);
+    str << ' ' << frameGeometry;
+    if (!topLevel)
+        str << " local: " << (clientGeometry.topLeft() - getClientAreaScreenPos(GetParent(hwnd)));
+    if (clientGeometry != frameGeometry) {
+        str << " client: " << clientGeometry << " frame: "
+            << (clientGeometry.topLeft() - frameGeometry.topLeft());
     }
+
     if (IsWindowVisible(hwnd))
         str << " [visible]";
 
@@ -73,7 +136,7 @@ static void formatNativeWindow(HWND hwnd, QTextStream &str)
     if (GetClassName(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
         str << '"' << QString::fromWCharArray(buf) << '"';
 
-    str << hex << showbase;
+    str << Qt::hex << Qt::showbase;
     if (const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE)) {
         str << " style=" << style;
         debugWinStyle(str, style, WS_OVERLAPPED)
@@ -145,7 +208,7 @@ static void formatNativeWindow(HWND hwnd, QTextStream &str)
     if (const ULONG_PTR wndProc = GetClassLongPtr(hwnd, GCLP_WNDPROC))
         str << " wndProc=" << wndProc;
 
-    str << noshowbase << dec;
+    str << Qt::noshowbase << Qt::dec;
 
     if (GetWindowModuleFileName(hwnd, buf, sizeof(buf)/sizeof(buf[0])))
         str << " module=\"" << QString::fromWCharArray(buf) << '"';
@@ -195,7 +258,7 @@ static void dumpNativeWindows(const WIdVector& wins)
     DumpContext dc;
     QString s;
     dc.stream = QSharedPointer<QTextStream>(new QTextStream(&s));
-    foreach (WId win, wins)
+    for (WId win : wins)
         dumpNativeWindowRecursion(reinterpret_cast<HWND>(win), &dc);
 #if QT_VERSION >= 0x050400
     qDebug().noquote() << s;

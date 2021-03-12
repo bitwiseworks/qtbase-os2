@@ -73,8 +73,8 @@ public:
         : explicitIconSize(false), explicitToolButtonStyle(false), movable(true), floatable(true),
           allowedAreas(Qt::AllToolBarAreas), orientation(Qt::Horizontal),
           toolButtonStyle(Qt::ToolButtonIconOnly),
-          layout(0), state(0)
-#ifdef Q_OS_OSX
+          layout(nullptr), state(nullptr)
+#ifdef Q_OS_MACOS
         , macWindowDragging(false)
 #endif
     { }
@@ -106,7 +106,7 @@ public:
     };
     DragState *state;
 
-#ifdef Q_OS_OSX
+#ifdef Q_OS_MACOS
     bool macWindowDragging;
     QPoint macWindowDragPressPosition;
 #endif

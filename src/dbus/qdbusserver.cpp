@@ -43,6 +43,8 @@
 #include "qdbusconnectionmanager_p.h"
 #include "qdbusutil_p.h"
 
+#include <QtCore/private/qlocking_p.h>
+
 #ifndef QT_NO_DBUS
 
 QT_BEGIN_NAMESPACE
@@ -109,15 +111,19 @@ QDBusServer::QDBusServer(QObject *parent)
 */
 QDBusServer::~QDBusServer()
 {
-    QWriteLocker locker(&d->lock);
+    QMutex *managerMutex = nullptr;
+    if (QDBusConnectionManager::instance())
+        managerMutex = &QDBusConnectionManager::instance()->mutex;
+    QMutexLocker locker(managerMutex);
+    QWriteLocker writeLocker(&d->lock);
     if (QDBusConnectionManager::instance()) {
-        QMutexLocker locker(&QDBusConnectionManager::instance()->mutex);
         for (const QString &name : qAsConst(d->serverConnectionNames))
             QDBusConnectionManager::instance()->removeConnection(name);
         d->serverConnectionNames.clear();
+        locker.unlock();
     }
     d->serverObject = nullptr;
-    d->ref.store(0);
+    d->ref.storeRelaxed(0);
     d->deleteLater();
 }
 

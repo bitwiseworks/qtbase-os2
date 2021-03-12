@@ -153,7 +153,7 @@ bool QFSFileEnginePrivate::nativeOpen(QIODevice::OpenMode openMode)
             }
         }
 
-        fh = 0;
+        fh = nullptr;
     }
 
     closeFileHandle = true;
@@ -304,54 +304,6 @@ bool QFSFileEnginePrivate::nativeIsSequential() const
     return isSequentialFdFh();
 }
 
-bool QFSFileEngine::remove()
-{
-    Q_D(QFSFileEngine);
-    QSystemError error;
-    bool ret = QFileSystemEngine::removeFile(d->fileEntry, error);
-    d->metaData.clear();
-    if (!ret) {
-        setError(QFile::RemoveError, error.toString());
-    }
-    return ret;
-}
-
-bool QFSFileEngine::copy(const QString &newName)
-{
-    Q_D(QFSFileEngine);
-    QSystemError error;
-    bool ret = QFileSystemEngine::copyFile(d->fileEntry, QFileSystemEntry(newName), error);
-    if (!ret) {
-        setError(QFile::CopyError, error.toString());
-    }
-    return ret;
-}
-
-bool QFSFileEngine::renameOverwrite(const QString &newName)
-{
-    Q_D(QFSFileEngine);
-    QSystemError error;
-    bool ret = QFileSystemEngine::renameOverwriteFile(d->fileEntry, QFileSystemEntry(newName), error);
-
-    if (!ret)
-        setError(QFile::RenameError, error.toString());
-
-    return ret;
-}
-
-bool QFSFileEngine::rename(const QString &newName)
-{
-    Q_D(QFSFileEngine);
-    QSystemError error;
-    bool ret = QFileSystemEngine::renameFile(d->fileEntry, QFileSystemEntry(newName), error);
-
-    if (!ret) {
-        setError(QFile::RenameError, error.toString());
-    }
-
-    return ret;
-}
-
 bool QFSFileEngine::link(const QString &newName)
 {
     Q_D(QFSFileEngine);
@@ -368,24 +320,9 @@ qint64 QFSFileEnginePrivate::nativeSize() const
     return sizeFdFh();
 }
 
-bool QFSFileEngine::mkdir(const QString &name, bool createParentDirectories) const
-{
-    return QFileSystemEngine::createDirectory(QFileSystemEntry(name), createParentDirectories);
-}
-
-bool QFSFileEngine::rmdir(const QString &name, bool recurseParentDirectories) const
-{
-    return QFileSystemEngine::removeDirectory(QFileSystemEntry(name), recurseParentDirectories);
-}
-
 bool QFSFileEngine::caseSensitive() const
 {
     return true;
-}
-
-bool QFSFileEngine::setCurrentPath(const QString &path)
-{
-    return QFileSystemEngine::setCurrentPath(QFileSystemEntry(path));
 }
 
 QString QFSFileEngine::currentPath(const QString &)
@@ -393,20 +330,6 @@ QString QFSFileEngine::currentPath(const QString &)
     return QFileSystemEngine::currentPath().filePath();
 }
 
-QString QFSFileEngine::homePath()
-{
-    return QFileSystemEngine::homePath();
-}
-
-QString QFSFileEngine::rootPath()
-{
-    return QFileSystemEngine::rootPath();
-}
-
-QString QFSFileEngine::tempPath()
-{
-    return QFileSystemEngine::tempPath();
-}
 
 QFileInfoList QFSFileEngine::drives()
 {
@@ -451,14 +374,14 @@ QAbstractFileEngine::FileFlags QFSFileEngine::fileFlags(FileFlags type) const
     if (type & Refresh)
         d->metaData.clear();
 
-    QAbstractFileEngine::FileFlags ret = 0;
+    QAbstractFileEngine::FileFlags ret = { };
 
     if (type & FlagsMask)
         ret |= LocalDiskFlag;
 
     bool exists;
     {
-        QFileSystemMetaData::MetaDataFlags queryFlags = 0;
+        QFileSystemMetaData::MetaDataFlags queryFlags = { };
 
         queryFlags |= QFileSystemMetaData::MetaDataFlags(uint(type))
                 & QFileSystemMetaData::Permissions;
@@ -590,9 +513,9 @@ bool QFSFileEngine::setPermissions(uint perms)
     QSystemError error;
     bool ok;
     if (d->fd != -1)
-        ok = QFileSystemEngine::setPermissions(d->fd, QFile::Permissions(perms), error, 0);
+        ok = QFileSystemEngine::setPermissions(d->fd, QFile::Permissions(perms), error);
     else
-        ok = QFileSystemEngine::setPermissions(d->fileEntry, QFile::Permissions(perms), error, 0);
+        ok = QFileSystemEngine::setPermissions(d->fileEntry, QFile::Permissions(perms), error);
     if (!ok) {
         setError(QFile::PermissionsError, error.toString());
         return false;
@@ -651,13 +574,13 @@ uchar *QFSFileEnginePrivate::map(qint64 offset, qint64 size, QFile::MemoryMapFla
     Q_Q(QFSFileEngine);
     if (openMode == QIODevice::NotOpen) {
         q->setError(QFile::PermissionsError, qt_error_string(int(EACCES)));
-        return 0;
+        return nullptr;
     }
 
     if (offset < 0 || offset > maxFileOffset
             || size < 0 || quint64(size) > quint64(size_t(-1))) {
         q->setError(QFile::UnspecifiedError, qt_error_string(int(EINVAL)));
-        return 0;
+        return nullptr;
     }
 
     // If we know the mapping will extend beyond EOF, fail early to avoid
@@ -685,14 +608,14 @@ uchar *QFSFileEnginePrivate::map(qint64 offset, qint64 size, QFile::MemoryMapFla
 
     if (quint64(size + extra) > quint64((size_t)-1)) {
         q->setError(QFile::UnspecifiedError, qt_error_string(int(EINVAL)));
-        return 0;
+        return nullptr;
     }
 
     size_t realSize = (size_t)size + extra;
     QT_OFF_T realOffset = QT_OFF_T(offset);
     realOffset &= ~(QT_OFF_T(pageSize - 1));
 
-    void *mapAddress = QT_MMAP((void*)0, realSize,
+    void *mapAddress = QT_MMAP((void*)nullptr, realSize,
                    access, sharemode, nativeHandle(), realOffset);
     if (MAP_FAILED != mapAddress) {
         uchar *address = extra + static_cast<uchar*>(mapAddress);
@@ -714,7 +637,7 @@ uchar *QFSFileEnginePrivate::map(qint64 offset, qint64 size, QFile::MemoryMapFla
         q->setError(QFile::UnspecifiedError, qt_error_string(int(errno)));
         break;
     }
-    return 0;
+    return nullptr;
 }
 
 bool QFSFileEnginePrivate::unmap(uchar *ptr)

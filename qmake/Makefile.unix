@@ -24,18 +24,19 @@ QOBJS = \
 	qfile.o qfiledevice.o qfileinfo.o qfilesystemengine.o \
 	qfilesystementry.o qfsfileengine.o qfsfileengine_iterator.o \
 	qiodevice.o qsettings.o qtemporaryfile.o qtextstream.o \
-	qjsonarray.o qjson.o qjsondocument.o qjsonobject.o qjsonparser.o qjsonvalue.o \
+	qcborstreamwriter.o qcborvalue.o \
+	qjsoncbor.o qjsonarray.o qjsondocument.o qjsonobject.o qjsonparser.o qjsonvalue.o \
 	qmetatype.o qsystemerror.o qvariant.o \
 	quuid.o \
-	qarraydata.o qbitarray.o qbytearray.o qbytearraymatcher.o \
-	qcryptographichash.o qdatetime.o qhash.o qlinkedlist.o qlist.o \
+	qarraydata.o qbitarray.o qbytearray.o qbytearraylist.o qbytearraymatcher.o \
+	qcalendar.o qgregoriancalendar.o qromancalendar.o \
+	qcryptographichash.o qdatetime.o qhash.o qlist.o \
 	qlocale.o qlocale_tools.o qmap.o qregexp.o qringbuffer.o \
-	qstringbuilder.o qstring_compat.o qstring.o qstringlist.o qversionnumber.o \
+	qstringbuilder.o qstring.o qstringlist.o qversionnumber.o \
 	qvsnprintf.o qxmlstream.o qxmlutils.o \
 	$(QTOBJS) $(QTOBJS2)
 # QTOBJS and QTOBJS2 are populated by Makefile.unix.* as for QTSRC (see below).
 # Note: qlibraryinfo.o omitted deliberately - see below.
-# Note: qcore_mac_objc.o is in SOURCES (see qmake.pri) but not QOBJS.
 
 #all sources, used for the depend target (please keep alphabetic in each block)
 DEPEND_SRC = \
@@ -90,14 +91,15 @@ DEPEND_SRC = \
 	   $(SOURCE_PATH)/src/corelib/io/qiodevice.cpp \
 	   $(SOURCE_PATH)/src/corelib/io/qsettings.cpp \
 	   $(SOURCE_PATH)/src/corelib/io/qtemporaryfile.cpp \
-	   $(SOURCE_PATH)/src/corelib/kernel/qcore_mac_objc.mm \
 	   $(SOURCE_PATH)/src/corelib/kernel/qmetatype.cpp \
 	   $(SOURCE_PATH)/src/corelib/kernel/qsystemerror.cpp \
 	   $(SOURCE_PATH)/src/corelib/kernel/qvariant.cpp \
 	   $(SOURCE_PATH)/src/corelib/plugin/quuid.cpp \
+	   $(SOURCE_PATH)/src/corelib/serialization/qcborstreamwriter.cpp \
+	   $(SOURCE_PATH)/src/corelib/serialization/qcborvalue.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qdatastream.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qjsonarray.cpp \
-	   $(SOURCE_PATH)/src/corelib/serialization/qjson.cpp \
+	   $(SOURCE_PATH)/src/corelib/serialization/qjsoncbor.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qjsondocument.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qjsonobject.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qjsonparser.cpp \
@@ -105,26 +107,28 @@ DEPEND_SRC = \
 	   $(SOURCE_PATH)/src/corelib/serialization/qtextstream.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qxmlstream.cpp \
 	   $(SOURCE_PATH)/src/corelib/serialization/qxmlutils.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qbytearray.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qbytearraylist.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qbytearraymatcher.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qlocale.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qlocale_tools.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qregexp.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qstringbuilder.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qstring.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qstringlist.cpp \
+	   $(SOURCE_PATH)/src/corelib/text/qvsnprintf.cpp \
+	   $(SOURCE_PATH)/src/corelib/time/qcalendar.cpp \
+	   $(SOURCE_PATH)/src/corelib/time/qdatetime.cpp \
+	   $(SOURCE_PATH)/src/corelib/time/qgregoriancalendar.cpp \
+	   $(SOURCE_PATH)/src/corelib/time/qromancalendar.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qarraydata.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qbitarray.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qbytearray.cpp\
-	   $(SOURCE_PATH)/src/corelib/tools/qbytearraymatcher.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qcryptographichash.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qdatetime.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qhash.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qlinkedlist.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qlist.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qlocale.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qlocale_tools.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qmap.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qregexp.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qringbuffer.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qstringbuilder.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qstring_compat.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qstring.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qstringlist.cpp \
 	   $(SOURCE_PATH)/src/corelib/tools/qversionnumber.cpp \
-	   $(SOURCE_PATH)/src/corelib/tools/qvsnprintf.cpp \
 	   $(QTSRCS) $(QTSRCS2)
 # QTSRCS and QTSRCS2 come from Makefile.unix.* (concatenated with this
 # by configure); QTSRCS2 may include *.mm entries on macOS.
@@ -132,6 +136,7 @@ DEPEND_SRC = \
 
 CPPFLAGS = -g $(EXTRA_CPPFLAGS) \
 	   -I$(QMKSRC) -I$(QMKLIBSRC) -I$(QMKGENSRC) \
+	   -I$(SOURCE_PATH)/src/3rdparty/tinycbor/src \
 	   -I$(QMKGENSRC)/unix -I$(QMKGENSRC)/win32 -I$(QMKGENSRC)/mac \
 	   -I$(INC_PATH) -I$(INC_PATH)/QtCore \
 	   -I$(INC_PATH)/QtCore/$(QT_VERSION) -I$(INC_PATH)/QtCore/$(QT_VERSION)/QtCore \
@@ -304,19 +309,22 @@ qglobal.o: $(SOURCE_PATH)/src/corelib/global/qglobal.cpp
 qarraydata.o: $(SOURCE_PATH)/src/corelib/tools/qarraydata.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qbytearray.o: $(SOURCE_PATH)/src/corelib/tools/qbytearray.cpp
+qbytearray.o: $(SOURCE_PATH)/src/corelib/text/qbytearray.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qvsnprintf.o: $(SOURCE_PATH)/src/corelib/tools/qvsnprintf.cpp
+qbytearraylist.o: $(SOURCE_PATH)/src/corelib/text/qbytearraylist.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qbytearraymatcher.o: $(SOURCE_PATH)/src/corelib/tools/qbytearraymatcher.cpp
+qvsnprintf.o: $(SOURCE_PATH)/src/corelib/text/qvsnprintf.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qbytearraymatcher.o: $(SOURCE_PATH)/src/corelib/text/qbytearraymatcher.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qmetatype.o: $(SOURCE_PATH)/src/corelib/kernel/qmetatype.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qcore_mac.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_mac.cpp
+qcore_mac.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_mac.mm
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qcore_unix.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_unix.cpp
@@ -331,34 +339,28 @@ qoperatingsystemversion_win.o: $(SOURCE_PATH)/src/corelib/global/qoperatingsyste
 qoperatingsystemversion_darwin.o: $(SOURCE_PATH)/src/corelib/global/qoperatingsystemversion_darwin.mm
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qcore_mac_objc.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_mac_objc.mm
-	$(CXX) -c -o $@ $(CXXFLAGS) $<
-
 qcore_foundation.o: $(SOURCE_PATH)/src/corelib/kernel/qcore_foundation.mm
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qutfcodec.o: $(SOURCE_PATH)/src/corelib/codecs/qutfcodec.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qstring.o: $(SOURCE_PATH)/src/corelib/tools/qstring.cpp
+qstring.o: $(SOURCE_PATH)/src/corelib/text/qstring.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qstring_compat.o: $(SOURCE_PATH)/src/corelib/tools/qstring_compat.cpp
+qstringbuilder.o: $(SOURCE_PATH)/src/corelib/text/qstringbuilder.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qstringbuilder.o: $(SOURCE_PATH)/src/corelib/tools/qstringbuilder.cpp
+qlocale.o: $(SOURCE_PATH)/src/corelib/text/qlocale.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qlocale.o: $(SOURCE_PATH)/src/corelib/tools/qlocale.cpp
+qlocale_tools.o: $(SOURCE_PATH)/src/corelib/text/qlocale_tools.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qlocale_tools.o: $(SOURCE_PATH)/src/corelib/tools/qlocale_tools.cpp
+qlocale_unix.o: $(SOURCE_PATH)/src/corelib/text/qlocale_unix.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qlocale_unix.o: $(SOURCE_PATH)/src/corelib/tools/qlocale_unix.cpp
-	$(CXX) -c -o $@ $(CXXFLAGS) $<
-
-qlocale_win.o: $(SOURCE_PATH)/src/corelib/tools/qlocale_win.cpp
+qlocale_win.o: $(SOURCE_PATH)/src/corelib/text/qlocale_win.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qversionnumber.o: $(SOURCE_PATH)/src/corelib/tools/qversionnumber.cpp
@@ -412,7 +414,7 @@ qabstractfileengine.o: $(SOURCE_PATH)/src/corelib/io/qabstractfileengine.cpp
 qtemporaryfile.o: $(SOURCE_PATH)/src/corelib/io/qtemporaryfile.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qregexp.o: $(SOURCE_PATH)/src/corelib/tools/qregexp.cpp
+qregexp.o: $(SOURCE_PATH)/src/corelib/text/qregexp.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qbitarray.o: $(SOURCE_PATH)/src/corelib/tools/qbitarray.cpp
@@ -430,19 +432,25 @@ quuid.o: $(SOURCE_PATH)/src/corelib/plugin/quuid.cpp
 qfileinfo.o: $(SOURCE_PATH)/src/corelib/io/qfileinfo.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qdatetime.o: $(SOURCE_PATH)/src/corelib/tools/qdatetime.cpp
+qdatetime.o: $(SOURCE_PATH)/src/corelib/time/qdatetime.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qstringlist.o: $(SOURCE_PATH)/src/corelib/tools/qstringlist.cpp
+qcalendar.o: $(SOURCE_PATH)/src/corelib/time/qcalendar.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qgregoriancalendar.o: $(SOURCE_PATH)/src/corelib/time/qgregoriancalendar.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qromancalendar.o: $(SOURCE_PATH)/src/corelib/time/qromancalendar.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qstringlist.o: $(SOURCE_PATH)/src/corelib/text/qstringlist.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qmap.o: $(SOURCE_PATH)/src/corelib/tools/qmap.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qhash.o: $(SOURCE_PATH)/src/corelib/tools/qhash.cpp
-	$(CXX) -c -o $@ $(CXXFLAGS) $<
-
-qlinkedlist.o: $(SOURCE_PATH)/src/corelib/tools/qlinkedlist.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qcryptographichash.o: $(SOURCE_PATH)/src/corelib/tools/qcryptographichash.cpp
@@ -457,7 +465,13 @@ qsystemlibrary.o: $(SOURCE_PATH)/src/corelib/plugin/qsystemlibrary.cpp
 qdatastream.o: $(SOURCE_PATH)/src/corelib/serialization/qdatastream.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
-qjson.o: $(SOURCE_PATH)/src/corelib/serialization/qjson.cpp
+qcborstreamwriter.o: $(SOURCE_PATH)/src/corelib/serialization/qcborstreamwriter.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qcborvalue.o: $(SOURCE_PATH)/src/corelib/serialization/qcborvalue.cpp
+	$(CXX) -c -o $@ $(CXXFLAGS) $<
+
+qjsoncbor.o: $(SOURCE_PATH)/src/corelib/serialization/qjsoncbor.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 qjsondocument.o: $(SOURCE_PATH)/src/corelib/serialization/qjsondocument.cpp

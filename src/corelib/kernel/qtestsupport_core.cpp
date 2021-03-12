@@ -55,7 +55,7 @@ Q_CORE_EXPORT void QTestPrivate::qSleep(int ms)
     Sleep(uint(ms));
 #else
     struct timespec ts = { time_t(ms / 1000), (ms % 1000) * 1000 * 1000 };
-    nanosleep(&ts, NULL);
+    nanosleep(&ts, nullptr);
 #endif
 }
 
@@ -67,7 +67,7 @@ Q_CORE_EXPORT void QTestPrivate::qSleep(int ms)
 
     Example:
 
-    \snippet code/src_corelib_kernel_qtestsupport_core.cpp 0
+    \snippet code/src_corelib_kernel_qtestsupport_core_snippet.cpp 0
 
     The code above will wait for the object to become ready, for a
     maximum of three seconds.
@@ -102,7 +102,7 @@ Q_CORE_EXPORT void QTest::qWait(int ms)
     int remaining = ms;
     do {
         QCoreApplication::processEvents(QEventLoop::AllEvents, remaining);
-        QCoreApplication::sendPostedEvents(Q_NULLPTR, QEvent::DeferredDelete);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         remaining = timer.remainingTime();
         if (remaining <= 0)
             break;

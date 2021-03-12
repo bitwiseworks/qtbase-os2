@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <QtCore/qrandom.h>
+
 #include <private/qpixmapcache_p.h>
 #include <private/qpaintengine_p.h>
 #include <private/qpolygonclipper_p.h>
@@ -455,7 +457,7 @@ static const uchar base_dither_matrix[DITHER_SIZE][DITHER_SIZE] = {
 static QPixmap qt_patternForAlpha(uchar alpha, int screen)
 {
     QPixmap pm;
-    QString key = QLatin1Literal("$qt-alpha-brush$")
+    QString key = QLatin1String("$qt-alpha-brush$")
                   % HexString<uchar>(alpha)
                   % HexString<int>(screen);
 
@@ -504,7 +506,7 @@ static Picture getPatternFill(int screen, const QBrush &b)
             return X11->pattern_fills[i].picture;
     }
     // none found, replace one
-    int i = qrand() % 16;
+    int i = QRandomGenerator::global()->generate() % 16;
 
     if (X11->pattern_fills[i].screen != screen && X11->pattern_fills[i].picture) {
     XRenderFreePicture (QXcbX11Info::display(), X11->pattern_fills[i].picture);

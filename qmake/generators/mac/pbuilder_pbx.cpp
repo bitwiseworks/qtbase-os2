@@ -60,11 +60,6 @@ static QString qtSha1(const QByteArray &src)
     return QString::fromLatin1(digest.toHex());
 }
 
-ProjectBuilderMakefileGenerator::ProjectBuilderMakefileGenerator() : UnixMakefileGenerator()
-{
-
-}
-
 bool
 ProjectBuilderMakefileGenerator::writeMakefile(QTextStream &t)
 {
@@ -514,6 +509,56 @@ static QList<QVariantMap> provisioningTeams()
     return flatTeams;
 }
 
+bool ProjectBuilderMakefileGenerator::replaceLibrarySuffix(const QString &lib_file,
+                                                           const ProString &opt,
+                                                           QString &name, QString &library)
+{
+    /* This isn't real nice, but it is real useful. This looks in a prl
+       for what the library will ultimately be called so we can stick it
+       in the ProjectFile. If the prl format ever changes (not likely) then
+       this will not really work. However, more concerning is that it will
+       encode the version number in the Project file which might be a bad
+       things in days to come? --Sam
+    */
+    if (lib_file.isEmpty())
+        return false;
+
+    QMakeMetaInfo libinfo;
+    if (!libinfo.readLib(lib_file) || libinfo.isEmpty("QMAKE_PRL_TARGET"))
+        return false;
+
+    const QString libDir = fileInfo(lib_file).absolutePath();
+    library = libDir + Option::dir_sep + libinfo.first("QMAKE_PRL_TARGET");
+
+    debug_msg(1, "pbuilder: Found library (%s) via PRL %s (%s)",
+              opt.toLatin1().constData(), lib_file.toLatin1().constData(), library.toLatin1().constData());
+
+    if (project->isActiveConfig("xcode_dynamic_library_suffix")) {
+        QString suffixSetting = project->first("QMAKE_XCODE_LIBRARY_SUFFIX_SETTING").toQString();
+        if (!suffixSetting.isEmpty()) {
+            QString librarySuffix = project->first("QMAKE_XCODE_LIBRARY_SUFFIX").toQString();
+            suffixSetting = "$(" + suffixSetting + ")";
+            if (!librarySuffix.isEmpty()) {
+                int pos = library.lastIndexOf(librarySuffix + '.');
+                if (pos == -1) {
+                    warn_msg(WarnLogic, "Failed to find expected suffix '%s' for library '%s'.",
+                             qPrintable(librarySuffix), qPrintable(library));
+                } else {
+                    library.replace(pos, librarySuffix.length(), suffixSetting);
+                    if (name.endsWith(librarySuffix))
+                        name.chop(librarySuffix.length());
+                }
+            } else {
+                int pos = library.lastIndexOf(name);
+                if (pos != -1)
+                    library.insert(pos + name.length(), suffixSetting);
+            }
+        }
+    }
+
+    return true;
+}
+
 bool
 ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
 {
@@ -540,7 +585,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
             debug_msg(1, "pbuilder: Creating file: %s", mkfile.toLatin1().constData());
             QTextStream mkt(&mkf);
             writeHeader(mkt);
-            mkt << "QMAKE    = " << var("QMAKE_QMAKE") << endl;
+            mkt << "QMAKE    = " << var("QMAKE_QMAKE") << Qt::endl;
             project->values("QMAKE_MAKE_QMAKE_EXTRA_COMMANDS")
                 << "@echo 'warning: Xcode project has been regenerated, custom settings have been lost. " \
                    "Use CONFIG+=no_autoqmake to prevent this behavior in the future, " \
@@ -738,15 +783,15 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
             debug_msg(1, "pbuilder: Creating file: %s", mkfile.toLatin1().constData());
             QTextStream mkt(&mkf);
             writeHeader(mkt);
-            mkt << "MOC       = " << var("QMAKE_MOC") << endl;
-            mkt << "UIC       = " << var("QMAKE_UIC") << endl;
-            mkt << "LEX       = " << var("QMAKE_LEX") << endl;
-            mkt << "LEXFLAGS  = " << var("QMAKE_LEXFLAGS") << endl;
-            mkt << "YACC      = " << var("QMAKE_YACC") << endl;
-            mkt << "YACCFLAGS = " << var("QMAKE_YACCFLAGS") << endl;
+            mkt << "MOC       = " << var("QMAKE_MOC") << Qt::endl;
+            mkt << "UIC       = " << var("QMAKE_UIC") << Qt::endl;
+            mkt << "LEX       = " << var("QMAKE_LEX") << Qt::endl;
+            mkt << "LEXFLAGS  = " << var("QMAKE_LEXFLAGS") << Qt::endl;
+            mkt << "YACC      = " << var("QMAKE_YACC") << Qt::endl;
+            mkt << "YACCFLAGS = " << var("QMAKE_YACCFLAGS") << Qt::endl;
             mkt << "DEFINES       = "
                 << varGlue("PRL_EXPORT_DEFINES","-D"," -D"," ")
-                << varGlue("DEFINES","-D"," -D","") << endl;
+                << varGlue("DEFINES","-D"," -D","") << Qt::endl;
             mkt << "INCPATH       =";
             {
                 const ProStringList &incs = project->values("INCLUDEPATH");
@@ -755,9 +800,9 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
             }
             if(!project->isEmpty("QMAKE_FRAMEWORKPATH_FLAGS"))
                mkt << " " << var("QMAKE_FRAMEWORKPATH_FLAGS");
-            mkt << endl;
-            mkt << "DEL_FILE  = " << var("QMAKE_DEL_FILE") << endl;
-            mkt << "MOVE      = " << var("QMAKE_MOVE") << endl << endl;
+            mkt << Qt::endl;
+            mkt << "DEL_FILE  = " << var("QMAKE_DEL_FILE") << Qt::endl;
+            mkt << "MOVE      = " << var("QMAKE_MOVE") << Qt::endl << Qt::endl;
             mkt << "preprocess: compilers\n";
             mkt << "clean preprocess_clean: compiler_clean\n\n";
             writeExtraTargets(mkt);
@@ -787,7 +832,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                         }
                     }
                 }
-                mkt << endl;
+                mkt << Qt::endl;
                 writeExtraCompilerTargets(mkt);
                 writingUnixMakefileGenerator = false;
             }
@@ -833,6 +878,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
         for (int i = 0; libs[i]; i++) {
             tmp = project->values(libs[i]);
             for(int x = 0; x < tmp.count();) {
+                bool libSuffixReplaced = false;
                 bool remove = false;
                 QString library, name;
                 ProString opt = tmp[x];
@@ -845,49 +891,12 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                     QString lib("lib" + name);
                     for (ProStringList::Iterator lit = libdirs.begin(); lit != libdirs.end(); ++lit) {
                         if(project->isActiveConfig("link_prl")) {
-                            /* This isn't real nice, but it is real useful. This looks in a prl
-                               for what the library will ultimately be called so we can stick it
-                               in the ProjectFile. If the prl format ever changes (not likely) then
-                               this will not really work. However, more concerning is that it will
-                               encode the version number in the Project file which might be a bad
-                               things in days to come? --Sam
-                            */
-                            QString lib_file = QMakeMetaInfo::checkLib(Option::normalizePath(
-                                        (*lit) + Option::dir_sep + lib + Option::prl_ext));
-                            if (!lib_file.isEmpty()) {
-                                QMakeMetaInfo libinfo;
-                                if(libinfo.readLib(lib_file)) {
-                                    if(!libinfo.isEmpty("QMAKE_PRL_TARGET")) {
-                                        library = (*lit) + Option::dir_sep + libinfo.first("QMAKE_PRL_TARGET");
-                                        debug_msg(1, "pbuilder: Found library (%s) via PRL %s (%s)",
-                                                  opt.toLatin1().constData(), lib_file.toLatin1().constData(), library.toLatin1().constData());
-                                        remove = true;
-
-                                        if (project->isActiveConfig("xcode_dynamic_library_suffix")) {
-                                            QString suffixSetting = project->first("QMAKE_XCODE_LIBRARY_SUFFIX_SETTING").toQString();
-                                            if (!suffixSetting.isEmpty()) {
-                                                QString librarySuffix = project->first("QMAKE_XCODE_LIBRARY_SUFFIX").toQString();
-                                                suffixSetting = "$(" + suffixSetting + ")";
-                                                if (!librarySuffix.isEmpty()) {
-                                                    int pos = library.lastIndexOf(librarySuffix + '.');
-                                                    if (pos == -1) {
-                                                        warn_msg(WarnLogic, "Failed to find expected suffix '%s' for library '%s'.",
-                                                                            qPrintable(librarySuffix), qPrintable(library));
-                                                    } else {
-                                                        library.replace(pos, librarySuffix.length(), suffixSetting);
-                                                        if (name.endsWith(librarySuffix))
-                                                            name.chop(librarySuffix.length());
-                                                    }
-                                                } else {
-                                                    int pos = library.lastIndexOf(name);
-                                                    if (pos != -1)
-                                                        library.insert(pos + name.length(), suffixSetting);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            const QString prlFilePath = QMakeMetaInfo::checkLib(
+                                Option::normalizePath((*lit) + Option::dir_sep + lib
+                                                      + Option::prl_ext));
+                            if (replaceLibrarySuffix(prlFilePath, opt, name, library))
+                                remove = true;
+                            libSuffixReplaced = true;
                         }
                         if(!remove) {
                             QString extns[] = { ".dylib", ".so", ".a", QString() };
@@ -937,6 +946,16 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                     }
                 }
                 if(!library.isEmpty()) {
+                    if (!libSuffixReplaced) {
+                        const QFileInfo fi = fileInfo(library);
+                        const QString prlFilePath = QMakeMetaInfo::checkLib(
+                            Option::normalizePath(fi.absolutePath() + '/' + fi.completeBaseName()
+                                                  + Option::prl_ext));
+                        if (!prlFilePath.isEmpty()) {
+                            name = fi.completeBaseName().mid(3);
+                            replaceLibrarySuffix(prlFilePath, opt, name, library);
+                        }
+                    }
                     const int slsh = library.lastIndexOf(Option::dir_sep);
                     if(name.isEmpty()) {
                         if(slsh != -1)
@@ -995,12 +1014,12 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
             tmp = project->values("SUBLIBS");
             for(int i = 0; i < tmp.count(); i++)
                 t << escapeFilePath("tmp/lib" + tmp[i] + ".a") << ' ';
-            t << endl << endl;
+            t << Qt::endl << Qt::endl;
             mkt << "sublibs: $(SUBLIBS)\n\n";
             tmp = project->values("SUBLIBS");
             for(int i = 0; i < tmp.count(); i++)
                 t << escapeFilePath("tmp/lib" + tmp[i] + ".a") + ":\n\t"
-                  << var(ProKey("MAKELIB" + tmp[i])) << endl << endl;
+                  << var(ProKey("MAKELIB" + tmp[i])) << Qt::endl << Qt::endl;
             mkt.flush();
             mkf.close();
             writingUnixMakefileGenerator = false;
@@ -1237,9 +1256,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
           << "\t\t\t" << writeSettings("runOnlyForDeploymentPostprocessing", "0", SettingsNoQuote) << ";\n"
           << "\t\t};\n";
 
-        QMapIterator<ProString, ProStringList> it(embedded_plugins);
-        while (it.hasNext()) {
-            it.next();
+        for (auto it = embedded_plugins.cbegin(), end = embedded_plugins.cend(); it != end; ++it) {
             QString suffix = !it.key().isEmpty() ? (" (" + it.key() + ")") : QString();
             QString grp3("Embed PlugIns" + suffix), key3 = keyFor(grp3);
             project->values("QMAKE_PBX_BUILDPHASES").append(key3);
@@ -1475,7 +1492,7 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
           << "\t\t\t" << writeSettings("name", "Qt Test") << ";\n"
           << "\t\t};\n";
 
-        QLatin1Literal testTargetID("TestTargetID");
+        QLatin1String testTargetID("TestTargetID");
         project->values(ProKey("QMAKE_PBX_TARGET_ATTRIBUTES_" + testTargetKey + "_" + testTargetID)).append(keyFor(pbx_dir + "QMAKE_PBX_TARGET"));
         project->values(ProKey("QMAKE_PBX_TARGET_ATTRIBUTES_" + testTargetKey)).append(ProKey(testTargetID));
     }
@@ -1612,17 +1629,24 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                     }
                 }
 
-                // The symroot is marked by xcodebuild as excluded from Time Machine
-                // backups, as it's a temporary build dir, so we don't want it to be
-                // the same as the possibe in-source dir, as that would leave out
-                // sources from being backed up.
-                t << "\t\t\t\t" << writeSettings("SYMROOT",
-                    Option::output_dir + Option::dir_sep + ".xcode") << ";\n";
+                if (Option::output_dir != qmake_getpwd()) {
+                    // The SYMROOT is marked by Xcode as excluded from Time Machine
+                    // backups, as it's a temporary build dir, but that's fine when
+                    // we are shadow building.
+                    t << "\t\t\t\t" << writeSettings("SYMROOT", "$(PROJECT_DIR)") << ";\n";
+                } else {
+                    // For in-source builds we don't want to exclude the sources
+                    // from being backed up, so we point SYMROOT to a temporary
+                    // build directory.
+                    t << "\t\t\t\t" << writeSettings("SYMROOT", ".xcode") << ";\n";
 
-                // The configuration build dir however is not treated as excluded,
-                // so we can safely point it to the root output dir.
-                t << "\t\t\t\t" << writeSettings("CONFIGURATION_BUILD_DIR",
-                    Option::output_dir + Option::dir_sep + "$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)") << ";\n";
+                    // Then we set the configuration build dir instead, so that the
+                    // final build artifacts end up in the place Qt Creator expects.
+                    // The disadvantage of using this over SYMROOT is that Xcode will
+                    // fail to archive projects that override this variable.
+                    t << "\t\t\t\t" << writeSettings("CONFIGURATION_BUILD_DIR",
+                        "$(PROJECT_DIR)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)") << ";\n";
+                }
 
                 if (!project->isEmpty("DESTDIR")) {
                     ProString dir = project->first("DESTDIR");

@@ -44,6 +44,9 @@
 #include <QtWidgets/qwidget.h>
 #endif
 #include <QtGui/private/qcoregraphics_p.h>
+#include <QtCore/qsysinfo.h>
+
+#include <vector>
 
 QT_BEGIN_NAMESPACE
 
@@ -128,26 +131,28 @@ Qt::DropAction QCocoaDrag::drag(QDrag *o)
     m_drag = o;
     m_executed_drop_action = Qt::IgnoreAction;
 
-    QPoint hotSpot = m_drag->hotSpot();
-    QPixmap pm = dragPixmap(m_drag, hotSpot);
-    QSize pmDeviceIndependentSize = pm.size() / pm.devicePixelRatio();
-    NSImage *nsimage = qt_mac_create_nsimage(pm);
-    [nsimage setSize:NSSizeFromCGSize(pmDeviceIndependentSize.toCGSize())];
-
-    QMacPasteboard dragBoard((CFStringRef) NSDragPboard, QMacInternalPasteboardMime::MIME_DND);
+    QMacPasteboard dragBoard(CFStringRef(NSPasteboardNameDrag), QMacInternalPasteboardMime::MIME_DND);
     m_drag->mimeData()->setData(QLatin1String("application/x-qt-mime-type-name"), QByteArray("dummy"));
     dragBoard.setMimeData(m_drag->mimeData(), QMacPasteboard::LazyRequest);
+
+    if (maybeDragMultipleItems())
+        return m_executed_drop_action;
+
+    QPoint hotSpot = m_drag->hotSpot();
+    QPixmap pm = dragPixmap(m_drag, hotSpot);
+    NSImage *dragImage = [NSImage imageFromQImage:pm.toImage()];
+    Q_ASSERT(dragImage);
 
     NSPoint event_location = [m_lastEvent locationInWindow];
     NSWindow *theWindow = [m_lastEvent window];
     Q_ASSERT(theWindow);
     event_location.x -= hotSpot.x();
-    CGFloat flippedY = pmDeviceIndependentSize.height() - hotSpot.y();
+    CGFloat flippedY = dragImage.size.height - hotSpot.y();
     event_location.y -= flippedY;
     NSSize mouseOffset_unused = NSMakeSize(0.0, 0.0);
-    NSPasteboard *pboard = [NSPasteboard pasteboardWithName:NSDragPboard];
+    NSPasteboard *pboard = [NSPasteboard pasteboardWithName:NSPasteboardNameDrag];
 
-    [theWindow dragImage:nsimage
+    [theWindow dragImage:dragImage
         at:event_location
         offset:mouseOffset_unused
         event:m_lastEvent
@@ -155,16 +160,103 @@ Qt::DropAction QCocoaDrag::drag(QDrag *o)
         source:m_lastView
         slideBack:YES];
 
-    [nsimage release];
-
     m_drag = nullptr;
     return m_executed_drop_action;
+}
+
+bool QCocoaDrag::maybeDragMultipleItems()
+{
+    Q_ASSERT(m_drag && m_drag->mimeData());
+    Q_ASSERT(m_executed_drop_action == Qt::IgnoreAction);
+
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::MacOSMojave) {
+        // -dragImage: stopped working in 10.14 first.
+        return false;
+    }
+
+    const QMacAutoReleasePool pool;
+
+    NSWindow *theWindow = [m_lastEvent window];
+    Q_ASSERT(theWindow);
+
+    if (![theWindow.contentView respondsToSelector:@selector(draggingSession:sourceOperationMaskForDraggingContext:)])
+        return false;
+
+    auto *sourceView = static_cast<NSView<NSDraggingSource>*>(theWindow.contentView);
+
+    const auto &qtUrls = m_drag->mimeData()->urls();
+    NSPasteboard *dragBoard = [NSPasteboard pasteboardWithName:NSPasteboardNameDrag];
+
+    if (qtUrls.size() <= 1) {
+        // Good old -dragImage: works perfectly for this ...
+        return false;
+    }
+
+    std::vector<NSPasteboardItem *> nonUrls;
+    for (NSPasteboardItem *item in dragBoard.pasteboardItems) {
+        bool isUrl = false;
+        for (NSPasteboardType type in item.types) {
+            using NSStringRef = NSString *;
+            if ([type isEqualToString:NSStringRef(kUTTypeFileURL)]) {
+                isUrl = true;
+                break;
+            }
+        }
+
+        if (!isUrl)
+            nonUrls.push_back(item);
+    }
+
+    QPoint hotSpot = m_drag->hotSpot();
+    const auto pixmap = dragPixmap(m_drag, hotSpot);
+    NSImage *dragImage = [NSImage imageFromQImage:pixmap.toImage()];
+    Q_ASSERT(dragImage);
+
+    NSMutableArray<NSDraggingItem *> *dragItems = [[[NSMutableArray alloc] init] autorelease];
+    const NSPoint itemLocation = m_drag->hotSpot().toCGPoint();
+    // 0. We start from URLs, which can be actually in a list (thus technically
+    // only ONE item in the pasteboard. The fact it's only one does not help, we are
+    // still getting an exception because of the number of items/images mismatch ...
+    // We only set the image for the first item and nil for the rest, the image already
+    // contains a combined picture for all urls we drag.
+    auto imageOrNil = dragImage;
+    for (const auto &qtUrl : qtUrls) {
+        NSURL *nsUrl = qtUrl.toNSURL();
+        auto *newItem = [[[NSDraggingItem alloc] initWithPasteboardWriter:nsUrl] autorelease];
+        const NSRect itemFrame = NSMakeRect(itemLocation.x, itemLocation.y,
+                                            dragImage.size.width,
+                                            dragImage.size.height);
+
+        [newItem setDraggingFrame:itemFrame contents:imageOrNil];
+        imageOrNil = nil;
+        [dragItems addObject:newItem];
+    }
+    // 1. Repeat for non-url items, if any:
+    for (auto *pbItem : nonUrls) {
+        auto *newItem = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbItem] autorelease];
+        const NSRect itemFrame = NSMakeRect(itemLocation.x, itemLocation.y,
+                                            dragImage.size.width,
+                                            dragImage.size.height);
+        [newItem setDraggingFrame:itemFrame contents:imageOrNil];
+        [dragItems addObject:newItem];
+    }
+
+    [sourceView beginDraggingSessionWithItems:dragItems event:m_lastEvent source:sourceView];
+    internalDragLoop.exec();
+    return true;
 }
 
 void QCocoaDrag::setAcceptedAction(Qt::DropAction act)
 {
     m_executed_drop_action = act;
 }
+
+void QCocoaDrag::exitDragLoop()
+{
+    if (internalDragLoop.isRunning())
+        internalDragLoop.exit();
+}
+
 
 QPixmap QCocoaDrag::dragPixmap(QDrag *drag, QPoint &hotSpot) const
 {

@@ -93,6 +93,7 @@ public:
         Version9_6 = 22,
         Version10 = 23,
         Version11 = 24,
+        Version12 = 25,
         UnknownLaterVersion = 100000
     };
 
@@ -129,7 +130,7 @@ protected:
     bool rollbackTransaction() override;
 
 private Q_SLOTS:
-    void _q_handleNotification(int);
+    void _q_handleNotification();
 };
 
 QT_END_NAMESPACE

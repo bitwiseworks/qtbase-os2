@@ -166,7 +166,12 @@ static inline bool launch(const QString &launcher, const QUrl &url)
 #if !QT_CONFIG(process)
     const bool ok = ::system(qPrintable(command + QLatin1String(" &")));
 #else
-    const bool ok = QProcess::startDetached(command);
+    QStringList args = QProcess::splitCommand(command);
+    bool ok = false;
+    if (!args.isEmpty()) {
+        QString program = args.takeFirst();
+        ok = QProcess::startDetached(program, args);
+    }
 #endif
     if (!ok)
         qWarning("Launch failed (%s)", qPrintable(command));
@@ -209,8 +214,10 @@ static inline QDBusMessage xdgDesktopPortalOpenFile(const QUrl &url)
         QDBusUnixFileDescriptor descriptor;
         descriptor.giveFileDescriptor(fd);
 
-        // FIXME parent_window_id and handle writable option
-        message << QString() << QVariant::fromValue(descriptor) << QVariantMap();
+        const QVariantMap options = {{QLatin1String("writable"), true}};
+
+        // FIXME parent_window_id
+        message << QString() << QVariant::fromValue(descriptor) << options;
 
         return QDBusConnection::sessionBus().call(message);
     }

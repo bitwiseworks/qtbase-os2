@@ -50,10 +50,6 @@
 #include "qdebug.h"
 #include <QDesktopWidget>
 
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-#include <private/qt_mac_p.h>
-#endif
-
 #include <private/qwidget_p.h>
 #include <private/qdesktopwidget_p.h>
 #include <QtWidgets/qabstractscrollarea.h>
@@ -81,9 +77,7 @@ public:
     Qt::Corner m_corner;
     bool gotMousePress;
     QPointer<QWidget> tlw;
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    void updateMacSizer(bool hide) const;
-#endif
+
     Qt::Corner corner() const;
     inline bool atBottom() const
     {
@@ -119,9 +113,7 @@ public:
         updateTopLevelWidget();
         if (tlw && showSizeGrip) {
             Qt::WindowStates sizeGripNotVisibleState = Qt::WindowFullScreen;
-#if 1 // Used to be excluded in Qt4 for Q_WS_MAC
             sizeGripNotVisibleState |= Qt::WindowMaximized;
-#endif
             // Don't show the size grip if the tlw is maximized or in full screen mode.
             showSizeGrip = !(tlw->windowState() & sizeGripNotVisibleState);
         }
@@ -136,22 +128,10 @@ QSizeGripPrivate::QSizeGripPrivate()
     : dxMax(0)
     , dyMax(0)
     , gotMousePress(false)
-    , tlw(0)
+    , tlw(nullptr)
     , m_platformSizeGrip(false)
 {
 }
-
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-void QSizeGripPrivate::updateMacSizer(bool hide) const
-{
-    Q_Q(const QSizeGrip);
-    if (QApplication::closingDown() || !parent)
-        return;
-    QWidget *topLevelWindow = qt_sizegrip_topLevelWidget(const_cast<QSizeGrip *>(q));
-    if(topLevelWindow && topLevelWindow->isWindow())
-        QWidgetPrivate::qt_mac_update_sizer(topLevelWindow, hide ? -1 : 1);
-}
-#endif
 
 Qt::Corner QSizeGripPrivate::corner() const
 {
@@ -215,7 +195,7 @@ Qt::Corner QSizeGripPrivate::corner() const
     parent.
 */
 QSizeGrip::QSizeGrip(QWidget * parent)
-    : QWidget(*new QSizeGripPrivate, parent, 0)
+    : QWidget(*new QSizeGripPrivate, parent, { })
 {
     Q_D(QSizeGrip);
     d->init();
@@ -227,7 +207,7 @@ void QSizeGripPrivate::init()
     Q_Q(QSizeGrip);
     m_corner = q->isLeftToRight() ? Qt::BottomRightCorner : Qt::BottomLeftCorner;
 
-#if !defined(QT_NO_CURSOR) && !0 /* Used to be included in Qt4 for Q_WS_MAC */
+#if !defined(QT_NO_CURSOR)
     q->setCursor(m_corner == Qt::TopLeftCorner || m_corner == Qt::BottomRightCorner
                  ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor);
 #endif
@@ -280,6 +260,17 @@ void QSizeGrip::paintEvent(QPaintEvent *event)
     parameter.
 */
 
+static Qt::Edges edgesFromCorner(Qt::Corner corner)
+{
+    switch (corner) {
+    case Qt::TopLeftCorner: return Qt::TopEdge | Qt::LeftEdge;
+    case Qt::TopRightCorner: return Qt::TopEdge | Qt::RightEdge;
+    case Qt::BottomLeftCorner: return Qt::BottomEdge | Qt::LeftEdge;
+    case Qt::BottomRightCorner: return Qt::BottomEdge | Qt::RightEdge;
+    }
+    return Qt::Edges{};
+}
+
 void QSizeGrip::mousePressEvent(QMouseEvent * e)
 {
     if (e->button() != Qt::LeftButton) {
@@ -301,8 +292,9 @@ void QSizeGrip::mousePressEvent(QMouseEvent * e)
         && !tlw->testAttribute(Qt::WA_DontShowOnScreen)
         && !tlw->hasHeightForWidth()) {
         QPlatformWindow *platformWindow = tlw->windowHandle()->handle();
-        const QPoint topLevelPos = mapTo(tlw, e->pos());
-        d->m_platformSizeGrip = platformWindow && platformWindow->startSystemResize(topLevelPos, d->m_corner);
+        const Qt::Edges edges = edgesFromCorner(d->m_corner);
+        if (!QGuiApplication::platformName().contains(QStringLiteral("xcb"))) // ### FIXME QTBUG-69716
+            d->m_platformSizeGrip = platformWindow && platformWindow->startSystemResize(edges);
     }
 
     if (d->m_platformSizeGrip)
@@ -440,7 +432,7 @@ void QSizeGrip::moveEvent(QMoveEvent * /*moveEvent*/)
         return;
 
     d->m_corner = d->corner();
-#if !defined(QT_NO_CURSOR) && !0 /* Used to be included in Qt4 for Q_WS_MAC */
+#if !defined(QT_NO_CURSOR)
     setCursor(d->m_corner == Qt::TopLeftCorner || d->m_corner == Qt::BottomRightCorner
               ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor);
 #endif
@@ -451,9 +443,6 @@ void QSizeGrip::moveEvent(QMoveEvent * /*moveEvent*/)
 */
 void QSizeGrip::showEvent(QShowEvent *showEvent)
 {
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    d_func()->updateMacSizer(false);
-#endif
     QWidget::showEvent(showEvent);
 }
 
@@ -462,9 +451,6 @@ void QSizeGrip::showEvent(QShowEvent *showEvent)
 */
 void QSizeGrip::hideEvent(QHideEvent *hideEvent)
 {
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    d_func()->updateMacSizer(true);
-#endif
     QWidget::hideEvent(hideEvent);
 }
 
@@ -486,9 +472,7 @@ bool QSizeGrip::eventFilter(QObject *o, QEvent *e)
         return QWidget::eventFilter(o, e);
     }
     Qt::WindowStates sizeGripNotVisibleState = Qt::WindowFullScreen;
-#if 1 // Used to be excluded in Qt4 for Q_WS_MAC
     sizeGripNotVisibleState |= Qt::WindowMaximized;
-#endif
     // Don't show the size grip if the tlw is maximized or in full screen mode.
     setVisible(!(d->tlw->windowState() & sizeGripNotVisibleState));
     setAttribute(Qt::WA_WState_ExplicitShowHide, false);

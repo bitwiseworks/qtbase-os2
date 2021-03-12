@@ -101,17 +101,17 @@ class QTextBlockData : public QFragment<3>
 {
 public:
     inline void initialize()
-        { layout = 0; userData = 0; userState = -1; revision = 0; hidden = 0; }
+        { layout = nullptr; userData = nullptr; userState = -1; revision = 0; hidden = 0; }
     void invalidate() const;
     inline void free()
-    { delete layout; layout = 0; delete userData; userData = 0; }
+    { delete layout; layout = nullptr; delete userData; userData = nullptr; }
 
     mutable int format;
     // ##### probably store a QTextEngine * here!
     mutable QTextLayout *layout;
     mutable QTextBlockUserData *userData;
     mutable int userState;
-    mutable int revision : 31;
+    mutable signed int revision : 31;
     mutable uint hidden : 1;
 };
 
@@ -277,8 +277,8 @@ private:
 public:
     void documentChange(int from, int length);
 
-    inline void addCursor(QTextCursorPrivate *c) { cursors.append(c); }
-    inline void removeCursor(QTextCursorPrivate *c) { cursors.removeAll(c); }
+    inline void addCursor(QTextCursorPrivate *c) { cursors.insert(c); }
+    inline void removeCursor(QTextCursorPrivate *c) { cursors.remove(c); }
 
     QTextFrame *frameAt(int pos) const;
     QTextFrame *rootFrame() const;
@@ -330,7 +330,7 @@ private:
     BlockMap blocks;
     int initialBlockCharFormatIndex;
 
-    QList<QTextCursorPrivate *> cursors;
+    QSet<QTextCursorPrivate *> cursors;
     QMap<int, QTextObject *> objects;
     QMap<QUrl, QVariant> resources;
     QMap<QUrl, QVariant> cachedResources;
@@ -339,6 +339,7 @@ private:
     int lastBlockCount;
 
 public:
+    bool inContentsChange;
     QTextOption defaultTextOption;
     Qt::CursorMoveStyle defaultCursorMoveStyle;
 #ifndef QT_NO_CSSPARSER
@@ -346,7 +347,6 @@ public:
 #endif
     int maximumBlockCount;
     uint needsEnsureMaximumBlockCount : 1;
-    uint inContentsChange : 1;
     uint blockCursorAdjustment : 1;
     QSizeF pageSize;
     QString title;
@@ -357,6 +357,7 @@ public:
 
     void mergeCachedResources(const QTextDocumentPrivate *priv);
 
+    friend struct QTextHtmlParserNode;
     friend class QTextHtmlExporter;
     friend class QTextCursor;
 };
@@ -395,7 +396,6 @@ private:
     void emitBorderStyle(QTextFrameFormat::BorderStyle style);
     void emitPageBreakPolicy(QTextFormat::PageBreakFlags policy);
 
-    void emitFontFamily(const QString &family);
     void emitFontFamily(const QStringList &families);
 
     void emitBackgroundAttribute(const QTextFormat &format);

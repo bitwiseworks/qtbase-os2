@@ -189,7 +189,7 @@ static const int maxSizeSection = 1048575; // since section size is in a bitfiel
     The following values are obsolete:
     \value Custom Use Fixed instead.
 
-    \sa setResizeMode(), setSectionResizeMode(), stretchLastSection, minimumSectionSize
+    \sa setSectionResizeMode(), stretchLastSection, minimumSectionSize
 */
 
 /*!
@@ -880,7 +880,7 @@ void QHeaderView::swapSections(int first, int second)
     size equal to zero is however not recommended. In that situation hideSection
     should be used instead.
 
-    \sa sectionResized(), resizeMode(), sectionSize(), hideSection()
+    \sa sectionResized(), sectionSize(), hideSection()
 */
 
 void QHeaderView::resizeSection(int logical, int size)
@@ -960,7 +960,7 @@ void QHeaderView::resizeSection(int logical, int size)
     Resizes the sections according to the given \a mode, ignoring the current
     resize mode.
 
-    \sa resizeMode(), sectionResized()
+    \sa sectionResized()
 */
 
 void QHeaderView::resizeSections(QHeaderView::ResizeMode mode)
@@ -1139,16 +1139,6 @@ void QHeaderView::setSectionsMovable(bool movable)
     d->movableSections = movable;
 }
 
-// ### Qt 6 - remove this obsolete function
-/*!
-    \obsolete
-    \fn void QHeaderView::setMovable(bool movable)
-
-    Use setSectionsMovable instead.
-
-    \sa setSectionsMovable()
-*/
-
 /*!
     \since 5.0
 
@@ -1166,16 +1156,6 @@ bool QHeaderView::sectionsMovable() const
     Q_D(const QHeaderView);
     return d->movableSections;
 }
-
-// ### Qt 6 - remove this obsolete function
-/*!
-    \obsolete
-    \fn bool QHeaderView::isMovable() const
-
-    Use sectionsMovable instead.
-
-    \sa sectionsMovable()
-*/
 
 /*!
     \property QHeaderView::firstSectionMovable
@@ -1223,16 +1203,6 @@ void QHeaderView::setSectionsClickable(bool clickable)
     d->clickableSections = clickable;
 }
 
-// ### Qt 6 - remove this obsolete function
-/*!
-    \obsolete
-    \fn void QHeaderView::setClickable(bool clickable)
-
-    Use setSectionsClickable instead.
-
-    \sa setSectionsClickable()
-*/
-
 /*!
     \since 5.0
 
@@ -1248,16 +1218,6 @@ bool QHeaderView::sectionsClickable() const
     Q_D(const QHeaderView);
     return d->clickableSections;
 }
-
-// ### Qt 6 - remove this obsolete function
-/*!
-    \obsolete
-    \fn bool QHeaderView::isClickable() const
-
-    Use sectionsClickable instead.
-
-    \sa sectionsClickable()
-*/
 
 void QHeaderView::setHighlightSections(bool highlight)
 {
@@ -1277,7 +1237,7 @@ bool QHeaderView::highlightSections() const
     Sets the constraints on how the header can be resized to those described
     by the given \a mode.
 
-    \sa resizeMode(), length(), sectionResized()
+    \sa length(), sectionResized()
 */
 
 void QHeaderView::setSectionResizeMode(ResizeMode mode)
@@ -1326,26 +1286,6 @@ void QHeaderView::setSectionResizeMode(int logicalIndex, ResizeMode mode)
     if (d->hasAutoResizeSections() && d->state == QHeaderViewPrivate::NoState)
         d->doDelayedResizeSections(); // section sizes may change as a result of the new mode
 }
-
-// ### Qt 6 - remove this obsolete function
-/*!
-    \overload
-    \obsolete
-    \fn void QHeaderView::setResizeMode(int logicalIndex, ResizeMode mode)
-
-    Use setSectionResizeMode instead.
-
-    \sa setSectionResizeMode()
-*/
-
-/*!
-    \obsolete
-    \fn void QHeaderView::setResizeMode(ResizeMode mode)
-
-    Use setSectionResizeMode instead.
-
-    \sa setSectionResizeMode()
-*/
 
 /*!
     \since 5.0
@@ -1407,16 +1347,6 @@ int QHeaderView::resizeContentsPrecision() const
     return d->resizeContentsPrecision;
 }
 
-// ### Qt 6 - remove this obsolete function
-/*!
-    \obsolete
-    \fn QHeaderView::ResizeMode QHeaderView::resizeMode(int logicalIndex) const
-
-    Use sectionResizeMode instead.
-
-    \sa sectionResizeMode()
-*/
-
 /*!
     \since 4.1
 
@@ -1424,7 +1354,7 @@ int QHeaderView::resizeContentsPrecision() const
     views, this can be used to see if the headerview needs to resize the
     sections when the view's geometry changes.
 
-    \sa stretchLastSection, resizeMode()
+    \sa stretchLastSection
 */
 
 int QHeaderView::stretchSectionCount() const
@@ -1653,7 +1583,7 @@ int QHeaderView::minimumSectionSize() const
     Q_D(const QHeaderView);
     if (d->minimumSectionSize == -1) {
         QSize strut = QApplication::globalStrut();
-        int margin = 2 * style()->pixelMetric(QStyle::PM_HeaderMargin, 0, this);
+        int margin = 2 * style()->pixelMetric(QStyle::PM_HeaderMargin, nullptr, this);
         if (d->orientation == Qt::Horizontal)
             return qMax(strut.width(), (fontMetrics().maxWidth() + margin));
         return qMax(strut.height(), (fontMetrics().height() + margin));
@@ -2640,7 +2570,6 @@ void QHeaderView::mouseMoveEvent(QMouseEvent *e)
     if (pos < 0 && d->state != QHeaderViewPrivate::SelectSections)
         return;
     if (e->buttons() == Qt::NoButton) {
-#if 1 // Used to be excluded in Qt4 for Q_WS_MAC
         // Under Cocoa, when the mouse button is released, may include an extra
         // simulated mouse moved event. The state of the buttons when this event
         // is generated is already "no button" and the code below gets executed
@@ -2648,7 +2577,6 @@ void QHeaderView::mouseMoveEvent(QMouseEvent *e)
         // column dragging from working. So this code is disabled under Cocoa.
         d->state = QHeaderViewPrivate::NoState;
         d->pressed = -1;
-#endif
     }
     switch (d->state) {
         case QHeaderViewPrivate::ResizeSection: {
@@ -2896,7 +2824,7 @@ bool QHeaderView::viewportEvent(QEvent *e)
     case QEvent::Wheel: {
         QAbstractScrollArea *asa = qobject_cast<QAbstractScrollArea *>(parentWidget());
         if (asa)
-            return QApplication::sendEvent(asa->viewport(), e);
+            return QCoreApplication::sendEvent(asa->viewport(), e);
         break; }
     default:
         break;
@@ -2955,12 +2883,12 @@ void QHeaderView::paintSection(QPainter *painter, const QRect &rect, int logical
     opt.text = d->model->headerData(logicalIndex, d->orientation,
                                     Qt::DisplayRole).toString();
 
-    int margin = 2 * style()->pixelMetric(QStyle::PM_HeaderMargin, 0, this);
+    int margin = 2 * style()->pixelMetric(QStyle::PM_HeaderMargin, nullptr, this);
 
-    const Qt::Alignment headerArrowAlignment = static_cast<Qt::Alignment>(style()->styleHint(QStyle::SH_Header_ArrowAlignment, 0, this));
+    const Qt::Alignment headerArrowAlignment = static_cast<Qt::Alignment>(style()->styleHint(QStyle::SH_Header_ArrowAlignment, nullptr, this));
     const bool isHeaderArrowOnTheSide = headerArrowAlignment & Qt::AlignVCenter;
     if (isSortIndicatorShown() && sortIndicatorSection() == logicalIndex && isHeaderArrowOnTheSide)
-        margin += style()->pixelMetric(QStyle::PM_HeaderMarkSize, 0, this);
+        margin += style()->pixelMetric(QStyle::PM_HeaderMarkSize, nullptr, this);
 
     const QVariant variant = d->model->headerData(logicalIndex, d->orientation,
                                                   Qt::DecorationRole);
@@ -2968,8 +2896,8 @@ void QHeaderView::paintSection(QPainter *painter, const QRect &rect, int logical
     if (opt.icon.isNull())
         opt.icon = qvariant_cast<QPixmap>(variant);
     if (!opt.icon.isNull()) // see CT_HeaderSection
-        margin += style()->pixelMetric(QStyle::PM_SmallIconSize, 0, this) +
-                  style()->pixelMetric(QStyle::PM_HeaderMargin, 0, this);
+        margin += style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this) +
+                  style()->pixelMetric(QStyle::PM_HeaderMargin, nullptr, this);
 
     if (d->textElideMode != Qt::ElideNone) {
         const QRect textRect = style()->subElementRect(QStyle::SE_HeaderLabel, &opt, this);
@@ -3347,7 +3275,7 @@ int QHeaderViewPrivate::sectionHandleAt(int position)
         return -1;
     int log = logicalIndex(visual);
     int pos = q->sectionViewportPosition(log);
-    int grip = q->style()->pixelMetric(QStyle::PM_HeaderGripMargin, 0, q);
+    int grip = q->style()->pixelMetric(QStyle::PM_HeaderGripMargin, nullptr, q);
 
     bool atLeft = position < pos + grip;
     bool atRight = (position > pos + q->sectionSize(log) - grip);
@@ -3732,7 +3660,7 @@ void QHeaderViewPrivate::flipSortIndicator(int section)
         sortOrder = (sortIndicatorOrder == Qt::DescendingOrder) ? Qt::AscendingOrder : Qt::DescendingOrder;
     } else {
         const QVariant value = model->headerData(section, orientation, Qt::InitialSortOrderRole);
-        if (value.canConvert(QVariant::Int))
+        if (value.canConvert(QMetaType::Int))
             sortOrder = static_cast<Qt::SortOrder>(value.toInt());
         else
             sortOrder = Qt::AscendingOrder;
@@ -3886,10 +3814,10 @@ void QHeaderViewPrivate::updateDefaultSectionSizeFromStyle()
 {
     Q_Q(QHeaderView);
     if (orientation == Qt::Horizontal) {
-        defaultSectionSize = q->style()->pixelMetric(QStyle::PM_HeaderDefaultSectionSizeHorizontal, 0, q);
+        defaultSectionSize = q->style()->pixelMetric(QStyle::PM_HeaderDefaultSectionSizeHorizontal, nullptr, q);
     } else {
         defaultSectionSize = qMax(q->minimumSectionSize(),
-                                  q->style()->pixelMetric(QStyle::PM_HeaderDefaultSectionSizeVertical, 0, q));
+                                  q->style()->pixelMetric(QStyle::PM_HeaderDefaultSectionSizeVertical, nullptr, q));
     }
 }
 

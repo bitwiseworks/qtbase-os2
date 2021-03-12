@@ -56,21 +56,21 @@
 static void dumpVariant(QTextStream &out, const QVariant &v)
 {
     switch (v.userType()) {
-    case QVariant::List: {
+    case QMetaType::QVariantList: {
         const QVariantList list = v.toList();
         for (const QVariant &item : list)
             dumpVariant(out, item);
         break;
     }
 
-    case QVariant::String: {
+    case QMetaType::QString: {
         const QStringList list = v.toStringList();
         for (const QString &s : list)
-            out << s << endl;
+            out << s << Qt::endl;
         break;
     }
 
-    case QVariant::Map: {
+    case QMetaType::QVariantMap: {
         const QVariantMap map = v.toMap();
         for (auto it = map.begin(); it != map.end(); ++it) {
             out << it.key() << " => ";
@@ -80,11 +80,11 @@ static void dumpVariant(QTextStream &out, const QVariant &v)
     }
 
     case QMetaType::Nullptr:
-        out << "(null)" << endl;
+        out << "(null)" << Qt::endl;
         break;
 
     default:
-        out << v.toString() << endl;
+        out << v.toString() << Qt::endl;
         break;
     }
 }

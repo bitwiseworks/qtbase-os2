@@ -1,20 +1,20 @@
-/***************************************************************************/
-/*                                                                         */
-/*  pngshim.c                                                              */
-/*                                                                         */
-/*    PNG Bitmap glyph support.                                            */
-/*                                                                         */
-/*  Copyright 2013-2018 by                                                 */
-/*  Google, Inc.                                                           */
-/*  Written by Stuart Gill and Behdad Esfahbod.                            */
-/*                                                                         */
-/*  This file is part of the FreeType project, and may only be used,       */
-/*  modified, and distributed under the terms of the FreeType project      */
-/*  license, LICENSE.TXT.  By continuing to use, modify, or distribute     */
-/*  this file you indicate that you have read the license and              */
-/*  understand and accept it fully.                                        */
-/*                                                                         */
-/***************************************************************************/
+/****************************************************************************
+ *
+ * pngshim.c
+ *
+ *   PNG Bitmap glyph support.
+ *
+ * Copyright (C) 2013-2019 by
+ * Google, Inc.
+ * Written by Stuart Gill and Behdad Esfahbod.
+ *
+ * This file is part of the FreeType project, and may only be used,
+ * modified, and distributed under the terms of the FreeType project
+ * license, LICENSE.TXT.  By continuing to use, modify, or distribute
+ * this file you indicate that you have read the license and
+ * understand and accept it fully.
+ *
+ */
 
 
 #include <ft2build.h>
@@ -328,6 +328,13 @@
 
     if ( populate_map_and_metrics )
     {
+      /* reject too large bitmaps similarly to the rasterizer */
+      if ( imgHeight > 0x7FFF || imgWidth > 0x7FFF )
+      {
+        error = FT_THROW( Array_Too_Large );
+        goto DestroyExit;
+      }
+
       metrics->width  = (FT_UShort)imgWidth;
       metrics->height = (FT_UShort)imgHeight;
 
@@ -336,13 +343,6 @@
       map->pixel_mode = FT_PIXEL_MODE_BGRA;
       map->pitch      = (int)( map->width * 4 );
       map->num_grays  = 256;
-
-      /* reject too large bitmaps similarly to the rasterizer */
-      if ( map->rows > 0x7FFF || map->width > 0x7FFF )
-      {
-        error = FT_THROW( Array_Too_Large );
-        goto DestroyExit;
-      }
     }
 
     /* convert palette/gray image to rgb */

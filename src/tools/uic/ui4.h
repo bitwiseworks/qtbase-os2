@@ -140,7 +140,7 @@ class DomStringPropertySpecification;
 */
 
 class QDESIGNER_UILIB_EXPORT DomUI {
-    Q_DISABLE_COPY(DomUI)
+    Q_DISABLE_COPY_MOVE(DomUI)
 public:
     DomUI() = default;
     ~DomUI();
@@ -168,6 +168,11 @@ public:
     inline bool attributeIdbasedtr() const { return m_attr_idbasedtr; }
     inline void setAttributeIdbasedtr(bool a) { m_attr_idbasedtr = a; m_has_attr_idbasedtr = true; }
     inline void clearAttributeIdbasedtr() { m_has_attr_idbasedtr = false; }
+
+    inline bool hasAttributeConnectslotsbyname() const { return m_has_attr_connectslotsbyname; }
+    inline bool attributeConnectslotsbyname() const { return m_attr_connectslotsbyname; }
+    inline void setAttributeConnectslotsbyname(bool a) { m_attr_connectslotsbyname = a; m_has_attr_connectslotsbyname = true; }
+    inline void clearAttributeConnectslotsbyname() { m_has_attr_connectslotsbyname = false; }
 
     inline bool hasAttributeStdsetdef() const { return m_has_attr_stdsetdef; }
     inline int attributeStdsetdef() const { return m_attr_stdsetdef; }
@@ -285,6 +290,9 @@ private:
     bool m_attr_idbasedtr = false;
     bool m_has_attr_idbasedtr = false;
 
+    bool m_attr_connectslotsbyname = false;
+    bool m_has_attr_connectslotsbyname = false;
+
     int m_attr_stdsetdef = 0;
     bool m_has_attr_stdsetdef = false;
 
@@ -331,7 +339,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomIncludes {
-    Q_DISABLE_COPY(DomIncludes)
+    Q_DISABLE_COPY_MOVE(DomIncludes)
 public:
     DomIncludes() = default;
     ~DomIncludes();
@@ -355,7 +363,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomInclude {
-    Q_DISABLE_COPY(DomInclude)
+    Q_DISABLE_COPY_MOVE(DomInclude)
 public:
     DomInclude() = default;
     ~DomInclude();
@@ -389,7 +397,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomResources {
-    Q_DISABLE_COPY(DomResources)
+    Q_DISABLE_COPY_MOVE(DomResources)
 public:
     DomResources() = default;
     ~DomResources();
@@ -422,7 +430,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomResource {
-    Q_DISABLE_COPY(DomResource)
+    Q_DISABLE_COPY_MOVE(DomResource)
 public:
     DomResource() = default;
     ~DomResource();
@@ -443,7 +451,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomActionGroup {
-    Q_DISABLE_COPY(DomActionGroup)
+    Q_DISABLE_COPY_MOVE(DomActionGroup)
 public:
     DomActionGroup() = default;
     ~DomActionGroup();
@@ -491,7 +499,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomAction {
-    Q_DISABLE_COPY(DomAction)
+    Q_DISABLE_COPY_MOVE(DomAction)
 public:
     DomAction() = default;
     ~DomAction();
@@ -537,7 +545,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomActionRef {
-    Q_DISABLE_COPY(DomActionRef)
+    Q_DISABLE_COPY_MOVE(DomActionRef)
 public:
     DomActionRef() = default;
     ~DomActionRef();
@@ -558,7 +566,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomButtonGroup {
-    Q_DISABLE_COPY(DomButtonGroup)
+    Q_DISABLE_COPY_MOVE(DomButtonGroup)
 public:
     DomButtonGroup() = default;
     ~DomButtonGroup();
@@ -596,7 +604,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomButtonGroups {
-    Q_DISABLE_COPY(DomButtonGroups)
+    Q_DISABLE_COPY_MOVE(DomButtonGroups)
 public:
     DomButtonGroups() = default;
     ~DomButtonGroups();
@@ -620,7 +628,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomCustomWidgets {
-    Q_DISABLE_COPY(DomCustomWidgets)
+    Q_DISABLE_COPY_MOVE(DomCustomWidgets)
 public:
     DomCustomWidgets() = default;
     ~DomCustomWidgets();
@@ -644,7 +652,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomHeader {
-    Q_DISABLE_COPY(DomHeader)
+    Q_DISABLE_COPY_MOVE(DomHeader)
 public:
     DomHeader() = default;
     ~DomHeader();
@@ -670,7 +678,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomCustomWidget {
-    Q_DISABLE_COPY(DomCustomWidget)
+    Q_DISABLE_COPY_MOVE(DomCustomWidget)
 public:
     DomCustomWidget() = default;
     ~DomCustomWidget();
@@ -756,7 +764,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomLayoutDefault {
-    Q_DISABLE_COPY(DomLayoutDefault)
+    Q_DISABLE_COPY_MOVE(DomLayoutDefault)
 public:
     DomLayoutDefault() = default;
     ~DomLayoutDefault();
@@ -785,7 +793,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomLayoutFunction {
-    Q_DISABLE_COPY(DomLayoutFunction)
+    Q_DISABLE_COPY_MOVE(DomLayoutFunction)
 public:
     DomLayoutFunction() = default;
     ~DomLayoutFunction();
@@ -814,7 +822,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomTabStops {
-    Q_DISABLE_COPY(DomTabStops)
+    Q_DISABLE_COPY_MOVE(DomTabStops)
 public:
     DomTabStops() = default;
     ~DomTabStops();
@@ -838,7 +846,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomLayout {
-    Q_DISABLE_COPY(DomLayout)
+    Q_DISABLE_COPY_MOVE(DomLayout)
 public:
     DomLayout() = default;
     ~DomLayout();
@@ -929,7 +937,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomLayoutItem {
-    Q_DISABLE_COPY(DomLayoutItem)
+    Q_DISABLE_COPY_MOVE(DomLayoutItem)
 public:
     DomLayoutItem() = default;
     ~DomLayoutItem();
@@ -1006,7 +1014,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomRow {
-    Q_DISABLE_COPY(DomRow)
+    Q_DISABLE_COPY_MOVE(DomRow)
 public:
     DomRow() = default;
     ~DomRow();
@@ -1030,7 +1038,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomColumn {
-    Q_DISABLE_COPY(DomColumn)
+    Q_DISABLE_COPY_MOVE(DomColumn)
 public:
     DomColumn() = default;
     ~DomColumn();
@@ -1054,7 +1062,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomItem {
-    Q_DISABLE_COPY(DomItem)
+    Q_DISABLE_COPY_MOVE(DomItem)
 public:
     DomItem() = default;
     ~DomItem();
@@ -1100,7 +1108,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomWidget {
-    Q_DISABLE_COPY(DomWidget)
+    Q_DISABLE_COPY_MOVE(DomWidget)
 public:
     DomWidget() = default;
     ~DomWidget();
@@ -1204,7 +1212,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomSpacer {
-    Q_DISABLE_COPY(DomSpacer)
+    Q_DISABLE_COPY_MOVE(DomSpacer)
 public:
     DomSpacer() = default;
     ~DomSpacer();
@@ -1237,7 +1245,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomColor {
-    Q_DISABLE_COPY(DomColor)
+    Q_DISABLE_COPY_MOVE(DomColor)
 public:
     DomColor() = default;
     ~DomColor();
@@ -1286,7 +1294,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomGradientStop {
-    Q_DISABLE_COPY(DomGradientStop)
+    Q_DISABLE_COPY_MOVE(DomGradientStop)
 public:
     DomGradientStop() = default;
     ~DomGradientStop();
@@ -1322,7 +1330,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomGradient {
-    Q_DISABLE_COPY(DomGradient)
+    Q_DISABLE_COPY_MOVE(DomGradient)
 public:
     DomGradient() = default;
     ~DomGradient();
@@ -1451,7 +1459,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomBrush {
-    Q_DISABLE_COPY(DomBrush)
+    Q_DISABLE_COPY_MOVE(DomBrush)
 public:
     DomBrush() = default;
     ~DomBrush();
@@ -1496,7 +1504,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomColorRole {
-    Q_DISABLE_COPY(DomColorRole)
+    Q_DISABLE_COPY_MOVE(DomColorRole)
 public:
     DomColorRole() = default;
     ~DomColorRole();
@@ -1532,7 +1540,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomColorGroup {
-    Q_DISABLE_COPY(DomColorGroup)
+    Q_DISABLE_COPY_MOVE(DomColorGroup)
 public:
     DomColorGroup() = default;
     ~DomColorGroup();
@@ -1561,7 +1569,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomPalette {
-    Q_DISABLE_COPY(DomPalette)
+    Q_DISABLE_COPY_MOVE(DomPalette)
 public:
     DomPalette() = default;
     ~DomPalette();
@@ -1604,7 +1612,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomFont {
-    Q_DISABLE_COPY(DomFont)
+    Q_DISABLE_COPY_MOVE(DomFont)
 public:
     DomFont() = default;
     ~DomFont();
@@ -1693,7 +1701,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomPoint {
-    Q_DISABLE_COPY(DomPoint)
+    Q_DISABLE_COPY_MOVE(DomPoint)
 public:
     DomPoint() = default;
     ~DomPoint();
@@ -1726,7 +1734,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomRect {
-    Q_DISABLE_COPY(DomRect)
+    Q_DISABLE_COPY_MOVE(DomRect)
 public:
     DomRect() = default;
     ~DomRect();
@@ -1773,7 +1781,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomLocale {
-    Q_DISABLE_COPY(DomLocale)
+    Q_DISABLE_COPY_MOVE(DomLocale)
 public:
     DomLocale() = default;
     ~DomLocale();
@@ -1802,7 +1810,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomSizePolicy {
-    Q_DISABLE_COPY(DomSizePolicy)
+    Q_DISABLE_COPY_MOVE(DomSizePolicy)
 public:
     DomSizePolicy() = default;
     ~DomSizePolicy();
@@ -1866,7 +1874,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomSize {
-    Q_DISABLE_COPY(DomSize)
+    Q_DISABLE_COPY_MOVE(DomSize)
 public:
     DomSize() = default;
     ~DomSize();
@@ -1899,7 +1907,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomDate {
-    Q_DISABLE_COPY(DomDate)
+    Q_DISABLE_COPY_MOVE(DomDate)
 public:
     DomDate() = default;
     ~DomDate();
@@ -1939,7 +1947,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomTime {
-    Q_DISABLE_COPY(DomTime)
+    Q_DISABLE_COPY_MOVE(DomTime)
 public:
     DomTime() = default;
     ~DomTime();
@@ -1979,7 +1987,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomDateTime {
-    Q_DISABLE_COPY(DomDateTime)
+    Q_DISABLE_COPY_MOVE(DomDateTime)
 public:
     DomDateTime() = default;
     ~DomDateTime();
@@ -2040,7 +2048,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomStringList {
-    Q_DISABLE_COPY(DomStringList)
+    Q_DISABLE_COPY_MOVE(DomStringList)
 public:
     DomStringList() = default;
     ~DomStringList();
@@ -2097,7 +2105,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomResourcePixmap {
-    Q_DISABLE_COPY(DomResourcePixmap)
+    Q_DISABLE_COPY_MOVE(DomResourcePixmap)
 public:
     DomResourcePixmap() = default;
     ~DomResourcePixmap();
@@ -2131,7 +2139,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomResourceIcon {
-    Q_DISABLE_COPY(DomResourceIcon)
+    Q_DISABLE_COPY_MOVE(DomResourceIcon)
 public:
     DomResourceIcon() = default;
     ~DomResourceIcon();
@@ -2236,7 +2244,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomString {
-    Q_DISABLE_COPY(DomString)
+    Q_DISABLE_COPY_MOVE(DomString)
 public:
     DomString() = default;
     ~DomString();
@@ -2286,7 +2294,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomPointF {
-    Q_DISABLE_COPY(DomPointF)
+    Q_DISABLE_COPY_MOVE(DomPointF)
 public:
     DomPointF() = default;
     ~DomPointF();
@@ -2319,7 +2327,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomRectF {
-    Q_DISABLE_COPY(DomRectF)
+    Q_DISABLE_COPY_MOVE(DomRectF)
 public:
     DomRectF() = default;
     ~DomRectF();
@@ -2366,7 +2374,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomSizeF {
-    Q_DISABLE_COPY(DomSizeF)
+    Q_DISABLE_COPY_MOVE(DomSizeF)
 public:
     DomSizeF() = default;
     ~DomSizeF();
@@ -2399,7 +2407,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomChar {
-    Q_DISABLE_COPY(DomChar)
+    Q_DISABLE_COPY_MOVE(DomChar)
 public:
     DomChar() = default;
     ~DomChar();
@@ -2425,7 +2433,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomUrl {
-    Q_DISABLE_COPY(DomUrl)
+    Q_DISABLE_COPY_MOVE(DomUrl)
 public:
     DomUrl() = default;
     ~DomUrl();
@@ -2452,7 +2460,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomProperty {
-    Q_DISABLE_COPY(DomProperty)
+    Q_DISABLE_COPY_MOVE(DomProperty)
 public:
     DomProperty() = default;
     ~DomProperty();
@@ -2643,7 +2651,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomConnections {
-    Q_DISABLE_COPY(DomConnections)
+    Q_DISABLE_COPY_MOVE(DomConnections)
 public:
     DomConnections() = default;
     ~DomConnections();
@@ -2667,7 +2675,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomConnection {
-    Q_DISABLE_COPY(DomConnection)
+    Q_DISABLE_COPY_MOVE(DomConnection)
 public:
     DomConnection() = default;
     ~DomConnection();
@@ -2722,7 +2730,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomConnectionHints {
-    Q_DISABLE_COPY(DomConnectionHints)
+    Q_DISABLE_COPY_MOVE(DomConnectionHints)
 public:
     DomConnectionHints() = default;
     ~DomConnectionHints();
@@ -2746,7 +2754,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomConnectionHint {
-    Q_DISABLE_COPY(DomConnectionHint)
+    Q_DISABLE_COPY_MOVE(DomConnectionHint)
 public:
     DomConnectionHint() = default;
     ~DomConnectionHint();
@@ -2788,7 +2796,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomDesignerData {
-    Q_DISABLE_COPY(DomDesignerData)
+    Q_DISABLE_COPY_MOVE(DomDesignerData)
 public:
     DomDesignerData() = default;
     ~DomDesignerData();
@@ -2812,7 +2820,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomSlots {
-    Q_DISABLE_COPY(DomSlots)
+    Q_DISABLE_COPY_MOVE(DomSlots)
 public:
     DomSlots() = default;
     ~DomSlots();
@@ -2841,7 +2849,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomPropertySpecifications {
-    Q_DISABLE_COPY(DomPropertySpecifications)
+    Q_DISABLE_COPY_MOVE(DomPropertySpecifications)
 public:
     DomPropertySpecifications() = default;
     ~DomPropertySpecifications();
@@ -2870,7 +2878,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomPropertyToolTip {
-    Q_DISABLE_COPY(DomPropertyToolTip)
+    Q_DISABLE_COPY_MOVE(DomPropertyToolTip)
 public:
     DomPropertyToolTip() = default;
     ~DomPropertyToolTip();
@@ -2891,7 +2899,7 @@ private:
 };
 
 class QDESIGNER_UILIB_EXPORT DomStringPropertySpecification {
-    Q_DISABLE_COPY(DomStringPropertySpecification)
+    Q_DISABLE_COPY_MOVE(DomStringPropertySpecification)
 public:
     DomStringPropertySpecification() = default;
     ~DomStringPropertySpecification();

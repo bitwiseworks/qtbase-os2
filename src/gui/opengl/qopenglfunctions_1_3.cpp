@@ -67,14 +67,14 @@ QT_BEGIN_NAMESPACE
 
 QOpenGLFunctions_1_3::QOpenGLFunctions_1_3()
  : QAbstractOpenGLFunctions()
- , d_1_0_Core(0)
- , d_1_1_Core(0)
- , d_1_2_Core(0)
- , d_1_3_Core(0)
- , d_1_0_Deprecated(0)
- , d_1_1_Deprecated(0)
- , d_1_2_Deprecated(0)
- , d_1_3_Deprecated(0)
+ , d_1_0_Core(nullptr)
+ , d_1_1_Core(nullptr)
+ , d_1_2_Core(nullptr)
+ , d_1_3_Core(nullptr)
+ , d_1_0_Deprecated(nullptr)
+ , d_1_1_Deprecated(nullptr)
+ , d_1_2_Deprecated(nullptr)
+ , d_1_3_Deprecated(nullptr)
 {
 }
 
@@ -82,35 +82,35 @@ QOpenGLFunctions_1_3::~QOpenGLFunctions_1_3()
 {
     if (d_1_0_Core) {
         d_1_0_Core->refs.deref();
-        Q_ASSERT(d_1_0_Core->refs.load());
+        Q_ASSERT(d_1_0_Core->refs.loadRelaxed());
     }
     if (d_1_1_Core) {
         d_1_1_Core->refs.deref();
-        Q_ASSERT(d_1_1_Core->refs.load());
+        Q_ASSERT(d_1_1_Core->refs.loadRelaxed());
     }
     if (d_1_2_Core) {
         d_1_2_Core->refs.deref();
-        Q_ASSERT(d_1_2_Core->refs.load());
+        Q_ASSERT(d_1_2_Core->refs.loadRelaxed());
     }
     if (d_1_3_Core) {
         d_1_3_Core->refs.deref();
-        Q_ASSERT(d_1_3_Core->refs.load());
+        Q_ASSERT(d_1_3_Core->refs.loadRelaxed());
     }
     if (d_1_0_Deprecated) {
         d_1_0_Deprecated->refs.deref();
-        Q_ASSERT(d_1_0_Deprecated->refs.load());
+        Q_ASSERT(d_1_0_Deprecated->refs.loadRelaxed());
     }
     if (d_1_1_Deprecated) {
         d_1_1_Deprecated->refs.deref();
-        Q_ASSERT(d_1_1_Deprecated->refs.load());
+        Q_ASSERT(d_1_1_Deprecated->refs.loadRelaxed());
     }
     if (d_1_2_Deprecated) {
         d_1_2_Deprecated->refs.deref();
-        Q_ASSERT(d_1_2_Deprecated->refs.load());
+        Q_ASSERT(d_1_2_Deprecated->refs.loadRelaxed());
     }
     if (d_1_3_Deprecated) {
         d_1_3_Deprecated->refs.deref();
-        Q_ASSERT(d_1_3_Deprecated->refs.load());
+        Q_ASSERT(d_1_3_Deprecated->refs.loadRelaxed());
     }
 }
 
@@ -128,7 +128,7 @@ bool QOpenGLFunctions_1_3::initializeOpenGLFunctions()
     {
         // Associate with private implementation, creating if necessary
         // Function pointers in the backends are resolved at creation time
-        QOpenGLVersionFunctionsBackend* d = 0;
+        QOpenGLVersionFunctionsBackend* d = nullptr;
         d = QAbstractOpenGLFunctionsPrivate::functionsBackend(context, QOpenGLFunctions_1_0_CoreBackend::versionStatus());
         d_1_0_Core = static_cast<QOpenGLFunctions_1_0_CoreBackend*>(d);
         d->refs.ref();

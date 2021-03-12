@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2018 Intel Corporation.
+** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2019 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -27,10 +27,10 @@
 **
 ****************************************************************************/
 
-
 #include <QtTest/QtTest>
 #include <QtCore/QCoreApplication>
-#include <QtCore/QMimeDatabase>
+#include <QtCore/QScopeGuard>
+#include <QtCore/private/qglobal_p.h>
 
 class tst_QResourceEngine: public QObject
 {
@@ -51,10 +51,16 @@ private slots:
 
     void checkUnregisterResource_data();
     void checkUnregisterResource();
+    void compressedResource_data();
+    void compressedResource();
     void checkStructure_data();
     void checkStructure();
     void searchPath_data();
     void searchPath();
+#if QT_DEPRECATED_SINCE(5, 13)
+    void searchPath_deprecated_data();
+    void searchPath_deprecated();
+#endif
     void doubleSlashInRoot();
     void setLocale();
     void lastModified();
@@ -102,6 +108,75 @@ void tst_QResourceEngine::cleanupTestCase()
     QVERIFY(QResource::unregisterResource(m_runtimeResourceRcc, "/secondary_root/"));
 }
 
+void tst_QResourceEngine::compressedResource_data()
+{
+    QTest::addColumn<QString>("fileName");
+    QTest::addColumn<int>("compressionAlgo");
+    QTest::addColumn<bool>("supported");
+
+    QTest::newRow("uncompressed")
+            << QFINDTESTDATA("uncompressed.rcc") << int(QResource::NoCompression) << true;
+    QTest::newRow("zlib")
+            << QFINDTESTDATA("zlib.rcc") << int(QResource::ZlibCompression) << true;
+    QTest::newRow("zstd")
+            << QFINDTESTDATA("zstd.rcc") << int(QResource::ZstdCompression) << QT_CONFIG(zstd);
+}
+
+// Note: generateResource.sh parses this line. Make sure it's a simple number.
+#define ZERO_FILE_LEN   16384
+// End note
+void tst_QResourceEngine::compressedResource()
+{
+    QFETCH(QString, fileName);
+    QFETCH(int, compressionAlgo);
+    QFETCH(bool, supported);
+    const QByteArray expectedData(ZERO_FILE_LEN, '\0');
+
+    QVERIFY(!QResource("zero.txt").isValid());
+    QCOMPARE(QResource::registerResource(fileName), supported);
+    if (!supported)
+        return;
+
+    auto unregister = qScopeGuard([=] { QResource::unregisterResource(fileName); });
+
+    QResource resource("zero.txt");
+    QVERIFY(resource.isValid());
+    QVERIFY(resource.size() > 0);
+    QVERIFY(resource.data());
+    QCOMPARE(resource.compressionAlgorithm(), QResource::Compression(compressionAlgo));
+
+    if (compressionAlgo == QResource::NoCompression) {
+        QCOMPARE(resource.size(), ZERO_FILE_LEN);
+        QCOMPARE(memcmp(resource.data(), expectedData.data(), ZERO_FILE_LEN), 0);
+
+        // API guarantees it will be QByteArray::fromRawData:
+        QCOMPARE(static_cast<const void *>(resource.uncompressedData().constData()),
+                 static_cast<const void *>(resource.data()));
+    } else {
+        // reasonable expectation:
+        QVERIFY(resource.size() < ZERO_FILE_LEN);
+    }
+
+    // using the engine
+    QFile f(":/zero.txt");
+    QVERIFY(f.exists());
+    QVERIFY(f.open(QIODevice::ReadOnly));
+
+    // verify that we can decompress correctly
+    QCOMPARE(resource.uncompressedSize(), ZERO_FILE_LEN);
+    QCOMPARE(f.size(), ZERO_FILE_LEN);
+
+    QByteArray data = resource.uncompressedData();
+    QCOMPARE(data.size(), expectedData.size());
+    QCOMPARE(data, expectedData);
+
+    // decompression through the engine
+    data = f.readAll();
+    QCOMPARE(data.size(), expectedData.size());
+    QCOMPARE(data, expectedData);
+}
+
+
 void tst_QResourceEngine::checkStructure_data()
 {
     QTest::addColumn<QString>("pathName");
@@ -115,24 +190,20 @@ void tst_QResourceEngine::checkStructure_data()
 
     QStringList rootContents;
     rootContents << QLatin1String("aliasdir")
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
+                 << QLatin1String("android_testdata")
+#endif
                  << QLatin1String("otherdir")
-                 << QLatin1String("qt-project.org")
                  << QLatin1String("runtime_resource")
                  << QLatin1String("searchpath1")
                  << QLatin1String("searchpath2")
                  << QLatin1String("secondary_root")
                  << QLatin1String("staticplugin")
                  << QLatin1String("test")
-                 << QLatin1String("withoutslashes");
-
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
-    rootContents.insert(1, QLatin1String("android_testdata"));
-#endif
-
 #if defined(BUILTIN_TESTDATA)
-    rootContents.insert(9, QLatin1String("testqrc"));
+                 << QLatin1String("testqrc")
 #endif
-
+                 << QLatin1String("withoutslashes");
 
     QTest::newRow("root dir")          << QString(":/")
                                        << QByteArray()
@@ -141,7 +212,13 @@ void tst_QResourceEngine::checkStructure_data()
                                            << "parentdir.txt"
                                            << "runtime_resource.rcc"
 #endif
-                                           << "search_file.txt")
+                                           << "search_file.txt"
+#if defined(BUILTIN_TESTDATA)
+                                           << "uncompressed.rcc"
+                                           << "zlib.rcc"
+                                           << "zstd.rcc"
+#endif
+                                           )
                                        << rootContents
                                        << QLocale::c()
                                        << qlonglong(0);
@@ -348,11 +425,6 @@ void tst_QResourceEngine::checkStructure()
     QFETCH(QLocale, locale);
     QFETCH(qlonglong, contentsSize);
 
-    // We rely on the existence of the root "qt-project.org" in resources. For
-    // static builds on MSVC these resources are only added if they are used.
-    QMimeDatabase db;
-    Q_UNUSED(db);
-
     bool directory = (containedDirs.size() + containedFiles.size() > 0);
     QLocale::setDefault(locale);
 
@@ -379,7 +451,7 @@ void tst_QResourceEngine::checkStructure()
         }
 
         list = dir.entryInfoList(QDir::Files, QDir::Name);
-        QCOMPARE(containedFiles.size(), list.size());
+        QCOMPARE(list.size(), containedFiles.size());
 
         for (i=0; i<list.size(); ++i) {
             QVERIFY(!list.at(i).isDir());
@@ -387,7 +459,7 @@ void tst_QResourceEngine::checkStructure()
         }
 
         list = dir.entryInfoList(QDir::NoFilter, QDir::SortFlags(QDir::Name | QDir::DirsFirst));
-        QCOMPARE(containedFiles.size() + containedDirs.size(), list.size());
+        QCOMPARE(list.size(), containedFiles.size() + containedDirs.size());
 
         for (i=0; i<list.size(); ++i) {
             QString expectedName;
@@ -420,6 +492,58 @@ void tst_QResourceEngine::checkStructure()
 
 void tst_QResourceEngine::searchPath_data()
 {
+    auto searchPath = QFileInfo(QFINDTESTDATA("testqrc")).canonicalFilePath();
+
+    QTest::addColumn<QString>("searchPathPrefix");
+    QTest::addColumn<QString>("searchPath");
+    QTest::addColumn<QString>("file");
+    QTest::addColumn<QByteArray>("expected");
+
+    QTest::newRow("no_search_path")
+            << QString()
+            << QString()
+            << ":search_file.txt"
+            << QByteArray("root\n");
+    QTest::newRow("path1")
+            << "searchpath1"
+            << searchPath
+            << "searchpath1:searchpath1/search_file.txt"
+            << QByteArray("path1\n");
+    QTest::newRow("no_search_path2")
+            << QString()
+            << QString()
+            << ":/search_file.txt"
+            << QByteArray("root\n");
+    QTest::newRow("path2")
+            << "searchpath2"
+            << searchPath + "/searchpath2"
+            << "searchpath2:search_file.txt"
+            << QByteArray("path2\n");
+}
+
+void tst_QResourceEngine::searchPath()
+{
+    QFETCH(QString, searchPathPrefix);
+    QFETCH(QString, searchPath);
+    QFETCH(QString, file);
+    QFETCH(QByteArray, expected);
+
+    if (!searchPath.isEmpty())
+        QDir::addSearchPath(searchPathPrefix, searchPath);
+    QFile qf(file);
+    QVERIFY(qf.open(QFile::ReadOnly));
+    QByteArray actual = qf.readAll();
+
+    actual.replace('\r', "");
+
+    QCOMPARE(actual, expected);
+    qf.close();
+}
+
+#if QT_DEPRECATED_SINCE(5, 13)
+
+void tst_QResourceEngine::searchPath_deprecated_data()
+{
     QTest::addColumn<QString>("searchPath");
     QTest::addColumn<QString>("file");
     QTest::addColumn<QByteArray>("expected");
@@ -438,7 +562,7 @@ void tst_QResourceEngine::searchPath_data()
                          << QByteArray("path2\n");
 }
 
-void tst_QResourceEngine::searchPath()
+void tst_QResourceEngine::searchPath_deprecated()
 {
     QFETCH(QString, searchPath);
     QFETCH(QString, file);
@@ -455,6 +579,8 @@ void tst_QResourceEngine::searchPath()
     QCOMPARE(actual, expected);
     qf.close();
 }
+
+#endif
 
 void tst_QResourceEngine::checkUnregisterResource_data()
 {
@@ -505,15 +631,15 @@ void tst_QResourceEngine::setLocale()
     // default constructed QResource gets the default locale
     QResource resource;
     resource.setFileName("aliasdir/aliasdir.txt");
-    QVERIFY(!resource.isCompressed());
+    QCOMPARE(resource.compressionAlgorithm(), QResource::NoCompression);
 
     // change the default locale and make sure it doesn't affect the resource
     QLocale::setDefault(QLocale("de_CH"));
-    QVERIFY(!resource.isCompressed());
+    QCOMPARE(resource.compressionAlgorithm(), QResource::NoCompression);
 
     // then explicitly set the locale on qresource
     resource.setLocale(QLocale("de_CH"));
-    QVERIFY(resource.isCompressed());
+    QVERIFY(resource.compressionAlgorithm() != QResource::NoCompression);
 
     // the reset the default locale back
     QLocale::setDefault(QLocale::system());

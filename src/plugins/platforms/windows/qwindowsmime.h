@@ -43,7 +43,6 @@
 #include <QtCore/qt_windows.h>
 
 #include <QtCore/qvector.h>
-#include <QtCore/qlist.h>
 #include <QtCore/qvariant.h>
 
 QT_BEGIN_NAMESPACE
@@ -53,7 +52,7 @@ class QMimeData;
 
 class QWindowsMime
 {
-    Q_DISABLE_COPY(QWindowsMime)
+    Q_DISABLE_COPY_MOVE(QWindowsMime)
 public:
     QWindowsMime();
     virtual ~QWindowsMime();
@@ -73,7 +72,7 @@ public:
 
 class QWindowsMimeConverter
 {
-    Q_DISABLE_COPY(QWindowsMimeConverter)
+    Q_DISABLE_COPY_MOVE(QWindowsMimeConverter)
 public:
     QWindowsMimeConverter();
     ~QWindowsMimeConverter();
@@ -85,7 +84,7 @@ public:
 
     // Convenience.
     QVariant convertToMime(const QStringList &mimeTypes, IDataObject *pDataObj, QVariant::Type preferredType,
-                           QString *format = 0) const;
+                           QString *format = nullptr) const;
 
     void registerMime(QWindowsMime *mime);
     void unregisterMime(QWindowsMime *mime) { m_mimes.removeOne(mime); }
@@ -95,7 +94,7 @@ public:
 private:
     void ensureInitialized() const;
 
-    mutable QList<QWindowsMime *> m_mimes;
+    mutable QVector<QWindowsMime *> m_mimes;
     mutable int m_internalMimeCount = 0;
 };
 

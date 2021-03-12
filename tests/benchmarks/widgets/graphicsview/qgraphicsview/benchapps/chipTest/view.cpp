@@ -30,12 +30,7 @@
 
 #include <QtGui>
 
-#if 0 // Used to be included in Qt4 for Q_WS_WIN
-#define CALLGRIND_START_INSTRUMENTATION  {}
-#define CALLGRIND_STOP_INSTRUMENTATION   {}
-#else
 #include "valgrind/callgrind.h"
-#endif
 
 #ifndef QT_NO_OPENGL
 #include <QtOpenGL>
@@ -192,7 +187,7 @@ void View::setupMatrix()
 {
     qreal scale = qPow(qreal(2), (zoomSlider->value() - 250) / qreal(50));
 
-    QMatrix matrix;
+    QTransform matrix;
     matrix.scale(scale, scale);
     matrix.rotate(rotateSlider->value());
 

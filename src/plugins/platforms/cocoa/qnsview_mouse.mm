@@ -55,7 +55,7 @@
     interact with the responder chain by e.g. calling super if Qt does not
     accept the mouse event
 */
-@implementation QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) {
+@implementation QNSViewMouseMoveHelper {
     QNSView *view;
 }
 
@@ -89,7 +89,7 @@
 
 @end
 
-@implementation QT_MANGLE_NAMESPACE(QNSView) (MouseAPI)
+@implementation QNSView (MouseAPI)
 
 - (void)resetMouseButtons
 {
@@ -178,7 +178,7 @@
 }
 @end
 
-@implementation QT_MANGLE_NAMESPACE(QNSView) (Mouse)
+@implementation QNSView (Mouse)
 
 - (void)initMouse
 {
@@ -193,7 +193,7 @@
     m_dontOverrideCtrlLMB = qt_mac_resolveOption(false, m_platformWindow->window(),
             "_q_platform_MacDontOverrideCtrlLMB", "QT_MAC_DONT_OVERRIDE_CTRL_LMB");
 
-    m_mouseMoveHelper = [[QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) alloc] initWithView:self];
+    m_mouseMoveHelper = [[QNSViewMouseMoveHelper alloc] initWithView:self];
 
     NSUInteger trackingOptions = NSTrackingActiveInActiveApp
         | NSTrackingMouseEnteredAndExited | NSTrackingCursorUpdate;
@@ -221,6 +221,11 @@
     if (!m_platformWindow)
         return NO;
     if ([self isTransparentForUserInput])
+        return NO;
+    QPointF windowPoint;
+    QPointF screenPoint;
+    [self convertFromScreen:[NSEvent mouseLocation] toWindowPoint: &windowPoint andScreenPoint: &screenPoint];
+    if (!qt_window_private(m_platformWindow->window())->allowClickThrough(screenPoint.toPoint()))
         return NO;
     return YES;
 }
@@ -389,14 +394,18 @@
         }
         // Close the popups if the click was outside.
         if (!inside) {
+            bool selfClosed = false;
             Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
             while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
+                selfClosed = self == popup->view();
                 QWindowSystemInterface::handleCloseEvent(popup->window());
                 QWindowSystemInterface::flushWindowSystemEvents();
+                if (!m_platformWindow)
+                    return; // Bail out if window was destroyed
             }
             // Consume the mouse event when closing the popup, except for tool tips
             // were it's expected that the event is processed normally.
-            if (type != Qt::ToolTip)
+            if (type != Qt::ToolTip || selfClosed)
                  return;
         }
     }

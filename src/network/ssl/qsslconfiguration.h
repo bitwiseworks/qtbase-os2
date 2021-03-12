@@ -85,12 +85,10 @@ public:
     QSslConfiguration();
     QSslConfiguration(const QSslConfiguration &other);
     ~QSslConfiguration();
-#ifdef Q_COMPILER_RVALUE_REFS
-    QSslConfiguration &operator=(QSslConfiguration &&other) Q_DECL_NOTHROW { swap(other); return *this; }
-#endif
+    QSslConfiguration &operator=(QSslConfiguration &&other) noexcept { swap(other); return *this; }
     QSslConfiguration &operator=(const QSslConfiguration &other);
 
-    void swap(QSslConfiguration &other) Q_DECL_NOTHROW
+    void swap(QSslConfiguration &other) noexcept
     { qSwap(d, other.d); }
 
     bool operator==(const QSslConfiguration &other) const;
@@ -133,6 +131,12 @@ public:
     // Certificate Authority (CA) settings
     QList<QSslCertificate> caCertificates() const;
     void setCaCertificates(const QList<QSslCertificate> &certificates);
+    bool addCaCertificates(
+            const QString &path, QSsl::EncodingFormat format = QSsl::Pem,
+            QSslCertificate::PatternSyntax syntax = QSslCertificate::PatternSyntax::FixedString);
+    void addCaCertificate(const QSslCertificate &certificate);
+    void addCaCertificates(const QList<QSslCertificate> &certificates);
+
     static QList<QSslCertificate> systemCaCertificates();
 
     void setSslOption(QSsl::SslOption option, bool on);

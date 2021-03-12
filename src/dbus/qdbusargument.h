@@ -76,14 +76,12 @@ public:
 
     QDBusArgument();
     QDBusArgument(const QDBusArgument &other);
-#ifdef Q_COMPILER_RVALUE_REFS
-    QDBusArgument(QDBusArgument &&other) Q_DECL_NOTHROW : d(other.d) { other.d = nullptr; }
-    QDBusArgument &operator=(QDBusArgument &&other) Q_DECL_NOTHROW { swap(other); return *this; }
-#endif
+    QDBusArgument(QDBusArgument &&other) noexcept : d(other.d) { other.d = nullptr; }
+    QDBusArgument &operator=(QDBusArgument &&other) noexcept { swap(other); return *this; }
     QDBusArgument &operator=(const QDBusArgument &other);
     ~QDBusArgument();
 
-    void swap(QDBusArgument &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
+    void swap(QDBusArgument &other) noexcept { qSwap(d, other.d); }
 
     // used for marshalling (Qt -> D-BUS)
     QDBusArgument &operator<<(uchar arg);
@@ -323,7 +321,7 @@ inline const QDBusArgument &operator>>(const QDBusArgument &arg, QMap<Key, T> &m
         T value;
         arg.beginMapEntry();
         arg >> key >> value;
-        map.insertMulti(key, value);
+        static_cast<QMultiMap<Key, T> &>(map).insert(key, value);
         arg.endMapEntry();
     }
     arg.endMap();
@@ -332,7 +330,7 @@ inline const QDBusArgument &operator>>(const QDBusArgument &arg, QMap<Key, T> &m
 
 inline QDBusArgument &operator<<(QDBusArgument &arg, const QVariantMap &map)
 {
-    arg.beginMap(QVariant::String, qMetaTypeId<QDBusVariant>());
+    arg.beginMap(QMetaType::QString, qMetaTypeId<QDBusVariant>());
     QVariantMap::ConstIterator it = map.constBegin();
     QVariantMap::ConstIterator end = map.constEnd();
     for ( ; it != end; ++it) {
@@ -372,7 +370,7 @@ inline const QDBusArgument &operator>>(const QDBusArgument &arg, QHash<Key, T> &
         T value;
         arg.beginMapEntry();
         arg >> key >> value;
-        map.insertMulti(key, value);
+        static_cast<QMultiHash<Key, T> &>(map).insert(key, value);
         arg.endMapEntry();
     }
     arg.endMap();
@@ -381,7 +379,7 @@ inline const QDBusArgument &operator>>(const QDBusArgument &arg, QHash<Key, T> &
 
 inline QDBusArgument &operator<<(QDBusArgument &arg, const QVariantHash &map)
 {
-    arg.beginMap(QVariant::String, qMetaTypeId<QDBusVariant>());
+    arg.beginMap(QMetaType::QString, qMetaTypeId<QDBusVariant>());
     QVariantHash::ConstIterator it = map.constBegin();
     QVariantHash::ConstIterator end = map.constEnd();
     for ( ; it != end; ++it) {

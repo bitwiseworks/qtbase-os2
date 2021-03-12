@@ -97,7 +97,7 @@ private:
 };
 
 QSystemTrayIconSys::QSystemTrayIconSys(QSystemTrayIcon *qIn)
-    : QWidget(0, Qt::Window | Qt::FramelessWindowHint | Qt::BypassWindowManagerHint)
+    : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint | Qt::BypassWindowManagerHint)
     , q(qIn)
 {
     setObjectName(QStringLiteral("QSystemTrayIconSys"));
@@ -137,7 +137,7 @@ void QSystemTrayIconSys::mousePressEvent(QMouseEvent *ev)
         emit q->activated(QSystemTrayIcon::Trigger);
     else if (ev->button() == Qt::RightButton)
         emit q->activated(QSystemTrayIcon::Context);
-    else if (ev->button() == Qt::MidButton)
+    else if (ev->button() == Qt::MiddleButton)
         emit q->activated(QSystemTrayIcon::MiddleClick);
 }
 
@@ -151,11 +151,11 @@ bool QSystemTrayIconSys::event(QEvent *e)
 {
     switch (e->type()) {
     case QEvent::ToolTip:
-        QApplication::sendEvent(q, e);
+        QCoreApplication::sendEvent(q, e);
         break;
 #if QT_CONFIG(wheelevent)
     case QEvent::Wheel:
-        return QApplication::sendEvent(q, e);
+        return QCoreApplication::sendEvent(q, e);
 #endif
     default:
         break;
@@ -218,7 +218,7 @@ private:
 ////////////////////////////////////////////////////////////////////////////
 
 QSystemTrayIconPrivate::QSystemTrayIconPrivate()
-    : sys(0),
+    : sys(nullptr),
       qpa_sys(QGuiApplicationPrivate::platformTheme()->createPlatformSystemTrayIcon()),
       visible(false),
       trayWatcher(nullptr)

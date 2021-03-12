@@ -46,6 +46,10 @@
 
 #include <screen/screen.h>
 
+#if QT_CONFIG(opengl)
+#include <EGL/egl.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 class QQnxScreenEventThread;
@@ -92,10 +96,12 @@ public:
 
     bool hasCapability(QPlatformIntegration::Capability cap) const override;
 
+    QPlatformWindow *createForeignWindow(QWindow *window, WId nativeHandle) const override;
     QPlatformWindow *createPlatformWindow(QWindow *window) const override;
     QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
 
-#if !defined(QT_NO_OPENGL)
+#if QT_CONFIG(opengl)
+    EGLDisplay eglDisplay() const { return m_eglDisplay; }
     QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
 #endif
 
@@ -123,7 +129,7 @@ public:
 
     QPlatformServices *services() const override;
 
-    QWindow *window(screen_window_t qnxWindow);
+    QWindow *window(screen_window_t qnxWindow) const;
 
     QQnxScreen *screenForNative(screen_display_t qnxScreen) const;
 
@@ -132,6 +138,7 @@ public:
     QQnxScreen *primaryDisplay() const;
     Options options() const;
     screen_context_t screenContext();
+    QByteArray screenContextId();
 
     QQnxNavigatorEventHandler *navigatorEventHandler();
 
@@ -145,6 +152,7 @@ private:
                                           int displayCount);
 
     screen_context_t m_screenContext;
+    QByteArray m_screenContextId;
     QQnxScreenEventThread *m_screenEventThread;
     QQnxNavigatorEventHandler *m_navigatorEventHandler;
     QQnxAbstractVirtualKeyboard *m_virtualKeyboard;
@@ -168,9 +176,15 @@ private:
     QSimpleDrag *m_drag;
 #endif
     QQnxWindowMapper m_windowMapper;
-    QMutex m_windowMapperMutex;
+    mutable QMutex m_windowMapperMutex;
 
     Options m_options;
+
+#if QT_CONFIG(opengl)
+    EGLDisplay m_eglDisplay;
+    void createEglDisplay();
+    void destroyEglDisplay();
+#endif
 
     static QQnxIntegration *ms_instance;
 

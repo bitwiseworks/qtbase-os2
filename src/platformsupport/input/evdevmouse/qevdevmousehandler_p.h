@@ -56,6 +56,8 @@
 #include <QPoint>
 #include <QEvent>
 
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 
 class QSocketNotifier;
@@ -64,7 +66,7 @@ class QEvdevMouseHandler : public QObject
 {
     Q_OBJECT
 public:
-    static QEvdevMouseHandler *create(const QString &device, const QString &specification);
+    static std::unique_ptr<QEvdevMouseHandler> create(const QString &device, const QString &specification);
     ~QEvdevMouseHandler();
 
     void readMouseData();
@@ -79,19 +81,22 @@ private:
 
     void sendMouseEvent();
     bool getHardwareMaximum();
+    void detectHiResWheelSupport();
 
     QString m_device;
     int m_fd;
-    QSocketNotifier *m_notify;
-    int m_x, m_y;
-    int m_prevx, m_prevy;
+    QSocketNotifier *m_notify = nullptr;
+    int m_x = 0, m_y = 0;
+    int m_prevx = 0, m_prevy = 0;
     bool m_abs;
     bool m_compression;
+    bool m_hiResWheel = false;
+    bool m_hiResHWheel = false;
     Qt::MouseButtons m_buttons;
     Qt::MouseButton m_button;
     QEvent::Type m_eventType;
     int m_jitterLimitSquared;
-    bool m_prevInvalid;
+    bool m_prevInvalid = true;
     int m_hardwareWidth;
     int m_hardwareHeight;
     qreal m_hardwareScalerY;

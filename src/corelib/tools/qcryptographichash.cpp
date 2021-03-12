@@ -58,6 +58,10 @@ typedef unsigned char BitSequence;
 typedef unsigned long long DataLength;
 typedef enum { SUCCESS = 0, FAIL = 1, BAD_HASHLEN = 2 } HashReturn;
 
+#ifdef Q_OS_RTEMS
+#  undef ALIGN
+#endif
+
 #include "../../3rdparty/sha3/KeccakSponge.c"
 typedef spongeState hashState;
 
@@ -387,19 +391,19 @@ void QCryptographicHash::addData(const char *data, int length)
         break;
     case RealSha3_224:
     case Keccak_224:
-        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), length*8);
+        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), quint64(length) * 8);
         break;
     case RealSha3_256:
     case Keccak_256:
-        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), length*8);
+        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), quint64(length) * 8);
         break;
     case RealSha3_384:
     case Keccak_384:
-        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), length*8);
+        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), quint64(length) * 8);
         break;
     case RealSha3_512:
     case Keccak_512:
-        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), length*8);
+        sha3Update(&d->sha3Context, reinterpret_cast<const BitSequence *>(data), quint64(length) * 8);
         break;
 #endif
     }

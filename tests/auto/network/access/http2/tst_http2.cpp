@@ -32,8 +32,10 @@
 
 #include <QtNetwork/private/http2protocol_p.h>
 #include <QtNetwork/qnetworkaccessmanager.h>
+#include <QtNetwork/qhttp2configuration.h>
 #include <QtNetwork/qnetworkrequest.h>
 #include <QtNetwork/qnetworkreply.h>
+
 #include <QtCore/qglobal.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qthread.h>
@@ -66,6 +68,26 @@ Q_DECLARE_METATYPE(QNetworkRequest::Attribute)
 
 QT_BEGIN_NAMESPACE
 
+QHttp2Configuration qt_defaultH2Configuration()
+{
+    QHttp2Configuration config;
+    config.setStreamReceiveWindowSize(Http2::qtDefaultStreamReceiveWindowSize);
+    config.setSessionReceiveWindowSize(Http2::maxSessionReceiveWindowSize);
+    config.setServerPushEnabled(false);
+    return config;
+}
+
+RawSettings qt_H2ConfigurationToSettings(const QHttp2Configuration &config = qt_defaultH2Configuration())
+{
+    RawSettings settings;
+    settings[Http2::Settings::ENABLE_PUSH_ID] = config.serverPushEnabled();
+    settings[Http2::Settings::INITIAL_WINDOW_SIZE_ID] = config.streamReceiveWindowSize();
+    if (config.maxFrameSize() != Http2::minPayloadLimit)
+        settings[Http2::Settings::MAX_FRAME_SIZE_ID] = config.maxFrameSize();
+    return settings;
+}
+
+
 class tst_Http2 : public QObject
 {
     Q_OBJECT
@@ -87,6 +109,7 @@ private slots:
     void earlyResponse();
     void connectToHost_data();
     void connectToHost();
+    void maxFrameSize();
 
 protected slots:
     // Slots to listen to our in-process server:
@@ -110,12 +133,13 @@ private:
     // small payload.
     void runEventLoop(int ms = 5000);
     void stopEventLoop();
-    Http2Server *newServer(const Http2::RawSettings &serverSettings, H2Type connectionType,
-                           const Http2::ProtocolParameters &clientSettings = {});
+    Http2Server *newServer(const RawSettings &serverSettings, H2Type connectionType,
+                           const RawSettings &clientSettings = qt_H2ConfigurationToSettings());
     // Send a get or post request, depending on a payload (empty or not).
     void sendRequest(int streamNumber,
                      QNetworkRequest::Priority priority = QNetworkRequest::NormalPriority,
-                     const QByteArray &payload = QByteArray());
+                     const QByteArray &payload = QByteArray(),
+                     const QHttp2Configuration &clientConfiguration = qt_defaultH2Configuration());
     QUrl requestUrl(H2Type connnectionType) const;
 
     quint16 serverPort = 0;
@@ -131,14 +155,14 @@ private:
     bool prefaceOK = false;
     bool serverGotSettingsACK = false;
 
-    static const Http2::RawSettings defaultServerSettings;
+    static const RawSettings defaultServerSettings;
 };
 
 #define STOP_ON_FAILURE \
     if (QTest::currentTestFailed()) \
         return;
 
-const Http2::RawSettings tst_Http2::defaultServerSettings{{Http2::Settings::MAX_CONCURRENT_STREAMS_ID, 100}};
+const RawSettings tst_Http2::defaultServerSettings{{Http2::Settings::MAX_CONCURRENT_STREAMS_ID, 100}};
 
 namespace {
 
@@ -195,12 +219,12 @@ void tst_Http2::singleRequest_data()
 
     // 'Clear text' that should always work, either via the protocol upgrade
     // or as direct.
-    QTest::addRow("h2c-upgrade") << QNetworkRequest::HTTP2AllowedAttribute << H2Type::h2c;
+    QTest::addRow("h2c-upgrade") << QNetworkRequest::Http2AllowedAttribute << H2Type::h2c;
     QTest::addRow("h2c-direct") << QNetworkRequest::Http2DirectAttribute << H2Type::h2cDirect;
 
     if (!clearTextHTTP2) {
         // Qt with TLS where TLS-backend supports ALPN.
-        QTest::addRow("h2-ALPN") << QNetworkRequest::HTTP2AllowedAttribute << H2Type::h2Alpn;
+        QTest::addRow("h2-ALPN") << QNetworkRequest::Http2AllowedAttribute << H2Type::h2Alpn;
     }
 
 #if QT_CONFIG(ssl)
@@ -308,18 +332,15 @@ void tst_Http2::flowControlClientSide()
     nRequests = 10;
     windowUpdates = 0;
 
-    Http2::ProtocolParameters params;
+    QHttp2Configuration params;
     // A small window size for a session, and even a smaller one per stream -
     // this will result in WINDOW_UPDATE frames both on connection stream and
     // per stream.
-    params.maxSessionReceiveWindowSize = Http2::defaultSessionWindowSize * 5;
-    params.settingsFrameData[Settings::INITIAL_WINDOW_SIZE_ID] = Http2::defaultSessionWindowSize;
-    // Inform our manager about non-default settings:
-    manager->setProperty(Http2::http2ParametersPropertyName, QVariant::fromValue(params));
+    params.setSessionReceiveWindowSize(Http2::defaultSessionWindowSize * 5);
+    params.setStreamReceiveWindowSize(Http2::defaultSessionWindowSize);
 
-    const Http2::RawSettings serverSettings = {{Settings::MAX_CONCURRENT_STREAMS_ID, quint32(3)}};
-    ServerPtr srv(newServer(serverSettings, defaultConnectionType(), params));
-
+    const RawSettings serverSettings = {{Settings::MAX_CONCURRENT_STREAMS_ID, quint32(3)}};
+    ServerPtr srv(newServer(serverSettings, defaultConnectionType(), qt_H2ConfigurationToSettings(params)));
 
     const QByteArray respond(int(Http2::defaultSessionWindowSize * 10), 'x');
     srv->setResponseBody(respond);
@@ -330,7 +351,7 @@ void tst_Http2::flowControlClientSide()
     QVERIFY(serverPort != 0);
 
     for (int i = 0; i < nRequests; ++i)
-        sendRequest(i);
+        sendRequest(i, QNetworkRequest::NormalPriority, {}, params);
 
     runEventLoop(120000);
     STOP_ON_FAILURE
@@ -359,7 +380,7 @@ void tst_Http2::flowControlServerSide()
     serverPort = 0;
     nRequests = 10;
 
-    const Http2::RawSettings serverSettings = {{Settings::MAX_CONCURRENT_STREAMS_ID, 7}};
+    const RawSettings serverSettings = {{Settings::MAX_CONCURRENT_STREAMS_ID, 7}};
 
     ServerPtr srv(newServer(serverSettings, defaultConnectionType()));
 
@@ -392,12 +413,11 @@ void tst_Http2::pushPromise()
     serverPort = 0;
     nRequests = 1;
 
-    Http2::ProtocolParameters params;
+    QHttp2Configuration params;
     // Defaults are good, except ENABLE_PUSH:
-    params.settingsFrameData[Settings::ENABLE_PUSH_ID] = 1;
-    manager->setProperty(Http2::http2ParametersPropertyName, QVariant::fromValue(params));
+    params.setServerPushEnabled(true);
 
-    ServerPtr srv(newServer(defaultServerSettings, defaultConnectionType(), params));
+    ServerPtr srv(newServer(defaultServerSettings, defaultConnectionType(), qt_H2ConfigurationToSettings(params)));
     srv->enablePushPromise(true, QByteArray("/script.js"));
 
     QMetaObject::invokeMethod(srv.data(), "startServer", Qt::QueuedConnection);
@@ -409,7 +429,8 @@ void tst_Http2::pushPromise()
     url.setPath("/index.html");
 
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, QVariant(true));
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
+    request.setHttp2Configuration(params);
 
     auto reply = manager->get(request);
     connect(reply, &QNetworkReply::finished, this, &tst_Http2::replyFinished);
@@ -434,7 +455,7 @@ void tst_Http2::pushPromise()
 
     url.setPath("/script.js");
     QNetworkRequest promisedRequest(url);
-    promisedRequest.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, QVariant(true));
+    promisedRequest.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
     reply = manager->get(promisedRequest);
     connect(reply, &QNetworkReply::finished, this, &tst_Http2::replyFinished);
     reply->ignoreSslErrors();
@@ -456,6 +477,9 @@ void tst_Http2::goaway_data()
     // - server waits for some time (enough for ur to init several streams on a
     // client side); then suddenly it replies with GOAWAY, never processing any
     // request.
+    if (clearTextHTTP2)
+        QSKIP("This test requires TLS with ALPN to work");
+
     QTest::addColumn<int>("responseTimeoutMS");
     QTest::newRow("ImmediateGOAWAY") << 0;
     QTest::newRow("DelayedGOAWAY") << 1000;
@@ -485,12 +509,10 @@ void tst_Http2::goaway()
     for (int i = 0; i < nRequests; ++i) {
         url.setPath(QString("/%1").arg(i));
         QNetworkRequest request(url);
-        request.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, QVariant(true));
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
         replies[i] = manager->get(request);
         QCOMPARE(replies[i]->error(), QNetworkReply::NoError);
-        void (QNetworkReply::*errorSignal)(QNetworkReply::NetworkError) =
-            &QNetworkReply::error;
-        connect(replies[i], errorSignal, this, &tst_Http2::replyFinishedWithError);
+        connect(replies[i], &QNetworkReply::errorOccurred, this, &tst_Http2::replyFinishedWithError);
         // Since we're using self-signed certificates, ignore SSL errors:
         replies[i]->ignoreSslErrors();
     }
@@ -558,7 +580,7 @@ void tst_Http2::connectToHost_data()
 #if QT_CONFIG(ssl)
     QTest::addRow("encrypted-h2-direct") << QNetworkRequest::Http2DirectAttribute << H2Type::h2Direct;
     if (!clearTextHTTP2)
-        QTest::addRow("encrypted-h2-ALPN") << QNetworkRequest::HTTP2AllowedAttribute << H2Type::h2Alpn;
+        QTest::addRow("encrypted-h2-ALPN") << QNetworkRequest::Http2AllowedAttribute << H2Type::h2Alpn;
 #endif // QT_CONFIG(ssl)
     // This works for all configurations, tests 'preconnect-http' scheme:
     // h2 with protocol upgrade is not working for now (the logic is a bit
@@ -649,9 +671,6 @@ void tst_Http2::connectToHost()
         eventLoop.exitLoop();
         QCOMPARE(reply->error(), QNetworkReply::NoError);
         QVERIFY(reply->isFinished());
-        // Nothing must be sent yet:
-        QVERIFY(!prefaceOK);
-        QVERIFY(!serverGotSettingsACK);
         // Nothing received back:
         QVERIFY(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).isNull());
         QCOMPARE(reply->readAll().size(), 0);
@@ -681,6 +700,73 @@ void tst_Http2::connectToHost()
     QVERIFY(reply->isFinished());
 }
 
+void tst_Http2::maxFrameSize()
+{
+#if !QT_CONFIG(ssl)
+    QSKIP("TLS support is needed for this test");
+#endif // QT_CONFIG(ssl)
+
+    // Here we test we send 'MAX_FRAME_SIZE' setting in our
+    // 'SETTINGS'. If done properly, our server will not chunk
+    // the payload into several DATA frames.
+
+#if QT_CONFIG(securetransport)
+    // Normally on macOS we use plain text only for SecureTransport
+    // does not support ALPN on the server side. With 'direct encrytped'
+    // we have to use TLS sockets (== private key) and thus suppress a
+    // keychain UI asking for permission to use a private key.
+    // Our CI has this, but somebody testing locally - will have a problem.
+    qputenv("QT_SSL_USE_TEMPORARY_KEYCHAIN", QByteArray("1"));
+    auto envRollback = qScopeGuard([](){
+        qunsetenv("QT_SSL_USE_TEMPORARY_KEYCHAIN");
+    });
+#endif // QT_CONFIG(securetransport)
+
+    auto connectionType = H2Type::h2Alpn;
+    auto attribute = QNetworkRequest::Http2AllowedAttribute;
+    if (clearTextHTTP2) {
+        connectionType = H2Type::h2Direct;
+        attribute = QNetworkRequest::Http2DirectAttribute;
+    }
+
+    auto h2Config = qt_defaultH2Configuration();
+    h2Config.setMaxFrameSize(Http2::minPayloadLimit * 3);
+
+    serverPort = 0;
+    nRequests = 1;
+
+    ServerPtr srv(newServer(defaultServerSettings, connectionType,
+                            qt_H2ConfigurationToSettings(h2Config)));
+    srv->setResponseBody(QByteArray(Http2::minPayloadLimit * 2, 'q'));
+    QMetaObject::invokeMethod(srv.data(), "startServer", Qt::QueuedConnection);
+    runEventLoop();
+    QVERIFY(serverPort != 0);
+
+    const QSignalSpy frameCounter(srv.data(), &Http2Server::sendingData);
+    auto url = requestUrl(connectionType);
+    url.setPath(QString("/stream1.html"));
+
+    QNetworkRequest request(url);
+    request.setAttribute(attribute, QVariant(true));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("text/plain"));
+    request.setHttp2Configuration(h2Config);
+
+    QNetworkReply *reply = manager->get(request);
+    reply->ignoreSslErrors();
+    connect(reply, &QNetworkReply::finished, this, &tst_Http2::replyFinished);
+
+    runEventLoop();
+    STOP_ON_FAILURE
+
+    // Normally, with a 16kb limit, our server would split such
+    // a response into 3 'DATA' frames (16kb + 16kb + 0|END_STREAM).
+    QCOMPARE(frameCounter.count(), 1);
+
+    QVERIFY(nRequests == 0);
+    QVERIFY(prefaceOK);
+    QVERIFY(serverGotSettingsACK);
+}
+
 void tst_Http2::serverStarted(quint16 port)
 {
     serverPort = port;
@@ -692,7 +778,6 @@ void tst_Http2::clearHTTP2State()
     windowUpdates = 0;
     prefaceOK = false;
     serverGotSettingsACK = false;
-    manager->setProperty(Http2::http2ParametersPropertyName, QVariant());
 }
 
 void tst_Http2::runEventLoop(int ms)
@@ -705,12 +790,11 @@ void tst_Http2::stopEventLoop()
     eventLoop.exitLoop();
 }
 
-Http2Server *tst_Http2::newServer(const Http2::RawSettings &serverSettings, H2Type connectionType,
-                                  const Http2::ProtocolParameters &clientSettings)
+Http2Server *tst_Http2::newServer(const RawSettings &serverSettings, H2Type connectionType,
+                                  const RawSettings &clientSettings)
 {
     using namespace Http2;
-    auto srv = new Http2Server(connectionType, serverSettings,
-                               clientSettings.settingsFrameData);
+    auto srv = new Http2Server(connectionType, serverSettings, clientSettings);
 
     using Srv = Http2Server;
     using Cl = tst_Http2;
@@ -732,16 +816,18 @@ Http2Server *tst_Http2::newServer(const Http2::RawSettings &serverSettings, H2Ty
 
 void tst_Http2::sendRequest(int streamNumber,
                             QNetworkRequest::Priority priority,
-                            const QByteArray &payload)
+                            const QByteArray &payload,
+                            const QHttp2Configuration &h2Config)
 {
     auto url = requestUrl(defaultConnectionType());
     url.setPath(QString("/stream%1.html").arg(streamNumber));
 
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, QVariant(true));
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
     request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, QVariant(true));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("text/plain"));
     request.setPriority(priority);
+    request.setHttp2Configuration(h2Config);
 
     QNetworkReply *reply = nullptr;
     if (payload.size())
@@ -844,7 +930,7 @@ void tst_Http2::replyFinished()
 
         QCOMPARE(reply->error(), QNetworkReply::NoError);
 
-        const QVariant http2Used(reply->attribute(QNetworkRequest::HTTP2WasUsedAttribute));
+        const QVariant http2Used(reply->attribute(QNetworkRequest::Http2WasUsedAttribute));
         if (!http2Used.isValid() || !http2Used.toBool())
             stopEventLoop();
 

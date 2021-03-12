@@ -191,7 +191,7 @@ void QCocoaMenuBar::syncMenu_helper(QPlatformMenu *menu, bool menubarUpdate)
     QMacAutoReleasePool pool;
 
     QCocoaMenu *cocoaMenu = static_cast<QCocoaMenu *>(menu);
-    Q_FOREACH (QCocoaMenuItem *item, cocoaMenu->items())
+    for (QCocoaMenuItem *item : cocoaMenu->items())
         cocoaMenu->syncMenuItem_helper(item, menubarUpdate);
 
     BOOL shouldHide = YES;
@@ -278,12 +278,11 @@ void QCocoaMenuBar::updateMenuBarImmediately()
         // we still have to update the menubar.
         if ((win->flags() & Qt::WindowType_Mask) != Qt::Tool)
             return;
-        typedef QT_MANGLE_NAMESPACE(QCocoaApplicationDelegate) AppDelegate;
         NSApplication *app = [NSApplication sharedApplication];
-        if (![app.delegate isKindOfClass:[AppDelegate class]])
+        if (![app.delegate isKindOfClass:[QCocoaApplicationDelegate class]])
             return;
         // We apply this logic _only_ during the startup.
-        AppDelegate *appDelegate = app.delegate;
+        QCocoaApplicationDelegate *appDelegate = app.delegate;
         if (!appDelegate.inLaunch)
             return;
     }
@@ -403,3 +402,4 @@ QCocoaWindow *QCocoaMenuBar::cocoaWindow() const
 
 QT_END_NAMESPACE
 
+#include "moc_qcocoamenubar.cpp"

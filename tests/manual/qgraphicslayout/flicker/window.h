@@ -74,7 +74,7 @@ class Window;
 
 class SlowWidget : public QGraphicsWidget {
 public:
-    SlowWidget(QGraphicsWidget *w = 0, Qt::WindowFlags wFlags = 0) : QGraphicsWidget(w, wFlags)
+    SlowWidget(QGraphicsWidget *w = nullptr, Qt::WindowFlags wFlags = {}) : QGraphicsWidget(w, wFlags)
     {
         m_window = 0;
     }
@@ -107,7 +107,7 @@ public:
         Q_UNUSED(option);
         Q_UNUSED(widget);
         painter->setBrush(m_brush);
-        painter->drawRoundRect(rect());
+        painter->drawRoundedRect(rect(), 25, 25, Qt::RelativeSize);
         painter->drawLine(rect().topLeft(), rect().bottomRight());
         painter->drawLine(rect().bottomLeft(), rect().topRight());
     }

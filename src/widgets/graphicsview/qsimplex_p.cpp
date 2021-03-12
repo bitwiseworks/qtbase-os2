@@ -76,7 +76,7 @@ QT_BEGIN_NAMESPACE
 /*!
   \internal
 */
-QSimplex::QSimplex() : objective(0), rows(0), columns(0), firstArtificial(0), matrix(0)
+QSimplex::QSimplex() : objective(nullptr), rows(0), columns(0), firstArtificial(0), matrix(nullptr)
 {
 }
 
@@ -93,7 +93,7 @@ QSimplex::~QSimplex()
 */
 void QSimplex::clearDataStructures()
 {
-    if (matrix == 0)
+    if (matrix == nullptr)
         return;
 
     // Matrix
@@ -101,7 +101,7 @@ void QSimplex::clearDataStructures()
     columns = 0;
     firstArtificial = 0;
     free(matrix);
-    matrix = 0;
+    matrix = nullptr;
 
     // Constraints
     for (int i = 0; i < constraints.size(); ++i) {
@@ -113,7 +113,7 @@ void QSimplex::clearDataStructures()
 
     // Other
     variables.clear();
-    objective = 0;
+    objective = nullptr;
 }
 
 /*!
@@ -164,7 +164,7 @@ bool QSimplex::setConstraints(const QList<QSimplexConstraint *> &newConstraints)
         for (auto it = v.cbegin(), end = v.cend(); it != end; ++it)
             variablesSet.insert(it.key());
     }
-    variables = variablesSet.toList();
+    variables = variablesSet.values();
 
     // Set Variables reverse mapping
     // We also need to be able to find the index for a given variable, to do that
@@ -195,7 +195,7 @@ bool QSimplex::setConstraints(const QList<QSimplexConstraint *> &newConstraints)
         QSimplexVariable *artificial;
 
         Q_ASSERT(constraints[i]->helper.first == 0);
-        Q_ASSERT(constraints[i]->artificial == 0);
+        Q_ASSERT(constraints[i]->artificial == nullptr);
 
         switch(constraints[i]->ratio) {
         case QSimplexConstraint::LessOrEqual:

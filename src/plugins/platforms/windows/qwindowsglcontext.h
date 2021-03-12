@@ -75,9 +75,9 @@ struct QOpenGLContextData
     QOpenGLContextData(HGLRC r, HWND h, HDC d) : renderingContext(r), hwnd(h), hdc(d) {}
     QOpenGLContextData() {}
 
-    HGLRC renderingContext = 0;
-    HWND hwnd = 0;
-    HDC hdc = 0;
+    HGLRC renderingContext = nullptr;
+    HWND hwnd = nullptr;
+    HDC hdc = nullptr;
 };
 
 class QOpenGLStaticContext;
@@ -89,7 +89,7 @@ struct QWindowsOpenGLContextFormat
 
     QSurfaceFormat::OpenGLContextProfile profile = QSurfaceFormat::NoProfile;
     int version = 0; //! majorVersion<<8 + minorVersion
-    QSurfaceFormat::FormatOptions options = 0;
+    QSurfaceFormat::FormatOptions options;
 };
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -107,6 +107,7 @@ struct QWindowsOpengl32DLL
     // Wrappers. Always use these instead of SwapBuffers/wglSwapBuffers/etc.
     BOOL swapBuffers(HDC dc);
     BOOL setPixelFormat(HDC dc, int pf, const PIXELFORMATDESCRIPTOR *pfd);
+    int describePixelFormat(HDC dc, int pf, UINT size, PIXELFORMATDESCRIPTOR *pfd);
 
     // WGL
     HGLRC (WINAPI * wglCreateContext)(HDC dc);
@@ -130,17 +131,19 @@ private:
     // For Mesa llvmpipe shipped with a name other than opengl32.dll
     BOOL (WINAPI * wglSwapBuffers)(HDC dc);
     BOOL (WINAPI * wglSetPixelFormat)(HDC dc, int pf, const PIXELFORMATDESCRIPTOR *pfd);
+    int (WINAPI * wglDescribePixelFormat)(HDC dc, int pf, UINT size, PIXELFORMATDESCRIPTOR *pfd);
 };
 
 class QOpenGLStaticContext : public QWindowsStaticOpenGLContext
 {
-    Q_DISABLE_COPY(QOpenGLStaticContext)
+    Q_DISABLE_COPY_MOVE(QOpenGLStaticContext)
     QOpenGLStaticContext();
 public:
     enum Extensions
     {
         SampleBuffers = 0x1,
-        sRGBCapableFramebuffer = 0x2
+        sRGBCapableFramebuffer = 0x2,
+        Robustness = 0x4,
     };
 
     typedef bool
@@ -222,7 +225,7 @@ private:
     typedef GLenum (APIENTRY *GlGetGraphicsResetStatusArbType)();
 
     inline void releaseDCs();
-    bool updateObtainedParams(HDC hdc, int *obtainedSwapInterval = 0);
+    bool updateObtainedParams(HDC hdc, int *obtainedSwapInterval = nullptr);
 
     QOpenGLStaticContext *m_staticContext;
     QOpenGLContext *m_context;

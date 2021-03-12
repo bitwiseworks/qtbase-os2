@@ -87,9 +87,27 @@ QT_BEGIN_NAMESPACE
         [testfunction2:testData]
         msvc-2010
 
+  QML test functions are identified using the following format:
+
+        <TestCase name>::<function name>:<data tag>
+
+  For example, to blacklist a QML test on RHEL 7.6:
+
+        # QTBUG-12345
+        [Button::test_display:TextOnly]
+        ci rhel-7.6
+
   Keys are lower-case.  Distribution name and version are supported if
-  QSysInfo's productType() and productVersion() return them. Keys can be
-  added via the space-separated QTEST_ENVIRONMENT environment variable.
+  QSysInfo's productType() and productVersion() return them.
+
+  Keys can be added via the space-separated QTEST_ENVIRONMENT
+  environment variable:
+
+        QTEST_ENVIRONMENT=ci ./tst_stuff
+
+  This can be used to "mock" a test environment. In the example above,
+  we add "ci" to the list of keys for the test environment, making it
+  possible to test BLACKLIST files that blacklist tests in a CI environment.
 
   The other known keys are listed below:
 */
@@ -102,7 +120,7 @@ static QSet<QByteArray> keywords()
 #ifdef Q_OS_LINUX
             << "linux"
 #endif
-#ifdef Q_OS_OSX
+#ifdef Q_OS_MACOS
             << "osx"
             << "macos"
 #endif
@@ -169,12 +187,14 @@ static QSet<QByteArray> keywords()
 #endif
             ;
 
+#if QT_CONFIG(properties)
             QCoreApplication *app = QCoreApplication::instance();
             if (app) {
                 const QVariant platformName = app->property("platformName");
                 if (platformName.isValid())
                     set << platformName.toByteArray();
             }
+#endif
 
             return set;
 }
@@ -208,11 +228,10 @@ static bool checkCondition(const QByteArray &condition)
     static const QSet<QByteArray> matchedConditions = activeConditions();
     QList<QByteArray> conds = condition.split(' ');
 
-    for (int i = 0; i < conds.size(); ++i) {
-        QByteArray c = conds.at(i);
+    for (QByteArray c : conds) {
         bool result = c.startsWith('!');
         if (result)
-            c = c.mid(1);
+            c.remove(0, 1);
 
         result ^= matchedConditions.contains(c);
         if (!result)
@@ -222,7 +241,7 @@ static bool checkCondition(const QByteArray &condition)
 }
 
 static bool ignoreAll = false;
-static std::set<QByteArray> *ignoredTests = 0;
+static std::set<QByteArray> *ignoredTests = nullptr;
 
 namespace QTestPrivate {
 

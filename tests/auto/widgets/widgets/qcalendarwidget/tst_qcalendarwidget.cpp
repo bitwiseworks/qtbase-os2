@@ -156,6 +156,9 @@ void tst_QCalendarWidget::buttonClickCheck()
 #ifdef Q_OS_WINRT
     QSKIP("Fails on WinRT - QTBUG-68297");
 #endif
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
     QCalendarWidget object;
     QSize size = object.sizeHint();
     object.setGeometry(0,0,size.width(), size.height());
@@ -185,6 +188,10 @@ void tst_QCalendarWidget::buttonClickCheck()
     QTest::mouseMove(widget);
     QTest::mouseClick(widget, Qt::LeftButton);
     QCOMPARE(2006, object.yearShown());
+    QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center(), 2);
+    QTest::mouseMove(widget);
+    QTest::mouseClick(widget, Qt::LeftButton);
+    QCOMPARE(button->text(), "2006"); // Check that it is shown as a year should be
     object.setSelectedDate(selectedDate);
     object.showSelectedDate();
     QTest::keyClick(widget, Qt::Key_Down);

@@ -71,7 +71,7 @@ ba[4] = 0xca;
 //! [2]
 for (int i = 0; i < ba.size(); ++i) {
     if (ba.at(i) >= 'a' && ba.at(i) <= 'f')
-        cout << "Found character in range [a-f]" << endl;
+        cout << "Found character in range [a-f]" << Qt::endl;
 }
 //! [2]
 
@@ -88,7 +88,7 @@ x.replace(5, 3, "&");       // x == "rock & roll"
 QByteArray ba("We must be <b>bold</b>, very <b>bold</b>");
 int j = 0;
 while ((j = ba.indexOf("<b>", j)) != -1) {
-    cout << "Found <b> tag at index position " << j << endl;
+    cout << "Found <b> tag at index position " << j << Qt::endl;
     ++j;
 }
 //! [4]
@@ -126,17 +126,17 @@ QByteArray("abc").isEmpty();    // returns false
 QByteArray ba("Hello world");
 char *data = ba.data();
 while (*data) {
-    cout << "[" << *data << "]" << endl;
+    cout << "[" << *data << "]" << Qt::endl;
     ++data;
 }
 //! [8]
 
 
 //! [9]
-QByteArray ba;
-for (int i = 0; i < 10; ++i)
-    ba[i] = 'A' + i;
-// ba == "ABCDEFGHIJ"
+QByteArray ba("Hello, world");
+cout << ba[0]; // prints H
+ba[7] = 'W';
+// ba == "Hello, World"
 //! [9]
 
 
@@ -428,6 +428,19 @@ text.data();            // returns "Qt is great!"
 QByteArray::fromBase64("PHA+SGVsbG8/PC9wPg==", QByteArray::Base64Encoding); // returns "<p>Hello?</p>"
 QByteArray::fromBase64("PHA-SGVsbG8_PC9wPg==", QByteArray::Base64UrlEncoding); // returns "<p>Hello?</p>"
 //! [44bis]
+
+//! [44ter]
+void process(const QByteArray &);
+
+if (auto result = QByteArray::fromBase64Encoding(encodedData))
+    process(*result);
+//! [44ter]
+
+//! [44quater]
+auto result = QByteArray::fromBase64Encoding(encodedData);
+if (result.decodingStatus == QByteArray::Base64DecodingStatus::Ok)
+    process(result.decoded);
+//! [44quater]
 
 
 //! [45]

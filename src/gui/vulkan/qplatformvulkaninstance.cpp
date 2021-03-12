@@ -80,9 +80,19 @@ QPlatformVulkanInstance::~QPlatformVulkanInstance()
 {
 }
 
+void QPlatformVulkanInstance::presentAboutToBeQueued(QWindow *window)
+{
+    Q_UNUSED(window);
+}
+
 void QPlatformVulkanInstance::presentQueued(QWindow *window)
 {
     Q_UNUSED(window);
+}
+
+void QPlatformVulkanInstance::setDebugFilters(const QVector<QVulkanInstance::DebugFilter> &filters)
+{
+    Q_UNUSED(filters);
 }
 
 QT_END_NAMESPACE

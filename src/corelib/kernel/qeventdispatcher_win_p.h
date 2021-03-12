@@ -73,8 +73,6 @@ class Q_CORE_EXPORT QEventDispatcherWin32 : public QAbstractEventDispatcher
 
 protected:
     void createInternalHwnd();
-    void installMessageHook();
-    void uninstallMessageHook();
 
 public:
     explicit QEventDispatcherWin32(QObject *parent = 0);
@@ -112,6 +110,7 @@ protected:
     QEventDispatcherWin32(QEventDispatcherWin32Private &dd, QObject *parent = 0);
     virtual void sendPostedEvents();
     void doUnregisterSocketNotifier(QSocketNotifier *notifier);
+    void doUnregisterEventNotifier(QWinEventNotifier *notifier);
 
 private:
     friend LRESULT QT_WIN_CALLBACK qt_internal_proc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp);
@@ -172,8 +171,7 @@ public:
     HHOOK getMessageHook;
 
     // for controlling when to send posted events
-    QAtomicInt serialNumber;
-    int lastSerialNumber, sendPostedEventsWindowsTimerId;
+    UINT_PTR sendPostedEventsTimerId;
     QAtomicInt wakeUps;
 
     // timers

@@ -51,7 +51,6 @@
 #endif
 #include "qnsview.h"
 #include "qnswindow.h"
-#include "qt_mac_p.h"
 
 #if QT_CONFIG(vulkan)
 #include <MoltenVK/mvk_vulkan.h>
@@ -151,6 +150,7 @@ public:
     Q_NOTIFICATION_HANDLER(NSWindowDidEndLiveResizeNotification) void windowDidEndLiveResize();
     Q_NOTIFICATION_HANDLER(NSWindowDidBecomeKeyNotification) void windowDidBecomeKey();
     Q_NOTIFICATION_HANDLER(NSWindowDidResignKeyNotification) void windowDidResignKey();
+    Q_NOTIFICATION_HANDLER(NSWindowWillMiniaturizeNotification) void windowWillMiniaturize();
     Q_NOTIFICATION_HANDLER(NSWindowDidMiniaturizeNotification) void windowDidMiniaturize();
     Q_NOTIFICATION_HANDLER(NSWindowDidDeminiaturizeNotification) void windowDidDeminiaturize();
     Q_NOTIFICATION_HANDLER(NSWindowWillEnterFullScreenNotification) void windowWillEnterFullScreen();
@@ -217,6 +217,8 @@ protected:
     void toggleMaximized();
     void toggleFullScreen();
     bool isTransitioningToFullScreen() const;
+
+    bool startSystemMove() override;
 
 // private:
 public: // for QNSView

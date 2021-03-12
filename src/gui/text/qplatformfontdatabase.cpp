@@ -60,6 +60,7 @@ void qt_registerFont(const QString &familyname, const QString &stylename,
 
 void qt_registerFontFamily(const QString &familyName);
 void qt_registerAliasToFontFamily(const QString &familyName, const QString &alias);
+bool qt_isFontFamilyPopulated(const QString &familyName);
 
 /*!
     Registers the pre-rendered QPF2 font contained in the given \a dataArray.
@@ -81,7 +82,7 @@ void QPlatformFontDatabase::registerQPF2Font(const QByteArray &dataArray, void *
 
         if (!fontName.isEmpty() && pixelSize) {
             QFont::Weight fontWeight = QFont::Normal;
-            if (weight.type() == QVariant::Int || weight.type() == QVariant::UInt)
+            if (weight.userType() == QMetaType::Int || weight.userType() == QMetaType::UInt)
                 fontWeight = QFont::Weight(weight.toInt());
 
             QFont::Style fontStyle = static_cast<QFont::Style>(style.toInt());
@@ -234,7 +235,7 @@ QSupportedWritingSystems::~QSupportedWritingSystems()
 */
 void QSupportedWritingSystems::detach()
 {
-    if (d->ref.load() != 1) {
+    if (d->ref.loadRelaxed() != 1) {
         QWritingSystemsPrivate *newd = new QWritingSystemsPrivate(d);
         if (!d->ref.deref())
             delete d;
@@ -367,7 +368,7 @@ QFontEngine *QPlatformFontDatabase::fontEngine(const QByteArray &fontData, qreal
     Q_UNUSED(pixelSize);
     Q_UNUSED(hintingPreference);
     qWarning("This plugin does not support font engines created directly from font data");
-    return 0;
+    return nullptr;
 }
 
 /*!
@@ -663,6 +664,16 @@ QFont::Weight QPlatformFontDatabase::weightFromInteger(int weight)
 void QPlatformFontDatabase::registerAliasToFontFamily(const QString &familyName, const QString &alias)
 {
     qt_registerAliasToFontFamily(familyName, alias);
+}
+
+/*!
+    Helper function that returns true if the font family has already been registered and populated.
+
+    \since 5.14
+*/
+bool QPlatformFontDatabase::isFamilyPopulated(const QString &familyName)
+{
+    return qt_isFontFamilyPopulated(familyName);
 }
 
 /*!

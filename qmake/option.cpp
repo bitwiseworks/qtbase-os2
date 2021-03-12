@@ -93,7 +93,6 @@ bool Option::mkfile::do_deps = true;
 bool Option::mkfile::do_mocs = true;
 bool Option::mkfile::do_dep_heuristics = true;
 bool Option::mkfile::do_preprocess = false;
-bool Option::mkfile::do_stub_makefile = false;
 QStringList Option::mkfile::project_files;
 
 static Option::QMAKE_MODE default_mode(QString progname)
@@ -122,7 +121,6 @@ static QString detectProjectFile(const QString &path)
     return ret;
 }
 
-QString project_builtin_regx();
 bool usage(const char *a0)
 {
     fprintf(stdout, "Usage: %s [mode] [options] [files]\n"
@@ -134,9 +132,9 @@ bool usage(const char *a0)
             "\n"
             "Mode:\n"
             "  -project       Put qmake into project file generation mode%s\n"
-            "                 In this mode qmake interprets files as files to\n"
-            "                 be built,\n"
-            "                 defaults to %s\n"
+            "                 In this mode qmake interprets [files] as files to\n"
+            "                 be added to the .pro file. By default, all files with\n"
+            "                 known source extensions are added.\n"
             "                 Note: The created .pro file probably will \n"
             "                 need to be edited. For example add the QT variable to \n"
             "                 specify what modules are required.\n"
@@ -184,7 +182,7 @@ bool usage(const char *a0)
             "  -nomoc         Don't generate moc targets  [makefile mode only]\n"
             "  -nopwd         Don't look for files in pwd [project mode only]\n"
             ,a0,
-            default_mode(a0) == Option::QMAKE_GENERATE_PROJECT  ? " (default)" : "", project_builtin_regx().toLatin1().constData(),
+            default_mode(a0) == Option::QMAKE_GENERATE_PROJECT  ? " (default)" : "",
             default_mode(a0) == Option::QMAKE_GENERATE_MAKEFILE ? " (default)" : ""
         );
     return false;
@@ -254,8 +252,6 @@ Option::parseCommandLine(QStringList &args, QMakeCmdLineParserState &state)
                             Option::mkfile::do_deps = false;
                         } else if (arg == "-nomoc") {
                             Option::mkfile::do_mocs = false;
-                        } else if (arg == "-createstub") {
-                            Option::mkfile::do_stub_makefile = true;
                         } else if (arg == "-nodependheuristics") {
                             Option::mkfile::do_dep_heuristics = false;
                         } else if (arg == "-E") {
@@ -660,6 +656,11 @@ QString qmake_libraryInfoFile()
     if (!Option::globals->qmake_abslocation.isEmpty())
         return QDir(QFileInfo(Option::globals->qmake_abslocation).absolutePath()).filePath("qt.conf");
     return QString();
+}
+
+QString qmake_abslocation()
+{
+    return Option::globals->qmake_abslocation;
 }
 
 QT_END_NAMESPACE

@@ -3,9 +3,9 @@ QT_FOR_CONFIG += gui-private
 
 android:!android-embedded: SUBDIRS += android
 
-!android: SUBDIRS += minimal
+!wasm:!android: SUBDIRS += minimal
 
-!android:qtConfig(freetype): SUBDIRS += offscreen
+!wasm:!android:qtConfig(freetype): SUBDIRS += offscreen
 
 qtConfig(xcb) {
     SUBDIRS += xcb
@@ -47,7 +47,5 @@ haiku {
 }
 
 wasm: SUBDIRS += wasm
-
-qtConfig(mirclient): SUBDIRS += mirclient
 
 qtConfig(integrityfb): SUBDIRS += integrity

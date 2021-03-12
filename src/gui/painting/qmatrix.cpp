@@ -45,6 +45,7 @@
 #include "qregion.h"
 #include "qpainterpath.h"
 #include "qpainterpath_p.h"
+#include "qtransform.h"
 #include "qvariant.h"
 #include <qmath.h>
 
@@ -248,7 +249,7 @@ QMatrix::QMatrix(qreal m11, qreal m12, qreal m21, qreal m22, qreal dx, qreal dy)
 /*!
      Constructs a matrix that is a copy of the given \a matrix.
  */
-QMatrix::QMatrix(const QMatrix &matrix) Q_DECL_NOTHROW
+QMatrix::QMatrix(const QMatrix &matrix) noexcept
     : _m11(matrix._m11)
     , _m12(matrix._m12)
     , _m21(matrix._m21)
@@ -680,7 +681,7 @@ QRegion QMatrix::map(const QRegion &r) const
     }
 
     QPainterPath p = map(qt_regionToPath(r));
-    return p.toFillPolygon().toPolygon();
+    return p.toFillPolygon(QTransform()).toPolygon();
 }
 
 /*!
@@ -989,7 +990,7 @@ bool QMatrix::operator==(const QMatrix &m) const
     Returns the hash value for \a key, using
     \a seed to seed the calculation.
 */
-uint qHash(const QMatrix &key, uint seed) Q_DECL_NOTHROW
+uint qHash(const QMatrix &key, uint seed) noexcept
 {
     QtPrivate::QHashCombine hash;
     seed = hash(seed, key.m11());
@@ -1068,7 +1069,7 @@ QMatrix QMatrix::operator *(const QMatrix &m) const
 /*!
     Assigns the given \a matrix's values to this matrix.
 */
-QMatrix &QMatrix::operator=(const QMatrix &matrix) Q_DECL_NOTHROW
+QMatrix &QMatrix::operator=(const QMatrix &matrix) noexcept
 {
     _m11 = matrix._m11;
     _m12 = matrix._m12;
@@ -1087,7 +1088,7 @@ QMatrix &QMatrix::operator=(const QMatrix &matrix) Q_DECL_NOTHROW
 */
 QMatrix::operator QVariant() const
 {
-    return QVariant(QVariant::Matrix, this);
+    return QVariant(QMetaType::QMatrix, this);
 }
 
 Q_GUI_EXPORT QPainterPath operator *(const QPainterPath &p, const QMatrix &m)

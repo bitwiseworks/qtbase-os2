@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -274,6 +274,7 @@ QItemSelectionRange QItemSelectionRange::intersected(const QItemSelectionRange &
 
 */
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
     Returns \c true if the selection range is less than the \a other
     range given; otherwise returns \c false.
@@ -312,6 +313,7 @@ bool QItemSelectionRange::operator<(const QItemSelectionRange &other) const
     std::less<const QAbstractItemModel *> less;
     return less(tl.model(), other.tl.model());
 }
+#endif
 
 /*!
     \fn bool QItemSelectionRange::isValid() const
@@ -656,7 +658,7 @@ void QItemSelectionModelPrivate::initModel(QAbstractItemModel *m)
           SLOT(_q_layoutChanged(QList<QPersistentModelIndex>,QAbstractItemModel::LayoutChangeHint)) },
         { SIGNAL(modelReset()),
           SLOT(reset()) },
-        { 0, 0 }
+        { nullptr, nullptr }
     };
 
     if (model == m)
@@ -1273,10 +1275,10 @@ struct IsNotValid {
     typedef bool result_type;
     struct is_transparent : std::true_type {};
     template <typename T>
-    Q_DECL_CONSTEXPR bool operator()(T &t) const Q_DECL_NOEXCEPT_EXPR(noexcept(t.isValid()))
+    Q_DECL_CONSTEXPR bool operator()(T &t) const noexcept(noexcept(t.isValid()))
     { return !t.isValid(); }
     template <typename T>
-    Q_DECL_CONSTEXPR bool operator()(T *t) const Q_DECL_NOEXCEPT_EXPR(noexcept(t->isValid()))
+    Q_DECL_CONSTEXPR bool operator()(T *t) const noexcept(noexcept(t->isValid()))
     { return !t->isValid(); }
 };
 }
@@ -1473,6 +1475,9 @@ bool QItemSelectionModel::isSelected(const QModelIndex &index) const
     Note that this function is usually faster than calling isSelected()
     on all items in the same row and that unselectable items are
     ignored.
+
+    \note Since Qt 5.15, the default argument for \a parent is an empty
+          model index.
 */
 bool QItemSelectionModel::isRowSelected(int row, const QModelIndex &parent) const
 {
@@ -1545,6 +1550,9 @@ bool QItemSelectionModel::isRowSelected(int row, const QModelIndex &parent) cons
     Note that this function is usually faster than calling isSelected()
     on all items in the same column and that unselectable items are
     ignored.
+
+    \note Since Qt 5.15, the default argument for \a parent is an empty
+          model index.
 */
 bool QItemSelectionModel::isColumnSelected(int column, const QModelIndex &parent) const
 {
@@ -1616,6 +1624,9 @@ bool QItemSelectionModel::isColumnSelected(int column, const QModelIndex &parent
 /*!
     Returns \c true if there are any items selected in the \a row with the given
     \a parent.
+
+    \note Since Qt 5.15, the default argument for \a parent is an empty
+          model index.
 */
 bool QItemSelectionModel::rowIntersectsSelection(int row, const QModelIndex &parent) const
 {
@@ -1627,10 +1638,9 @@ bool QItemSelectionModel::rowIntersectsSelection(int row, const QModelIndex &par
 
     QItemSelection sel = d->ranges;
     sel.merge(d->currentSelection, d->currentCommand);
-    for (int i = 0; i < sel.count(); ++i) {
-        QItemSelectionRange range = sel.at(i);
+    for (const QItemSelectionRange &range : qAsConst(sel)) {
         if (range.parent() != parent)
-          return false;
+            return false;
         int top = range.top();
         int bottom = range.bottom();
         int left = range.left();
@@ -1650,6 +1660,9 @@ bool QItemSelectionModel::rowIntersectsSelection(int row, const QModelIndex &par
 /*!
     Returns \c true if there are any items selected in the \a column with the given
     \a parent.
+
+    \note Since Qt 5.15, the default argument for \a parent is an empty
+          model index.
 */
 bool QItemSelectionModel::columnIntersectsSelection(int column, const QModelIndex &parent) const
 {
@@ -1661,11 +1674,13 @@ bool QItemSelectionModel::columnIntersectsSelection(int column, const QModelInde
 
     QItemSelection sel = d->ranges;
     sel.merge(d->currentSelection, d->currentCommand);
-    for (int i = 0; i < sel.count(); ++i) {
-        int left = sel.at(i).left();
-        int right = sel.at(i).right();
-        int top =  sel.at(i).top();
-        int bottom =  sel.at(i).bottom();
+    for (const QItemSelectionRange &range : qAsConst(sel)) {
+        if (range.parent() != parent)
+            return false;
+        int top = range.top();
+        int bottom = range.bottom();
+        int left = range.left();
+        int right = range.right();
         if (left <= column && right >= column) {
             for (int j = top; j <= bottom; j++) {
                 const Qt::ItemFlags flags = d->model->index(j, column, parent).flags();

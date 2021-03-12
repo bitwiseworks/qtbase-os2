@@ -60,7 +60,7 @@ class QWindowsUiaMainProvider :
     public IRawElementProviderFragmentRoot
 {
     Q_OBJECT
-    Q_DISABLE_COPY(QWindowsUiaMainProvider)
+    Q_DISABLE_COPY_MOVE(QWindowsUiaMainProvider)
 public:
     static QWindowsUiaMainProvider *providerForAccessible(QAccessibleInterface *accessible);
     explicit QWindowsUiaMainProvider(QAccessibleInterface *a, int initialRefCount = 1);
@@ -68,6 +68,7 @@ public:
     static void notifyFocusChange(QAccessibleEvent *event);
     static void notifyStateChange(QAccessibleStateChangeEvent *event);
     static void notifyValueChange(QAccessibleValueChangeEvent *event);
+    static void notifyNameChange(QAccessibleEvent *event);
     static void notifySelectionChange(QAccessibleEvent *event);
     static void notifyTextChange(QAccessibleEvent *event);
 

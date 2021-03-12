@@ -62,17 +62,13 @@ QT_BEGIN_NAMESPACE
 
 struct QMimeGlobMatchResult
 {
-    QMimeGlobMatchResult()
-    : m_weight(0), m_matchingPatternLength(0)
-    {}
-
-    void addMatch(const QString &mimeType, int weight, const QString &pattern);
+    void addMatch(const QString &mimeType, int weight, const QString &pattern, int knownSuffixLength = 0);
 
     QStringList m_matchingMimeTypes; // only those with highest weight
     QStringList m_allMatchingMimeTypes;
-    int m_weight;
-    int m_matchingPatternLength;
-    QString m_foundSuffix;
+    int m_weight = 0;
+    int m_matchingPatternLength = 0;
+    int m_knownSuffixLength = 0;
 };
 
 class QMimeGlobPattern
@@ -88,7 +84,7 @@ public:
     {
     }
 
-    void swap(QMimeGlobPattern &other) Q_DECL_NOTHROW
+    void swap(QMimeGlobPattern &other) noexcept
     {
         qSwap(m_pattern,         other.m_pattern);
         qSwap(m_mimeType,        other.m_mimeType);

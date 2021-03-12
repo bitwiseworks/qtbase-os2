@@ -175,11 +175,12 @@
 #include "qmovie.h"
 
 #include "qglobal.h"
+#include "qelapsedtimer.h"
 #include "qimage.h"
 #include "qimagereader.h"
 #include "qpixmap.h"
 #include "qrect.h"
-#include "qdatetime.h"
+#include "qelapsedtimer.h"
 #include "qtimer.h"
 #include "qpair.h"
 #include "qmap.h"
@@ -206,8 +207,8 @@ public:
         : pixmap(QPixmap()), delay(QMOVIE_INVALID_DELAY), endMark(false)
     { }
 
-    inline QFrameInfo(const QPixmap &pixmap, int delay)
-        : pixmap(pixmap), delay(delay), endMark(false)
+    inline QFrameInfo(QPixmap &&pixmap, int delay)
+        : pixmap(std::move(pixmap)), delay(delay), endMark(false)
     { }
 
     inline bool isValid()
@@ -221,6 +222,7 @@ public:
     static inline QFrameInfo endMarker()
     { return QFrameInfo(true); }
 };
+Q_DECLARE_TYPEINFO(QFrameInfo, Q_MOVABLE_TYPE);
 
 class QMoviePrivate : public QObjectPrivate
 {
@@ -270,7 +272,7 @@ public:
 /*! \internal
  */
 QMoviePrivate::QMoviePrivate(QMovie *qq)
-    : reader(0), speed(100), movieState(QMovie::NotRunning),
+    : reader(nullptr), speed(100), movieState(QMovie::NotRunning),
       currentFrameNumber(-1), nextFrameNumber(0), greatestFrameNumber(-1),
       nextDelay(0), playCounter(-1),
       cacheMode(QMovie::CacheNone), haveReadAll(false), isFirstIteration(true)
@@ -379,9 +381,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
             }
             if (frameNumber > greatestFrameNumber)
                 greatestFrameNumber = frameNumber;
-            QPixmap aPixmap = QPixmap::fromImage(std::move(anImage));
-            int aDelay = reader->nextImageDelay();
-            return QFrameInfo(aPixmap, aDelay);
+            return QFrameInfo(QPixmap::fromImage(std::move(anImage)), reader->nextImageDelay());
         } else if (frameNumber != 0) {
             // We've read all frames now. Return an end marker
             haveReadAll = true;
@@ -405,9 +405,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
                     return QFrameInfo(); // Invalid
                 }
                 greatestFrameNumber = i;
-                QPixmap aPixmap = QPixmap::fromImage(std::move(anImage));
-                int aDelay = reader->nextImageDelay();
-                QFrameInfo info(aPixmap, aDelay);
+                QFrameInfo info(QPixmap::fromImage(std::move(anImage)), reader->nextImageDelay());
                 // Cache it!
                 frameMap.insert(i, info);
                 if (i == frameNumber) {
@@ -416,7 +414,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
             } else {
                 // We've read all frames now. Return an end marker
                 haveReadAll = true;
-                return QFrameInfo::endMarker();
+                return frameNumber == greatestFrameNumber + 1 ? QFrameInfo::endMarker() : QFrameInfo();
             }
         }
     }
@@ -437,7 +435,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
 */
 bool QMoviePrivate::next()
 {
-    QTime time;
+    QElapsedTimer time;
     time.start();
     QFrameInfo info = infoForFrame(nextFrameNumber);
     if (!info.isValid())

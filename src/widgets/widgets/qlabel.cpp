@@ -85,6 +85,7 @@ QLabelPrivate::QLabelPrivate()
       shortcutId(0),
 #endif
       textformat(Qt::AutoText),
+      effectiveTextFormat(Qt::PlainText),
       textInteractionFlags(Qt::LinksAccessibleByMouse),
       sizePolicy(),
       margin(0),
@@ -94,7 +95,6 @@ QLabelPrivate::QLabelPrivate()
       scaledcontents(false),
       textLayoutDirty(false),
       textDirty(false),
-      isRichText(false),
       isTextLabel(false),
       hasShortcut(/*???*/),
 #ifndef QT_NO_CURSOR
@@ -188,8 +188,13 @@ QLabelPrivate::~QLabelPrivate()
 */
 
 #ifndef QT_NO_PICTURE
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
-    Returns the label's picture or nullptr if the label doesn't have a
+    \deprecated
+
+    New code should use the other overload which returns QPicture by-value.
+
+    This function returns the label's picture or \c nullptr if the label doesn't have a
     picture.
 */
 
@@ -197,6 +202,37 @@ const QPicture *QLabel::picture() const
 {
     Q_D(const QLabel);
     return d->picture;
+}
+#endif // QT_DEPRECATED_SINCE(5, 15)
+
+/*!
+    \since 5.15
+    Returns the label's picture.
+
+    Previously, Qt provided a version of \c picture() which returned the picture
+    by-pointer. That version is now deprecated. To maintain compatibility
+    with old code, you can explicitly differentiate between the by-pointer
+    function and the by-value function:
+
+    \code
+    const QPicture *picPtr = label->picture();
+    QPicture picVal = label->picture(Qt::ReturnByValue);
+    \endcode
+
+    If you disable the deprecated version using the QT_DISABLE_DEPRECATED_BEFORE
+    macro, then you can omit \c Qt::ReturnByValue as shown below:
+
+    \code
+    QPicture picVal = label->picture();
+    \endcode
+*/
+
+QPicture QLabel::picture(Qt::ReturnByValueConstant) const
+{
+    Q_D(const QLabel);
+    if (d->picture)
+        return *(d->picture);
+    return QPicture();
 }
 #endif
 
@@ -294,8 +330,14 @@ void QLabel::setText(const QString &text)
     d->text = text;
     d->isTextLabel = true;
     d->textDirty = true;
-    d->isRichText = d->textformat == Qt::RichText
-                    || (d->textformat == Qt::AutoText && Qt::mightBeRichText(d->text));
+    if (d->textformat == Qt::AutoText) {
+        if (Qt::mightBeRichText(d->text))
+            d->effectiveTextFormat = Qt::RichText;
+        else
+            d->effectiveTextFormat = Qt::PlainText;
+    } else {
+        d->effectiveTextFormat = d->textformat;
+    }
 
     d->control = oldControl;
 
@@ -306,7 +348,7 @@ void QLabel::setText(const QString &text)
         d->control = nullptr;
     }
 
-    if (d->isRichText) {
+    if (d->effectiveTextFormat != Qt::PlainText) {
         setMouseTracking(true);
     } else {
         // Note: mouse tracking not disabled intentionally
@@ -346,9 +388,27 @@ void QLabel::clear()
 
 /*!
     \property QLabel::pixmap
-    \brief the label's pixmap
+    \brief the label's pixmap.
 
-    If no pixmap has been set this will return nullptr.
+    Previously, Qt provided a version of \c pixmap() which returned the pixmap
+    by-pointer. That version is now deprecated. To maintain compatibility
+    with old code, you can explicitly differentiate between the by-pointer
+    function and the by-value function:
+
+    \code
+    const QPixmap *pixmapPtr = label->pixmap();
+    QPixmap pixmapVal = label->pixmap(Qt::ReturnByValue);
+    \endcode
+
+    If you disable the deprecated version using the QT_DISABLE_DEPRECATED_BEFORE
+    macro, then you can omit \c Qt::ReturnByValue as shown below:
+
+    \code
+    QPixmap pixmapVal = label->pixmap();
+    \endcode
+
+    If no pixmap has been set, the deprecated getter function will return
+    \c nullptr.
 
     Setting the pixmap clears any previous content. The buddy
     shortcut, if any, is disabled.
@@ -367,10 +427,28 @@ void QLabel::setPixmap(const QPixmap &pixmap)
     d->updateLabel();
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
+/*!
+    \deprecated
+
+    New code should use the other overload which returns QPixmap by-value.
+*/
 const QPixmap *QLabel::pixmap() const
 {
     Q_D(const QLabel);
     return d->pixmap;
+}
+#endif // QT_DEPRECATED_SINCE(5, 15)
+
+/*!
+    \since 5.15
+*/
+QPixmap QLabel::pixmap(Qt::ReturnByValueConstant) const
+{
+    Q_D(const QLabel);
+    if (d->pixmap)
+        return *(d->pixmap);
+    return QPixmap();
 }
 
 #ifndef QT_NO_PICTURE
@@ -989,6 +1067,9 @@ bool QLabel::event(QEvent *e)
                ) {
         d->setLayoutItemMargins(QStyle::SE_LabelLayoutItem);
         d->updateLabel();
+    } else if (type == QEvent::Polish) {
+        if (d->needTextControl())
+            d->ensureTextControl();
     }
 
     return QFrame::event(e);
@@ -1478,14 +1559,19 @@ void QLabelPrivate::ensureTextPopulated() const
     if (control) {
         QTextDocument *doc = control->document();
         if (textDirty) {
-#ifndef QT_NO_TEXTHTMLPARSER
-            if (isRichText)
-                doc->setHtml(text);
-            else
+            if (effectiveTextFormat == Qt::PlainText) {
                 doc->setPlainText(text);
-#else
-            doc->setPlainText(text);
+#if QT_CONFIG(texthtmlparser)
+            } else if (effectiveTextFormat == Qt::RichText) {
+                doc->setHtml(text);
 #endif
+#if QT_CONFIG(textmarkdownreader)
+            } else if (effectiveTextFormat == Qt::MarkdownText) {
+                doc->setMarkdown(text);
+#endif
+            } else {
+                doc->setPlainText(text);
+            }
             doc->setUndoRedoEnabled(false);
 
 #ifndef QT_NO_SHORTCUT
@@ -1623,7 +1709,7 @@ QMenu *QLabelPrivate::createStandardContextMenu(const QPoint &pos)
 {
     QString linkToCopy;
     QPoint p;
-    if (control && isRichText) {
+    if (control && effectiveTextFormat != Qt::PlainText) {
         p = layoutPoint(pos);
         linkToCopy = control->document()->documentLayout()->anchorAt(p);
     }

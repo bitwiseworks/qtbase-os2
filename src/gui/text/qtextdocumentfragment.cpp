@@ -277,7 +277,7 @@ void QTextDocumentFragmentPrivate::insert(QTextCursor &_cursor) const
     \sa isEmpty()
 */
 QTextDocumentFragment::QTextDocumentFragment()
-    : d(0)
+    : d(nullptr)
 {
 }
 
@@ -287,7 +287,7 @@ QTextDocumentFragment::QTextDocumentFragment()
     like the document's title.
 */
 QTextDocumentFragment::QTextDocumentFragment(const QTextDocument *document)
-    : d(0)
+    : d(nullptr)
 {
     if (!document)
         return;
@@ -304,7 +304,7 @@ QTextDocumentFragment::QTextDocumentFragment(const QTextDocument *document)
     \sa isEmpty(), QTextCursor::selection()
 */
 QTextDocumentFragment::QTextDocumentFragment(const QTextCursor &cursor)
-    : d(0)
+    : d(nullptr)
 {
     if (!cursor.hasSelection())
         return;
@@ -576,6 +576,9 @@ bool QTextHtmlImporter::appendNodeText()
             && ch != QChar::Nbsp
             && ch != QChar::ParagraphSeparator) {
 
+            if (wsm == QTextHtmlParserNode::WhiteSpacePreLine && (ch == QLatin1Char('\n') || ch == QLatin1Char('\r')))
+                compressNextWhitespace = PreserveWhiteSpace;
+
             if (compressNextWhitespace == CollapseWhiteSpace)
                 compressNextWhitespace = RemoveWhiteSpace; // allow this one, and remove the ones coming next.
             else if(compressNextWhitespace == RemoveWhiteSpace)
@@ -592,7 +595,9 @@ bool QTextHtmlImporter::appendNodeText()
                 }
             } else if (wsm != QTextHtmlParserNode::WhiteSpacePreWrap) {
                 compressNextWhitespace = RemoveWhiteSpace;
-                if (wsm == QTextHtmlParserNode::WhiteSpaceNoWrap)
+                if (wsm == QTextHtmlParserNode::WhiteSpacePreLine && (ch == QLatin1Char('\n') || ch == QLatin1Char('\r')))
+                { }
+                else if (wsm == QTextHtmlParserNode::WhiteSpaceNoWrap)
                     ch = QChar::Nbsp;
                 else
                     ch = QLatin1Char(' ');
@@ -605,6 +610,8 @@ bool QTextHtmlImporter::appendNodeText()
             || ch == QChar::ParagraphSeparator) {
 
             if (!textToInsert.isEmpty()) {
+                if (wsm == QTextHtmlParserNode::WhiteSpacePreLine && textToInsert.at(textToInsert.length() - 1) == QLatin1Char(' '))
+                    textToInsert = textToInsert.chopped(1);
                 cursor.insertText(textToInsert, format);
                 textToInsert.clear();
             }
@@ -671,7 +678,7 @@ QTextHtmlImporter::ProcessNodeResult QTextHtmlImporter::processSpecialNodes()
                     if (n->parent)
                         n = &at(n->parent);
                     else
-                        n = 0;
+                        n = nullptr;
                 }
             }
 
@@ -715,6 +722,10 @@ QTextHtmlImporter::ProcessNodeResult QTextHtmlImporter::processSpecialNodes()
         case Html_img: {
             QTextImageFormat fmt;
             fmt.setName(currentNode->imageName);
+            if (!currentNode->text.isEmpty())
+                fmt.setProperty(QTextFormat::ImageTitle, currentNode->text);
+            if (!currentNode->imageAlt.isEmpty())
+                fmt.setProperty(QTextFormat::ImageAltText, currentNode->imageAlt);
 
             fmt.merge(currentNode->charFormat);
 
@@ -782,7 +793,7 @@ bool QTextHtmlImporter::closeTag()
     bool blockTagClosed = false;
 
     while (depth > endDepth) {
-        Table *t = 0;
+        Table *t = nullptr;
         if (!tables.isEmpty())
             t = &tables.last();
 
@@ -805,7 +816,7 @@ bool QTextHtmlImporter::closeTag()
                 indent = t->lastIndent;
 
                 tables.resize(tables.size() - 1);
-                t = 0;
+                t = nullptr;
 
                 if (tables.isEmpty()) {
                     cursor = doc->rootFrame()->lastCursorPosition();
@@ -975,6 +986,7 @@ QTextHtmlImporter::Table QTextHtmlImporter::scanTable(int tableNodeIdx)
         tableFmt.setColumns(table.columns);
         tableFmt.setColumnWidthConstraints(columnWidths);
         tableFmt.setHeaderRowCount(tableHeaderRowCount);
+        tableFmt.setBorderCollapse(node.borderCollapse);
         fmt = tableFmt;
     }
 
@@ -1050,6 +1062,33 @@ QTextHtmlImporter::ProcessNodeResult QTextHtmlImporter::processBlockNode()
                     fmt.setLeftPadding(leftPadding(currentNodeIdx));
                 if (rightPadding(currentNodeIdx) >= 0)
                     fmt.setRightPadding(rightPadding(currentNodeIdx));
+#ifndef QT_NO_CSSPARSER
+                if (tableCellBorder(currentNodeIdx, QCss::TopEdge) > 0)
+                    fmt.setTopBorder(tableCellBorder(currentNodeIdx, QCss::TopEdge));
+                if (tableCellBorder(currentNodeIdx, QCss::RightEdge) > 0)
+                    fmt.setRightBorder(tableCellBorder(currentNodeIdx, QCss::RightEdge));
+                if (tableCellBorder(currentNodeIdx, QCss::BottomEdge) > 0)
+                    fmt.setBottomBorder(tableCellBorder(currentNodeIdx, QCss::BottomEdge));
+                if (tableCellBorder(currentNodeIdx, QCss::LeftEdge) > 0)
+                    fmt.setLeftBorder(tableCellBorder(currentNodeIdx, QCss::LeftEdge));
+                if (tableCellBorderStyle(currentNodeIdx, QCss::TopEdge) != QTextFrameFormat::BorderStyle_None)
+                    fmt.setTopBorderStyle(tableCellBorderStyle(currentNodeIdx, QCss::TopEdge));
+                if (tableCellBorderStyle(currentNodeIdx, QCss::RightEdge) != QTextFrameFormat::BorderStyle_None)
+                    fmt.setRightBorderStyle(tableCellBorderStyle(currentNodeIdx, QCss::RightEdge));
+                if (tableCellBorderStyle(currentNodeIdx, QCss::BottomEdge) != QTextFrameFormat::BorderStyle_None)
+                    fmt.setBottomBorderStyle(tableCellBorderStyle(currentNodeIdx, QCss::BottomEdge));
+                if (tableCellBorderStyle(currentNodeIdx, QCss::LeftEdge) != QTextFrameFormat::BorderStyle_None)
+                    fmt.setLeftBorderStyle(tableCellBorderStyle(currentNodeIdx, QCss::LeftEdge));
+                if (tableCellBorderBrush(currentNodeIdx, QCss::TopEdge) != Qt::NoBrush)
+                    fmt.setTopBorderBrush(tableCellBorderBrush(currentNodeIdx, QCss::TopEdge));
+                if (tableCellBorderBrush(currentNodeIdx, QCss::RightEdge) != Qt::NoBrush)
+                    fmt.setRightBorderBrush(tableCellBorderBrush(currentNodeIdx, QCss::RightEdge));
+                if (tableCellBorderBrush(currentNodeIdx, QCss::BottomEdge) != Qt::NoBrush)
+                    fmt.setBottomBorderBrush(tableCellBorderBrush(currentNodeIdx, QCss::BottomEdge));
+                if (tableCellBorderBrush(currentNodeIdx, QCss::LeftEdge) != Qt::NoBrush)
+                    fmt.setLeftBorderBrush(tableCellBorderBrush(currentNodeIdx, QCss::LeftEdge));
+#endif
+
                 cell.setFormat(fmt);
 
                 cursor.setPosition(cell.firstPosition());
@@ -1084,7 +1123,7 @@ QTextHtmlImporter::ProcessNodeResult QTextHtmlImporter::processBlockNode()
 
     // for list items we may want to collapse with the bottom margin of the
     // list.
-    const QTextHtmlParserNode *parentNode = currentNode->parent ? &at(currentNode->parent) : 0;
+    const QTextHtmlParserNode *parentNode = currentNode->parent ? &at(currentNode->parent) : nullptr;
     if ((currentNode->id == Html_li || currentNode->id == Html_dt || currentNode->id == Html_dd)
         && parentNode
         && (parentNode->isListStart() || parentNode->id == Html_dl)
@@ -1231,7 +1270,7 @@ void QTextHtmlImporter::appendBlock(const QTextBlockFormat &format, QTextCharFor
 
 QTextDocumentFragment QTextDocumentFragment::fromHtml(const QString &html)
 {
-    return fromHtml(html, 0);
+    return fromHtml(html, nullptr);
 }
 
 /*!

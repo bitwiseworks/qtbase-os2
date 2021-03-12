@@ -1,4 +1,5 @@
+[sendEventsOnProcessEvents]
+ubuntu-20.04
 [touchEventPropagation]
 # QTBUG-66745
-opensuse
 opensuse-leap

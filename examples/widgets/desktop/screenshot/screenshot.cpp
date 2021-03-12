@@ -59,7 +59,7 @@ Screenshot::Screenshot()
     screenshotLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     screenshotLabel->setAlignment(Qt::AlignCenter);
 
-    const QRect screenGeometry = QApplication::desktop()->screenGeometry(this);
+    const QRect screenGeometry = screen()->geometry();
     screenshotLabel->setMinimumSize(screenGeometry.width() / 8, screenGeometry.height() / 8);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
@@ -109,7 +109,7 @@ void Screenshot::resizeEvent(QResizeEvent * /* event */)
 {
     QSize scaledSize = originalPixmap.size();
     scaledSize.scale(screenshotLabel->size(), Qt::KeepAspectRatio);
-    if (!screenshotLabel->pixmap() || scaledSize != screenshotLabel->pixmap()->size())
+    if (scaledSize != screenshotLabel->pixmap(Qt::ReturnByValue).size())
         updateScreenshotLabel();
 }
 //! [1]

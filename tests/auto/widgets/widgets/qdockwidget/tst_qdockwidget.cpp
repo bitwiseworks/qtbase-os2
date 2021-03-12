@@ -670,7 +670,11 @@ void tst_QDockWidget::dockLocationChanged()
     spy.clear();
 
     dw.setFloating(true);
-    QTest::qWait(100);
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(qvariant_cast<Qt::DockWidgetArea>(spy.at(0).at(0)),
+             Qt::NoDockWidgetArea);
+    spy.clear();
+
     dw.setFloating(false);
     QTRY_COMPARE(spy.count(), 1);
     QCOMPARE(qvariant_cast<Qt::DockWidgetArea>(spy.at(0).at(0)),
@@ -942,6 +946,9 @@ void tst_QDockWidget::task248604_infiniteResize()
 
 void tst_QDockWidget::task258459_visibilityChanged()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
     QMainWindow win;
     QDockWidget dock1, dock2;
     win.addDockWidget(Qt::RightDockWidgetArea, &dock1);

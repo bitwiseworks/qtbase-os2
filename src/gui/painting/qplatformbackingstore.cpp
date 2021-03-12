@@ -87,10 +87,10 @@ class QPlatformBackingStorePrivate
 public:
     QPlatformBackingStorePrivate(QWindow *w)
         : window(w)
-        , backingStore(0)
+        , backingStore(nullptr)
 #ifndef QT_NO_OPENGL
         , textureId(0)
-        , blitter(0)
+        , blitter(nullptr)
 #endif
     {
     }
@@ -338,7 +338,16 @@ void QPlatformBackingStore::composeAndFlush(QWindow *window, const QRegion &regi
         }
     }
 
-    if (!d_ptr->context->makeCurrent(window)) {
+    bool current = d_ptr->context->makeCurrent(window);
+
+    if (!current && !d_ptr->context->isValid()) {
+        delete d_ptr->blitter;
+        d_ptr->blitter = nullptr;
+        d_ptr->textureId = 0;
+        current = d_ptr->context->create() && d_ptr->context->makeCurrent(window);
+    }
+
+    if (!current) {
         qCWarning(lcQpaBackingStore, "composeAndFlush: makeCurrent() failed");
         return;
     }
@@ -418,7 +427,7 @@ void QPlatformBackingStore::composeAndFlush(QWindow *window, const QRegion &regi
             origin = QOpenGLTextureBlitter::OriginBottomLeft;
         textureId = d_ptr->textureId;
     } else {
-        TextureFlags flags = 0;
+        TextureFlags flags;
         textureId = toTexture(deviceRegion(region, window, offset), &d_ptr->textureSize, &flags);
         d_ptr->needsSwizzle = (flags & TextureSwizzle) != 0;
         d_ptr->premultiplied = (flags & TexturePremultiplied) != 0;
@@ -446,14 +455,22 @@ void QPlatformBackingStore::composeAndFlush(QWindow *window, const QRegion &regi
             d_ptr->blitter->setRedBlueSwizzle(false);
     }
 
-    // There is no way to tell if the OpenGL-rendered content is premultiplied or not.
-    // For compatibility, assume that it is not, and use normal alpha blend always.
-    if (d_ptr->premultiplied)
-        funcs->glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
-
     // Textures for renderToTexture widgets that have WA_AlwaysStackOnTop set.
+    bool blendIsPremultiplied = d_ptr->premultiplied;
     for (int i = 0; i < textures->count(); ++i) {
-        if (textures->flags(i).testFlag(QPlatformTextureList::StacksOnTop))
+        const QPlatformTextureList::Flags flags = textures->flags(i);
+        if (flags.testFlag(QPlatformTextureList::NeedsPremultipliedAlphaBlending)) {
+            if (!blendIsPremultiplied) {
+                funcs->glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+                blendIsPremultiplied = true;
+            }
+        } else {
+            if (blendIsPremultiplied) {
+                funcs->glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+                blendIsPremultiplied = false;
+            }
+        }
+        if (flags.testFlag(QPlatformTextureList::StacksOnTop))
             blitTextureForWidget(textures, i, window, deviceWindowRect, d_ptr->blitter, offset, canUseSrgb);
     }
 
@@ -517,7 +534,7 @@ GLuint QPlatformBackingStore::toTexture(const QRegion &dirtyRegion, QSize *textu
     GLuint pixelType = GL_UNSIGNED_BYTE;
 
     bool needsConversion = false;
-    *flags = 0;
+    *flags = { };
     switch (image.format()) {
     case QImage::Format_ARGB32_Premultiplied:
         *flags |= TexturePremultiplied;

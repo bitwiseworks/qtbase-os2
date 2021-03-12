@@ -136,7 +136,7 @@ void tst_QAbstractProxyModel::flags_data()
 {
     QTest::addColumn<QModelIndex>("index");
     QTest::addColumn<Qt::ItemFlags>("flags");
-    QTest::newRow("null") << QModelIndex() << (Qt::ItemFlags)0;
+    QTest::newRow("null") << QModelIndex() << Qt::ItemFlags{};
 }
 
 // public Qt::ItemFlags flags(QModelIndex const& index) const
@@ -313,11 +313,12 @@ public:
         CustomRole2
     };
 
-    StandardItemModelWithCustomRoleNames() {
-        QHash<int, QByteArray> _roleNames = roleNames();
-        _roleNames.insert(CustomRole1, "custom1");
-        _roleNames.insert(CustomRole2, "custom2");
-        setRoleNames(_roleNames);
+    QHash<int, QByteArray> roleNames() const override
+    {
+        auto result = QStandardItemModel::roleNames();
+        result.insert(CustomRole1, QByteArrayLiteral("custom1"));
+        result.insert(CustomRole2, QByteArrayLiteral("custom2"));
+        return result;
     }
 };
 
@@ -329,11 +330,10 @@ public:
         AnotherCustomRole2
     };
 
-    AnotherStandardItemModelWithCustomRoleNames() {
-        QHash<int, QByteArray> _roleNames = roleNames();
-        _roleNames.insert(AnotherCustomRole1, "another_custom1");
-        _roleNames.insert(AnotherCustomRole2, "another_custom2");
-        setRoleNames(_roleNames);
+    QHash<int, QByteArray> roleNames() const override
+    {
+        return {{AnotherCustomRole1, QByteArrayLiteral("another_custom1")},
+                {AnotherCustomRole2, QByteArrayLiteral("another_custom2")}};
     }
 };
 

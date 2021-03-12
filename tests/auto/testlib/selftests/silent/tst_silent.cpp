@@ -72,6 +72,17 @@ void tst_Silent::xpass()
     QVERIFY2(true, "This test should XPASS");
 }
 
+#ifndef Q_OS_WIN
+#include <signal.h>
+#include <setjmp.h>
+
+static jmp_buf state;
+static void abort_handler(int)
+{
+    longjmp(state, 1);
+}
+#endif
+
 void tst_Silent::messages()
 {
     qWarning("This is a warning that should not appear in silent test output");
@@ -80,8 +91,25 @@ void tst_Silent::messages()
     qCritical("This is a critical message that should not appear in silent test output");
     qInfo("This is an info message that should not appear in silent test output");
     QTestLog::info("This is an internal testlib info message that should not appear in silent test output", __FILE__, __LINE__);
-    qFatal("This is a fatal error message that should still appear in silent test output");
+
+#ifndef Q_OS_WIN
+    // We're testing qFatal, but we don't want to actually std::abort() !
+    auto prior = signal(SIGABRT, abort_handler);
+    if (setjmp(state))
+        signal(SIGABRT, prior);
+    else
+#endif
+        qFatal("This is a fatal error message that should still appear in silent test output");
 }
 
-QTEST_MAIN(tst_Silent)
+int main(int argc, char *argv[])
+{
+    std::vector<const char*> args(argv, argv + argc);
+    args.push_back("-silent");
+    argc = args.size();
+    argv = const_cast<char**>(&args[0]);
+
+    QTEST_MAIN_IMPL(tst_Silent)
+}
+
 #include "tst_silent.moc"

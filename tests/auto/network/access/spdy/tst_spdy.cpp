@@ -100,7 +100,8 @@ tst_Spdy::~tst_Spdy()
 void tst_Spdy::initTestCase()
 {
     QVERIFY(!m_rfc3252FilePath.isEmpty());
-    QVERIFY(QtNetworkSettings::verifyTestNetworkSettings());
+    if (!QtNetworkSettings::verifyTestNetworkSettings())
+        QSKIP("No network test server available");
 }
 
 void tst_Spdy::settingsAndNegotiation_data()
@@ -580,7 +581,7 @@ void tst_Spdy::errors()
     if (ignoreSslErrors)
         reply->ignoreSslErrors();
     QSignalSpy finishedSpy(reply, SIGNAL(finished()));
-    QSignalSpy errorSpy(reply, SIGNAL(error(QNetworkReply::NetworkError)));
+    QSignalSpy errorSpy(reply, SIGNAL(errorOccurred(QNetworkReply::NetworkError)));
 
     QObject::connect(reply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
 

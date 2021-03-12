@@ -53,6 +53,7 @@ private Q_SLOTS:
     void QTBUG_31046();
     void settingCustomWidgets();
     void i18n();
+    void setValueReentrancyGuard();
 };
 
 void tst_QProgressDialog::cleanup()
@@ -252,7 +253,7 @@ class QTestTranslator : public QTranslator
 {
     const QString m_str;
 public:
-    explicit QTestTranslator(QString str) : m_str(qMove(str)) {}
+    explicit QTestTranslator(QString str) : m_str(std::move(str)) {}
 
     QString translate(const char *, const char *sourceText, const char *, int) const override
     { return m_str + sourceText + m_str; }
@@ -265,7 +266,7 @@ class QTranslatorGuard {
     Translator t;
 public:
     template <typename Arg>
-    explicit QTranslatorGuard(Arg a) : t(qMove(a))
+    explicit QTranslatorGuard(Arg a) : t(std::move(a))
     { qApp->installTranslator(&t); }
     ~QTranslatorGuard()
     { qApp->removeTranslator(&t); }
@@ -289,6 +290,29 @@ void tst_QProgressDialog::i18n()
     QVERIFY(btn);
     QTRY_COMPARE(btn->text(), QProgressDialog::tr("Cancel"));
     QVERIFY(!btn->text().startsWith(xxx));
+}
+
+void tst_QProgressDialog::setValueReentrancyGuard()
+{
+    // Tests setValue() of window modal QProgressBar with
+    // Qt::QueuedConnection:
+    // This test crashes with a stack overflow if the boolean
+    // guard "processingEvents" that prevents reentranct calls
+    // to QCoreApplication::processEvents() within setValue()
+    // has not been implemented
+
+    constexpr int steps = 100; // Should be at least 50 to test for crash
+
+    QProgressDialog dlg("Testing setValue reentrancy guard...", QString(), 0, steps);
+    dlg.setWindowModality(Qt::WindowModal);
+    dlg.setMinimumDuration(0);
+    dlg.setAutoReset(false);
+
+    // Simulate a quick work loop
+    for (int i = 0; i <= steps; ++i)
+        QMetaObject::invokeMethod(&dlg, "setValue", Qt::QueuedConnection, Q_ARG(int, i));
+
+    QTRY_COMPARE(dlg.value(), steps);
 }
 
 QTEST_MAIN(tst_QProgressDialog)

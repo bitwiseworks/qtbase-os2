@@ -127,16 +127,18 @@ void ArthurFrame::createGlWindow()
     f.setStencilBufferSize(8);
     m_glWindow->setFormat(f);
     m_glWindow->setFlags(Qt::WindowTransparentForInput);
-    m_glWindow->resize(width() - 1, height() - 1);
-    m_glWindow->create();
+    m_glWindow->resize(width(), height());
     m_glWidget = QWidget::createWindowContainer(m_glWindow, this);
+    // create() must be called after createWindowContainer() otherwise
+    // an incorrect offsetting of the position will occur.
+    m_glWindow->create();
 }
 #endif
 
 
 void ArthurFrame::paintEvent(QPaintEvent *e)
 {
-    static QImage *static_image = 0;
+    static QImage *static_image = nullptr;
 
     QPainter painter;
 
@@ -153,7 +155,7 @@ void ArthurFrame::paintEvent(QPaintEvent *e)
 
         int o = 10;
 
-        QBrush bg = palette().brush(QPalette::Background);
+        QBrush bg = palette().brush(QPalette::Window);
         painter.fillRect(0, 0, o, o, bg);
         painter.fillRect(width() - o, 0, o, o, bg);
         painter.fillRect(0, height() - o, o, o, bg);
@@ -233,7 +235,7 @@ void ArthurFrame::resizeEvent(QResizeEvent *e)
 {
 #if QT_CONFIG(opengl)
     if (m_glWidget)
-        m_glWidget->setGeometry(0, 0, e->size().width()-1, e->size().height()-1);
+        m_glWidget->setGeometry(0, 0, e->size().width(), e->size().height());
 #endif
     QWidget::resizeEvent(e);
 }
@@ -376,7 +378,7 @@ void ArthurFrame::showSource()
 
     const QString html = QStringLiteral("<html><pre>") + contents + QStringLiteral("</pre></html>");
 
-    QTextBrowser *sourceViewer = new QTextBrowser(0);
+    QTextBrowser *sourceViewer = new QTextBrowser;
     sourceViewer->setWindowTitle(tr("Source: %1").arg(m_sourceFileName.midRef(5)));
     sourceViewer->setParent(this, Qt::Dialog);
     sourceViewer->setAttribute(Qt::WA_DeleteOnClose);

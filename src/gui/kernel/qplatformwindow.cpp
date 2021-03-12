@@ -348,9 +348,7 @@ void QPlatformWindow::setWindowIcon(const QIcon &icon) { Q_UNUSED(icon); }
 */
 bool QPlatformWindow::close()
 {
-    bool accepted = false;
-    QWindowSystemInterface::handleCloseEvent<QWindowSystemInterface::SynchronousDelivery>(window(), &accepted);
-    return accepted;
+    return QWindowSystemInterface::handleCloseEvent<QWindowSystemInterface::SynchronousDelivery>(window());
 }
 
 /*!
@@ -484,19 +482,17 @@ bool QPlatformWindow::windowEvent(QEvent *event)
 }
 
 /*!
-    Reimplement this method to start a system size grip drag
-    operation if the system supports it and return true to indicate
-    success.
-    It is called from the mouse press event handler of the size grip.
+    Reimplement this method to start a system resize operation if
+    the system supports it and return true to indicate success.
 
-    The default implementation is empty and does nothing with \a pos
-    and \a corner.
+    The default implementation is empty and does nothing with \a edges.
+
+    \since 5.15
 */
 
-bool QPlatformWindow::startSystemResize(const QPoint &pos, Qt::Corner corner)
+bool QPlatformWindow::startSystemResize(Qt::Edges edges)
 {
-    Q_UNUSED(pos)
-    Q_UNUSED(corner)
+    Q_UNUSED(edges)
     return false;
 }
 
@@ -504,18 +500,13 @@ bool QPlatformWindow::startSystemResize(const QPoint &pos, Qt::Corner corner)
     Reimplement this method to start a system move operation if
     the system supports it and return true to indicate success.
 
-    The \a pos is a position of MouseButtonPress event or TouchBegin
-    event from a sequence of mouse events that triggered the movement.
-    It must be specified in window coordinates.
+    The default implementation is empty and does nothing.
 
-    The default implementation is empty and does nothing with \a pos.
-
-    \since 5.11
+    \since 5.15
 */
 
-bool QPlatformWindow::startSystemMove(const QPoint &pos)
+bool QPlatformWindow::startSystemMove()
 {
-    Q_UNUSED(pos)
     return false;
 }
 
@@ -696,9 +687,12 @@ static QSize fixInitialSize(QSize size, const QWindow *w,
     However if the given window already has geometry which the application has
     initialized, it takes priority.
 */
-QRect QPlatformWindow::initialGeometry(const QWindow *w,
-    const QRect &initialGeometry, int defaultWidth, int defaultHeight)
+QRect QPlatformWindow::initialGeometry(const QWindow *w, const QRect &initialGeometry,
+                                       int defaultWidth, int defaultHeight,
+                                       const QScreen **resultingScreenReturn)
 {
+    if (resultingScreenReturn)
+        *resultingScreenReturn = w->screen();
     if (!w->isTopLevel()) {
         const qreal factor = QHighDpiScaling::factor(w);
         const QSize size = fixInitialSize(QHighDpi::fromNative(initialGeometry.size(), factor),
@@ -714,6 +708,8 @@ QRect QPlatformWindow::initialGeometry(const QWindow *w,
         : QGuiApplication::screenAt(initialGeometry.center());
     if (!screen)
         return initialGeometry;
+    if (resultingScreenReturn)
+        *resultingScreenReturn = screen;
     // initialGeometry refers to window's screen
     QRect rect(QHighDpi::fromNativePixels(initialGeometry, w));
     if (wp->resizeAutomatic)
@@ -744,7 +740,7 @@ QRect QPlatformWindow::initialGeometry(const QWindow *w,
     QPlatformWindow subclasses can re-implement this function to
     provide display refresh synchronized updates. The event
     should be delivered using QPlatformWindow::deliverUpdateRequest()
-    to not get out of sync with the the internal state of QWindow.
+    to not get out of sync with the internal state of QWindow.
 
     The default implementation posts an UpdateRequest event to the
     window after 5 ms. The additional time is there to give the event
@@ -886,8 +882,8 @@ QRectF QPlatformWindow::windowClosestAcceptableGeometry(const QRectF &nativeRect
     However, it is not concerned with how Qt renders into the window it represents.
 
     Visible QWindows will always have a QPlatformWindow. However, it is not necessary for
-    all windows to have a QBackingStore. This is the case for QOpenGLWidget. And could be the case for
-    windows where some  3.party renders into it.
+    all windows to have a QBackingStore. This is the case for QOpenGLWindow. And could be the case for
+    windows where some third party renders into it.
 
     The platform specific window handle can be retrieved by the winId function.
 

@@ -48,7 +48,7 @@
 #include <qcoreapplication.h>
 #endif
 
-#if QT_HAS_INCLUDE(<paths.h>)
+#if __has_include(<paths.h>)
 #include <paths.h>
 #endif
 
@@ -232,7 +232,7 @@ QT_BEGIN_NAMESPACE
     \row \li DocumentsLocation
          \li "~/Documents"
     \row \li FontsLocation
-         \li "~/.fonts"
+         \li "~/.fonts", "~/.local/share/fonts", "/usr/local/share/fonts", "/usr/share/fonts"
     \row \li ApplicationsLocation
          \li "~/.local/share/applications", "/usr/local/share/applications", "/usr/share/applications"
     \row \li MusicLocation
@@ -343,7 +343,10 @@ QT_BEGIN_NAMESPACE
     OS configuration, locale, or they may change in future Qt versions.
 
     \note On Android, applications with open files on the external storage (<USER> locations),
-          will be killed if the external storage is unmounted.
+        will be killed if the external storage is unmounted.
+
+    \note On Android 6.0 (API 23) or higher, the "WRITE_EXTERNAL_STORAGE" permission must be
+        requested at runtime when using QStandardPaths::writableLocation or QStandardPaths::standardLocations.
 
     \note On iOS, if you do pass \c {QStandardPaths::standardLocations(QStandardPaths::PicturesLocation).last()}
         as argument to \l{QFileDialog::setDirectory()},
@@ -357,22 +360,14 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QString QStandardPaths::writableLocation(StandardLocation type)
 
-    Returns the directory where files of \a type should be written to, or an empty string
-    if the location cannot be determined.
-
-    \note The storage location returned can be a directory that does not exist; i.e., it
-    may need to be created by the system or the user.
+    \include standardpath/functiondocs.qdocinc writableLocation
 */
 
 
 /*!
    \fn QStringList QStandardPaths::standardLocations(StandardLocation type)
 
-   Returns all the directories where files of \a type belong.
-
-   The list of directories is sorted from high to low priority, starting with
-   writableLocation() if it can be determined. This list is empty if no locations
-   for \a type are defined.
+   \include standardpath/functiondocs.qdocinc standardLocations
 
    \sa writableLocation()
  */
@@ -396,11 +391,7 @@ static bool existsAsSpecified(const QString &path, QStandardPaths::LocateOptions
 }
 
 /*!
-   Tries to find a file or directory called \a fileName in the standard locations
-   for \a type.
-
-   The full path to the first file or directory (depending on \a options) found is returned.
-   If no such file or directory can be found, an empty string is returned.
+    \include standardpath/functiondocs.qdocinc locate
  */
 QString QStandardPaths::locate(StandardLocation type, const QString &fileName, LocateOptions options)
 {
@@ -414,12 +405,7 @@ QString QStandardPaths::locate(StandardLocation type, const QString &fileName, L
 }
 
 /*!
-   Tries to find all files or directories called \a fileName in the standard locations
-   for \a type.
-
-   The \a options flag allows to specify whether to look for files or directories.
-
-   Returns the list of all the files that were found.
+    \include standardpath/functiondocs.qdocinc locateAll
  */
 QStringList QStandardPaths::locateAll(StandardLocation type, const QString &fileName, LocateOptions options)
 {
@@ -492,23 +478,7 @@ static inline QString
 #endif // Q_OS_WIN
 
 /*!
-  Finds the executable named \a executableName in the paths specified by \a paths,
-  or the system paths if \a paths is empty.
-
-  On most operating systems the system path is determined by the PATH environment variable.
-
-  The directories where to search for the executable can be set in the \a paths argument.
-  To search in both your own paths and the system paths, call findExecutable twice, once with
-  \a paths set and once with \a paths empty.
-
-  Symlinks are not resolved, in order to preserve behavior for the case of executables
-  whose behavior depends on the name they are invoked with.
-
-  \note On Windows, the usual executable extensions (from the PATHEXT environment variable)
-  are automatically appended, so that for instance findExecutable("foo") will find foo.exe
-  or foo.bat if present.
-
-  Returns the absolute file path to the executable, or an empty string if not found.
+    \include standardpath/functiondocs.qdocinc findExecutable
  */
 QString QStandardPaths::findExecutable(const QString &executableName, const QStringList &paths)
 {
@@ -540,7 +510,8 @@ QString QStandardPaths::findExecutable(const QString &executableName, const QStr
         }
 
         // Remove trailing slashes, which occur on Windows.
-        const QStringList rawPaths = QString::fromLocal8Bit(pEnv.constData()).split(QDir::listSeparator(), QString::SkipEmptyParts);
+        const QStringList rawPaths = QString::fromLocal8Bit(pEnv.constData()).split(
+            QDir::listSeparator(), Qt::SkipEmptyParts);
         searchPaths.reserve(rawPaths.size());
         for (const QString &rawPath : rawPaths) {
             QString cleanPath = QDir::cleanPath(rawPath);
@@ -566,10 +537,7 @@ QString QStandardPaths::findExecutable(const QString &executableName, const QStr
 }
 
 /*!
-    \fn QString QStandardPaths::displayName(StandardLocation type)
-
-    Returns a localized display name for the given location \a type or
-    an empty QString if no relevant location can be found.
+    \include standardpath/functiondocs.qdocinc displayName
 */
 
 #if !defined(Q_OS_MAC) && !defined(QT_BOOTSTRAPPED)
@@ -626,23 +594,7 @@ QString QStandardPaths::displayName(StandardLocation type)
 /*!
   \fn void QStandardPaths::setTestModeEnabled(bool testMode)
 
-  If \a testMode is true, this enables a special "test mode" in
-  QStandardPaths, which changes writable locations
-  to point to test directories, in order to prevent auto tests from reading from
-  or writing to the current user's configuration.
-
-  This affects the locations into which test programs might write files:
-  GenericDataLocation, DataLocation, ConfigLocation, GenericConfigLocation,
-  AppConfigLocation, GenericCacheLocation, CacheLocation.
-  Other locations are not affected.
-
-  On Unix, \c XDG_DATA_HOME is set to \e ~/.qttest/share, \c XDG_CONFIG_HOME is
-  set to \e ~/.qttest/config, and \c XDG_CACHE_HOME is set to \e ~/.qttest/cache.
-
-  On \macos, data goes to \e ~/.qttest/Application Support, cache goes to
-  \e ~/.qttest/Cache, and config goes to \e ~/.qttest/Preferences.
-
-  On Windows, everything goes to a "qttest" directory under Application Data.
+  \include standardpath/functiondocs.qdocinc setTestModeEnabled
 */
 
 static bool qsp_testMode = false;

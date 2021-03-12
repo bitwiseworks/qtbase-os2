@@ -40,6 +40,10 @@
 #ifndef QNETWORKCONFIGURATION_H
 #define QNETWORKCONFIGURATION_H
 
+#if 0
+#pragma qt_class(QNetworkConfiguration)
+#endif
+
 #include <QtNetwork/qtnetworkglobal.h>
 
 #include <QtCore/qshareddata.h>
@@ -47,21 +51,24 @@
 #include <QtCore/qlist.h>
 #include <QtCore/qmetatype.h>
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
+#ifndef QT_NO_BEARERMANAGEMENT
+
 QT_BEGIN_NAMESPACE
 
 class QNetworkConfigurationPrivate;
-class Q_NETWORK_EXPORT QNetworkConfiguration
+class QT_DEPRECATED_BEARER_MANAGEMENT Q_NETWORK_EXPORT QNetworkConfiguration
 {
 public:
     QNetworkConfiguration();
     QNetworkConfiguration(const QNetworkConfiguration& other);
-#ifdef Q_COMPILER_RVALUE_REFS
-    QNetworkConfiguration &operator=(QNetworkConfiguration &&other) Q_DECL_NOTHROW { swap(other); return *this; }
-#endif
+    QNetworkConfiguration &operator=(QNetworkConfiguration &&other) noexcept { swap(other); return *this; }
     QNetworkConfiguration &operator=(const QNetworkConfiguration &other);
     ~QNetworkConfiguration();
 
-    void swap(QNetworkConfiguration &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
+    void swap(QNetworkConfiguration &other) noexcept { qSwap(d, other.d); }
 
     bool operator==(const QNetworkConfiguration &other) const;
     inline bool operator!=(const QNetworkConfiguration &other) const
@@ -136,5 +143,9 @@ Q_DECLARE_SHARED(QNetworkConfiguration)
 QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(QNetworkConfiguration)
+
+#endif
+
+QT_WARNING_POP
 
 #endif // QNETWORKCONFIGURATION_H

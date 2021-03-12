@@ -367,8 +367,6 @@ bool QSystemTrayIcon::event(QEvent *e)
     This signal is emitted when the message displayed using showMessage()
     was clicked by the user.
 
-    Currently this signal is not sent on \macos.
-
     \note We follow Microsoft Windows behavior, so the
     signal is also emitted when the user clicks on a tray icon with
     a balloon message displayed.
@@ -455,7 +453,7 @@ void QSystemTrayIconPrivate::_q_emitActivated(QPlatformSystemTrayIcon::Activatio
 }
 
 //////////////////////////////////////////////////////////////////////
-static QBalloonTip *theSolitaryBalloonTip = 0;
+static QBalloonTip *theSolitaryBalloonTip = nullptr;
 
 void QBalloonTip::showBalloon(const QIcon &icon, const QString &title,
                               const QString &message, QSystemTrayIcon *trayIcon,
@@ -477,7 +475,7 @@ void QBalloonTip::hideBalloon()
         return;
     theSolitaryBalloonTip->hide();
     delete theSolitaryBalloonTip;
-    theSolitaryBalloonTip = 0;
+    theSolitaryBalloonTip = nullptr;
 }
 
 void QBalloonTip::updateBalloonPosition(const QPoint& pos)
@@ -495,7 +493,7 @@ bool QBalloonTip::isBalloonVisible()
 
 QBalloonTip::QBalloonTip(const QIcon &icon, const QString &title,
                          const QString &message, QSystemTrayIcon *ti)
-    : QWidget(0, Qt::ToolTip),
+    : QWidget(nullptr, Qt::ToolTip),
       trayIcon(ti),
       timerId(-1),
       showArrow(true)
@@ -585,7 +583,7 @@ QBalloonTip::QBalloonTip(const QIcon &icon, const QString &title,
 
 QBalloonTip::~QBalloonTip()
 {
-    theSolitaryBalloonTip = 0;
+    theSolitaryBalloonTip = nullptr;
 }
 
 void QBalloonTip::paintEvent(QPaintEvent *)
@@ -626,16 +624,6 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
     }
 
     QPainterPath path;
-#if defined(QT_NO_XSHAPE) && 0 /* Used to be included in Qt4 for Q_WS_X11 */
-    // XShape is required for setting the mask, so we just
-    // draw an ugly square when its not available
-    path.moveTo(0, 0);
-    path.lineTo(sz.width() - 1, 0);
-    path.lineTo(sz.width() - 1, sz.height() - 1);
-    path.lineTo(0, sz.height() - 1);
-    path.lineTo(0, 0);
-    move(qMax(pos.x() - sz.width(), scr.left()), pos.y());
-#else
     path.moveTo(ml + rc, mt);
     if (arrowAtTop && arrowAtLeft) {
         if (showArrow) {
@@ -685,7 +673,6 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
     painter1.setBrush(QBrush(Qt::color1));
     painter1.drawPath(path);
     setMask(bitmap);
-#endif
 
     // Draw the border
     pixmap = QPixmap(sz);

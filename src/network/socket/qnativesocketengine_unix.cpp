@@ -628,7 +628,7 @@ bool QNativeSocketEnginePrivate::nativeListen(int backlog)
 
 int QNativeSocketEnginePrivate::nativeAccept()
 {
-    int acceptedDescriptor = qt_safe_accept(socketDescriptor, 0, 0);
+    int acceptedDescriptor = qt_safe_accept(socketDescriptor, nullptr, nullptr);
     if (acceptedDescriptor == -1) {
         switch (errno) {
         case EBADF:
@@ -1000,8 +1000,11 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxS
 
         // parse the ancillary data
         struct cmsghdr *cmsgptr;
-        for (cmsgptr = CMSG_FIRSTHDR(&msg); cmsgptr != NULL;
+        QT_WARNING_PUSH
+        QT_WARNING_DISABLE_CLANG("-Wsign-compare")
+        for (cmsgptr = CMSG_FIRSTHDR(&msg); cmsgptr != nullptr;
              cmsgptr = CMSG_NXTHDR(&msg, cmsgptr)) {
+            QT_WARNING_POP
             if (cmsgptr->cmsg_level == IPPROTO_IPV6 && cmsgptr->cmsg_type == IPV6_PKTINFO
                     && cmsgptr->cmsg_len >= CMSG_LEN(sizeof(in6_pktinfo))) {
                 in6_pktinfo *info = reinterpret_cast<in6_pktinfo *>(CMSG_DATA(cmsgptr));
@@ -1163,7 +1166,7 @@ qint64 QNativeSocketEnginePrivate::nativeSendDatagram(const char *data, qint64 l
 #endif
 
     if (msg.msg_controllen == 0)
-        msg.msg_control = 0;
+        msg.msg_control = nullptr;
     ssize_t sentBytes = qt_safe_sendmsg(socketDescriptor, &msg, 0);
 
     if (sentBytes < 0) {

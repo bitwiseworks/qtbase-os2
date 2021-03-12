@@ -54,7 +54,7 @@ QPlatformScreen::QPlatformScreen()
     : d_ptr(new QPlatformScreenPrivate)
 {
     Q_D(QPlatformScreen);
-    d->screen = 0;
+    d->screen = nullptr;
 }
 
 QPlatformScreen::~QPlatformScreen()
@@ -99,7 +99,7 @@ QWindow *QPlatformScreen::topLevelAt(const QPoint & pos) const
             return w;
     }
 
-    return 0;
+    return nullptr;
 }
 
 /*!
@@ -191,6 +191,28 @@ QDpi QPlatformScreen::logicalDpi() const
 
     return QDpi(25.4 * s.width() / ps.width(),
                 25.4 * s.height() / ps.height());
+}
+
+// Helper function for accessing the platform screen logical dpi
+// which accounts for QT_FONT_DPI.
+QPair<qreal, qreal> QPlatformScreen::overrideDpi(const QPair<qreal, qreal> &in)
+{
+    static const int overrideDpi = qEnvironmentVariableIntValue("QT_FONT_DPI");
+    return overrideDpi > 0 ?  QDpi(overrideDpi, overrideDpi) : in;
+}
+
+/*!
+    Reimplement to return the base logical DPI for the platform. This
+    DPI value should correspond to a standard-DPI (1x) display. The
+    default implementation returns 96.
+
+    QtGui will use this value (together with logicalDpi) to compute
+    the scale factor when high-DPI scaling is enabled:
+        factor = logicalDPI / baseDPI
+*/
+QDpi QPlatformScreen::logicalBaseDpi() const
+{
+    return QDpi(96, 96);
 }
 
 /*!
@@ -288,7 +310,7 @@ QPlatformScreen * QPlatformScreen::platformScreenForWindow(const QWindow *window
     // QTBUG 32681: It can happen during the transition between screens
     // when one screen is disconnected that the window doesn't have a screen.
     if (!window->screen())
-        return 0;
+        return nullptr;
     return window->screen()->handle();
 }
 
@@ -373,7 +395,7 @@ QString QPlatformScreen::serialNumber() const
 */
 QPlatformCursor *QPlatformScreen::cursor() const
 {
-    return 0;
+    return nullptr;
 }
 
 /*!
@@ -388,15 +410,22 @@ void QPlatformScreen::resizeMaximizedWindows()
     const QRect newGeometry = deviceIndependentGeometry();
     const QRect newAvailableGeometry = QHighDpi::fromNative(availableGeometry(), QHighDpiScaling::factor(this), newGeometry.topLeft());
 
+    const bool supportsMaximizeUsingFullscreen = QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::MaximizeUsingFullscreenGeometry);
+
     for (QWindow *w : windows()) {
         // Skip non-platform windows, e.g., offscreen windows.
         if (!w->handle())
             continue;
 
-        if (w->windowState() & Qt::WindowMaximized || w->geometry() == oldAvailableGeometry)
-            w->setGeometry(newAvailableGeometry);
-        else if (w->windowState() & Qt::WindowFullScreen || w->geometry() == oldGeometry)
+        if (supportsMaximizeUsingFullscreen
+                && w->windowState() & Qt::WindowMaximized
+                && w->flags() & Qt::MaximizeUsingFullscreenGeometryHint) {
             w->setGeometry(newGeometry);
+        } else if (w->windowState() & Qt::WindowMaximized || w->geometry() == oldAvailableGeometry) {
+            w->setGeometry(newAvailableGeometry);
+        } else if (w->windowState() & Qt::WindowFullScreen || w->geometry() == oldGeometry) {
+            w->setGeometry(newGeometry);
+        }
     }
 }
 
@@ -585,6 +614,20 @@ int QPlatformScreen::currentMode() const
 int QPlatformScreen::preferredMode() const
 {
     return 0;
+}
+
+QList<QPlatformScreen *> QPlatformPlaceholderScreen::virtualSiblings() const
+{
+    QList<QPlatformScreen *> siblings;
+
+    if (!m_virtualSibling)
+        return siblings;
+
+    for (QScreen *screen : QGuiApplication::screens()) {
+        if (screen->handle() && screen->handle() != this)
+            siblings << screen->handle();
+    }
+    return siblings;
 }
 
 QT_END_NAMESPACE

@@ -114,19 +114,19 @@ static QMouseEvent *copyMouseEvent(QEvent *e)
     }
 #endif // QT_CONFIG(graphicsview)
     default:
-        return 0;
+        return nullptr;
     }
 }
 
 class PressDelayHandler : public QObject
 {
 private:
-    PressDelayHandler(QObject *parent = 0)
+    PressDelayHandler(QObject *parent = nullptr)
         : QObject(parent)
         , pressDelayTimer(0)
         , sendingEvent(false)
         , mouseButton(Qt::NoButton)
-        , mouseTarget(0)
+        , mouseTarget(nullptr)
         , mouseEventSource(Qt::MouseEventNotSynthesized)
     { }
 
@@ -138,7 +138,7 @@ public:
 
     static PressDelayHandler *instance()
     {
-        static PressDelayHandler *inst = 0;
+        static PressDelayHandler *inst = nullptr;
         if (!inst)
             inst = new PressDelayHandler(QCoreApplication::instance());
         return inst;
@@ -192,10 +192,10 @@ public:
             result = true; // consume this event
         } else if (mouseTarget && scrollerIsActive) {
             // we grabbed the mouse expicitly when the scroller became active, so undo that now
-            sendMouseEvent(0, UngrabMouseBefore);
+            sendMouseEvent(nullptr, UngrabMouseBefore);
         }
-        pressDelayEvent.reset(0);
-        mouseTarget = 0;
+        pressDelayEvent.reset(nullptr);
+        mouseTarget = nullptr;
         return result;
     }
 
@@ -208,9 +208,9 @@ public:
                 killTimer(pressDelayTimer);
                 pressDelayTimer = 0;
             }
-            pressDelayEvent.reset(0);
+            pressDelayEvent.reset(nullptr);
         }
-        mouseTarget = 0;
+        mouseTarget = nullptr;
     }
 
     void scrollerBecameActive()
@@ -222,13 +222,13 @@ public:
                 killTimer(pressDelayTimer);
                 pressDelayTimer = 0;
             }
-            pressDelayEvent.reset(0);
-            mouseTarget = 0;
+            pressDelayEvent.reset(nullptr);
+            mouseTarget = nullptr;
         } else if (mouseTarget) {
             // we did send a press, so we need to fake a release now
 
             // release all pressed mouse buttons
-            /* Qt::MouseButtons mouseButtons = QApplication::mouseButtons();
+            /* Qt::MouseButtons mouseButtons = QGuiApplication::mouseButtons();
             for (int i = 0; i < 32; ++i) {
                 if (mouseButtons & (1 << i)) {
                     Qt::MouseButton b = static_cast<Qt::MouseButton>(1 << i);
@@ -237,7 +237,7 @@ public:
 
                     qFGDebug() << "QFG: sending a fake mouse release at far-far-away to " << mouseTarget;
                     QMouseEvent re(QEvent::MouseButtonRelease, QPoint(), farFarAway,
-                                   b, mouseButtons, QApplication::keyboardModifiers());
+                                   b, mouseButtons, QGuiApplication::keyboardModifiers());
                     sendMouseEvent(&re);
                 }
             }*/
@@ -246,8 +246,8 @@ public:
 
             qFGDebug() << "QFG: sending a fake mouse release at far-far-away to " << mouseTarget;
             QMouseEvent re(QEvent::MouseButtonRelease, QPoint(), farFarAway, farFarAway,
-                           mouseButton, QApplication::mouseButtons() & ~mouseButton,
-                           QApplication::keyboardModifiers(), mouseEventSource);
+                           mouseButton, QGuiApplication::mouseButtons() & ~mouseButton,
+                           QGuiApplication::keyboardModifiers(), mouseEventSource);
             sendMouseEvent(&re, RegrabMouseAfterwards);
             // don't clear the mouseTarget just yet, since we need to explicitly ungrab the mouse on release!
         }
@@ -261,7 +261,7 @@ protected:
                 qFGDebug() << "QFG: timer event: re-sending mouse press to " << mouseTarget;
                 sendMouseEvent(pressDelayEvent.data(), UngrabMouseBefore);
             }
-            pressDelayEvent.reset(0);
+            pressDelayEvent.reset(nullptr);
 
             if (pressDelayTimer) {
                 killTimer(pressDelayTimer);
@@ -276,7 +276,7 @@ protected:
             sendingEvent = true;
 
 #if QT_CONFIG(graphicsview)
-            QGraphicsItem *grabber = 0;
+            QGraphicsItem *grabber = nullptr;
             if (mouseTarget->parentWidget()) {
                 if (QGraphicsView *gv = qobject_cast<QGraphicsView *>(mouseTarget->parentWidget())) {
                     if (gv->scene())
@@ -350,7 +350,7 @@ QFlickGesture::QFlickGesture(QObject *receiver, Qt::MouseButton button, QObject 
 {
     d_func()->q_ptr = this;
     d_func()->receiver = receiver;
-    d_func()->receiverScroller = (receiver && QScroller::hasScroller(receiver)) ? QScroller::scroller(receiver) : 0;
+    d_func()->receiverScroller = (receiver && QScroller::hasScroller(receiver)) ? QScroller::scroller(receiver) : nullptr;
     d_func()->button = button;
 }
 
@@ -358,7 +358,7 @@ QFlickGesture::~QFlickGesture()
 { }
 
 QFlickGesturePrivate::QFlickGesturePrivate()
-    : receiverScroller(0), button(Qt::NoButton), macIgnoreWheel(false)
+    : receiverScroller(nullptr), button(Qt::NoButton), macIgnoreWheel(false)
 { }
 
 
@@ -420,11 +420,11 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
         return Ignore;
     }
 
-    const QMouseEvent *me = 0;
+    const QMouseEvent *me = nullptr;
 #if QT_CONFIG(graphicsview)
-    const QGraphicsSceneMouseEvent *gsme = 0;
+    const QGraphicsSceneMouseEvent *gsme = nullptr;
 #endif
-    const QTouchEvent *te = 0;
+    const QTouchEvent *te = nullptr;
     QPoint globalPos;
 
     // qFGDebug() << "FlickGesture "<<state<<"watched:"<<watched<<"receiver"<<d->receiver<<"event"<<event->type()<<"button"<<button;
@@ -461,21 +461,6 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
                 globalPos = te->touchPoints().at(0).screenPos().toPoint();
         }
         break;
-
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    // the only way to distinguish between real mouse wheels and wheel
-    // events generated by the native 2 finger swipe gesture is to listen
-    // for these events (according to Apple's Cocoa Event-Handling Guide)
-
-    case QEvent::NativeGesture: {
-        QNativeGestureEvent *nge = static_cast<QNativeGestureEvent *>(event);
-        if (nge->gestureType == QNativeGestureEvent::GestureBegin)
-            d->macIgnoreWheel = true;
-        else if (nge->gestureType == QNativeGestureEvent::GestureEnd)
-            d->macIgnoreWheel = false;
-        break;
-    }
-#endif
 
     // consume all wheel events if the scroller is active
     case QEvent::Wheel:
@@ -625,7 +610,7 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
     }
 
     // depending on the scroller state return the gesture state
-    Result result(0);
+    Result result;
     bool scrollerIsActive = (scroller->state() == QScroller::Dragging ||
                              scroller->state() == QScroller::Scrolling);
 
