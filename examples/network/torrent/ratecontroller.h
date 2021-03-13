@@ -53,7 +53,7 @@
 
 #include <QObject>
 #include <QSet>
-#include <QTime>
+#include <QElapsedTimer>
 
 class PeerWireClient;
 
@@ -62,8 +62,7 @@ class RateController : public QObject
     Q_OBJECT
 
 public:
-    inline RateController(QObject *parent = 0)
-        : QObject(parent), transferScheduled(false) { }
+    using QObject::QObject;
     static RateController *instance();
 
     void addSocket(PeerWireClient *socket);
@@ -79,11 +78,11 @@ public slots:
     void scheduleTransfer();
 
 private:
-    QTime stopWatch;
+    QElapsedTimer stopWatch;
     QSet<PeerWireClient *> sockets;
-    int upLimit;
-    int downLimit;
-    bool transferScheduled;
+    int upLimit = 0;
+    int downLimit = 0;
+    bool transferScheduled = false;
 };
 
 #endif

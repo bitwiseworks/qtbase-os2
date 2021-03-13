@@ -55,11 +55,10 @@ QT_BEGIN_NAMESPACE
     to be done by using QWaitCondition/QMutex.
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 class QWindowsThreadPoolRunner
 {
-    Q_DISABLE_COPY(QWindowsThreadPoolRunner)
+    Q_DISABLE_COPY_MOVE(QWindowsThreadPoolRunner)
 
 #if QT_CONFIG(thread)
     template <class RunnableFunction> // nested class implementing QRunnable to execute a function.

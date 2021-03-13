@@ -182,6 +182,9 @@ QSqlQueryPrivate::~QSqlQueryPrivate()
     You can retrieve the values of all the fields in a single variable
     (a map) using boundValues().
 
+    \note Not all SQL operations support binding values. Refer to your database
+    system's documentation to check their availability.
+
     \section1 Approaches to Binding Values
 
     Below we present the same example using each of the four
@@ -374,7 +377,7 @@ bool QSqlQuery::exec(const QString& query)
     QElapsedTimer t;
     t.start();
 #endif
-    if (d->ref.load() != 1) {
+    if (d->ref.loadRelaxed() != 1) {
         bool fo = isForwardOnly();
         *this = QSqlQuery(driver()->createResult());
         d->sqlResult->setNumericalPrecisionPolicy(d->sqlResult->numericalPrecisionPolicy());
@@ -411,7 +414,7 @@ bool QSqlQuery::exec(const QString& query)
     The fields are numbered from left to right using the text of the
     \c SELECT statement, e.g. in
 
-    \snippet code/src_sql_kernel_qsqlquery.cpp 0
+    \snippet code/src_sql_kernel_qsqlquery_snippet.cpp 0
 
     field 0 is \c forename and field 1 is \c
     surname. Using \c{SELECT *} is not recommended because the order
@@ -960,7 +963,7 @@ void QSqlQuery::clear()
 */
 bool QSqlQuery::prepare(const QString& query)
 {
-    if (d->ref.load() != 1) {
+    if (d->ref.loadRelaxed() != 1) {
         bool fo = isForwardOnly();
         *this = QSqlQuery(driver()->createResult());
         setForwardOnly(fo);
@@ -1041,7 +1044,7 @@ bool QSqlQuery::exec()
 
   The example above inserts four new rows into \c myTable:
 
-  \snippet code/src_sql_kernel_qsqlquery.cpp 3
+  \snippet code/src_sql_kernel_qsqlquery_snippet.cpp 3
 
   To bind NULL values, a null QVariant of the relevant type has to be
   added to the bound QVariantList; for example, \c

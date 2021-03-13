@@ -37,9 +37,18 @@
 **
 ****************************************************************************/
 
+#ifdef QT_NO_LINKED_LIST
+# undef QT_NO_LINKED_LIST
+#endif
+
 #include "qlinkedlist.h"
 
 QT_BEGIN_NAMESPACE
+
+#if QT_DEPRECATED_SINCE(5, 15)
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 
 const QLinkedListData QLinkedListData::shared_null = {
     const_cast<QLinkedListData *>(&QLinkedListData::shared_null),
@@ -49,12 +58,15 @@ const QLinkedListData QLinkedListData::shared_null = {
 
 /*! \class QLinkedList
     \inmodule QtCore
+    \obsolete
     \brief The QLinkedList class is a template class that provides linked lists.
 
     \ingroup tools
     \ingroup shared
 
     \reentrant
+
+    \note This class is obsolete, please use std::list instead.
 
     QLinkedList\<T\> is one of Qt's generic \l{container classes}. It
     stores a list of values and provides iterator-based access as
@@ -151,6 +163,14 @@ const QLinkedListData QLinkedListData::shared_null = {
 
     This constructor is only enabled if the compiler supports C++11
     initializer lists.
+*/
+
+/*! \fn template <class T> template<typename InputIterator> QLinkedList<T>::QLinkedList(InputIterator first, InputIterator last)
+    \since 5.14
+
+    Constructs a list with the contents in the iterator range [\a first, \a last).
+
+    The value type of \c InputIterator must be convertible to \c T.
 */
 
 /*! \fn template <class T> QLinkedList<T>::~QLinkedList()
@@ -708,6 +728,7 @@ const QLinkedListData QLinkedListData::shared_null = {
 
 /*! \class QLinkedList::iterator
     \inmodule QtCore
+    \obsolete
     \brief The QLinkedList::iterator class provides an STL-style non-const iterator for QLinkedList.
 
     QLinkedList features both \l{STL-style iterators} and
@@ -734,8 +755,7 @@ const QLinkedListData QLinkedListData::shared_null = {
     \snippet code/src_corelib_tools_qlinkedlist.cpp 7
 
     STL-style iterators can be used as arguments to \l{generic
-    algorithms}. For example, here's how to find an item in the list
-    using the qFind() algorithm:
+    algorithms}. For example, here's how to find an item in the list:
 
     \snippet code/src_corelib_tools_qlinkedlist.cpp 8
 
@@ -954,6 +974,7 @@ const QLinkedListData QLinkedListData::shared_null = {
 
 /*! \class QLinkedList::const_iterator
     \inmodule QtCore
+    \obsolete
     \brief The QLinkedList::const_iterator class provides an STL-style const iterator for QLinkedList.
 
     QLinkedList features both \l{STL-style iterators} and
@@ -979,8 +1000,7 @@ const QLinkedListData QLinkedListData::shared_null = {
     \snippet code/src_corelib_tools_qlinkedlist.cpp 14
 
     STL-style iterators can be used as arguments to \l{generic
-    algorithms}. For example, here's how to find an item in the list
-    using the qFind() algorithm:
+    algorithms}. For example, here's how to find an item in the list:
 
     \snippet code/src_corelib_tools_qlinkedlist.cpp 15
 
@@ -1210,5 +1230,9 @@ const QLinkedListData QLinkedListData::shared_null = {
 
     \sa fromStdList()
 */
+
+QT_WARNING_POP
+
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 QT_END_NAMESPACE

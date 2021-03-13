@@ -39,6 +39,7 @@
 #include <QtCore/qbytearray.h>
 #include <QtCore/qdatastream.h>
 #include <QtCore/qmessageauthenticationcode.h>
+#include <QtCore/qrandom.h>
 
 #include "qsslsocket_p.h"
 #include "qasn1element_p.h"
@@ -72,6 +73,7 @@ static QAsn1Element _q_PKCS7_data(const QByteArray &data)
 
     Some test vectors:
     http://www.drh-consultancy.demon.co.uk/test.txt
+    \internal
 */
 static QByteArray _q_PKCS12_keygen(char id, const QByteArray &salt, const QString &passPhrase, int n, int r)
 {
@@ -137,7 +139,7 @@ static QByteArray _q_PKCS12_salt()
     QByteArray salt;
     salt.resize(8);
     for (int i = 0; i < salt.size(); ++i)
-        salt[i] = (qrand() & 0xff);
+        salt[i] = (QRandomGenerator::global()->generate() & 0xff);
     return salt;
 }
 

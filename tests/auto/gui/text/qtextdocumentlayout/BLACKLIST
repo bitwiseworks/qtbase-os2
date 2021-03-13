@@ -1,2 +1,5 @@
 [imageAtRightAlignedTab]
-linux
+rhel-6.6
+rhel-7.4
+rhel-7.6
+sles

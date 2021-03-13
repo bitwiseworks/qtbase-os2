@@ -71,7 +71,7 @@ QTimer *timer = qobject_cast<QTimer *>(obj);
 // timer == (QObject *)obj
 
 QAbstractButton *button = qobject_cast<QAbstractButton *>(obj);
-// button == 0
+// button == nullptr
 //! [3]
 
 
@@ -144,7 +144,7 @@ class MyObject : public QObject
     Q_OBJECT
 
 public:
-    MyObject(QObject *parent = 0);
+    MyObject(QObject *parent = nullptr);
 
 protected:
     void timerEvent(QTimerEvent *event) override;
@@ -322,7 +322,7 @@ QObject::connect: Cannot queue arguments of type 'MyType'
 
 
 //! [26]
-disconnect(myObject, 0, 0, 0);
+disconnect(myObject, nullptr, nullptr, nullptr);
 //! [26]
 
 
@@ -332,7 +332,7 @@ myObject->disconnect();
 
 
 //! [28]
-disconnect(myObject, SIGNAL(mySignal()), 0, 0);
+disconnect(myObject, SIGNAL(mySignal()), nullptr, nullptr);
 //! [28]
 
 
@@ -342,7 +342,7 @@ myObject->disconnect(SIGNAL(mySignal()));
 
 
 //! [30]
-disconnect(myObject, 0, myReceiver, 0);
+disconnect(myObject, nullptr, myReceiver, nullptr);
 //! [30]
 
 
@@ -391,7 +391,7 @@ class MyClass : public QObject
     Q_OBJECT
 
 public:
-    MyClass(QObject *parent = 0);
+    MyClass(QObject *parent = nullptr);
     ~MyClass();
 
     enum Priority { High, Low, VeryHigh, VeryLow };
@@ -403,20 +403,28 @@ public:
 
 
 //! [39]
-class QLibrary : public QObject
+class QItemSelectionModel : public QObject
 {
     Q_OBJECT
 
 public:
     ...
-
-    enum LoadHint {
-        ResolveAllSymbolsHint = 0x01,
-        ExportExternalSymbolsHint = 0x02,
-        LoadArchiveMemberHint = 0x04
+    enum SelectionFlag {
+        NoUpdate       = 0x0000,
+        Clear          = 0x0001,
+        Select         = 0x0002,
+        Deselect       = 0x0004,
+        Toggle         = 0x0008,
+        Current        = 0x0010,
+        Rows           = 0x0020,
+        Columns        = 0x0040,
+        SelectCurrent  = Select | Current,
+        ToggleCurrent  = Toggle | Current,
+        ClearAndSelect = Clear | Select
     };
-    Q_DECLARE_FLAGS(LoadHints, LoadHint)
-    Q_FLAG(LoadHints)
+
+    Q_DECLARE_FLAGS(SelectionFlags, SelectionFlag)
+    Q_FLAG(SelectionFlags)
     ...
 }
 //! [39]
@@ -467,7 +475,7 @@ QObject::connect(socket, &QTcpSocket::connected, [=] () {
 //! [46]
 
 //! [47]
-disconnect(myObject, &MyObject::mySignal(), 0, 0);
+disconnect(myObject, &MyObject::mySignal(), nullptr, nullptr);
 //! [47]
 
 //! [48]
@@ -505,7 +513,7 @@ class MyClass : public QWidget
     Q_OBJECT
 
 public:
-    MyClass(QWidget *parent = 0);
+    MyClass(QWidget *parent = nullptr);
     ~MyClass();
 
     bool event(QEvent* ev) override

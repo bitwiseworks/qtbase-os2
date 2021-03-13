@@ -65,7 +65,6 @@ QVncClient::QVncClient(QTcpSocket *clientSocket, QVncServer *server)
     , m_cutTextPending(0)
     , m_supportHextile(false)
     , m_wantUpdate(false)
-    , m_keymod(0)
     , m_dirtyCursor(false)
     , m_updatePending(false)
     , m_protocolVersion(V3_3)
@@ -587,9 +586,18 @@ void QVncClient::frameBufferUpdateRequest()
 void QVncClient::pointerEvent()
 {
     QRfbPointerEvent ev;
+    static int buttonState = Qt::NoButton;
     if (ev.read(m_clientSocket)) {
-        const QPoint pos = m_server->screen()->geometry().topLeft() + QPoint(ev.x, ev.y);
-        QWindowSystemInterface::handleMouseEvent(0, pos, pos, ev.buttons, QGuiApplication::keyboardModifiers());
+        const QPointF pos = m_server->screen()->geometry().topLeft() + QPoint(ev.x, ev.y);
+        int buttonStateChange = buttonState ^ int(ev.buttons);
+        QEvent::Type type = QEvent::MouseMove;
+        if (int(ev.buttons) > buttonState)
+            type = QEvent::MouseButtonPress;
+        else if (int(ev.buttons) < buttonState)
+            type = QEvent::MouseButtonRelease;
+        QWindowSystemInterface::handleMouseEvent(nullptr, pos, pos, ev.buttons, Qt::MouseButton(buttonStateChange),
+                                                 type, QGuiApplication::keyboardModifiers());
+        buttonState = int(ev.buttons);
         m_handleMsg = false;
     }
 }
@@ -609,7 +617,7 @@ void QVncClient::keyEvent()
             m_keymod = ev.down ? m_keymod | Qt::AltModifier :
                                  m_keymod & ~Qt::AltModifier;
         if (ev.unicode || ev.keycode)
-            QWindowSystemInterface::handleKeyEvent(0, ev.down ? QEvent::KeyPress : QEvent::KeyRelease, ev.keycode, m_keymod, QString(ev.unicode));
+            QWindowSystemInterface::handleKeyEvent(nullptr, ev.down ? QEvent::KeyPress : QEvent::KeyRelease, ev.keycode, m_keymod, QString(ev.unicode));
         m_handleMsg = false;
     }
 }

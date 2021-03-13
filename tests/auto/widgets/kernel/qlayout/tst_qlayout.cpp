@@ -163,7 +163,7 @@ void tst_QLayout::smartMaxSize()
                                         QSizePolicy::MinimumExpanding,
                                         QSizePolicy::Ignored
                                         };
-    Qt::Alignment alignments[] = {  0,
+    Qt::Alignment alignments[] = {  Qt::Alignment{},
                                     Qt::AlignLeft,
                                     Qt::AlignRight,
                                     Qt::AlignHCenter
@@ -308,7 +308,7 @@ void tst_QLayout::controlTypes2()
 {
     QWidget main;
     QVBoxLayout *const layout = new QVBoxLayout(&main);
-    layout->setMargin(0);
+    layout->setContentsMargins(0, 0, 0, 0);
     QComboBox *combo = new QComboBox(&main);
     layout->addWidget(combo);
     QCOMPARE(layout->controlTypes(), QSizePolicy::ComboBox);
@@ -319,7 +319,7 @@ void tst_QLayout::adjustSizeShouldMakeSureLayoutIsActivated()
     QWidget main;
 
     QVBoxLayout *const layout = new QVBoxLayout(&main);
-    layout->setMargin(0);
+    layout->setContentsMargins(0, 0, 0, 0);
     SizeHinterFrame *frame = new SizeHinterFrame(QSize(200, 10), QSize(200, 8));
     frame->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     layout->addWidget(frame);

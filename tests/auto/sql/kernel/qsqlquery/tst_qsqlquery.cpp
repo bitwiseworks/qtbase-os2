@@ -184,20 +184,15 @@ private slots:
     void sqliteVirtualTable();
     void mysql_timeType_data() { generic_data("QMYSQL"); }
     void mysql_timeType();
+    void ibase_executeBlock_data() { generic_data("QIBASE"); }
+    void ibase_executeBlock();
 
-#ifdef NOT_READY_YET
-    void task_229811();
-    void task_229811_data() { generic_data(); }
-    void task_234422_data() {  generic_data(); }
-    void task_234422();
-#endif
     void task_217003_data() { generic_data(); }
     void task_217003();
 
     void task_250026_data() { generic_data("QODBC"); }
     void task_250026();
-    void task_205701_data() { generic_data("QMYSQL"); }
-    void task_205701();
+    void crashQueryOnCloseDatabase();
 
     void task_233829_data() { generic_data("QPSQL"); }
     void task_233829();
@@ -245,6 +240,9 @@ private slots:
     void QTBUG_53969_data() { generic_data("QMYSQL"); }
     void QTBUG_53969();
 
+    void gisPointDatatype_data() { generic_data("QMYSQL"); }
+    void gisPointDatatype();
+
     void sqlite_constraint_data() { generic_data("QSQLITE"); }
     void sqlite_constraint();
 
@@ -262,6 +260,9 @@ private slots:
 
     void dateTime_data();
     void dateTime();
+
+    void ibaseArray_data() { generic_data("QIBASE"); }
+    void ibaseArray();
 
 private:
     // returns all database connections
@@ -311,6 +312,8 @@ void tst_QSqlQuery::init()
 
 void tst_QSqlQuery::cleanup()
 {
+    if (QTest::currentTestFunction() == QLatin1String("crashQueryOnCloseDatabase"))
+        return;
     QFETCH( QString, dbName );
     QSqlDatabase db = QSqlDatabase::database( dbName );
     CHECK_DATABASE( db );
@@ -480,10 +483,6 @@ void tst_QSqlQuery::char1SelectUnicode()
     if ( db.driver()->hasFeature( QSqlDriver::Unicode ) ) {
         QString uniStr( QChar(0x0915) ); // DEVANAGARI LETTER KA
         QSqlQuery q( db );
-
-        if ( db.driverName().startsWith( "QMYSQL" ) && tst_Databases::getMySqlVersion( db ).section( QChar('.'), 0, 0 ).toInt()<5 )
-            QSKIP( "Test requires MySQL >= 5.0");
-
         QString createQuery;
         const QString char1SelectUnicode(qTableName("char1SU", __FILE__, db));
 
@@ -563,9 +562,6 @@ void tst_QSqlQuery::mysql_outValues()
     QFETCH( QString, dbName );
     QSqlDatabase db = QSqlDatabase::database( dbName );
     CHECK_DATABASE( db );
-    if (tst_Databases::getMySqlVersion(db).section(QChar('.'), 0, 0 ).toInt() < 5)
-        QSKIP( "Test requires MySQL >= 5.0");
-
     const QString hello(qTableName("hello", __FILE__, db)), qtestproc(qTableName("qtestproc", __FILE__, db));
 
     QSqlQuery q( db );
@@ -977,9 +973,7 @@ void tst_QSqlQuery::blob()
     //don' make it too big otherwise sybase and mysql will complain
     QByteArray ba( BLOBSIZE, 0 );
 
-    int i;
-
-    for ( i = 0; i < ( int )ba.size(); ++i )
+    for (int i = 0; i < ba.size(); ++i)
         ba[i] = i % 256;
 
     QSqlQuery q( db );
@@ -992,7 +986,7 @@ void tst_QSqlQuery::blob()
 
     QVERIFY_SQL(q, prepare("insert into " + qTableName("qtest_blob", __FILE__, db) + " (id, t_blob) values (?, ?)"));
 
-    for ( i = 0; i < BLOBCOUNT; ++i ) {
+    for (int i = 0; i < BLOBCOUNT; ++i) {
         q.addBindValue( i );
         q.addBindValue( ba );
         QVERIFY_SQL( q, exec() );
@@ -1000,13 +994,13 @@ void tst_QSqlQuery::blob()
 
     QVERIFY_SQL(q, exec("select * from " + qTableName("qtest_blob", __FILE__, db)));
 
-    for ( i = 0; i < BLOBCOUNT; ++i ) {
+    for (int i = 0; i < BLOBCOUNT; ++i) {
         QVERIFY( q.next() );
         QByteArray res = q.value( 1 ).toByteArray();
         QVERIFY2( res.size() >= ba.size(),
                   QString( "array sizes differ, expected %1, got %2" ).arg( ba.size() ).arg( res.size() ).toLatin1() );
 
-        for ( int i2 = 0; i2 < ( int )ba.size(); ++i2 ) {
+        for (int i2 = 0; i2 < ba.size(); ++i2) {
             if ( res[i2] != ba[i2] )
                 QFAIL( QString( "ByteArrays differ at position %1, expected %2, got %3" ).arg(
                            i2 ).arg(( int )( unsigned char )ba[i2] ).arg(( int )( unsigned char )res[i2] ).toLatin1() );
@@ -1846,7 +1840,7 @@ void tst_QSqlQuery::oci_rawField()
 }
 
 // test whether we can fetch values with more than DOUBLE precision
-// note that MySQL's 3.x highest precision is that of a double, although
+// note that SQLite highest precision is that of a double, although
 // you can define field with higher precision
 void tst_QSqlQuery::precision()
 {
@@ -1857,45 +1851,41 @@ void tst_QSqlQuery::precision()
     if (dbType == QSqlDriver::Interbase)
         QSKIP("DB unable to store high precision");
 
+    const auto oldPrecision = db.driver()->numericalPrecisionPolicy();
+    db.driver()->setNumericalPrecisionPolicy(QSql::HighPrecision);
     const QString qtest_precision(qTableName("qtest_precision", __FILE__, db));
-    static const char* precStr = "1.2345678901234567891";
+    static const QLatin1String precStr("1.2345678901234567891");
 
     {
         // need a new scope for SQLITE
         QSqlQuery q( db );
 
         q.exec("drop table " + qtest_precision);
-        if ( tst_Databases::isMSAccess( db ) )
-            QVERIFY_SQL( q, exec( "create table " + qtest_precision + " (col1 number)" ) );
+        if (tst_Databases::isMSAccess(db))
+            QVERIFY_SQL(q, exec("CREATE TABLE " + qtest_precision + " (col1 number)"));
         else
-            QVERIFY_SQL( q, exec( "create table " + qtest_precision + " (col1 numeric(21, 20))" ) );
+            QVERIFY_SQL(q, exec("CREATE TABLE " + qtest_precision + " (col1 numeric(21, 20))"));
 
-        QVERIFY_SQL( q, exec( "insert into " + qtest_precision + " (col1) values (1.2345678901234567891)" ) );
-
-        QVERIFY_SQL( q, exec( "select * from " + qtest_precision ) );
-        QVERIFY( q.next() );
-
-        QString val = q.value( 0 ).toString();
-
-        if ( !val.startsWith( "1.2345678901234567891" ) ) {
+        QVERIFY_SQL(q, exec("INSERT INTO " + qtest_precision + " (col1) VALUES (" + precStr + ")"));
+        QVERIFY_SQL(q, exec("SELECT * FROM " + qtest_precision));
+        QVERIFY(q.next());
+        const QString val = q.value(0).toString();
+        if (!val.startsWith(precStr)) {
             int i = 0;
-
-            while ( precStr[i] != 0 && *( precStr + i ) == val[i].toLatin1() )
+            while (i < val.size() && precStr[i] != 0 && precStr[i] == val[i].toLatin1())
                 i++;
 
-            // MySQL and TDS have crappy precisions by default
-            if (dbType == QSqlDriver::MySqlServer) {
-                if ( i < 17 )
-                    QWARN( "MySQL didn't return the right precision" );
-            } else if (dbType == QSqlDriver::Sybase) {
-                if ( i < 18 )
-                    QWARN( "TDS didn't return the right precision" );
+            // TDS has crappy precisions by default
+            if (dbType == QSqlDriver::Sybase) {
+                if (i < 18)
+                    QWARN("TDS didn't return the right precision");
             } else {
-                QWARN( QString( tst_Databases::dbToString( db ) + " didn't return the right precision (" +
-                                QString::number( i ) + " out of 21), " + val ).toLatin1() );
+                QWARN(QString(tst_Databases::dbToString(db) + " didn't return the right precision (" +
+                              QString::number(i) + " out of 21), " + val).toUtf8());
             }
         }
     } // SQLITE scope
+    db.driver()->setNumericalPrecisionPolicy(oldPrecision);
 }
 
 void tst_QSqlQuery::nullResult()
@@ -2093,10 +2083,6 @@ void tst_QSqlQuery::prepare_bind_exec()
         bool useUnicode = db.driver()->hasFeature( QSqlDriver::Unicode );
 
         QSqlQuery q( db );
-
-        if ( db.driverName().startsWith( "QMYSQL" ) && tst_Databases::getMySqlVersion( db ).section( QChar('.'), 0, 0 ).toInt()<5 )
-            useUnicode = false;
-
         QString createQuery;
         QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
         if (dbType == QSqlDriver::PostgreSQL)
@@ -2270,6 +2256,16 @@ void tst_QSqlQuery::prepare_bind_exec()
             QCOMPARE(q.boundValues()[q.result()->boundValueName(0)].toInt(), 7);
             QCOMPARE(q.boundValues()[q.result()->boundValueName(1)].toString(), utf8str);
         }
+
+        // Test binding more placeholders than the query contains placeholders
+        q.addBindValue(8);
+        q.addBindValue(9);
+        q.addBindValue(10);
+        QCOMPARE(q.boundValues().size(), 3);
+        QCOMPARE(q.boundValues()[q.result()->boundValueName(0)].toInt(), 8);
+        QCOMPARE(q.boundValues()[q.result()->boundValueName(1)].toInt(), 9);
+        QCOMPARE(q.boundValues()[q.result()->boundValueName(2)].toInt(), 10);
+        QFAIL_SQL(q, exec());
 
         QVERIFY_SQL( q, exec( "SELECT * FROM " + qtest_prepare + " order by id" ) );
 
@@ -2855,10 +2851,11 @@ void tst_QSqlQuery::psql_bindWithDoubleColonCastOperator()
     QVERIFY_SQL( q, exec() );
     QVERIFY_SQL( q, next() );
 
-    if ( db.driver()->hasFeature( QSqlDriver::PreparedQueries ) )
-        QCOMPARE( q.executedQuery(), QString( "select sum((fld1 - fld2)::int) from " + tablename + " where id1 = ? and id2 =? and id3=?" ) );
+    // the positional placeholders are converted to named placeholders in executedQuery()
+    if (db.driver()->hasFeature(QSqlDriver::PreparedQueries))
+        QCOMPARE(q.executedQuery(), QString("select sum((fld1 - fld2)::int) from " + tablename + " where id1 = :myid1 and id2 =:myid2 and id3=:myid3"));
     else
-        QCOMPARE( q.executedQuery(), QString( "select sum((fld1 - fld2)::int) from " + tablename + " where id1 = 1 and id2 =2 and id3=3" ) );
+        QCOMPARE(q.executedQuery(), QString("select sum((fld1 - fld2)::int) from " + tablename + " where id1 = 1 and id2 =2 and id3=3"));
 }
 
 void tst_QSqlQuery::psql_specialFloatValues()
@@ -3068,10 +3065,6 @@ void tst_QSqlQuery::nextResult()
         QSKIP("DBMS does not support multiple result sets");
 
     QSqlQuery q( db );
-
-    if ( db.driverName().startsWith( "QMYSQL" ) && tst_Databases::getMySqlVersion( db ).section( QChar('.'), 0, 0 ).toInt()<5 )
-        QSKIP( "Test requires MySQL >= 5.0");
-
     const QString tableName(qTableName("more_results", __FILE__, db));
 
     QVERIFY_SQL( q, exec( "CREATE TABLE " + tableName + " (id integer, text varchar(20), num numeric(6, 3), empty varchar(10));" ) );
@@ -3448,104 +3441,18 @@ void tst_QSqlQuery::task_250026()
     QCOMPARE( q.value( 0 ).toString().length(), data1026.length() );
 }
 
-void tst_QSqlQuery::task_205701()
+void tst_QSqlQuery::crashQueryOnCloseDatabase()
 {
-    QSqlDatabase qsdb = QSqlDatabase::addDatabase("QMYSQL", "atest");
-    qsdb.setHostName("test");
-    qsdb.setDatabaseName("test");
-    qsdb.setUserName("test");
-    qsdb.setPassword("test");
-    qsdb.open();
-
-//     {
-        QSqlQuery query(qsdb);
-//     }
-    QSqlDatabase::removeDatabase("atest");
-}
-
-#ifdef NOT_READY_YET
-// For task: 229811
-void tst_QSqlQuery::task_229811()
-{
-    QFETCH( QString, dbName );
-    QSqlDatabase db = QSqlDatabase::database( dbName );
-    CHECK_DATABASE( db );
-
-    if (!db.driverName().startsWith( "QODBC" )) return;
-
-    QSqlQuery q( db );
-
-    const QString tableName(qTableName("task_229811", __FILE__, db));
-
-    if ( !q.exec( "CREATE TABLE " + tableName + " (Word varchar(20))" ) ) {
-        qDebug() << "Warning" << q.lastError();
+    for (const auto &dbName : qAsConst(dbs.dbNames)) {
+        QSqlDatabase clonedDb = QSqlDatabase::cloneDatabase(
+              QSqlDatabase::database(dbName), "crashTest");
+        qDebug() << "Testing crash in sqlquery dtor for driver" << clonedDb.driverName();
+        QVERIFY(clonedDb.open());
+        QSqlQuery q(clonedDb);
+        clonedDb.close();
+        QSqlDatabase::removeDatabase("crashTest");
     }
-
-    QVERIFY_SQL( q, exec( "INSERT INTO " + tableName + " values ('Albert')" ) );
-    QVERIFY_SQL( q, exec( "INSERT INTO " + tableName + " values ('Beehive')" ) );
-    QVERIFY_SQL( q, exec( "INSERT INTO " + tableName + " values ('Alimony')" ) );
-    QVERIFY_SQL( q, exec( "INSERT INTO " + tableName + " values ('Bohemian')" ) );
-    QVERIFY_SQL( q, exec( "INSERT INTO " + tableName + " values ('AllStars')" ) );
-
-
-    QString stmt = "SELECT * FROM " + tableName  +  " WHERE Word LIKE :name";
-    QVERIFY_SQL(q,prepare(stmt));
-    q.bindValue(":name", "A%");
-    QVERIFY_SQL(q,exec());
-
-    QVERIFY(q.isActive());
-    QVERIFY(q.isSelect());
-    QVERIFY(q.first());
-
-    QSqlRecord rec = q.record();
-    QCOMPARE(rec.field(0).value().toString(), QString("Albert"));
-    QVERIFY(q.next());
-    rec = q.record();
-    QCOMPARE(rec.field(0).value().toString(), QString("Alimony"));
-    QVERIFY(q.next());
-    rec = q.record();
-    QCOMPARE(rec.field(0).value().toString(),QString("AllStars"));
-
-    q.exec("DROP TABLE " + tableName );
 }
-
-void tst_QSqlQuery::task_234422()
-{
-    QFETCH( QString, dbName );
-    QSqlDatabase db = QSqlDatabase::database( dbName );
-    CHECK_DATABASE( db );
-
-    QSqlQuery query(db);
-    QStringList m_airlines;
-    QStringList m_countries;
-
-    m_airlines << "Lufthansa" << "SAS" << "United" << "KLM" << "Aeroflot";
-    m_countries << "DE" << "SE" << "US" << "NL" << "RU";
-
-    const QString tableName(qTableName("task_234422", __FILE__, db));
-
-    QVERIFY_SQL(query,exec("CREATE TABLE " + tableName + " (id int primary key, "
-                "name varchar(20), homecountry varchar(2))"));
-    for (int i = 0; i < m_airlines.count(); ++i) {
-        QVERIFY(query.exec(QString("INSERT INTO " + tableName + " values(%1, '%2', '%3')")
-                    .arg(i).arg(m_airlines[i], m_countries[i])));
-    }
-
-    QVERIFY_SQL(query, exec("SELECT name FROM " + tableName));
-    QVERIFY(query.isSelect());
-    QVERIFY(query.first());
-    QVERIFY(query.next());
-    QCOMPARE(query.at(), 1);
-
-    QSqlQuery query2(query);
-
-    QVERIFY_SQL(query2,exec());
-    QVERIFY(query2.first());
-    QCOMPARE(query2.at(), 0);
-    QCOMPARE(query.at(), 1);
-}
-
-#endif
 
 void tst_QSqlQuery::task_233829()
 {
@@ -3836,9 +3743,6 @@ void tst_QSqlQuery::QTBUG_6852()
     QFETCH( QString, dbName );
     QSqlDatabase db = QSqlDatabase::database( dbName );
     CHECK_DATABASE( db );
-    if ( tst_Databases::getMySqlVersion( db ).section( QChar('.'), 0, 0 ).toInt()<5 )
-        QSKIP( "Test requires MySQL >= 5.0");
-
     QSqlQuery q(db);
     const QString tableName(qTableName("bug6852", __FILE__, db)), procName(qTableName("bug6852_proc", __FILE__, db));
 
@@ -3870,9 +3774,6 @@ void tst_QSqlQuery::QTBUG_5765()
     QFETCH( QString, dbName );
     QSqlDatabase db = QSqlDatabase::database( dbName );
     CHECK_DATABASE( db );
-    if ( tst_Databases::getMySqlVersion( db ).section( QChar('.'), 0, 1 ).toFloat()<4.1 )
-        QSKIP( "Test requires MySQL >= 4.1");
-
     QSqlQuery q(db);
     const QString tableName(qTableName("bug5765", __FILE__, db));
 
@@ -4114,8 +4015,8 @@ void tst_QSqlQuery::QTBUG_2192()
 
         // Check if retrieved value preserves reported precision
         int precision = qMax(0, q.record().field("dt").precision());
-        int diff = qAbs(q.value(0).toDateTime().msecsTo(dt));
-        int keep = qMin(1000, (int)qPow(10.0, precision));
+        qint64 diff = qAbs(q.value(0).toDateTime().msecsTo(dt));
+        qint64 keep = qMin(1000LL, qRound64(qPow(10.0, precision)));
         QVERIFY(diff <= 1000 - keep);
     }
 }
@@ -4132,8 +4033,11 @@ void tst_QSqlQuery::QTBUG_36211()
         QSqlQuery q(db);
         QVERIFY_SQL(q, exec(QString("CREATE TABLE %1 (dtwtz timestamptz, dtwotz timestamp)").arg(tableName)));
 
-        QTimeZone l_tzBrazil("BRT");
-        QTimeZone l_tzChina("CST");
+#if QT_CONFIG(timezone)
+        QTimeZone l_tzBrazil("America/Sao_Paulo");
+        QTimeZone l_tzChina("Asia/Shanghai");
+        QVERIFY(l_tzBrazil.isValid());
+        QVERIFY(l_tzChina.isValid());
         QDateTime dt = QDateTime(QDate(2014, 10, 30), QTime(14, 12, 02, 357));
         QVERIFY_SQL(q, prepare("INSERT INTO " + tableName + " (dtwtz, dtwotz) VALUES (:dt, :dt)"));
         q.bindValue(":dt", dt);
@@ -4151,11 +4055,12 @@ void tst_QSqlQuery::QTBUG_36211()
             for (int j = 0; j < 2; ++j) {
                 // Check if retrieved value preserves reported precision
                 int precision = qMax(0, q.record().field(j).precision());
-                int diff = qAbs(q.value(j).toDateTime().msecsTo(dt));
-                int keep = qMin(1000, (int)qPow(10.0, precision));
+                qint64 diff = qAbs(q.value(j).toDateTime().msecsTo(dt));
+                qint64 keep = qMin(1000LL, qRound64(qPow(10.0, precision)));
                 QVERIFY(diff <= 1000 - keep);
             }
         }
+#endif
     }
 }
 
@@ -4193,6 +4098,25 @@ void tst_QSqlQuery::QTBUG_53969()
         }
         QCOMPARE(values, tableValues);
     }
+}
+
+void tst_QSqlQuery::gisPointDatatype()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+
+    QSqlQuery sqlQuery(db);
+    const auto tableName = qTableName("qtbug72140", __FILE__, db);
+    tst_Databases::safeDropTable(db, tableName);
+    QString sqlCommand = QStringLiteral("CREATE TABLE %1 (`lonlat_point` POINT NULL) ENGINE = InnoDB;").arg(tableName);
+    QVERIFY(sqlQuery.exec(sqlCommand));
+    sqlCommand = QStringLiteral("INSERT INTO %1(lonlat_point) VALUES(ST_GeomFromText('POINT(1 1)'));").arg(tableName);
+    QVERIFY(sqlQuery.exec(sqlCommand));
+    sqlCommand = QStringLiteral("SELECT * FROM %1;").arg(tableName);
+    QVERIFY(sqlQuery.exec(sqlCommand));
+    QCOMPARE(sqlQuery.record().field(0).type(), QVariant::Type::ByteArray);
+    QVERIFY(sqlQuery.next());
 }
 
 void tst_QSqlQuery::oraOCINumber()
@@ -4636,6 +4560,7 @@ void tst_QSqlQuery::dateTime_data()
     QTest::addColumn<QList<QDateTime> >("initialDateTimes");
     QTest::addColumn<QList<QDateTime> >("expectedDateTimes");
 
+#if QT_CONFIG(timezone)
     // Using time zones which are highly unlikely to be the same as the testing machine's one
     // as it could pass as a result despite it.
     // +8.5 hours from UTC to North Korea
@@ -4643,17 +4568,37 @@ void tst_QSqlQuery::dateTime_data()
     // -8 hours from UTC to Belize
     const QTimeZone beforeUTCTimeZone(-28800);
     const QTimeZone utcTimeZone("UTC");
-    const QDateTime dt(QDate(2015, 5, 18), QTime(4, 26, 30));
-    const QDateTime dtWithMS(QDate(2015, 5, 18), QTime(4, 26, 30, 500));
+
     const QDateTime dtWithAfterTZ(QDate(2015, 5, 18), QTime(4, 26, 30, 500), afterUTCTimeZone);
     const QDateTime dtWithBeforeTZ(QDate(2015, 5, 18), QTime(4, 26, 30, 500), beforeUTCTimeZone);
     const QDateTime dtWithUTCTZ(QDate(2015, 5, 18), QTime(4, 26, 30, 500), utcTimeZone);
-    const QList<QDateTime> dateTimes = { dt, dtWithMS, dtWithAfterTZ, dtWithBeforeTZ, dtWithUTCTZ };
-    const QList<QDateTime> expectedDateTimesLocalTZ = { dt, dtWithMS, dtWithAfterTZ.toLocalTime(),
-                                                        dtWithBeforeTZ.toLocalTime(),
-                                                        dtWithUTCTZ.toLocalTime() };
-    const QList<QDateTime> expectedTimeStampDateTimes = { dt, dtWithMS, dtWithMS, dtWithMS, dtWithMS };
-    const QList<QDateTime> expectedDateTimes = { dt, dt, dt, dt, dt };
+#endif
+    const QDateTime dt(QDate(2015, 5, 18), QTime(4, 26, 30));
+    const QDateTime dtWithMS(QDate(2015, 5, 18), QTime(4, 26, 30, 500));
+    const QList<QDateTime> dateTimes = {
+        dt, dtWithMS,
+#if QT_CONFIG(timezone)
+        dtWithAfterTZ, dtWithBeforeTZ, dtWithUTCTZ
+#endif
+    };
+    const QList<QDateTime> expectedDateTimesLocalTZ = {
+        dt, dtWithMS,
+#if QT_CONFIG(timezone)
+        dtWithAfterTZ.toLocalTime(), dtWithBeforeTZ.toLocalTime(), dtWithUTCTZ.toLocalTime()
+#endif
+    };
+    const QList<QDateTime> expectedTimeStampDateTimes = {
+        dt, dtWithMS,
+#if QT_CONFIG(timezone)
+        dtWithMS, dtWithMS, dtWithMS
+#endif
+    };
+    const QList<QDateTime> expectedDateTimes = {
+        dt, dt,
+#if QT_CONFIG(timezone)
+        dt, dt, dt
+#endif
+    };
 
     for (const QString &dbName : qAsConst(dbs.dbNames)) {
         QSqlDatabase db = QSqlDatabase::database(dbName);
@@ -4801,6 +4746,52 @@ void tst_QSqlQuery::mysql_timeType()
         QVERIFY(qry.next());
         QCOMPARE(qry.value(0).toTime(), time);
     }
+}
+
+void tst_QSqlQuery::ibaseArray()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+
+    const auto arrayTable = qTableName("ibasearray", __FILE__, db);
+    tst_Databases::safeDropTable(db, arrayTable);
+    QSqlQuery qry(db);
+    QVERIFY_SQL(qry, exec("create table " + arrayTable + " (intData int[0:4], longData bigint[5], "
+                          "charData varchar(255)[5])"));
+    QVERIFY_SQL(qry, prepare("insert into " + arrayTable + " (intData, longData, charData) "
+                             "values(?, ?, ?)"));
+    const auto intArray = QVariant{QVariantList{1, 2, 3, 4711, 815}};
+    const auto charArray = QVariant{QVariantList{"AAA", "BBB", "CCC", "DDD", "EEE"}};
+    qry.bindValue(0, intArray);
+    qry.bindValue(1, intArray);
+    qry.bindValue(2, charArray);
+    QVERIFY_SQL(qry, exec());
+    QVERIFY_SQL(qry, exec("select * from " + arrayTable));
+    QVERIFY(qry.next());
+    QCOMPARE(qry.value(0).toList(), intArray.toList());
+    QCOMPARE(qry.value(1).toList(), intArray.toList());
+    QCOMPARE(qry.value(2).toList(), charArray.toList());
+}
+
+void tst_QSqlQuery::ibase_executeBlock()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+    QSqlQuery qry(db);
+    QVERIFY_SQL(qry, prepare("execute block (x double precision = ?, y double precision = ?) "
+                             "returns (total double precision) "
+                             "as "
+                             "begin "
+                             "total = :x + :y; "
+                             "suspend; "
+                             "end"));
+    qry.bindValue(0, 2);
+    qry.bindValue(1, 2);
+    QVERIFY_SQL(qry, exec());
+    QVERIFY(qry.next());
+    QCOMPARE(qry.value(0).toInt(), 4);
 }
 
 QTEST_MAIN( tst_QSqlQuery )

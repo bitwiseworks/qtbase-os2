@@ -48,14 +48,19 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-
 #include "mainwindow.h"
 #include "tabletcanvas.h"
 
+#include <QApplication>
+#include <QColorDialog>
+#include <QDir>
+#include <QFileDialog>
+#include <QMenuBar>
+#include <QMessageBox>
+
 //! [0]
 MainWindow::MainWindow(TabletCanvas *canvas)
-  : m_canvas(canvas), m_colorDialog(nullptr)
+    : m_canvas(canvas)
 {
     createMenus();
     setWindowTitle(tr("Tablet Example"));
@@ -80,21 +85,21 @@ void MainWindow::setBrushColor()
 //! [2]
 void MainWindow::setAlphaValuator(QAction *action)
 {
-    m_canvas->setAlphaChannelValuator(action->data().value<TabletCanvas::Valuator>());
+    m_canvas->setAlphaChannelValuator(qvariant_cast<TabletCanvas::Valuator>(action->data()));
 }
 //! [2]
 
 //! [3]
 void MainWindow::setLineWidthValuator(QAction *action)
 {
-    m_canvas->setLineWidthType(action->data().value<TabletCanvas::Valuator>());
+    m_canvas->setLineWidthType(qvariant_cast<TabletCanvas::Valuator>(action->data()));
 }
 //! [3]
 
 //! [4]
 void MainWindow::setSaturationValuator(QAction *action)
 {
-    m_canvas->setColorSaturationValuator(action->data().value<TabletCanvas::Valuator>());
+    m_canvas->setColorSaturationValuator(qvariant_cast<TabletCanvas::Valuator>(action->data()));
 }
 //! [4]
 

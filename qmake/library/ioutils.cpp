@@ -35,6 +35,7 @@
 
 #include <qdir.h>
 #include <qfile.h>
+#include <qregexp.h>
 
 #ifdef Q_OS_WIN
 #  include <windows.h>

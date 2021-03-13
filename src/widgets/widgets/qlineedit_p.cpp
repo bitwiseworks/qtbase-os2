@@ -68,12 +68,13 @@ QT_BEGIN_NAMESPACE
 const int QLineEditPrivate::verticalMargin(1);
 const int QLineEditPrivate::horizontalMargin(2);
 
+// Needs to be kept in sync with QLineEdit::paintEvent
 QRect QLineEditPrivate::adjustedControlRect(const QRect &rect) const
 {
     QRect widgetRect = !rect.isEmpty() ? rect : q_func()->rect();
     QRect cr = adjustedContentsRect();
     int cix = cr.x() - hscroll + horizontalMargin;
-    return widgetRect.translated(QPoint(cix, vscroll));
+    return widgetRect.translated(QPoint(cix, vscroll - control->ascent() + q_func()->fontMetrics().ascent()));
 }
 
 int QLineEditPrivate::xToPos(int x, QTextLine::CursorPosition betweenOrOn) const
@@ -127,6 +128,7 @@ void QLineEditPrivate::_q_handleWindowActivate()
 void QLineEditPrivate::_q_textEdited(const QString &text)
 {
     Q_Q(QLineEdit);
+    edited = true;
     emit q->textEdited(text);
 #if QT_CONFIG(completer)
     if (control->completer()
@@ -253,10 +255,7 @@ QRect QLineEditPrivate::adjustedContentsRect() const
     QStyleOptionFrame opt;
     q->initStyleOption(&opt);
     QRect r = q->style()->subElementRect(QStyle::SE_LineEditContents, &opt, q);
-    r.setX(r.x() + effectiveLeftTextMargin());
-    r.setY(r.y() + topTextMargin);
-    r.setRight(r.right() - effectiveRightTextMargin());
-    r.setBottom(r.bottom() - bottomTextMargin);
+    r = r.marginsRemoved(effectiveTextMargins());
     return r;
 }
 
@@ -270,6 +269,12 @@ void QLineEditPrivate::setCursorVisible(bool visible)
         q->update(cursorRect());
     else
         q->update();
+}
+
+void QLineEditPrivate::setText(const QString& text)
+{
+    edited = true;
+    control->setText(text);
 }
 
 void QLineEditPrivate::updatePasswordEchoEditing(bool editing)
@@ -348,9 +353,7 @@ QLineEditPrivate *QLineEditIconButton::lineEditPrivate() const
 void QLineEditIconButton::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
-    QWindow *window = nullptr;
-    if (const QWidget *nativeParent = nativeParentWidget())
-        window = nativeParent->windowHandle();
+    QWindow *window = qt_widget_private(this)->windowHandle(QWidgetPrivate::WindowHandleMode::Closest);
     QIcon::Mode state = QIcon::Disabled;
     if (isEnabled())
         state = isDown() ? QIcon::Active : QIcon::Normal;
@@ -485,7 +488,7 @@ QLineEditPrivate::SideWidgetParameters QLineEditPrivate::sideWidgetParameters() 
 {
     Q_Q(const QLineEdit);
     SideWidgetParameters result;
-    result.iconSize = q->style()->pixelMetric(QStyle::PM_SmallIconSize, 0, q);
+    result.iconSize = q->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, q);
     result.margin = result.iconSize / 4;
     result.widgetWidth = result.iconSize + 6;
     result.widgetHeight = result.iconSize + 2;
@@ -564,12 +567,12 @@ QWidget *QLineEditPrivate::addAction(QAction *newAction, QAction *before, QLineE
 {
     Q_Q(QLineEdit);
     if (!newAction)
-        return 0;
+        return nullptr;
     if (!hasSideWidgets()) { // initial setup.
         QObject::connect(q, SIGNAL(textChanged(QString)), q, SLOT(_q_textChanged(QString)));
         lastTextSize = q->text().size();
     }
-    QWidget *w = 0;
+    QWidget *w = nullptr;
     // Store flags about QWidgetAction here since removeAction() may be called from ~QAction,
     // in which a qobject_cast<> no longer works.
 #if QT_CONFIG(action)
@@ -667,14 +670,12 @@ static int effectiveTextMargin(int defaultMargin, const QLineEditPrivate::SideWi
                                  return e.widget->isVisibleTo(e.widget->parentWidget()); }));
 }
 
-int QLineEditPrivate::effectiveLeftTextMargin() const
+QMargins QLineEditPrivate::effectiveTextMargins() const
 {
-    return effectiveTextMargin(leftTextMargin, leftSideWidgetList(), sideWidgetParameters());
-}
-
-int QLineEditPrivate::effectiveRightTextMargin() const
-{
-    return effectiveTextMargin(rightTextMargin, rightSideWidgetList(), sideWidgetParameters());
+    return {effectiveTextMargin(textMargins.left(), leftSideWidgetList(), sideWidgetParameters()),
+            textMargins.top(),
+            effectiveTextMargin(textMargins.right(), rightSideWidgetList(), sideWidgetParameters()),
+            textMargins.bottom()};
 }
 
 

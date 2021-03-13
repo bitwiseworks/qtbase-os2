@@ -262,7 +262,7 @@ PathDeformWidget::PathDeformWidget(QWidget *parent, bool smallScreen)
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     mainLayout->addWidget(m_renderer);
 
-    m_controls = new PathDeformControls(0, m_renderer, smallScreen);
+    m_controls = new PathDeformControls(nullptr, m_renderer, smallScreen);
     m_controls->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum);
 
     if (!smallScreen)
@@ -374,7 +374,7 @@ void PathDeformRenderer::setText(const QString &text)
     }
 
     for (int i=0; i<m_paths.size(); ++i)
-        m_paths[i] = m_paths[i] * QMatrix(1, 0, 0, 1, -m_pathBounds.x(), -m_pathBounds.y());
+        m_paths[i] = m_paths[i] * QTransform(1, 0, 0, 1, -m_pathBounds.x(), -m_pathBounds.y());
 
     update();
 }

@@ -78,12 +78,15 @@
 #endif
 #include <private/qmath_p.h>
 #include <qmath.h>
+#include <QtGui/qpainterpath.h>
 #include <QtGui/qscreen.h>
 #include <QtGui/qwindow.h>
 #include <qpa/qplatformtheme.h>
 #include <qpa/qplatformscreen.h>
 #include <private/qguiapplication_p.h>
 #include <private/qhighdpiscaling_p.h>
+#include <qpa/qplatformnativeinterface.h>
+#include <private/qwidget_p.h>
 
 #include <private/qstylehelper_p.h>
 #if QT_CONFIG(animation)
@@ -119,14 +122,27 @@ enum QSliderDirection { SlUp, SlDown, SlLeft, SlRight };
     \internal
 */
 
-QWindowsStylePrivate::QWindowsStylePrivate()
-    : alt_down(false), menuBarTimer(0)
-{
-}
+QWindowsStylePrivate::QWindowsStylePrivate() = default;
 
 qreal QWindowsStylePrivate::appDevicePixelRatio()
 {
     return qApp->devicePixelRatio();
+}
+
+bool QWindowsStylePrivate::isDarkMode()
+{
+    bool result = false;
+#ifdef Q_OS_WIN
+    // Windows only: Return whether dark mode style support is desired and
+    // dark mode is in effect.
+    if (auto ni = QGuiApplication::platformNativeInterface()) {
+        const QVariant darkModeStyleP = ni->property("darkModeStyle");
+        result = darkModeStyleP.type() == QVariant::Bool
+                 && darkModeStyleP.value<bool>()
+                 && ni->property("darkMode").value<bool>();
+    }
+#endif
+    return result;
 }
 
 // Returns \c true if the toplevel parent of \a widget has seen the Alt-key
@@ -156,7 +172,7 @@ bool QWindowsStyle::eventFilter(QObject *o, QEvent *e)
             QList<QWidget *> l = widget->findChildren<QWidget *>();
             auto ignorable = [](QWidget *w) {
                 return w->isWindow() || !w->isVisible()
-                        || w->style()->styleHint(SH_UnderlineShortcut, 0, w);
+                        || w->style()->styleHint(SH_UnderlineShortcut, nullptr, w);
             };
             l.erase(std::remove_if(l.begin(), l.end(), ignorable), l.end());
             // Update states before repainting
@@ -241,14 +257,15 @@ void QWindowsStyle::polish(QApplication *app)
     QCommonStyle::polish(app);
     QWindowsStylePrivate *d = const_cast<QWindowsStylePrivate*>(d_func());
     // We only need the overhead when shortcuts are sometimes hidden
-    if (!proxy()->styleHint(SH_UnderlineShortcut, 0) && app)
+    if (!proxy()->styleHint(SH_UnderlineShortcut, nullptr) && app)
         app->installEventFilter(this);
 
-    d->activeCaptionColor = app->palette().highlight().color();
-    d->activeGradientCaptionColor = app->palette().highlight() .color();
-    d->inactiveCaptionColor = app->palette().dark().color();
-    d->inactiveGradientCaptionColor = app->palette().dark().color();
-    d->inactiveCaptionText = app->palette().window().color();
+    const auto &palette = QGuiApplication::palette();
+    d->activeGradientCaptionColor = palette.highlight().color();
+    d->activeCaptionColor = d->activeGradientCaptionColor;
+    d->inactiveGradientCaptionColor = palette.dark().color();
+    d->inactiveCaptionColor = d->inactiveGradientCaptionColor;
+    d->inactiveCaptionText = palette.window().color();
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) //fetch native title bar colors
     if(app->desktopSettingsAware()){
@@ -341,7 +358,6 @@ int QWindowsStylePrivate::fixedPixelMetric(QStyle::PixelMetric pm)
     case QStyle::PM_MenuVMargin:
     case QStyle::PM_ToolBarItemMargin:
         return 1;
-        break;
     case QStyle::PM_DockWidgetSeparatorExtent:
         return 4;
 #if QT_CONFIG(tabbar)
@@ -380,23 +396,12 @@ int QWindowsStylePrivate::fixedPixelMetric(QStyle::PixelMetric pm)
     return QWindowsStylePrivate::InvalidMetric;
 }
 
-static QWindow *windowOf(const QWidget *w)
-{
-    QWindow *result = nullptr;
-    if (w) {
-        result = w->windowHandle();
-        if (!result) {
-            if (const QWidget *np = w->nativeParentWidget())
-                result = np->windowHandle();
-        }
-    }
-    return result;
-}
-
 static QScreen *screenOf(const QWidget *w)
 {
-    if (const QWindow *window = windowOf(w))
-        return window->screen();
+    if (w) {
+        if (auto screen = qt_widget_private(const_cast<QWidget *>(w))->associatedScreen())
+            return screen;
+    }
     return QGuiApplication::primaryScreen();
 }
 
@@ -405,8 +410,6 @@ static QScreen *screenOf(const QWidget *w)
 // and account for secondary screens with differing logical DPI.
 qreal QWindowsStylePrivate::nativeMetricScaleFactor(const QWidget *widget)
 {
-    if (!QHighDpiScaling::isActive())
-        return 1;
     qreal result = qreal(1) / QWindowsStylePrivate::devicePixelRatio(widget);
     if (QGuiApplicationPrivate::screen_list.size() > 1) {
         const QScreen *primaryScreen = QGuiApplication::primaryScreen();
@@ -432,7 +435,7 @@ int QWindowsStyle::pixelMetric(PixelMetric pm, const QStyleOption *opt, const QW
 
     ret = QWindowsStylePrivate::fixedPixelMetric(pm);
     if (ret != QWindowsStylePrivate::InvalidMetric)
-        return int(QStyleHelper::dpiScaled(ret));
+        return int(QStyleHelper::dpiScaled(ret, opt));
 
     ret = 0;
 
@@ -478,7 +481,7 @@ int QWindowsStyle::pixelMetric(PixelMetric pm, const QStyleOption *opt, const QW
         break;
 
     case PM_SplitterWidth:
-        ret = qMax(int(QStyleHelper::dpiScaled(4)), QApplication::globalStrut().width());
+        ret = qMax(int(QStyleHelper::dpiScaled(4, opt)), QApplication::globalStrut().width());
         break;
 
     default:
@@ -546,6 +549,8 @@ int QWindowsStyle::styleHint(StyleHint hint, const QStyleOption *opt, const QWid
 
     switch (hint) {
     case SH_EtchDisabledText:
+        ret = d_func()->isDarkMode() ? 0 : 1;
+        break;
     case SH_Slider_SnapToValue:
     case SH_PrintDialog_RightAlignButtons:
     case SH_FontDialog_SelectAssociatedText:
@@ -707,17 +712,17 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
                 x -= 2;
             if (opt->rect.height() > 4) {
                 qDrawShadePanel(p, x, 2, 3, opt->rect.height() - 4,
-                                opt->palette, false, 1, 0);
+                                opt->palette, false, 1, nullptr);
                 qDrawShadePanel(p, x + 3, 2, 3, opt->rect.height() - 4,
-                                opt->palette, false, 1, 0);
+                                opt->palette, false, 1, nullptr);
             }
         } else {
             if (opt->rect.width() > 4) {
                 int y = opt->rect.height() / 2 - 4;
                 qDrawShadePanel(p, 2, y, opt->rect.width() - 4, 3,
-                                opt->palette, false, 1, 0);
+                                opt->palette, false, 1, nullptr);
                 qDrawShadePanel(p, 2, y + 3, opt->rect.width() - 4, 3,
-                                opt->palette, false, 1, 0);
+                                opt->palette, false, 1, nullptr);
             }
         }
         p->restore();
@@ -768,7 +773,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
                 }
             } else {
                 qDrawWinButton(p, opt->rect, opt->palette,
-                               opt->state & (State_Sunken | State_On), panel ? &fill : 0);
+                               opt->state & (State_Sunken | State_On), panel ? &fill : nullptr);
             }
         } else {
             p->fillRect(opt->rect, fill);
@@ -802,8 +807,11 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         QPen oldPen = p->pen();
         p->setPen(QPen(opt->palette.shadow().color(), 0));
         QRectF rect = opt->rect;
-        rect.adjust(QStyleHelper::dpiScaled(0.5), QStyleHelper::dpiScaled(0.5),
-                    QStyleHelper::dpiScaled(-1.5), QStyleHelper::dpiScaled(-1.5));
+        const qreal dpi = QStyleHelper::dpi(opt);
+        const qreal topLevelAdjustment = QStyleHelper::dpiScaled(0.5, dpi);
+        const qreal bottomRightAdjustment = QStyleHelper::dpiScaled(-1.5, dpi);
+        rect.adjust(topLevelAdjustment, topLevelAdjustment,
+                    bottomRightAdjustment, bottomRightAdjustment);
         p->drawRect(rect);
         p->setPen(oldPen);
         break;
@@ -986,7 +994,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
 
         if (opt->state & (State_Raised | State_On | State_Sunken)) {
             qDrawWinButton(p, opt->rect, opt->palette, opt->state & (State_Sunken | State_On),
-                           panel ? &fill : 0);
+                           panel ? &fill : nullptr);
         } else {
             if (panel)
                 p->fillRect(opt->rect, fill);
@@ -1011,7 +1019,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
 #endif // QT_CONFIG(dockwidget)
 
     case PE_FrameStatusBarItem:
-        qDrawShadePanel(p, opt->rect, opt->palette, true, 1, 0);
+        qDrawShadePanel(p, opt->rect, opt->palette, true, 1, nullptr);
         break;
 
     case PE_IndicatorProgressChunk:
@@ -1049,7 +1057,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         break;
 
     case PE_FrameTabWidget: {
-        qDrawWinButton(p, opt->rect, opt->palette, false, 0);
+        qDrawWinButton(p, opt->rect, opt->palette, false, nullptr);
         break;
     }
     default:
@@ -1591,6 +1599,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                 case QStyleOptionToolBar::Beginning:
                 case QStyleOptionToolBar::OnlyOne:
                     paintBottomBorder = false;
+                    break;
                 default:
                     break;
                 }
@@ -1606,6 +1615,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                 case QStyleOptionToolBar::OnlyOne:
                     paintRightBorder = false;
                     paintLeftBorder = false;
+                    break;
                 default:
                     break;
                 }
@@ -1685,7 +1695,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
             const bool vertical = pb->orientation == Qt::Vertical;
             const bool inverted = pb->invertedAppearance;
 
-            QMatrix m;
+            QTransform m;
             if (vertical) {
                 rect = QRect(rect.y(), rect.x(), rect.height(), rect.width()); // flip width and height
                 m.rotate(90);
@@ -2129,7 +2139,7 @@ void QWindowsStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComp
 #if QT_CONFIG(combobox)
     case CC_ComboBox:
         if (const QStyleOptionComboBox *cmb = qstyleoption_cast<const QStyleOptionComboBox *>(opt)) {
-            QBrush editBrush = cmb->palette.brush(QPalette::Base);
+            QBrush editBrush = cmb->palette.brush(QPalette::Button);
             if ((cmb->subControls & SC_ComboBoxFrame)) {
                 if (cmb->frame) {
                     QPalette shadePal = opt->palette;
@@ -2310,8 +2320,9 @@ QSize QWindowsStyle::sizeFromContents(ContentsType ct, const QStyleOption *opt,
             int defwidth = 0;
             if (btn->features & QStyleOptionButton::AutoDefaultButton)
                 defwidth = 2 * proxy()->pixelMetric(PM_ButtonDefaultIndicator, btn, widget);
-            int minwidth = int(QStyleHelper::dpiScaled(75.));
-            int minheight = int(QStyleHelper::dpiScaled(23.));
+            const qreal dpi = QStyleHelper::dpi(opt);
+            int minwidth = int(QStyleHelper::dpiScaled(75, dpi));
+            int minheight = int(QStyleHelper::dpiScaled(23, dpi));
 
 #ifndef QT_QWS_SMALL_PUSHBUTTON
             if (w < minwidth + defwidth && !btn->text.isEmpty())

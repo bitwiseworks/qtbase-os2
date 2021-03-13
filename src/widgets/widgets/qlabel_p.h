@@ -92,9 +92,11 @@ public:
     void _q_buddyDeleted();
 #endif
     inline bool needTextControl() const {
+        Q_Q(const QLabel);
         return isTextLabel
-               && (isRichText
-                   || (!isRichText && (textInteractionFlags & (Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard))));
+               && (effectiveTextFormat != Qt::PlainText
+                   || (textInteractionFlags & (Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard))
+                   || q->focusPolicy() != Qt::NoFocus);
     }
 
     void ensureTextPopulated() const;
@@ -134,6 +136,7 @@ public:
     int shortcutId;
 #endif
     Qt::TextFormat textformat;
+    Qt::TextFormat effectiveTextFormat;
     Qt::TextInteractionFlags textInteractionFlags;
     mutable QSizePolicy sizePolicy;
     int margin;
@@ -143,7 +146,6 @@ public:
     uint scaledcontents : 1;
     mutable uint textLayoutDirty : 1;
     mutable uint textDirty : 1;
-    mutable uint isRichText : 1;
     mutable uint isTextLabel : 1;
     mutable uint hasShortcut : 1;
 #ifndef QT_NO_CURSOR

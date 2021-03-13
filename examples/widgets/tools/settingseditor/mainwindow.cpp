@@ -48,15 +48,23 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-
 #include "locationdialog.h"
 #include "mainwindow.h"
 #include "settingstree.h"
 
-MainWindow::MainWindow()
-    : settingsTree(new SettingsTree)
-    , locationDialog(nullptr)
+#include <QAction>
+#include <QApplication>
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QScreen>
+#include <QStandardPaths>
+#include <QStatusBar>
+
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
+    , settingsTree(new SettingsTree)
 {
     setCentralWidget(settingsTree);
 
@@ -66,7 +74,7 @@ MainWindow::MainWindow()
     fallbacksAct->setChecked(true);
 
     setWindowTitle(QCoreApplication::applicationName());
-    const QRect availableGeometry = QApplication::desktop()->availableGeometry(this);
+    const QRect availableGeometry = screen()->availableGeometry();
     adjustSize();
     move((availableGeometry.width() - width()) / 2, (availableGeometry.height() - height()) / 2);
 }
@@ -149,10 +157,10 @@ void MainWindow::createActions()
     QAction *openIniFileAct = fileMenu->addAction(tr("Open I&NI File..."), this, &MainWindow::openIniFile);
     openIniFileAct->setShortcut(tr("Ctrl+N"));
 
-#ifdef Q_OS_OSX
+#ifdef Q_OS_MACOS
     QAction *openPropertyListAct = fileMenu->addAction(tr("Open Apple &Property List..."), this, &MainWindow::openPropertyList);
     openPropertyListAct->setShortcut(tr("Ctrl+P"));
-#endif // Q_OS_OSX
+#endif // Q_OS_MACOS
 
 #ifdef Q_OS_WIN
     QAction *openRegistryPathAct = fileMenu->addAction(tr("Open Windows &Registry Path..."), this, &MainWindow::openRegistryPath);

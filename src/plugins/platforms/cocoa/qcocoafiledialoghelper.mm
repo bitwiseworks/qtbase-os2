@@ -48,10 +48,8 @@
 
 #include <qguiapplication.h>
 #include <private/qguiapplication_p.h>
-#include "qt_mac_p.h"
 #include "qcocoahelpers.h"
 #include "qcocoaeventdispatcher.h"
-#include <qregexp.h>
 #include <qbuffer.h>
 #include <qdebug.h>
 #include <qstringlist.h>
@@ -76,27 +74,6 @@ QT_FORWARD_DECLARE_CLASS(QWindow)
 QT_USE_NAMESPACE
 
 typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
-
-@interface QT_MANGLE_NAMESPACE(QNSOpenSavePanelDelegate)
-    : NSObject<NSOpenSavePanelDelegate>
-
-- (NSString *)strip:(const QString &)label;
-- (BOOL)panel:(id)sender shouldEnableURL:(NSURL *)url;
-- (void)filterChanged:(id)sender;
-- (void)showModelessPanel;
-- (BOOL)runApplicationModalPanel;
-- (void)showWindowModalSheet:(QWindow *)docWidget;
-- (void)updateProperties;
-- (QStringList)acceptableExtensionsForSave;
-- (QString)removeExtensions:(const QString &)filter;
-- (void)createTextField;
-- (void)createPopUpButton:(const QString &)selectedFilter hideDetails:(BOOL)hideDetails;
-- (QStringList)findStrippedFilterWithVisualFilterName:(QString)name;
-- (void)createAccessory;
-
-@end
-
-QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSOpenSavePanelDelegate);
 
 @implementation QNSOpenSavePanelDelegate {
     @public
@@ -215,7 +192,7 @@ static QString strippedText(QString s)
         NSString *filepath = info.filePath().toNSString();
         NSURL *url = [NSURL fileURLWithPath:filepath isDirectory:info.isDir()];
         bool selectable = (mOptions->acceptMode() == QFileDialogOptions::AcceptSave)
-            || [self panel:nil shouldEnableURL:url];
+            || [self panel:mOpenPanel shouldEnableURL:url];
 
         [self updateProperties];
         [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
@@ -234,7 +211,7 @@ static QString strippedText(QString s)
     NSString *filepath = info.filePath().toNSString();
     NSURL *url = [NSURL fileURLWithPath:filepath isDirectory:info.isDir()];
     bool selectable = (mOptions->acceptMode() == QFileDialogOptions::AcceptSave)
-        || [self panel:nil shouldEnableURL:url];
+        || [self panel:mSavePanel shouldEnableURL:url];
 
     [mSavePanel setDirectoryURL: [NSURL fileURLWithPath:mCurrentDir]];
     [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
@@ -264,7 +241,7 @@ static QString strippedText(QString s)
     NSString *filepath = info.filePath().toNSString();
     NSURL *url = [NSURL fileURLWithPath:filepath isDirectory:info.isDir()];
     bool selectable = (mOptions->acceptMode() == QFileDialogOptions::AcceptSave)
-        || [self panel:nil shouldEnableURL:url];
+        || [self panel:mSavePanel shouldEnableURL:url];
 
     [self updateProperties];
     [mSavePanel setDirectoryURL: [NSURL fileURLWithPath:mCurrentDir]];
@@ -441,8 +418,7 @@ static QString strippedText(QString s)
     [mPopUpButton setHidden:chooseDirsOnly];    // TODO hide the whole sunken pane instead?
 
     if (mOptions->acceptMode() == QFileDialogOptions::AcceptSave) {
-        const QStringList ext = [self acceptableExtensionsForSave];
-        [mSavePanel setAllowedFileTypes:ext.isEmpty() ? nil : qt_mac_QStringListToNSMutableArray(ext)];
+        [self recomputeAcceptableExtensionsForSave];
     } else {
         [mOpenPanel setAllowedFileTypes:nil]; // delegate panel:shouldEnableURL: does the file filtering for NSOpenPanel
     }
@@ -479,25 +455,49 @@ static QString strippedText(QString s)
 }
 
 /*
-    Returns a list of extensions (e.g. "png", "jpg", "gif")
-    for the current name filter. If a filter do not conform
-    to the format *.xyz or * or *.*, an empty list
-    is returned meaning accept everything.
+    Computes a list of extensions (e.g. "png", "jpg", "gif")
+    for the current name filter, and updates the save panel.
+
+    If a filter do not conform to the format *.xyz or * or *.*,
+    all files types are allowed.
+
+    Extensions with more than one part (e.g. "tar.gz") are
+    reduced to their final part, as NSSavePanel does not deal
+    well with multi-part extensions.
 */
-- (QStringList)acceptableExtensionsForSave
+- (void)recomputeAcceptableExtensionsForSave
 {
-    QStringList result;
-    for (int i=0; i<mSelectedNameFilter->count(); ++i) {
-        const QString &filter = mSelectedNameFilter->at(i);
-        if (filter.startsWith(QLatin1String("*."))
-                && !filter.contains(QLatin1Char('?'))
-                && filter.count(QLatin1Char('*')) == 1) {
-            result += filter.mid(2);
-        } else {
-            return QStringList(); // Accept everything
-        }
+    QStringList fileTypes;
+    for (const QString &filter : *mSelectedNameFilter) {
+        if (!filter.startsWith(QLatin1String("*.")))
+            continue;
+
+        if (filter.contains(QLatin1Char('?')))
+            continue;
+
+        if (filter.count(QLatin1Char('*')) != 1)
+            continue;
+
+        auto extensions = filter.split('.', Qt::SkipEmptyParts);
+        fileTypes += extensions.last();
+
+        // Explicitly show extensions if we detect a filter
+        // that has a multi-part extension. This prevents
+        // confusing situations where the user clicks e.g.
+        // 'foo.tar.gz' and 'foo.tar' is populated in the
+        // file name box, but when then clicking save macOS
+        // will warn that the file needs to end in .gz,
+        // due to thinking the user tried to save the file
+        // as a 'tar' file instead. Unfortunately this
+        // property can only be set before the panel is
+        // shown, so it will not have any effect when
+        // swithcing filters in an already opened dialog.
+        if (extensions.size() > 2)
+            mSavePanel.extensionHidden = NO;
     }
-    return result;
+
+    mSavePanel.allowedFileTypes = fileTypes.isEmpty() ? nil
+        : qt_mac_QStringListToNSMutableArray(fileTypes);
 }
 
 - (QString)removeExtensions:(const QString &)filter

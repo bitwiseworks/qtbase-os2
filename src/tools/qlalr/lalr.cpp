@@ -51,7 +51,9 @@ QTextStream &qout()
     static QTextStream result(stdout, QIODevice::WriteOnly);
     return result;
 }
+QT_END_NAMESPACE
 
+namespace std {
 bool operator < (Name a, Name b)
 {
     return *a < *b;
@@ -66,7 +68,7 @@ bool operator < (StatePointer a, StatePointer b)
 {
   return &*a < &*b;
 }
-QT_END_NAMESPACE
+}
 
 bool Read::operator < (const Read &other) const
 {
@@ -242,16 +244,16 @@ void Grammar::buildExtendedGrammar ()
   non_terminals.insert (accept_symbol);
 }
 
-struct Nullable
+struct NotNullable
 {
   typedef Name argument_type;
   Automaton *_M_automaton;
 
-  Nullable (Automaton *aut):
+  NotNullable (Automaton *aut):
     _M_automaton (aut) {}
 
   bool operator () (Name name) const
-  { return _M_automaton->nullables.find (name) != _M_automaton->nullables.end (); }
+  { return _M_automaton->nullables.find (name) == _M_automaton->nullables.end (); }
 };
 
 Automaton::Automaton (Grammar *g):
@@ -295,12 +297,6 @@ void Automaton::build ()
   buildDefaultReduceActions ();
 }
 
-#if defined(__cpp_lib_not_fn) && __cpp_lib_not_fn >= 201603
-# define Q_NOT_FN std::not_fn
-#else
-# define Q_NOT_FN std::not1
-#endif
-
 void Automaton::buildNullables ()
 {
   bool changed = true;
@@ -311,7 +307,7 @@ void Automaton::buildNullables ()
 
       for (RulePointer rule = _M_grammar->rules.begin (); rule != _M_grammar->rules.end (); ++rule)
         {
-          NameList::iterator nn = std::find_if(rule->rhs.begin(), rule->rhs.end(), Q_NOT_FN(Nullable(this)));
+          NameList::iterator nn = std::find_if(rule->rhs.begin(), rule->rhs.end(), NotNullable(this));
 
           if (nn == rule->rhs.end ())
             changed |= nullables.insert (rule->lhs).second;
@@ -319,7 +315,7 @@ void Automaton::buildNullables ()
     }
 
 #ifndef QLALR_NO_DEBUG_NULLABLES
-  qerr() << "nullables = {" << nullables << endl;
+  qerr() << "nullables = {" << nullables << Qt::endl;
 #endif
 }
 
@@ -335,7 +331,7 @@ QPair<StatePointer, bool> Automaton::internState (const State &state)
 
 struct _Bucket
 {
-  QLinkedList<ItemPointer> items;
+  std::list<ItemPointer> items;
 
   void insert (ItemPointer item)
   { items.push_back (item); }
@@ -344,8 +340,8 @@ struct _Bucket
   {
     State st (aut->_M_grammar);
 
-    for (QLinkedList<ItemPointer>::iterator item = items.begin (); item != items.end (); ++item)
-      st.insert ((*item)->next ());
+    for (auto &item : items)
+      st.insert(item->next());
 
     return st;
   }
@@ -462,7 +458,7 @@ void Automaton::buildLookbackSets ()
               lookbacks.insert (item, Lookback (p, A));
 
 #ifndef QLALR_NO_DEBUG_LOOKBACKS
-              qerr() << "*** (" << id (q) << ", " << *rule << ") lookback (" << id (p) << ", " << *A << ")" << endl;
+              qerr() << "*** (" << id (q) << ", " << *rule << ") lookback (" << id (p) << ", " << *A << ")" << Qt::endl;
 #endif
             }
         }
@@ -493,7 +489,7 @@ void Automaton::buildDirectReads ()
 
 #ifndef QLALR_NO_DEBUG_DIRECT_READS
       for (QMap<Name, NameSet>::iterator dr = q->reads.begin (); dr != q->reads.end (); ++dr)
-        qerr() << "*** DR(" << id (q) << ", " << dr.key () << ") = " << dr.value () << endl;
+        qerr() << "*** DR(" << id (q) << ", " << dr.key () << ") = " << dr.value () << Qt::endl;
 #endif
     }
 }
@@ -526,7 +522,7 @@ void Automaton::buildReadsDigraph ()
               dump (qerr(), source);
               qerr() << " reads ";
               dump (qerr(), target);
-              qerr() << endl;
+              qerr() << Qt::endl;
 #endif
             }
         }
@@ -561,7 +557,7 @@ void Automaton::visitReadNode (ReadNode node)
   _M_reads_stack.push (node);
 
 #ifndef QLALR_NO_DEBUG_INCLUDES
-  // qerr() << "*** Debug. visit node (" << id (node->data.state) << ", " << node->data.nt << ")  N = " << N << endl;
+  // qerr() << "*** Debug. visit node (" << id (node->data.state) << ", " << node->data.nt << ")  N = " << N << Qt::endl;
 #endif
 
   for (ReadsGraph::edge_iterator edge = node->begin (); edge != node->end (); ++edge)
@@ -641,7 +637,7 @@ void Automaton::buildIncludesDigraph ()
                       source->insertEdge (target);
 
 #ifndef QLALR_NO_DEBUG_INCLUDES
-                      qerr() << "*** (" << id (p) << ", " << *A << ") includes (" << id (pp) << ", " << *name << ")" << endl;
+                      qerr() << "*** (" << id (p) << ", " << *A << ") includes (" << id (pp) << ", " << *name << ")" << Qt::endl;
 #endif // QLALR_NO_DEBUG_INCLUDES
 
                       continue;
@@ -652,7 +648,7 @@ void Automaton::buildIncludesDigraph ()
                   if (! _M_grammar->isNonTerminal (*A))
                     continue;
 
-                  NameList::iterator first_not_nullable = std::find_if(dot, rule->rhs.end(), Q_NOT_FN(Nullable(this)));
+                  NameList::iterator first_not_nullable = std::find_if(dot, rule->rhs.end(), NotNullable(this));
                   if (first_not_nullable != rule->rhs.end ())
                     continue;
 
@@ -663,7 +659,7 @@ void Automaton::buildIncludesDigraph ()
                   source->insertEdge (target);
 
 #ifndef QLALR_NO_DEBUG_INCLUDES
-                  qerr() << "*** (" << id (p) << ", " << *A << ") includes (" << id (pp) << ", " << *name << ")" << endl;
+                  qerr() << "*** (" << id (p) << ", " << *A << ") includes (" << id (pp) << ", " << *name << ")" << Qt::endl;
 #endif // QLALR_NO_DEBUG_INCLUDES
                 }
             }
@@ -680,7 +676,7 @@ void Automaton::visitIncludeNode (IncludeNode node)
   _M_includes_stack.push (node);
 
 #ifndef QLALR_NO_DEBUG_INCLUDES
-  // qerr() << "*** Debug. visit node (" << id (node->data.state) << ", " << node->data.nt << ")  N = " << N << endl;
+  // qerr() << "*** Debug. visit node (" << id (node->data.state) << ", " << node->data.nt << ")  N = " << N << Qt::endl;
 #endif
 
   for (IncludesGraph::edge_iterator edge = node->begin (); edge != node->end (); ++edge)
@@ -696,7 +692,7 @@ void Automaton::visitIncludeNode (IncludeNode node)
       dump (qerr(), node);
       qerr() << " += follows";
       dump (qerr(), r);
-      qerr() << endl;
+      qerr() << Qt::endl;
 #endif
 
       NameSet &dst = node->data.state->follows [node->data.nt];
@@ -732,7 +728,7 @@ void Automaton::buildLookaheads ()
 #ifndef QLALR_NO_DEBUG_LOOKAHEADS
               qerr() << "(" << id (p) << ", " << *item->rule << ") lookbacks ";
               dump (qerr(), lookback);
-              qerr() << " with follows (" << id (q) << ", " << lookback.nt << ") = " << q->follows [lookback.nt] << endl;
+              qerr() << " with follows (" << id (q) << ", " << lookback.nt << ") = " << q->follows [lookback.nt] << Qt::endl;
 #endif
 
               lookaheads [item].insert (q->follows [lookback.nt].begin (), q->follows [lookback.nt].end ());
@@ -760,7 +756,7 @@ void Automaton::buildDefaultReduceActions ()
           if (item->dot != item->end_rhs ())
             continue;
 
-          int la = lookaheads.value (item).size ();
+          int la = static_cast<int>(lookaheads.value(item).size());
           if (def == state->closure.end () || la > size)
             {
               def = item;

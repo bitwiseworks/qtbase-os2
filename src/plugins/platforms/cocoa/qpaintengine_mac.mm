@@ -37,15 +37,22 @@
 **
 ****************************************************************************/
 
+#include <AppKit/AppKit.h>
+#include <CoreGraphics/CoreGraphics.h>
+
 #include "qpaintengine_mac_p.h"
+#if defined(QT_PRINTSUPPORT_LIB)
 #include "qprintengine_mac_p.h"
+#endif
 
 #include <qbitmap.h>
 #include <qpaintdevice.h>
 #include <qpainterpath.h>
 #include <qpixmapcache.h>
 #include <private/qpaintengine_raster_p.h>
+#if defined(QT_PRINTSUPPORT_LIB)
 #include <qprinter.h>
+#endif
 #include <qstack.h>
 #include <qwidget.h>
 #include <qvarlengtharray.h>
@@ -390,16 +397,19 @@ QCoreGraphicsPaintEngine::begin(QPaintDevice *pdev)
     d->cosmeticPenSize = 1;
     d->current.clipEnabled = false;
     d->pixelSize = QPoint(1,1);
-    QMacCGContext ctx(pdev);
-    d->hd = CGContextRetain(ctx);
-    if (d->hd) {
-        d->saveGraphicsState();
-        d->orig_xform = CGContextGetCTM(d->hd);
-        if (d->shading) {
-            CGShadingRelease(d->shading);
-            d->shading = nullptr;
+
+    if (pdev->devType() != QInternal::Printer) {
+        QMacCGContext ctx(pdev);
+        d->hd = CGContextRetain(ctx);
+        if (d->hd) {
+            d->saveGraphicsState();
+            d->orig_xform = CGContextGetCTM(d->hd);
+            if (d->shading) {
+                CGShadingRelease(d->shading);
+                d->shading = nullptr;
+            }
+            d->setClip(nullptr);  //clear the context's clipping
         }
-        d->setClip(nullptr);  //clear the context's clipping
     }
 
     setActive(true);

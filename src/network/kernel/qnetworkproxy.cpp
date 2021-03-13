@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
@@ -241,7 +241,7 @@
 #include "qstringlist.h"
 #include "qurl.h"
 
-#ifndef QT_NO_BEARERMANAGEMENT
+#ifndef QT_NO_BEARERMANAGEMENT // ### Qt6: Remove section
 #include <QtNetwork/QNetworkConfiguration>
 #endif
 
@@ -254,14 +254,13 @@ class QGlobalNetworkProxy
 {
 public:
     QGlobalNetworkProxy()
-        : mutex(QMutex::Recursive)
-        , applicationLevelProxy(0)
-        , applicationLevelProxyFactory(0)
+        : applicationLevelProxy(nullptr)
+        , applicationLevelProxyFactory(nullptr)
 #if QT_CONFIG(socks5)
-        , socks5SocketEngineHandler(0)
+        , socks5SocketEngineHandler(nullptr)
 #endif
 #if QT_CONFIG(http)
-        , httpSocketEngineHandler(0)
+        , httpSocketEngineHandler(nullptr)
 #endif
 #ifdef QT_USE_SYSTEM_PROXIES
         , useSystemProxies(true)
@@ -314,7 +313,7 @@ public:
             applicationLevelProxy = new QNetworkProxy;
         *applicationLevelProxy = proxy;
         delete applicationLevelProxyFactory;
-        applicationLevelProxyFactory = 0;
+        applicationLevelProxyFactory = nullptr;
         useSystemProxies = false;
     }
 
@@ -338,7 +337,7 @@ public:
     QList<QNetworkProxy> proxyForQuery(const QNetworkProxyQuery &query);
 
 private:
-    QMutex mutex;
+    QRecursiveMutex mutex;
     QNetworkProxy *applicationLevelProxy;
     QNetworkProxyFactory *applicationLevelProxyFactory;
 #if QT_CONFIG(socks5)
@@ -483,7 +482,7 @@ public:
 
 template<> void QSharedDataPointer<QNetworkProxyPrivate>::detach()
 {
-    if (d && d->ref.load() == 1)
+    if (d && d->ref.loadRelaxed() == 1)
         return;
     QNetworkProxyPrivate *x = (d ? new QNetworkProxyPrivate(*d)
                                : new QNetworkProxyPrivate);
@@ -494,13 +493,15 @@ template<> void QSharedDataPointer<QNetworkProxyPrivate>::detach()
 }
 
 /*!
-    Constructs a QNetworkProxy with DefaultProxy type; the proxy type is
-    determined by applicationProxy(), which defaults to NoProxy.
+    Constructs a QNetworkProxy with DefaultProxy type.
+
+    The proxy type is determined by applicationProxy(), which defaults to
+    NoProxy or a system-wide proxy if one is configured.
 
     \sa setType(), setApplicationProxy()
 */
 QNetworkProxy::QNetworkProxy()
-    : d(0)
+    : d(nullptr)
 {
     // make sure we have QGlobalNetworkProxy singleton created, otherwise
     // you don't have any socket engine handler created when directly setting
@@ -925,7 +926,7 @@ public:
 
 template<> void QSharedDataPointer<QNetworkProxyQueryPrivate>::detach()
 {
-    if (d && d->ref.load() == 1)
+    if (d && d->ref.loadRelaxed() == 1)
         return;
     QNetworkProxyQueryPrivate *x = (d ? new QNetworkProxyQueryPrivate(*d)
                                     : new QNetworkProxyQueryPrivate);
@@ -982,11 +983,6 @@ template<> void QSharedDataPointer<QNetworkProxyQueryPrivate>::detach()
     this information is provided in case a better choice can be made,
     like choosing an caching HTTP proxy for HTTP-based connections,
     but a more powerful SOCKSv5 proxy for all others.
-
-    The network configuration specifies which configuration to use,
-    when bearer management is used. For example on a mobile phone
-    the proxy settings are likely to be different for the cellular
-    network vs WLAN.
 
     Some of the criteria may not make sense in all of the types of
     query. The following table lists the criteria that are most

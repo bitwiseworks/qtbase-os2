@@ -36,6 +36,7 @@
 #include <qglframebufferobject.h>
 #include <qglcolormap.h>
 #include <qpaintengine.h>
+#include <qpainterpath.h>
 #include <qopenglfunctions.h>
 #include <qopenglframebufferobject.h>
 #include <qopenglpaintdevice.h>
@@ -59,6 +60,8 @@ Q_OBJECT
 public:
     tst_QGL();
     virtual ~tst_QGL();
+
+    static void initMain();
 
 private slots:
     void initTestCase();
@@ -99,6 +102,11 @@ tst_QGL::tst_QGL()
 
 tst_QGL::~tst_QGL()
 {
+}
+
+void tst_QGL::initMain()
+{
+    QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
 }
 
 void tst_QGL::initTestCase()

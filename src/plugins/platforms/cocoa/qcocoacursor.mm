@@ -85,6 +85,31 @@ void QCocoaCursor::setPos(const QPoint &position)
     CFRelease(e);
 }
 
+
+QSize QCocoaCursor::size() const
+{
+    NSCursor *cocoaCursor = NSCursor.currentSystemCursor;
+    if (!cocoaCursor)
+        return QPlatformCursor::size();
+    NSImage *cursorImage = cocoaCursor.image;
+    if (!cursorImage)
+        return QPlatformCursor::size();
+
+    QSizeF size = QSizeF::fromCGSize(cursorImage.size);
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSDictionary *accessSettings = [defaults persistentDomainForName:@"com.apple.universalaccess"];
+    if (accessSettings == nil)
+        return size.toSize();
+
+    float sizeScale = [accessSettings[@"mouseDriverCursorSize"] floatValue];
+    if (sizeScale > 0) {
+        size.rwidth() *= sizeScale;
+        size.rheight() *= sizeScale;
+    }
+
+    return size.toSize();
+}
+
 NSCursor *QCocoaCursor::convertCursor(QCursor *cursor)
 {
     if (!cursor)
@@ -218,7 +243,7 @@ NSCursor *QCocoaCursor::createCursorData(QCursor *cursor)
     switch (cursor->shape()) {
     case Qt::BitmapCursor: {
         if (cursor->pixmap().isNull())
-            return createCursorFromBitmap(cursor->bitmap(), cursor->mask(), hotspot);
+            return createCursorFromBitmap(cursor->bitmap(Qt::ReturnByValue), cursor->mask(Qt::ReturnByValue), hotspot);
         else
             return createCursorFromPixmap(cursor->pixmap(), hotspot);
         break; }
@@ -276,17 +301,17 @@ NSCursor *QCocoaCursor::createCursorData(QCursor *cursor)
     if (cursorData) {
         QBitmap bitmap(QBitmap::fromData(QSize(16, 16), cursorData, QImage::Format_Mono));
         QBitmap mask(QBitmap::fromData(QSize(16, 16), cursorMaskData, QImage::Format_Mono));
-        return (createCursorFromBitmap(&bitmap, &mask, hotspot));
+        return (createCursorFromBitmap(bitmap, mask, hotspot));
     }
 
     return nil; // should not happen, all cases covered above
 }
 
-NSCursor *QCocoaCursor::createCursorFromBitmap(const QBitmap *bitmap, const QBitmap *mask, const QPoint hotspot)
+NSCursor *QCocoaCursor::createCursorFromBitmap(const QBitmap &bitmap, const QBitmap &mask, const QPoint hotspot)
 {
-    QImage finalCursor(bitmap->size(), QImage::Format_ARGB32);
-    QImage bmi = bitmap->toImage().convertToFormat(QImage::Format_RGB32);
-    QImage bmmi = mask->toImage().convertToFormat(QImage::Format_RGB32);
+    QImage finalCursor(bitmap.size(), QImage::Format_ARGB32);
+    QImage bmi = bitmap.toImage().convertToFormat(QImage::Format_RGB32);
+    QImage bmmi = mask.toImage().convertToFormat(QImage::Format_RGB32);
     for (int row = 0; row < finalCursor.height(); ++row) {
         QRgb *bmData = reinterpret_cast<QRgb *>(bmi.scanLine(row));
         QRgb *bmmData = reinterpret_cast<QRgb *>(bmmi.scanLine(row));
@@ -307,27 +332,11 @@ NSCursor *QCocoaCursor::createCursorFromBitmap(const QBitmap *bitmap, const QBit
     return createCursorFromPixmap(QPixmap::fromImage(finalCursor), hotspot);
 }
 
-NSCursor *QCocoaCursor::createCursorFromPixmap(const QPixmap pixmap, const QPoint hotspot)
+NSCursor *QCocoaCursor::createCursorFromPixmap(const QPixmap &pixmap, const QPoint hotspot)
 {
     NSPoint hotSpot = NSMakePoint(hotspot.x(), hotspot.y());
-    NSImage *nsimage;
-    if (pixmap.devicePixelRatio() > 1.0) {
-        QSize layoutSize = pixmap.size() / pixmap.devicePixelRatio();
-        QPixmap scaledPixmap = pixmap.scaled(layoutSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        scaledPixmap.setDevicePixelRatio(1.0);
-        nsimage = static_cast<NSImage *>(qt_mac_create_nsimage(scaledPixmap));
-        CGImageRef cgImage = qt_mac_toCGImage(pixmap.toImage());
-        NSBitmapImageRep *imageRep = [[NSBitmapImageRep alloc] initWithCGImage:cgImage];
-        [nsimage addRepresentation:imageRep];
-        [imageRep release];
-        CGImageRelease(cgImage);
-    } else {
-        nsimage = static_cast<NSImage *>(qt_mac_create_nsimage(pixmap));
-    }
-
-    NSCursor *nsCursor = [[NSCursor alloc] initWithImage:nsimage hotSpot: hotSpot];
-    [nsimage release];
-    return nsCursor;
+    auto *image = [NSImage imageFromQImage:pixmap.toImage()];
+    return [[NSCursor alloc] initWithImage:image hotSpot:hotSpot];
 }
 
 QT_END_NAMESPACE

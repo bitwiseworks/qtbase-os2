@@ -58,13 +58,14 @@ QT_BEGIN_NAMESPACE
     \endlist
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 class QWindowsNativeInterface : public QPlatformNativeInterface
 {
     Q_OBJECT
     Q_PROPERTY(bool asyncExpose READ asyncExpose WRITE setAsyncExpose)
+    Q_PROPERTY(bool darkMode READ isDarkMode STORED false NOTIFY darkModeChanged)
+    Q_PROPERTY(bool darkModeStyle READ isDarkModeStyle STORED false)
     Q_PROPERTY(QVariant gpu READ gpu STORED false)
     Q_PROPERTY(QVariant gpuList READ gpuList STORED false)
 
@@ -74,6 +75,7 @@ public:
     void *nativeResourceForContext(const QByteArray &resource, QOpenGLContext *context) override;
 #endif
     void *nativeResourceForWindow(const QByteArray &resource, QWindow *window) override;
+    void *nativeResourceForScreen(const QByteArray &resource, QScreen *screen) override;
 #ifndef QT_NO_CURSOR
     void *nativeResourceForCursor(const QByteArray &resource, const QCursor &cursor) override;
 #endif
@@ -91,6 +93,9 @@ public:
     bool asyncExpose() const;
     void setAsyncExpose(bool value);
 
+    bool isDarkMode() const;
+    bool isDarkModeStyle() const;
+
     QVariant gpu() const;
     QVariant gpuList() const;
 
@@ -107,6 +112,9 @@ public:
     static bool isTabletMode();
 
     QFunctionPointer platformFunction(const QByteArray &function) const override;
+
+Q_SIGNALS:
+    void darkModeChanged(bool);
 
 private:
     static QWindowsWindowFunctions::WindowActivationBehavior m_windowActivationBehavior;

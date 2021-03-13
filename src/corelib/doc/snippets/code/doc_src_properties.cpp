@@ -60,7 +60,8 @@ Q_PROPERTY(type name
            [STORED bool]
            [USER bool]
            [CONSTANT]
-           [FINAL])
+           [FINAL]
+           [REQUIRED])
 //! [0]
 
 

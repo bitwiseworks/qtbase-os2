@@ -65,7 +65,6 @@ QT_BEGIN_NAMESPACE
     Qt Widgets, either the containers or the items might be deleted first.
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 static uint nextId = 1;
@@ -445,7 +444,7 @@ QString QWindowsMenuItem::nativeText() const
     QString result = m_text;
 #if QT_CONFIG(shortcut)
     if (!m_shortcut.isEmpty()) {
-        result += QLatin1Char('\t');
+        result += u'\t';
         result += m_shortcut.toString(QKeySequence::NativeText);
     }
 #endif
@@ -518,7 +517,7 @@ QWindowsMenu::~QWindowsMenu()
 void QWindowsMenu::insertMenuItem(QPlatformMenuItem *menuItemIn, QPlatformMenuItem *before)
 {
     qCDebug(lcQpaMenus) << __FUNCTION__ << '(' << menuItemIn << ", before=" << before << ')' << this;
-    QWindowsMenuItem *menuItem = static_cast<QWindowsMenuItem *>(menuItemIn);
+    auto *menuItem = static_cast<QWindowsMenuItem *>(menuItemIn);
     const int index = insertBefore(&m_menuItems, menuItemIn, before);
     const bool append = index == m_menuItems.size() - 1;
     menuItem->insertIntoMenu(this, append, index);
@@ -689,7 +688,7 @@ void QWindowsPopupMenu::showPopup(const QWindow *parentWindow, const QRect &targ
                                   const QPlatformMenuItem *item)
 {
     qCDebug(lcQpaMenus) << __FUNCTION__ << '>' << this << parentWindow << targetRect << item;
-    const QWindowsBaseWindow *window = static_cast<const QWindowsBaseWindow *>(parentWindow->handle());
+    const auto *window = static_cast<const QWindowsBaseWindow *>(parentWindow->handle());
     const QPoint globalPos = window->mapToGlobal(targetRect.topLeft());
     trackPopupMenu(window->handle(), globalPos.x(), globalPos.y());
 }
@@ -756,7 +755,7 @@ QWindowsMenuBar::~QWindowsMenuBar()
 void QWindowsMenuBar::insertMenu(QPlatformMenu *menuIn, QPlatformMenu *before)
 {
     qCDebug(lcQpaMenus) << __FUNCTION__ << menuIn << "before=" << before;
-    QWindowsMenu *menu = static_cast<QWindowsMenu *>(menuIn);
+    auto *menu = static_cast<QWindowsMenu *>(menuIn);
     const int index = insertBefore(&m_menus, menuIn, before);
     menu->insertIntoMenuBar(this, index == m_menus.size() - 1, index);
 }
@@ -784,7 +783,7 @@ void QWindowsMenuBar::handleReparent(QWindow *newParentWindow)
     if (QPlatformWindow *platWin = newParentWindow->handle())
         install(static_cast<QWindowsWindow *>(platWin));
     else // Store for later creation, see menuBarOf()
-        newParentWindow->setProperty(menuBarPropertyName, qVariantFromValue<QObject *>(this));
+        newParentWindow->setProperty(menuBarPropertyName, QVariant::fromValue<QObject *>(this));
 }
 
 QWindowsMenuBar *QWindowsMenuBar::menuBarOf(const QWindow *notYetCreatedWindow)
@@ -794,20 +793,13 @@ QWindowsMenuBar *QWindowsMenuBar::menuBarOf(const QWindow *notYetCreatedWindow)
         ? qobject_cast<QWindowsMenuBar *>(menuBarV.value<QObject *>()) : nullptr;
 }
 
-static inline void forceNcCalcSize(HWND hwnd)
-{
-    // Force WM_NCCALCSIZE to adjust margin: Does not appear to work?
-    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
-}
-
 void QWindowsMenuBar::install(QWindowsWindow *window)
 {
     const HWND hwnd = window->handle();
     const BOOL result = SetMenu(hwnd, m_hMenuBar);
     if (result) {
         window->setMenuBar(this);
-        forceNcCalcSize(hwnd);
+        QWindowsContext::forceNcCalcSize(hwnd);
     }
 }
 
@@ -817,7 +809,7 @@ void QWindowsMenuBar::removeFromWindow()
         const HWND hwnd = window->handle();
         SetMenu(hwnd, nullptr);
         window->setMenuBar(nullptr);
-        forceNcCalcSize(hwnd);
+        QWindowsContext::forceNcCalcSize(hwnd);
     }
 }
 
@@ -896,8 +888,8 @@ void QWindowsMenuItem::formatDebug(QDebug &d) const
         d << ", parentMenu=" << static_cast<const void *>(m_parentMenu);
     if (m_subMenu)
         d << ", subMenu=" << static_cast<const void *>(m_subMenu);
-    d << ", tag=" << showbase << hex
-      << tag() << noshowbase << dec << ", id=" << m_id;
+    d << ", tag=" << Qt::showbase << Qt::hex
+      << tag() << Qt::noshowbase << Qt::dec << ", id=" << m_id;
 #if QT_CONFIG(shortcut)
     if (!m_shortcut.isEmpty())
         d << ", shortcut=" << m_shortcut;
@@ -933,7 +925,7 @@ void QWindowsMenu::formatDebug(QDebug &d) const
     if (m_parentMenu != nullptr)
         d << " [on menu]";
     if (tag())
-        d << ", tag=" << showbase << hex << tag() << noshowbase << dec;
+        d << ", tag=" << Qt::showbase << Qt::hex << tag() << Qt::noshowbase << Qt::dec;
     if (m_visible)
         d << " [visible]";
     if (m_enabled)

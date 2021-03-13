@@ -39,6 +39,7 @@
 
 #include "qwindowspipewriter_p.h"
 #include "qiodevice_p.h"
+#include <qscopedvaluerollback.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -56,7 +57,7 @@ void QWindowsPipeWriter::Overlapped::clear()
 QWindowsPipeWriter::QWindowsPipeWriter(HANDLE pipeWriteEnd, QObject *parent)
     : QObject(parent),
       handle(pipeWriteEnd),
-      overlapped(nullptr),
+      overlapped(this),
       pendingBytesWrittenValue(0),
       stopped(true),
       writeSequenceStarted(false),
@@ -71,7 +72,6 @@ QWindowsPipeWriter::QWindowsPipeWriter(HANDLE pipeWriteEnd, QObject *parent)
 QWindowsPipeWriter::~QWindowsPipeWriter()
 {
     stop();
-    delete overlapped;
 }
 
 bool QWindowsPipeWriter::waitForWrite(int msecs)
@@ -111,9 +111,8 @@ void QWindowsPipeWriter::emitPendingBytesWrittenValue()
 
         emit canWrite();
         if (!inBytesWritten) {
-            inBytesWritten = true;
+            QScopedValueRollback<bool> guard(inBytesWritten, true);
             emit bytesWritten(bytes);
-            inBytesWritten = false;
         }
     }
 }
@@ -122,10 +121,7 @@ void QWindowsPipeWriter::writeFileCompleted(DWORD errorCode, DWORD numberOfBytes
                                             OVERLAPPED *overlappedBase)
 {
     Overlapped *overlapped = static_cast<Overlapped *>(overlappedBase);
-    if (overlapped->pipeWriter)
-        overlapped->pipeWriter->notified(errorCode, numberOfBytesTransfered);
-    else
-        delete overlapped;
+    overlapped->pipeWriter->notified(errorCode, numberOfBytesTransfered);
 }
 
 /*!
@@ -187,14 +183,12 @@ bool QWindowsPipeWriter::write(const QByteArray &ba)
     if (writeSequenceStarted)
         return false;
 
-    if (!overlapped)
-        overlapped = new Overlapped(this);
-    overlapped->clear();
+    overlapped.clear();
     buffer = ba;
     stopped = false;
     writeSequenceStarted = true;
     if (!WriteFileEx(handle, buffer.constData(), buffer.size(),
-                     overlapped, &writeFileCompleted)) {
+                     &overlapped, &writeFileCompleted)) {
         writeSequenceStarted = false;
         buffer.clear();
 
@@ -218,16 +212,14 @@ void QWindowsPipeWriter::stop()
     bytesWrittenPending = false;
     pendingBytesWrittenValue = 0;
     if (writeSequenceStarted) {
-        overlapped->pipeWriter = nullptr;
-        if (!CancelIoEx(handle, overlapped)) {
+        if (!CancelIoEx(handle, &overlapped)) {
             const DWORD dwError = GetLastError();
             if (dwError != ERROR_NOT_FOUND) {
                 qErrnoWarning(dwError, "QWindowsPipeWriter: CancelIoEx on handle %p failed.",
                               handle);
             }
         }
-        overlapped = nullptr;       // The object will be deleted in the I/O callback.
-        writeSequenceStarted = false;
+        waitForNotification(-1);
     }
 }
 

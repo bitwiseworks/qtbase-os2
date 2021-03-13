@@ -189,6 +189,9 @@ void tst_QDtls::initTestCase()
     defaultServerConfig.setDtlsCookieVerificationEnabled(false);
 
     hostName = QStringLiteral("bob.org");
+
+    void qt_ForceTlsSecurityLevel();
+    qt_ForceTlsSecurityLevel();
 }
 
 void tst_QDtls::init()
@@ -837,10 +840,6 @@ void tst_QDtls::verifyServerCertificate()
 
 void tst_QDtls::verifyClientCertificate_data()
 {
-#if !QT_CONFIG(opensslv11)
-    QSKIP("This test is not supposed to work with OpenSSL version below 1.1");
-#endif
-
     QTest::addColumn<QSslSocket::PeerVerifyMode>("verifyMode");
     QTest::addColumn<QList<QSslCertificate>>("clientCerts");
     QTest::addColumn<QSslKey>("clientKey");
@@ -1131,7 +1130,7 @@ void tst_QDtls::handshakeReadyRead()
     QUdpSocket *socket = qobject_cast<QUdpSocket *>(sender());
     Q_ASSERT(socket);
 
-    if (!socket->pendingDatagramSize())
+    if (socket->pendingDatagramSize() <= 0)
         return;
 
     const bool isServer = socket == &serverSocket;

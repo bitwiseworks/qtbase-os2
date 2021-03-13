@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <QtNetwork/private/qtnetworkglobal_p.h>
+
 #include "qlocalsocket.h"
 #include "qlocalsocket_p.h"
 
@@ -51,7 +53,7 @@ QT_BEGIN_NAMESPACE
 
     On Windows this is a named pipe and on Unix this is a local domain socket.
 
-    If an error occurs, socketError() returns the type of error, and
+    If an error occurs, error() returns the type of error, and
     errorString() can be called to get a human readable description
     of what happened.
 
@@ -74,7 +76,7 @@ QT_BEGIN_NAMESPACE
     The socket is opened in the given \a openMode and first enters ConnectingState.
     If a connection is established, QLocalSocket enters ConnectedState and emits connected().
 
-    After calling this function, the socket can emit error() to signal that an error occurred.
+    After calling this function, the socket can emit errorOccurred() to signal that an error occurred.
 
     \sa state(), serverName(), waitForConnected()
 */
@@ -87,7 +89,7 @@ QT_BEGIN_NAMESPACE
 
     Note that unlike in most other QIODevice subclasses, open() may not open the device directly.
     The function return false if the socket was already connected or if the server to connect
-    to was not defined and true in any other case. The connected() or error() signals will be
+    to was not defined and true in any other case. The connected() or errorOccurred() signals will be
     emitted once the device is actualy open (or the connection failed).
 
     See connectToServer() for more details.
@@ -287,11 +289,12 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn bool QLocalSocket::waitForDisconnected(int msecs)
 
-    Waits until the socket has disconnected, up to \a msecs
-    milliseconds. If the connection has been disconnected, this
-    function returns \c true; otherwise it returns \c false. In the case
-    where it returns \c false, you can call error() to determine
-    the cause of the error.
+    Waits until the socket has disconnected, up to \a msecs milliseconds. If the
+    connection was successfully disconnected, this function returns \c true;
+    otherwise it returns \c false (if the operation timed out, if an error
+    occurred, or if this QLocalSocket is already disconnected). In the case
+    where it returns \c false, you can call error() to determine the cause of
+    the error.
 
     The following example waits up to one second for a connection
     to be closed:
@@ -328,6 +331,14 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn void QLocalSocket::error(QLocalSocket::LocalSocketError socketError)
+    \obsolete
+
+    Use errorOccurred() instead.
+*/
+
+/*!
+    \fn void QLocalSocket::errorOccurred(QLocalSocket::LocalSocketError socketError)
+    \since 5.15
 
     This signal is emitted after an error occurred. The \a socketError
     parameter describes the type of error that occurred.
@@ -361,6 +372,9 @@ QLocalSocket::QLocalSocket(QObject * parent)
 {
     Q_D(QLocalSocket);
     d->init();
+
+    // Support the deprecated error() signal:
+    connect(this, &QLocalSocket::errorOccurred, this, QOverload<QLocalSocket::LocalSocketError>::of(&QLocalSocket::error));
 }
 
 /*!
@@ -371,7 +385,7 @@ QLocalSocket::~QLocalSocket()
     QLocalSocket::close();
 #if !defined(Q_OS_WIN) && !defined(QT_LOCALSOCKET_TCP)
     Q_D(QLocalSocket);
-    d->unixSocket.setParent(0);
+    d->unixSocket.setParent(nullptr);
 #endif
 }
 
@@ -388,7 +402,7 @@ bool QLocalSocket::open(OpenMode openMode)
     The socket is opened in the given \a openMode and first enters ConnectingState.
     If a connection is established, QLocalSocket enters ConnectedState and emits connected().
 
-    After calling this function, the socket can emit error() to signal that an error occurred.
+    After calling this function, the socket can emit errorOccurred() to signal that an error occurred.
 
     \sa state(), serverName(), waitForConnected()
 */
@@ -537,6 +551,9 @@ QDebug operator<<(QDebug debug, QLocalSocket::LocalSocketError error)
         break;
     case QLocalSocket::UnknownSocketError:
         debug << "QLocalSocket::UnknownSocketError";
+        break;
+    case QLocalSocket::OperationError:
+        debug << "QLocalSocket::OperationError";
         break;
     default:
         debug << "QLocalSocket::SocketError(" << int(error) << ')';

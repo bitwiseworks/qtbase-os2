@@ -55,11 +55,14 @@
 int main(int argc, char *argv[])
 {
     Q_INIT_RESOURCE(gradients);
+#ifdef Q_OS_ANDROID
+    qputenv("QT_SCALE_FACTOR", "2");
+#endif
 
     QApplication app(argc, argv);
 
-    GradientWidget gradientWidget(0);
-    QStyle *arthurStyle = new ArthurStyle();
+    GradientWidget gradientWidget;
+    QStyle *arthurStyle = new ArthurStyle;
     gradientWidget.setStyle(arthurStyle);
     const QList<QWidget *> widgets = gradientWidget.findChildren<QWidget *>();
     for (QWidget *w : widgets) {

@@ -89,8 +89,8 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
     By default, QGraphicsView provides a regular QWidget for the viewport
     widget. You can access this widget by calling viewport(), or you can
     replace it by calling setViewport(). To render using OpenGL, simply call
-    setViewport(new QGLWidget). QGraphicsView takes ownership of the viewport
-    widget.
+    setViewport(new QOpenGLWidget). QGraphicsView takes ownership of the
+    viewport widget.
 
     QGraphicsView supports affine transformations, using QTransform. You can
     either pass a matrix to setTransform(), or you can call one of the
@@ -122,6 +122,10 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
     using view coordinates.
 
     \image graphicsview-view.png
+
+    \note Using an OpenGL viewport limits the ability to use QGraphicsProxyWidget.
+    Not all combinations of widgets and styles can be supported with such a setup.
+    You should carefully test your UI and make the necessary adjustments.
 
     \sa QGraphicsScene, QGraphicsItem, QGraphicsSceneEvent
 */
@@ -155,8 +159,8 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
     fastest when QGraphicsView spends more time figuring out what to draw than
     it would spend drawing (e.g., when very many small items are repeatedly
     updated). This is the preferred update mode for viewports that do not
-    support partial updates, such as QGLWidget, and for viewports that need to
-    disable scroll optimization.
+    support partial updates, such as QOpenGLWidget, and for viewports that
+    need to disable scroll optimization.
 
     \value MinimalViewportUpdate QGraphicsView will determine the minimal
     viewport region that requires a redraw, minimizing the time spent drawing
@@ -290,6 +294,7 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
 #include <QtGui/qtransform.h>
 #include <QtGui/qmatrix.h>
 #include <QtGui/qpainter.h>
+#include <QtGui/qpainterpath.h>
 #include <QtWidgets/qscrollbar.h>
 #include <QtWidgets/qstyleoption.h>
 
@@ -348,22 +353,21 @@ QGraphicsViewPrivate::QGraphicsViewPrivate()
       hasUpdateClip(false),
       mousePressButton(Qt::NoButton),
       leftIndent(0), topIndent(0),
-      lastMouseEvent(QEvent::None, QPointF(), QPointF(), QPointF(), Qt::NoButton, 0, 0),
+      lastMouseEvent(QEvent::None, QPointF(), QPointF(), QPointF(), Qt::NoButton, { }, { }),
       alignment(Qt::AlignCenter),
       transformationAnchor(QGraphicsView::AnchorViewCenter), resizeAnchor(QGraphicsView::NoAnchor),
       viewportUpdateMode(QGraphicsView::MinimalViewportUpdate),
-      optimizationFlags(0),
-      scene(0),
+      scene(nullptr),
 #if QT_CONFIG(rubberband)
       rubberBanding(false),
       rubberBandSelectionMode(Qt::IntersectsItemShape),
       rubberBandSelectionOperation(Qt::ReplaceSelection),
 #endif
-      handScrollMotions(0), cacheMode(0),
+      handScrollMotions(0),
 #ifndef QT_NO_CURSOR
       hasStoredOriginalCursor(false),
 #endif
-      lastDragDropEvent(0),
+      lastDragDropEvent(nullptr),
       updateSceneSlotReimplementedChecked(false)
 {
     styleOptions.reserve(QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS);
@@ -385,7 +389,7 @@ void QGraphicsViewPrivate::recalculateContentSize()
     int height = maxSize.height();
     QRectF viewRect = matrix.mapRect(q->sceneRect());
 
-    bool frameOnlyAround = (q->style()->styleHint(QStyle::SH_ScrollView_FrameOnlyAroundContents, 0, q));
+    bool frameOnlyAround = (q->style()->styleHint(QStyle::SH_ScrollView_FrameOnlyAroundContents, nullptr, q));
     if (frameOnlyAround) {
         if (hbarpolicy == Qt::ScrollBarAlwaysOn)
             height -= frameWidth * 2;
@@ -395,7 +399,7 @@ void QGraphicsViewPrivate::recalculateContentSize()
 
     // Adjust the maximum width and height of the viewport based on the width
     // of visible scroll bars.
-    int scrollBarExtent = q->style()->pixelMetric(QStyle::PM_ScrollBarExtent, 0, q);
+    int scrollBarExtent = q->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, q);
     if (frameOnlyAround)
         scrollBarExtent += frameWidth * 2;
 
@@ -667,7 +671,7 @@ void QGraphicsViewPrivate::mouseMoveEventHandler(QMouseEvent *event)
     if (event->spontaneous())
         qt_sendSpontaneousEvent(scene, &mouseEvent);
     else
-        QApplication::sendEvent(scene, &mouseEvent);
+        QCoreApplication::sendEvent(scene, &mouseEvent);
 
     // Remember whether the last event was accepted or not.
     lastMouseEvent.setAccepted(mouseEvent.isAccepted());
@@ -782,6 +786,27 @@ void QGraphicsViewPrivate::updateRubberBand(const QMouseEvent *event)
     selectionArea.closeSubpath();
     if (scene)
         scene->setSelectionArea(selectionArea, rubberBandSelectionOperation, rubberBandSelectionMode, q->viewportTransform());
+}
+
+void QGraphicsViewPrivate::clearRubberBand()
+{
+    Q_Q(QGraphicsView);
+    if (dragMode != QGraphicsView::RubberBandDrag || !sceneInteractionAllowed || !rubberBanding)
+        return;
+
+    if (viewportUpdateMode != QGraphicsView::NoViewportUpdate) {
+        if (viewportUpdateMode != QGraphicsView::FullViewportUpdate)
+            q->viewport()->update(rubberBandRegion(q->viewport(), rubberBandRect));
+        else
+            updateAll();
+    }
+
+    rubberBanding = false;
+    rubberBandSelectionOperation = Qt::ReplaceSelection;
+    if (!rubberBandRect.isNull()) {
+        rubberBandRect = QRect();
+        emit q->rubberBandChanged(rubberBandRect, QPointF(), QPointF());
+    }
 }
 #endif
 
@@ -964,7 +989,7 @@ static inline void QRect_unite(QRect *rect, const QRect &other)
 /*
    Calling this function results in update rects being clipped to the item's
    bounding rect. Note that updates prior to this function call is not clipped.
-   The clip is removed by passing 0.
+   The clip is removed by passing \nullptr.
 */
 void QGraphicsViewPrivate::setUpdateClip(QGraphicsItem *item)
 {
@@ -1163,19 +1188,19 @@ QList<QGraphicsItem *> QGraphicsViewPrivate::findItems(const QRegion &exposedReg
 void QGraphicsViewPrivate::updateInputMethodSensitivity()
 {
     Q_Q(QGraphicsView);
-    QGraphicsItem *focusItem = 0;
+    QGraphicsItem *focusItem = nullptr;
     bool enabled = scene && (focusItem = scene->focusItem())
                    && (focusItem->d_ptr->flags & QGraphicsItem::ItemAcceptsInputMethod);
     q->setAttribute(Qt::WA_InputMethodEnabled, enabled);
     q->viewport()->setAttribute(Qt::WA_InputMethodEnabled, enabled);
 
     if (!enabled) {
-        q->setInputMethodHints(0);
+        q->setInputMethodHints({ });
         return;
     }
 
     QGraphicsProxyWidget *proxy = focusItem->d_ptr->isWidget && focusItem->d_ptr->isProxyWidget()
-                                    ? static_cast<QGraphicsProxyWidget *>(focusItem) : 0;
+                                    ? static_cast<QGraphicsProxyWidget *>(focusItem) : nullptr;
     if (!proxy) {
         q->setInputMethodHints(focusItem->inputMethodHints());
     } else if (QWidget *widget = proxy->widget()) {
@@ -1183,7 +1208,7 @@ void QGraphicsViewPrivate::updateInputMethodSensitivity()
             widget = fw;
         q->setInputMethodHints(widget->inputMethodHints());
     } else {
-        q->setInputMethodHints(0);
+        q->setInputMethodHints({ });
     }
 }
 
@@ -1193,7 +1218,7 @@ void QGraphicsViewPrivate::updateInputMethodSensitivity()
 QGraphicsView::QGraphicsView(QWidget *parent)
     : QAbstractScrollArea(*new QGraphicsViewPrivate, parent)
 {
-    setViewport(0);
+    setViewport(nullptr);
     setAcceptDrops(true);
     setBackgroundRole(QPalette::Base);
     // Investigate leaving these disabled by default.
@@ -1209,7 +1234,7 @@ QGraphicsView::QGraphicsView(QGraphicsScene *scene, QWidget *parent)
     : QAbstractScrollArea(*new QGraphicsViewPrivate, parent)
 {
     setScene(scene);
-    setViewport(0);
+    setViewport(nullptr);
     setAcceptDrops(true);
     setBackgroundRole(QPalette::Base);
     // Investigate leaving these disabled by default.
@@ -1223,7 +1248,7 @@ QGraphicsView::QGraphicsView(QGraphicsScene *scene, QWidget *parent)
 QGraphicsView::QGraphicsView(QGraphicsViewPrivate &dd, QWidget *parent)
   : QAbstractScrollArea(dd, parent)
 {
-    setViewport(0);
+    setViewport(nullptr);
     setAcceptDrops(true);
     setBackgroundRole(QPalette::Base);
     // Investigate leaving these disabled by default.
@@ -1486,6 +1511,10 @@ void QGraphicsView::setDragMode(DragMode mode)
     if (d->dragMode == mode)
         return;
 
+#if QT_CONFIG(rubberband)
+    d->clearRubberBand();
+#endif
+
 #ifndef QT_NO_CURSOR
     if (d->dragMode == ScrollHandDrag)
         viewport()->unsetCursor();
@@ -1716,7 +1745,7 @@ void QGraphicsView::setScene(QGraphicsScene *scene)
 
         if (isActiveWindow() && isVisible()) {
             QEvent windowDeactivate(QEvent::WindowDeactivate);
-            QApplication::sendEvent(d->scene, &windowDeactivate);
+            QCoreApplication::sendEvent(d->scene, &windowDeactivate);
         }
         if(hasFocus())
             d->scene->clearFocus();
@@ -1744,7 +1773,7 @@ void QGraphicsView::setScene(QGraphicsScene *scene)
 
         if (isActiveWindow() && isVisible()) {
             QEvent windowActivate(QEvent::WindowActivate);
-            QApplication::sendEvent(d->scene, &windowActivate);
+            QCoreApplication::sendEvent(d->scene, &windowActivate);
         }
     } else {
         d->recalculateContentSize();
@@ -1796,7 +1825,13 @@ void QGraphicsView::setSceneRect(const QRectF &rect)
     d->recalculateContentSize();
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
+
 /*!
+    \obsolete
+
+    Use transform() instead.
+
     Returns the current transformation matrix for the view. If no current
     transformation is set, the identity matrix is returned.
 
@@ -1809,6 +1844,10 @@ QMatrix QGraphicsView::matrix() const
 }
 
 /*!
+    \obsolete
+
+    Use setTransform() instead.
+
     Sets the view's current transformation matrix to \a matrix.
 
     If \a combine is true, then \a matrix is combined with the current matrix;
@@ -1840,6 +1879,10 @@ void QGraphicsView::setMatrix(const QMatrix &matrix, bool combine)
 }
 
 /*!
+    \obsolete
+
+    Use resetTransform() instead.
+
     Resets the view transformation matrix to the identity matrix.
 
     \sa resetTransform()
@@ -1848,6 +1891,8 @@ void QGraphicsView::resetMatrix()
 {
     resetTransform();
 }
+
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 /*!
     Rotates the current view transformation \a angle degrees clockwise.
@@ -2375,7 +2420,7 @@ QGraphicsItem *QGraphicsView::itemAt(const QPoint &pos) const
 {
     Q_D(const QGraphicsView);
     if (!d->scene)
-        return 0;
+        return nullptr;
     const QList<QGraphicsItem *> itemsAtPos = items(pos);
     return itemsAtPos.isEmpty() ? 0 : itemsAtPos.first();
 }
@@ -2590,13 +2635,13 @@ QVariant QGraphicsView::inputMethodQuery(Qt::InputMethodQuery query) const
         return QVariant();
 
     QVariant value = d->scene->inputMethodQuery(query);
-    if (value.type() == QVariant::RectF)
+    if (value.userType() == QMetaType::QRectF)
         value = d->mapRectFromScene(value.toRectF());
-    else if (value.type() == QVariant::PointF)
+    else if (value.userType() == QMetaType::QPointF)
         value = mapFromScene(value.toPointF());
-    else if (value.type() == QVariant::Rect)
+    else if (value.userType() == QMetaType::QRect)
         value = d->mapRectFromScene(value.toRect()).toRect();
-    else if (value.type() == QVariant::Point)
+    else if (value.userType() == QMetaType::QPoint)
         value = mapFromScene(value.toPoint());
     return value;
 }
@@ -2809,7 +2854,7 @@ bool QGraphicsView::event(QEvent *event)
         switch (event->type()) {
         case QEvent::ShortcutOverride:
             if (d->scene)
-                return QApplication::sendEvent(d->scene, event);
+                return QCoreApplication::sendEvent(d->scene, event);
             break;
         case QEvent::KeyPress:
             if (d->scene) {
@@ -2821,7 +2866,7 @@ bool QGraphicsView::event(QEvent *event)
                     // and the base implementation will call QGraphicsView's
                     // focusNextPrevChild() function. If the event is ignored,
                     // we fall back to standard tab focus handling.
-                    QApplication::sendEvent(d->scene, event);
+                    QCoreApplication::sendEvent(d->scene, event);
                     if (event->isAccepted())
                         return true;
                     // Ensure the event doesn't propagate just because the
@@ -2850,10 +2895,10 @@ bool QGraphicsView::viewportEvent(QEvent *event)
 
     switch (event->type()) {
     case QEvent::Enter:
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
         break;
     case QEvent::WindowActivate:
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
         break;
     case QEvent::WindowDeactivate:
         // ### This is a temporary fix for until we get proper mouse
@@ -2862,19 +2907,19 @@ bool QGraphicsView::viewportEvent(QEvent *event)
         // Remove all popups when the scene loses focus.
         if (!d->scene->d_func()->popupWidgets.isEmpty())
             d->scene->d_func()->removePopup(d->scene->d_func()->popupWidgets.constFirst());
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
         break;
     case QEvent::Show:
         if (d->scene && isActiveWindow()) {
             QEvent windowActivate(QEvent::WindowActivate);
-            QApplication::sendEvent(d->scene, &windowActivate);
+            QCoreApplication::sendEvent(d->scene, &windowActivate);
         }
         break;
     case QEvent::Hide:
         // spontaneous event will generate a WindowDeactivate.
         if (!event->spontaneous() && d->scene && isActiveWindow()) {
             QEvent windowDeactivate(QEvent::WindowDeactivate);
-            QApplication::sendEvent(d->scene, &windowDeactivate);
+            QCoreApplication::sendEvent(d->scene, &windowDeactivate);
         }
         break;
     case QEvent::Leave: {
@@ -2889,10 +2934,10 @@ bool QGraphicsView::viewportEvent(QEvent *event)
         }
         d->useLastMouseEvent = false;
         // a hack to pass a viewport pointer to the scene inside the leave event
-        Q_ASSERT(event->d == 0);
+        Q_ASSERT(event->d == nullptr);
         QScopedValueRollback<QEventPrivate *> rb(event->d);
         event->d = reinterpret_cast<QEventPrivate *>(viewport());
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
         break;
     }
 #ifndef QT_NO_TOOLTIP
@@ -2902,7 +2947,7 @@ bool QGraphicsView::viewportEvent(QEvent *event)
         helpEvent.setWidget(viewport());
         helpEvent.setScreenPos(toolTip->globalPos());
         helpEvent.setScenePos(mapToScene(toolTip->pos()));
-        QApplication::sendEvent(d->scene, &helpEvent);
+        QCoreApplication::sendEvent(d->scene, &helpEvent);
         toolTip->setAccepted(helpEvent.isAccepted());
         return true;
     }
@@ -2940,7 +2985,7 @@ bool QGraphicsView::viewportEvent(QEvent *event)
             QTouchEvent *touchEvent = static_cast<QTouchEvent *>(event);
             touchEvent->setTarget(viewport());
             QGraphicsViewPrivate::translateTouchEvent(d, touchEvent);
-            (void) QApplication::sendEvent(d->scene, touchEvent);
+            QCoreApplication::sendEvent(d->scene, touchEvent);
         } else {
             event->ignore();
         }
@@ -2957,7 +3002,7 @@ bool QGraphicsView::viewportEvent(QEvent *event)
         if (d->scene && d->sceneInteractionAllowed) {
             QGestureEvent *gestureEvent = static_cast<QGestureEvent *>(event);
             gestureEvent->setWidget(viewport());
-            (void) QApplication::sendEvent(d->scene, gestureEvent);
+            QCoreApplication::sendEvent(d->scene, gestureEvent);
         }
         return true;
     }
@@ -2992,7 +3037,7 @@ void QGraphicsView::contextMenuEvent(QContextMenuEvent *event)
     contextEvent.setModifiers(event->modifiers());
     contextEvent.setReason((QGraphicsSceneContextMenuEvent::Reason)(event->reason()));
     contextEvent.setAccepted(event->isAccepted());
-    QApplication::sendEvent(d->scene, &contextEvent);
+    QCoreApplication::sendEvent(d->scene, &contextEvent);
     event->setAccepted(contextEvent.isAccepted());
 }
 #endif // QT_NO_CONTEXTMENU
@@ -3012,7 +3057,7 @@ void QGraphicsView::dropEvent(QDropEvent *event)
     d->populateSceneDragDropEvent(&sceneEvent, event);
 
     // Send it to the scene.
-    QApplication::sendEvent(d->scene, &sceneEvent);
+    QCoreApplication::sendEvent(d->scene, &sceneEvent);
 
     // Accept the originating event if the scene accepted the scene event.
     event->setAccepted(sceneEvent.isAccepted());
@@ -3020,7 +3065,7 @@ void QGraphicsView::dropEvent(QDropEvent *event)
         event->setDropAction(sceneEvent.dropAction());
 
     delete d->lastDragDropEvent;
-    d->lastDragDropEvent = 0;
+    d->lastDragDropEvent = nullptr;
 }
 
 /*!
@@ -3043,7 +3088,7 @@ void QGraphicsView::dragEnterEvent(QDragEnterEvent *event)
     d->storeDragDropEvent(&sceneEvent);
 
     // Send it to the scene.
-    QApplication::sendEvent(d->scene, &sceneEvent);
+    QCoreApplication::sendEvent(d->scene, &sceneEvent);
 
     // Accept the originating event if the scene accepted the scene event.
     if (sceneEvent.isAccepted()) {
@@ -3078,10 +3123,10 @@ void QGraphicsView::dragLeaveEvent(QDragLeaveEvent *event)
     sceneEvent.setWidget(d->lastDragDropEvent->widget());
     sceneEvent.setSource(d->lastDragDropEvent->source());
     delete d->lastDragDropEvent;
-    d->lastDragDropEvent = 0;
+    d->lastDragDropEvent = nullptr;
 
     // Send it to the scene.
-    QApplication::sendEvent(d->scene, &sceneEvent);
+    QCoreApplication::sendEvent(d->scene, &sceneEvent);
 
     // Accept the originating event if the scene accepted the scene event.
     if (sceneEvent.isAccepted())
@@ -3105,7 +3150,7 @@ void QGraphicsView::dragMoveEvent(QDragMoveEvent *event)
     d->storeDragDropEvent(&sceneEvent);
 
     // Send it to the scene.
-    QApplication::sendEvent(d->scene, &sceneEvent);
+    QCoreApplication::sendEvent(d->scene, &sceneEvent);
 
     // Ignore the originating event if the scene ignored the scene event.
     event->setAccepted(sceneEvent.isAccepted());
@@ -3123,7 +3168,7 @@ void QGraphicsView::focusInEvent(QFocusEvent *event)
     d->updateInputMethodSensitivity();
     QAbstractScrollArea::focusInEvent(event);
     if (d->scene)
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
     // Pass focus on if the scene cannot accept focus.
     if (!d->scene || !event->isAccepted())
         QAbstractScrollArea::focusInEvent(event);
@@ -3145,7 +3190,7 @@ void QGraphicsView::focusOutEvent(QFocusEvent *event)
     Q_D(QGraphicsView);
     QAbstractScrollArea::focusOutEvent(event);
     if (d->scene)
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
 }
 
 /*!
@@ -3158,7 +3203,7 @@ void QGraphicsView::keyPressEvent(QKeyEvent *event)
         QAbstractScrollArea::keyPressEvent(event);
         return;
     }
-    QApplication::sendEvent(d->scene, event);
+    QCoreApplication::sendEvent(d->scene, event);
     if (!event->isAccepted())
         QAbstractScrollArea::keyPressEvent(event);
 }
@@ -3171,7 +3216,7 @@ void QGraphicsView::keyReleaseEvent(QKeyEvent *event)
     Q_D(QGraphicsView);
     if (!d->scene || !d->sceneInteractionAllowed)
         return;
-    QApplication::sendEvent(d->scene, event);
+    QCoreApplication::sendEvent(d->scene, event);
     if (!event->isAccepted())
         QAbstractScrollArea::keyReleaseEvent(event);
 }
@@ -3210,7 +3255,7 @@ void QGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
     if (event->spontaneous())
         qt_sendSpontaneousEvent(d->scene, &mouseEvent);
     else
-        QApplication::sendEvent(d->scene, &mouseEvent);
+        QCoreApplication::sendEvent(d->scene, &mouseEvent);
 
     // Update the original mouse event accepted state.
     const bool isAccepted = mouseEvent.isAccepted();
@@ -3261,7 +3306,7 @@ void QGraphicsView::mousePressEvent(QMouseEvent *event)
             if (event->spontaneous())
                 qt_sendSpontaneousEvent(d->scene, &mouseEvent);
             else
-                QApplication::sendEvent(d->scene, &mouseEvent);
+                QCoreApplication::sendEvent(d->scene, &mouseEvent);
 
             // Update the original mouse event accepted state.
             bool isAccepted = mouseEvent.isAccepted();
@@ -3339,20 +3384,7 @@ void QGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 
 #if QT_CONFIG(rubberband)
     if (d->dragMode == QGraphicsView::RubberBandDrag && d->sceneInteractionAllowed && !event->buttons()) {
-        if (d->rubberBanding) {
-            if (d->viewportUpdateMode != QGraphicsView::NoViewportUpdate){
-                if (d->viewportUpdateMode != FullViewportUpdate)
-                    viewport()->update(d->rubberBandRegion(viewport(), d->rubberBandRect));
-                else
-                    d->updateAll();
-            }
-            d->rubberBanding = false;
-            d->rubberBandSelectionOperation = Qt::ReplaceSelection;
-            if (!d->rubberBandRect.isNull()) {
-                d->rubberBandRect = QRect();
-                emit rubberBandChanged(d->rubberBandRect, QPointF(), QPointF());
-            }
-        }
+        d->clearRubberBand();
     } else
 #endif
     if (d->dragMode == QGraphicsView::ScrollHandDrag && event->button() == Qt::LeftButton) {
@@ -3397,7 +3429,7 @@ void QGraphicsView::mouseReleaseEvent(QMouseEvent *event)
     if (event->spontaneous())
         qt_sendSpontaneousEvent(d->scene, &mouseEvent);
     else
-        QApplication::sendEvent(d->scene, &mouseEvent);
+        QCoreApplication::sendEvent(d->scene, &mouseEvent);
 
     // Update the last mouse event selected state.
     d->lastMouseEvent.setAccepted(mouseEvent.isAccepted());
@@ -3426,14 +3458,15 @@ void QGraphicsView::wheelEvent(QWheelEvent *event)
 
     QGraphicsSceneWheelEvent wheelEvent(QEvent::GraphicsSceneWheel);
     wheelEvent.setWidget(viewport());
-    wheelEvent.setScenePos(mapToScene(event->pos()));
-    wheelEvent.setScreenPos(event->globalPos());
+    wheelEvent.setScenePos(mapToScene(event->position().toPoint()));
+    wheelEvent.setScreenPos(event->globalPosition().toPoint());
     wheelEvent.setButtons(event->buttons());
     wheelEvent.setModifiers(event->modifiers());
-    wheelEvent.setDelta(event->delta());
-    wheelEvent.setOrientation(event->orientation());
+    const bool horizontal = qAbs(event->angleDelta().x()) > qAbs(event->angleDelta().y());
+    wheelEvent.setDelta(horizontal ? event->angleDelta().x() : event->angleDelta().y());
+    wheelEvent.setOrientation(horizontal ? Qt::Horizontal : Qt::Vertical);
     wheelEvent.setAccepted(false);
-    QApplication::sendEvent(d->scene, &wheelEvent);
+    QCoreApplication::sendEvent(d->scene, &wheelEvent);
     event->setAccepted(wheelEvent.isAccepted());
     if (!event->isAccepted())
         QAbstractScrollArea::wheelEvent(event);
@@ -3475,11 +3508,7 @@ void QGraphicsView::paintEvent(QPaintEvent *event)
     const QTransform viewTransform = painter.worldTransform();
 
     // Draw background
-    if ((d->cacheMode & CacheBackground)
-#if 0 // Used to be included in Qt4 for Q_WS_X11
-        && X11->use_xrender
-#endif
-        ) {
+    if (d->cacheMode & CacheBackground) {
         // Recreate the background pixmap, and flag the whole background as
         // exposed.
         if (d->mustResizeBackgroundPixmap) {
@@ -3529,7 +3558,7 @@ void QGraphicsView::paintEvent(QPaintEvent *event)
             d->scene->d_func()->rectAdjust = 1;
         else
             d->scene->d_func()->rectAdjust = 2;
-        d->scene->d_func()->drawItems(&painter, viewTransformed ? &viewTransform : 0,
+        d->scene->d_func()->drawItems(&painter, viewTransformed ? &viewTransform : nullptr,
                                       &d->exposedRegion, viewport());
         d->scene->d_func()->rectAdjust = oldRectAdjust;
         // Make sure the painter's world transform is restored correctly when
@@ -3676,11 +3705,7 @@ void QGraphicsView::scrollContentsBy(int dx, int dy)
 
     d->updateLastCenterPoint();
 
-    if ((d->cacheMode & CacheBackground)
-#if 0 // Used to be included in Qt4 for Q_WS_X11
-        && X11->use_xrender
-#endif
-        ) {
+    if (d->cacheMode & CacheBackground) {
         // Below, QPixmap::scroll() works in device pixels, while the delta values
         // and backgroundPixmapExposed are in device independent pixels.
         const qreal dpr = d->backgroundPixmap.devicePixelRatio();
@@ -3720,7 +3745,7 @@ void QGraphicsView::inputMethodEvent(QInputMethodEvent *event)
 {
     Q_D(QGraphicsView);
     if (d->scene)
-        QApplication::sendEvent(d->scene, event);
+        QCoreApplication::sendEvent(d->scene, event);
 }
 
 /*!
@@ -3802,7 +3827,7 @@ void QGraphicsView::drawItems(QPainter *painter, int numItems,
 {
     Q_D(QGraphicsView);
     if (d->scene) {
-        QWidget *widget = painter->device() == viewport() ? viewport() : 0;
+        QWidget *widget = painter->device() == viewport() ? viewport() : nullptr;
         d->scene->drawItems(painter, numItems, items, options, widget);
     }
 }

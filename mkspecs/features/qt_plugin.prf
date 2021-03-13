@@ -91,8 +91,9 @@ CONFIG(static, static|shared)|prefix_build {
 target.path = $$[QT_INSTALL_PLUGINS]/$$PLUGIN_TYPE
 INSTALLS += target
 
-TARGET = $$qt5LibraryTarget($$TARGET)
-!isEmpty(TARGET_SHORT):TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT)
+qt_libinfix_plugins: TARGET = $$TARGET$$QT_LIBINFIX
+TARGET = $$qt5LibraryTarget($$TARGET, "plugins/$$PLUGIN_TYPE/")
+!isEmpty(TARGET_SHORT):TARGET_SHORT = $$qt5LibraryTarget($$TARGET_SHORT, "plugins/$$PLUGIN_TYPE/")
 
 CONFIG += create_cmake
 

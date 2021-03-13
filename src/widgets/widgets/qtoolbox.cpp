@@ -50,6 +50,8 @@
 #include <qtooltip.h>
 #include <qabstractbutton.h>
 
+#include <private/qmemory_p.h>
+
 #include "qframe_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -106,10 +108,10 @@ public:
             return widget == other.widget;
         }
     };
-    typedef QList<Page> PageList;
+    typedef std::vector<std::unique_ptr<Page>> PageList;
 
     inline QToolBoxPrivate()
-        : currentPage(0)
+        : currentPage(nullptr)
     {
     }
     void _q_buttonClicked();
@@ -130,40 +132,40 @@ public:
 const QToolBoxPrivate::Page *QToolBoxPrivate::page(const QObject *widget) const
 {
     if (!widget)
-        return 0;
+        return nullptr;
 
-    for (PageList::ConstIterator i = pageList.constBegin(); i != pageList.constEnd(); ++i)
-        if ((*i).widget == widget)
-            return (const Page*) &(*i);
-    return 0;
+    for (const auto &page : pageList) {
+        if (page->widget == widget)
+            return page.get();
+    }
+    return nullptr;
 }
 
 QToolBoxPrivate::Page *QToolBoxPrivate::page(int index)
 {
-    if (index >= 0 && index < pageList.size())
-        return &pageList[index];
-    return 0;
+    if (index >= 0 && index < static_cast<int>(pageList.size()))
+        return pageList[index].get();
+    return nullptr;
 }
 
 const QToolBoxPrivate::Page *QToolBoxPrivate::page(int index) const
 {
-    if (index >= 0 && index < pageList.size())
-        return &pageList.at(index);
-    return 0;
+    if (index >= 0 && index < static_cast<int>(pageList.size()))
+        return pageList[index].get();
+    return nullptr;
 }
 
 void QToolBoxPrivate::updateTabs()
 {
-    QToolBoxButton *lastButton = currentPage ? currentPage->button : 0;
+    QToolBoxButton *lastButton = currentPage ? currentPage->button : nullptr;
     bool after = false;
     int index = 0;
-    for (index = 0; index < pageList.count(); ++index) {
-        const Page &page = pageList.at(index);
-        QToolBoxButton *tB = page.button;
+    for (const auto &page : pageList) {
+        QToolBoxButton *tB = page->button;
         // update indexes, since the updates are delayed, the indexes will be correct
         // when we actually paint.
         tB->setIndex(index);
-        QWidget *tW = page.widget;
+        QWidget *tW = page->widget;
         if (after) {
             QPalette p = tB->palette();
             p.setColor(tB->backgroundRole(), tW->palette().color(tW->backgroundRole()));
@@ -174,6 +176,7 @@ void QToolBoxPrivate::updateTabs()
             tB->update();
         }
         after = tB == lastButton;
+        ++index;
     }
 }
 
@@ -181,7 +184,7 @@ QSize QToolBoxButton::sizeHint() const
 {
     QSize iconSize(8, 8);
     if (!icon().isNull()) {
-        int icone = style()->pixelMetric(QStyle::PM_SmallIconSize, 0, parentWidget() /* QToolBox */);
+        int icone = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, parentWidget() /* QToolBox */);
         iconSize += QSize(icone + 2, icone);
     }
     QSize textSize = fontMetrics().size(Qt::TextShowMnemonic, text()) + QSize(0, 8);
@@ -194,7 +197,7 @@ QSize QToolBoxButton::minimumSizeHint() const
 {
     if (icon().isNull())
         return QSize();
-    int icone = style()->pixelMetric(QStyle::PM_SmallIconSize, 0, parentWidget() /* QToolBox */);
+    int icone = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, parentWidget() /* QToolBox */);
     return QSize(icone + 8, icone + 8);
 }
 
@@ -345,7 +348,8 @@ int QToolBox::insertItem(int index, QWidget *widget, const QIcon &icon, const QS
     Q_D(QToolBox);
     connect(widget, SIGNAL(destroyed(QObject*)), this, SLOT(_q_widgetDestroyed(QObject*)));
 
-    QToolBoxPrivate::Page c;
+    auto newPage = qt_make_unique<QToolBoxPrivate::Page>();
+    auto &c = *newPage;
     c.widget = widget;
     c.button = new QToolBoxButton(this);
     c.button->setObjectName(QLatin1String("qt_toolbox_toolboxbutton"));
@@ -360,21 +364,21 @@ int QToolBox::insertItem(int index, QWidget *widget, const QIcon &icon, const QS
     c.setText(text);
     c.setIcon(icon);
 
-    if (index < 0 || index >= (int)d->pageList.count()) {
-        index = d->pageList.count();
-        d->pageList.append(c);
+    if (index < 0 || index >= static_cast<int>(d->pageList.size())) {
+        index = static_cast<int>(d->pageList.size());
+        d->pageList.push_back(std::move(newPage));
         d->layout->addWidget(c.button);
         d->layout->addWidget(c.sv);
         if (index == 0)
             setCurrentIndex(index);
     } else {
-        d->pageList.insert(index, c);
+        d->pageList.insert(d->pageList.cbegin() + index, std::move(newPage));
         d->relayout();
         if (d->currentPage) {
             QWidget *current = d->currentPage->widget;
             int oldindex = indexOf(current);
             if (index <= oldindex) {
-                d->currentPage = 0; // trigger change
+                d->currentPage = nullptr; // trigger change
                 setCurrentIndex(oldindex);
             }
         }
@@ -391,12 +395,13 @@ void QToolBoxPrivate::_q_buttonClicked()
 {
     Q_Q(QToolBox);
     QToolBoxButton *tb = qobject_cast<QToolBoxButton*>(q->sender());
-    QWidget* item = 0;
-    for (QToolBoxPrivate::PageList::ConstIterator i = pageList.constBegin(); i != pageList.constEnd(); ++i)
-        if ((*i).button == tb) {
-            item = (*i).widget;
+    QWidget* item = nullptr;
+    for (const auto &page : pageList) {
+        if (page->button == tb) {
+            item = page->widget;
             break;
         }
+    }
 
     q->setCurrentIndex(q->indexOf(item));
 }
@@ -411,7 +416,7 @@ void QToolBoxPrivate::_q_buttonClicked()
 int QToolBox::count() const
 {
     Q_D(const QToolBox);
-    return d->pageList.count();
+    return static_cast<int>(d->pageList.size());
 }
 
 void QToolBox::setCurrentIndex(int index)
@@ -438,11 +443,17 @@ void QToolBoxPrivate::relayout()
     delete layout;
     layout = new QVBoxLayout(q);
     layout->setContentsMargins(QMargins());
-    for (QToolBoxPrivate::PageList::ConstIterator i = pageList.constBegin(); i != pageList.constEnd(); ++i) {
-        layout->addWidget((*i).button);
-        layout->addWidget((*i).sv);
+    for (const auto &page : pageList) {
+        layout->addWidget(page->button);
+        layout->addWidget(page->sv);
     }
 }
+
+auto pageEquals = [](const QToolBoxPrivate::Page *page) {
+    return [page](const std::unique_ptr<QToolBoxPrivate::Page> &ptr) {
+        return ptr.get() == page;
+    };
+};
 
 void QToolBoxPrivate::_q_widgetDestroyed(QObject *object)
 {
@@ -458,13 +469,13 @@ void QToolBoxPrivate::_q_widgetDestroyed(QObject *object)
     delete c->button;
 
     bool removeCurrent = c == currentPage;
-    pageList.removeAll(*c);
+    pageList.erase(std::remove_if(pageList.begin(), pageList.end(), pageEquals(c)), pageList.end());
 
-    if (!pageList.count()) {
-        currentPage = 0;
+    if (pageList.empty()) {
+        currentPage = nullptr;
         emit q->currentChanged(-1);
     } else if (removeCurrent) {
-        currentPage = 0;
+        currentPage = nullptr;
         q->setCurrentIndex(0);
     }
 }
@@ -538,9 +549,9 @@ void QToolBox::setCurrentWidget(QWidget *widget)
 QWidget *QToolBox::widget(int index) const
 {
     Q_D(const QToolBox);
-    if (index < 0 || index >= (int) d->pageList.size())
+    if (index < 0 || index >= static_cast<int>(d->pageList.size()))
         return nullptr;
-    return d->pageList.at(index).widget;
+    return d->pageList[index]->widget;
 }
 
 /*!
@@ -551,8 +562,13 @@ QWidget *QToolBox::widget(int index) const
 int QToolBox::indexOf(QWidget *widget) const
 {
     Q_D(const QToolBox);
-    const QToolBoxPrivate::Page *c = (widget ? d->page(widget) : 0);
-    return c ? d->pageList.indexOf(*c) : -1;
+    const QToolBoxPrivate::Page *c = (widget ? d->page(widget) : nullptr);
+    if (!c)
+        return -1;
+    const auto it = std::find_if(d->pageList.cbegin(), d->pageList.cend(), pageEquals(c));
+    if (it == d->pageList.cend())
+        return -1;
+    return static_cast<int>(it - d->pageList.cbegin());
 }
 
 /*!
@@ -571,7 +587,7 @@ void QToolBox::setItemEnabled(int index, bool enabled)
     if (!enabled && c == d->currentPage) {
         int curIndexUp = index;
         int curIndexDown = curIndexUp;
-        const int count = d->pageList.count();
+        const int count = static_cast<int>(d->pageList.size());
         while (curIndexUp > 0 || curIndexDown < count-1) {
             if (curIndexDown < count-1) {
                 if (d->page(++curIndexDown)->button->isEnabled()) {

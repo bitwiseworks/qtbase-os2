@@ -106,7 +106,8 @@ public:
         ApplicationIcon,
         SwitchableWidgetComposition,
         TopStackedNativeChildWindows,
-        OpenGLOnRasterSurface
+        OpenGLOnRasterSurface,
+        MaximizeUsingFullscreenGeometry
     };
 
     virtual ~QPlatformIntegration() { }
@@ -115,7 +116,7 @@ public:
 
     virtual QPlatformPixmap *createPlatformPixmap(QPlatformPixmap::PixelType type) const;
     virtual QPlatformWindow *createPlatformWindow(QWindow *window) const = 0;
-    virtual QPlatformWindow *createForeignWindow(QWindow *, WId) const { return 0; }
+    virtual QPlatformWindow *createForeignWindow(QWindow *, WId) const { return nullptr; }
     virtual QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const = 0;
 #ifndef QT_NO_OPENGL
     virtual QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const;

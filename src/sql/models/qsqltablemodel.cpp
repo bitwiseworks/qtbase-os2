@@ -211,7 +211,7 @@ bool QSqlTableModelPrivate::exec(const QString &stmt, bool prepStatement,
     lower-level QSqlQuery and can be used to provide data to view
     classes such as QTableView. For example:
 
-    \snippet sqldatabase/sqldatabase.cpp 24
+    \snippet sqldatabase/sqldatabase_snippet.cpp 24
 
     We set the SQL table's name and the edit strategy, then we set up
     the labels displayed in the view header. The edit strategy
@@ -222,7 +222,7 @@ bool QSqlTableModelPrivate::exec(const QString &stmt, bool prepStatement,
     QSqlTableModel can also be used to access a database
     programmatically, without binding it to a view:
 
-    \snippet sqldatabase/sqldatabase.cpp 21
+    \snippet sqldatabase/sqldatabase.cpp 25
 
     The code snippet above extracts the \c salary field from record 4 in
     the result set of the query \c{SELECT * from employee}.
@@ -611,7 +611,7 @@ bool QSqlTableModel::setData(const QModelIndex &index, const QVariant &value, in
 /*!
     \reimp
  */
-bool QStringListModel::clearItemData(const QModelIndex &index)
+bool QSqlTableModel::clearItemData(const QModelIndex &index)
 {
     return setData(index, QVariant(), Qt::EditRole);
 }
@@ -1305,7 +1305,7 @@ Qt::ItemFlags QSqlTableModel::flags(const QModelIndex &index) const
     Q_D(const QSqlTableModel);
     if (index.internalPointer() || index.column() < 0 || index.column() >= d->rec.count()
         || index.row() < 0)
-        return 0;
+        return { };
 
     bool editable = true;
 
@@ -1369,7 +1369,7 @@ QSqlRecord QSqlTableModel::record(int row) const
     // get generated flags from the cache
     const QSqlTableModelPrivate::ModifiedRow mrow = d->cache.value(row);
     if (mrow.op() != QSqlTableModelPrivate::None) {
-        const QSqlRecord crec = mrow.rec();
+        const QSqlRecord &crec = mrow.rec();
         for (int i = 0, cnt = rec.count(); i < cnt; ++i)
             rec.setGenerated(i, crec.isGenerated(i));
     }

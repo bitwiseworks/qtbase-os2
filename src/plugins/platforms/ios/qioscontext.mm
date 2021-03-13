@@ -118,7 +118,7 @@ QSurfaceFormat QIOSContext::format() const
     return m_format;
 }
 
-#define QT_IOS_GL_STATUS_CASE(val) case val: return QLatin1Literal(#val)
+#define QT_IOS_GL_STATUS_CASE(val) case val: return QLatin1String(#val)
 
 static QString fboStatusString(GLenum status)
 {
@@ -332,11 +332,8 @@ bool QIOSContext::verifyGraphicsHardwareAvailability()
         );
     });
 
-    if (applicationBackgrounded) {
-        static const char warning[] = "OpenGL ES calls are not allowed while an application is backgrounded";
-        Q_ASSERT_X(!applicationBackgrounded, "QIOSContext", warning);
-        qCWarning(lcQpaGLContext, warning);
-    }
+    if (applicationBackgrounded)
+        qCWarning(lcQpaGLContext, "OpenGL ES calls are not allowed while an application is backgrounded");
 
     return !applicationBackgrounded;
 }

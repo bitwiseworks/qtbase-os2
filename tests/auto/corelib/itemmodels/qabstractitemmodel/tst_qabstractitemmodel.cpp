@@ -309,7 +309,8 @@ bool QtTestModel::moveColumns(const QModelIndex &sourceParent, int src, int cnt,
 
 void QtTestModel::reset()
 {
-    QAbstractItemModel::reset();
+    QAbstractItemModel::beginResetModel();
+    QAbstractItemModel::endResetModel();
 }
 
 bool QtTestModel::canDropMimeData(const QMimeData *data, Qt::DropAction action,
@@ -457,6 +458,34 @@ void tst_QAbstractItemModel::match()
     res = model.match(start, Qt::DisplayRole, QVariant("bat"), -1,
                       Qt::MatchFixedString | Qt::MatchCaseSensitive);
     QCOMPARE(res.count(), 1);
+
+    res = model.match(start, Qt::DisplayRole, QVariant(".*O.*"), -1,
+                      Qt::MatchRegularExpression);
+    QCOMPARE(res.count(), 2);
+    res = model.match(start, Qt::DisplayRole, QVariant(".*O.*"), -1,
+                      Qt::MatchRegularExpression | Qt::MatchCaseSensitive);
+    QCOMPARE(res.count(), 0);
+
+    res = model.match(start, Qt::DisplayRole, QVariant(QRegularExpression(".*O.*")),
+                      -1, Qt::MatchRegularExpression);
+    QCOMPARE(res.count(), 0);
+    res = model.match(start,
+                      Qt::DisplayRole,
+                      QVariant(QRegularExpression(".*O.*",
+                                                  QRegularExpression::CaseInsensitiveOption)),
+                      -1,
+                      Qt::MatchRegularExpression);
+    QCOMPARE(res.count(), 2);
+
+    // Ensure that the case sensitivity is properly ignored when passing a
+    // QRegularExpression object.
+    res = model.match(start,
+                      Qt::DisplayRole,
+                      QVariant(QRegularExpression(".*O.*",
+                                                  QRegularExpression::CaseInsensitiveOption)),
+                      -1,
+                      Qt::MatchRegularExpression | Qt::MatchCaseSensitive);
+    QCOMPARE(res.count(), 2);
 }
 
 typedef QPair<int, int> Position;
@@ -1785,13 +1814,12 @@ class ModelWithCustomRole : public QStringListModel
 {
   Q_OBJECT
 public:
-  ModelWithCustomRole(QObject *parent = 0)
-    : QStringListModel(parent)
-  {
-    QHash<int, QByteArray> roleNames_ = roleNames();
-    roleNames_.insert(Qt::UserRole + 1, "custom");
-    setRoleNames(roleNames_);
-  }
+    using QStringListModel::QStringListModel;
+
+    QHash<int, QByteArray> roleNames() const override
+    {
+        return {{Qt::UserRole + 1, QByteArrayLiteral("custom")}};
+    }
 };
 
 ListenerObject::ListenerObject(QAbstractProxyModel *parent)
@@ -1830,7 +1858,7 @@ void ListenerObject::slotAboutToBeReset()
 
 void ListenerObject::slotReset()
 {
-    foreach (const QModelIndex &idx, m_persistentIndexes) {
+    for (const auto &idx : qAsConst(m_persistentIndexes)) {
         QVERIFY(!idx.isValid());
     }
 }

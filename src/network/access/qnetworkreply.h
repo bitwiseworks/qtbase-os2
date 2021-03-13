@@ -143,7 +143,7 @@ public:
     // attributes
     QVariant attribute(QNetworkRequest::Attribute code) const;
 
-#ifndef QT_NO_SSL
+#if QT_CONFIG(ssl)
     QSslConfiguration sslConfiguration() const;
     void setSslConfiguration(const QSslConfiguration &configuration);
     void ignoreSslErrors(const QList<QSslError> &errors);
@@ -156,8 +156,12 @@ public Q_SLOTS:
 Q_SIGNALS:
     void metaDataChanged();
     void finished();
+#if QT_DEPRECATED_SINCE(5,15)
+    QT_DEPRECATED_NETWORK_API_5_15_X("Use QNetworkReply::errorOccurred(QNetworkReply::NetworkError) instead")
     void error(QNetworkReply::NetworkError);
-#ifndef QT_NO_SSL
+#endif
+    void errorOccurred(QNetworkReply::NetworkError);
+#if QT_CONFIG(ssl)
     void encrypted();
     void sslErrors(const QList<QSslError> &errors);
     void preSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator);
@@ -182,9 +186,11 @@ protected:
     void setRawHeader(const QByteArray &headerName, const QByteArray &value);
     void setAttribute(QNetworkRequest::Attribute code, const QVariant &value);
 
+#if QT_CONFIG(ssl)
     virtual void sslConfigurationImplementation(QSslConfiguration &) const;
     virtual void setSslConfigurationImplementation(const QSslConfiguration &);
     virtual void ignoreSslErrorsImplementation(const QList<QSslError> &);
+#endif
 
 private:
     Q_DECLARE_PRIVATE(QNetworkReply)

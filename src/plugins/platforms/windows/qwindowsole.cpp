@@ -70,7 +70,6 @@ QT_BEGIN_NAMESPACE
    \endlist
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsOleDataObject::QWindowsOleDataObject(QMimeData *mimeData) :
@@ -110,7 +109,7 @@ QWindowsOleDataObject::GetData(LPFORMATETC pformatetc, LPSTGMEDIUM pmedium)
     }
 
     if (QWindowsContext::verbose > 1 && lcQpaMime().isDebugEnabled())
-        qCDebug(lcQpaMime) <<__FUNCTION__ << *pformatetc << "returns" << hex << showbase << quint64(hr);
+        qCDebug(lcQpaMime) <<__FUNCTION__ << *pformatetc << "returns" << Qt::hex << Qt::showbase << quint64(hr);
 
     return hr;
 }
@@ -135,7 +134,7 @@ QWindowsOleDataObject::QueryGetData(LPFORMATETC pformatetc)
              ResultFromScode(S_OK) : ResultFromScode(S_FALSE);
     }
     if (QWindowsContext::verbose > 1)
-        qCDebug(lcQpaMime) <<  __FUNCTION__ << " returns 0x" << hex << int(hr);
+        qCDebug(lcQpaMime) <<  __FUNCTION__ << " returns 0x" << Qt::hex << int(hr);
     return hr;
 }
 
@@ -155,7 +154,7 @@ QWindowsOleDataObject::SetData(LPFORMATETC pFormatetc, STGMEDIUM *pMedium, BOOL 
     HRESULT hr = ResultFromScode(E_NOTIMPL);
 
     if (pFormatetc->cfFormat == CF_PERFORMEDDROPEFFECT && pMedium->tymed == TYMED_HGLOBAL) {
-        DWORD * val = (DWORD*)GlobalLock(pMedium->hGlobal);
+        auto * val = (DWORD*)GlobalLock(pMedium->hGlobal);
         performedEffect = *val;
         GlobalUnlock(pMedium->hGlobal);
         if (fRelease)
@@ -163,7 +162,7 @@ QWindowsOleDataObject::SetData(LPFORMATETC pFormatetc, STGMEDIUM *pMedium, BOOL 
         hr = ResultFromScode(S_OK);
     }
     if (QWindowsContext::verbose > 1)
-        qCDebug(lcQpaMime) <<  __FUNCTION__ << " returns 0x" << hex << int(hr);
+        qCDebug(lcQpaMime) <<  __FUNCTION__ << " returns 0x" << Qt::hex << int(hr);
     return hr;
 }
 
@@ -193,7 +192,7 @@ QWindowsOleDataObject::EnumFormatEtc(DWORD dwDirection, LPENUMFORMATETC FAR* ppe
         fmtetcs.append(formatetc);
     }
 
-    QWindowsOleEnumFmtEtc *enumFmtEtc = new QWindowsOleEnumFmtEtc(fmtetcs);
+    auto *enumFmtEtc = new QWindowsOleEnumFmtEtc(fmtetcs);
     *ppenumFormatEtc = enumFmtEtc;
     if (enumFmtEtc->isNull()) {
         delete enumFmtEtc;
@@ -228,7 +227,6 @@ QWindowsOleDataObject::EnumDAdvise(LPENUMSTATDATA FAR*)
     \class QWindowsOleEnumFmtEtc
     \brief Enumerates the FORMATETC structures supported by QWindowsOleDataObject.
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsOleEnumFmtEtc::QWindowsOleEnumFmtEtc(const QVector<FORMATETC> &fmtetcs)
@@ -237,7 +235,7 @@ QWindowsOleEnumFmtEtc::QWindowsOleEnumFmtEtc(const QVector<FORMATETC> &fmtetcs)
         qCDebug(lcQpaMime) << __FUNCTION__ << fmtetcs;
     m_lpfmtetcs.reserve(fmtetcs.count());
     for (int idx = 0; idx < fmtetcs.count(); ++idx) {
-        LPFORMATETC destetc = new FORMATETC();
+        auto destetc = new FORMATETC();
         if (copyFormatEtc(destetc, &(fmtetcs.at(idx)))) {
             m_lpfmtetcs.append(destetc);
         } else {
@@ -255,7 +253,7 @@ QWindowsOleEnumFmtEtc::QWindowsOleEnumFmtEtc(const QVector<LPFORMATETC> &lpfmtet
     m_lpfmtetcs.reserve(lpfmtetcs.count());
     for (int idx = 0; idx < lpfmtetcs.count(); ++idx) {
         LPFORMATETC srcetc = lpfmtetcs.at(idx);
-        LPFORMATETC destetc = new FORMATETC();
+        auto destetc = new FORMATETC();
         if (copyFormatEtc(destetc, srcetc)) {
             m_lpfmtetcs.append(destetc);
         } else {
@@ -357,7 +355,7 @@ QWindowsOleEnumFmtEtc::Clone(LPENUMFORMATETC FAR* newEnum)
     if (newEnum == nullptr)
         return ResultFromScode(E_INVALIDARG);
 
-    QWindowsOleEnumFmtEtc *result = new QWindowsOleEnumFmtEtc(m_lpfmtetcs);
+    auto *result = new QWindowsOleEnumFmtEtc(m_lpfmtetcs);
     result->m_nIndex = m_nIndex;
 
     if (result->isNull()) {

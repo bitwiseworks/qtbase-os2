@@ -93,7 +93,7 @@ public:
     QEvent *event;
     int priority;
     inline QPostEvent()
-        : receiver(0), event(0), priority(0)
+        : receiver(nullptr), event(nullptr), priority(0)
     { }
     inline QPostEvent(QObject *r, QEvent *e, int p)
         : receiver(r), event(e), priority(p)
@@ -152,7 +152,7 @@ private:
 class Q_CORE_EXPORT QDaemonThread : public QThread
 {
 public:
-    QDaemonThread(QObject *parent = 0);
+    QDaemonThread(QObject *parent = nullptr);
     ~QDaemonThread();
 };
 
@@ -161,7 +161,7 @@ class QThreadPrivate : public QObjectPrivate
     Q_DECLARE_PUBLIC(QThread)
 
 public:
-    QThreadPrivate(QThreadData *d = 0);
+    QThreadPrivate(QThreadData *d = nullptr);
     ~QThreadPrivate();
 
     void setPriority(QThread::Priority prio);
@@ -191,8 +191,8 @@ public:
 #endif // Q_OS_UNIX
 
 #ifdef Q_OS_WIN
-    static unsigned int __stdcall start(void *) Q_DECL_NOEXCEPT;
-    static void finish(void *, bool lockAnyway=true) Q_DECL_NOEXCEPT;
+    static unsigned int __stdcall start(void *) noexcept;
+    static void finish(void *, bool lockAnyway=true) noexcept;
 
     Qt::HANDLE handle;
     unsigned int id;
@@ -265,17 +265,17 @@ public:
 #endif
     static void clearCurrentThreadData();
     static QThreadData *get2(QThread *thread)
-    { Q_ASSERT_X(thread != 0, "QThread", "internal error"); return thread->d_func()->data; }
+    { Q_ASSERT_X(thread != nullptr, "QThread", "internal error"); return thread->d_func()->data; }
 
 
     void ref();
     void deref();
     inline bool hasEventDispatcher() const
-    { return eventDispatcher.load() != nullptr; }
+    { return eventDispatcher.loadRelaxed() != nullptr; }
     QAbstractEventDispatcher *createEventDispatcher();
     QAbstractEventDispatcher *ensureEventDispatcher()
     {
-        QAbstractEventDispatcher *ed = eventDispatcher.load();
+        QAbstractEventDispatcher *ed = eventDispatcher.loadRelaxed();
         if (Q_LIKELY(ed))
             return ed;
         return createEventDispatcher();
@@ -298,7 +298,7 @@ public:
 
     public:
         FlaggedDebugSignatures() : idx(0)
-        { std::fill_n(locations, Count, static_cast<char*>(0)); }
+        { std::fill_n(locations, Count, static_cast<char*>(nullptr)); }
 
         void store(const char* method)
         { locations[idx++ % Count] = method; }
@@ -345,7 +345,7 @@ class QAdoptedThread : public QThread
     Q_DECLARE_PRIVATE(QThread)
 
 public:
-    QAdoptedThread(QThreadData *data = 0);
+    QAdoptedThread(QThreadData *data = nullptr);
     ~QAdoptedThread();
     void init();
 

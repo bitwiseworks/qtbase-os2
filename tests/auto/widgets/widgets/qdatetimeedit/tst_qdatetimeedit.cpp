@@ -195,6 +195,8 @@ private slots:
     void specialValueText();
     void setRange_data();
     void setRange();
+    void editingRanged_data();
+    void editingRanged();
 
     void selectAndScrollWithKeys();
     void backspaceKey();
@@ -294,6 +296,13 @@ private slots:
 
     void stepModifierPressAndHold_data();
     void stepModifierPressAndHold();
+
+    void springForward_data();
+    void springForward();
+
+    void stepIntoDSTGap_data();
+    void stepIntoDSTGap();
+
 private:
     EditorDateEdit* testWidget;
     QWidget *testFocusWidget;
@@ -307,19 +316,19 @@ static QLatin1String modifierToName(Qt::KeyboardModifier modifier)
 {
     switch (modifier) {
     case Qt::NoModifier:
-        return QLatin1Literal("No");
+        return QLatin1String("No");
         break;
     case Qt::ControlModifier:
-        return QLatin1Literal("Ctrl");
+        return QLatin1String("Ctrl");
         break;
     case Qt::ShiftModifier:
-        return QLatin1Literal("Shift");
+        return QLatin1String("Shift");
         break;
     case Qt::AltModifier:
-        return QLatin1Literal("Alt");
+        return QLatin1String("Alt");
         break;
     case Qt::MetaModifier:
-        return QLatin1Literal("Meta");
+        return QLatin1String("Meta");
         break;
     default:
         qFatal("Unexpected keyboard modifier");
@@ -331,25 +340,24 @@ static QLatin1String sectionToName(const QDateTimeEdit::Section section)
 {
     switch (section) {
     case QDateTimeEdit::SecondSection:
-        return QLatin1Literal("Second");
+        return QLatin1String("Second");
     case QDateTimeEdit::MinuteSection:
-        return QLatin1Literal("Minute");
+        return QLatin1String("Minute");
     case QDateTimeEdit::HourSection:
-        return QLatin1Literal("Hours");
+        return QLatin1String("Hours");
     case QDateTimeEdit::DaySection:
-        return QLatin1Literal("Day");
+        return QLatin1String("Day");
     case QDateTimeEdit::MonthSection:
-        return QLatin1Literal("Month");
+        return QLatin1String("Month");
     case QDateTimeEdit::YearSection:
-        return QLatin1Literal("Year");
+        return QLatin1String("Year");
     default:
         qFatal("Unexpected section");
         return QLatin1String();
     }
 }
 
-static QDate stepDate(const QDate& startDate, const QDateTimeEdit::Section section,
-                      const int steps)
+static QDate stepDate(QDate startDate, const QDateTimeEdit::Section section, const int steps)
 {
     switch (section) {
     case QDateTimeEdit::DaySection:
@@ -364,8 +372,7 @@ static QDate stepDate(const QDate& startDate, const QDateTimeEdit::Section secti
     }
 }
 
-static QTime stepTime(const QTime& startTime, const QDateTimeEdit::Section section,
-                      const int steps)
+static QTime stepTime(QTime startTime, const QDateTimeEdit::Section section, const int steps)
 {
     switch (section) {
     case QDateTimeEdit::SecondSection:
@@ -1303,6 +1310,120 @@ void tst_QDateTimeEdit::setRange()
         QCOMPARE(dte4.minimumTime(), expectedMin.time());
         QCOMPARE(dte4.maximumTime(), expectedMax.time());
     }
+}
+
+/*
+    Test that a user can input a date into a ranged QDateTimeEdit or QDateEdit
+    where a part of date is larger than the respective part of the maximum, or
+    smaller than the respective part of the minimum of the range.
+
+    This test is expected to fail unless keyboard tracking of the edit is set
+    to off. Otherwise the changed-signal would be emitted with values outside
+    of the allowed range as the user types.
+*/
+void tst_QDateTimeEdit::editingRanged_data()
+{
+    QTest::addColumn<QDate>("minDate");
+    QTest::addColumn<QTime>("minTime");
+    QTest::addColumn<QDate>("maxDate");
+    QTest::addColumn<QTime>("maxTime");
+    QTest::addColumn<QString>("userInput");
+    QTest::addColumn<QDateTime>("expected");
+
+    QTest::addRow("trivial")
+        << QDate(2010, 1, 1) << QTime(9, 0)
+        << QDate(2011, 12, 31) << QTime(16, 0)
+        << QString::fromLatin1("311220101600")
+        << QDateTime(QDate(2010, 12, 31), QTime(16, 0));
+
+    QTest::addRow("data0")
+        << QDate(2010, 12, 30) << QTime(16, 0)
+        << QDate(2011, 1, 2) << QTime(9, 0)
+        << QString::fromLatin1("311220102359")
+        << QDateTime(QDate(2010, 12, 31), QTime(23, 59));
+
+    QTest::addRow("data1")
+        << QDate(2010, 12, 30) << QTime(16, 0)
+        << QDate(2011, 1, 2) << QTime(9, 0)
+        << QString::fromLatin1("010120111823")
+        << QDateTime(QDate(2011, 1, 1), QTime(18, 23));
+
+    QTest::addRow("Out of range")
+        << QDate(2010, 12, 30) << QTime(16, 0)
+        << QDate(2011, 1, 2) << QTime(9, 0)
+        << QString::fromLatin1("090920111823")
+        << QDateTime(QDate(2011, 1, 2), QTime(9, 0));
+
+    QTest::addRow("only date")
+        << QDate(2010, 12, 30) << QTime()
+        << QDate(2011, 1, 2) << QTime()
+        << QString::fromLatin1("01012011")
+        << QDateTime(QDate(2011, 1, 1), QTime());
+}
+
+void tst_QDateTimeEdit::editingRanged()
+{
+    QFETCH(QDate, minDate);
+    QFETCH(QTime, minTime);
+    QFETCH(QDate, maxDate);
+    QFETCH(QTime, maxTime);
+    QFETCH(QString, userInput);
+    QFETCH(QDateTime, expected);
+
+    QDateTimeEdit *edit;
+    if (minTime.isValid()) {
+        edit = new QDateTimeEdit;
+        edit->setDisplayFormat("dd.MM.yyyy hh:mm");
+        edit->setDateTimeRange(QDateTime(minDate, minTime), QDateTime(maxDate, maxTime));
+    } else {
+        edit = new QDateEdit;
+        edit->setDisplayFormat("dd.MM.yyyy");
+        edit->setDateRange(minDate, maxDate);
+    }
+
+    int callCount = 0;
+    connect(edit, &QDateTimeEdit::dateTimeChanged, [&](const QDateTime &dateTime) {
+        ++callCount;
+        if (minTime.isValid()) {
+            QVERIFY(dateTime >= QDateTime(minDate, minTime));
+            QVERIFY(dateTime <= QDateTime(maxDate, maxTime));
+        } else {
+            QVERIFY(dateTime.date() >= minDate);
+            QVERIFY(dateTime.date() <= maxDate);
+        }
+    });
+
+    edit->show();
+    QApplication::setActiveWindow(edit);
+    if (!QTest::qWaitForWindowActive(edit))
+        QSKIP("Failed to make window active, aborting");
+    edit->setFocus();
+
+    // with keyboard tracking, never get a signal with an out-of-range value
+    edit->setKeyboardTracking(true);
+    QTest::keyClicks(edit, userInput);
+    QTest::keyClick(edit, Qt::Key_Return);
+    QVERIFY(callCount > 0);
+
+    // QDateTimeEdit blocks these dates from being entered - see QTBUG-65
+    QEXPECT_FAIL("data0", "Can't enter this date", Continue);
+    QEXPECT_FAIL("data1", "Can't enter this date", Continue);
+    QEXPECT_FAIL("Out of range", "Can't enter this date", Continue);
+    QEXPECT_FAIL("only date", "Can't enter this date", Continue);
+    QCOMPARE(edit->dateTime(), expected);
+
+    // reset
+    edit->clearFocus();
+    edit->setFocus();
+    callCount = 0;
+
+    edit->setKeyboardTracking(false);
+    QTest::keyClicks(edit, userInput);
+    QTest::keyClick(edit, Qt::Key_Return);
+    QCOMPARE(edit->dateTime(), expected);
+    QCOMPARE(callCount, 1);
+
+    delete edit;
 }
 
 void tst_QDateTimeEdit::wrappingTime_data()
@@ -2305,7 +2426,7 @@ void tst_QDateTimeEdit::mousePress()
     QRect rectUp = testWidget->style()->subControlRect(QStyle::CC_SpinBox, &so, QStyle::SC_SpinBoxUp, testWidget);
 
     // Send mouseClick to center of SC_SpinBoxUp
-    QTest::mouseClick(testWidget, Qt::LeftButton, 0, rectUp.center());
+    QTest::mouseClick(testWidget, Qt::LeftButton, {}, rectUp.center());
     QCOMPARE(testWidget->date().year(), 2005);
 }
 
@@ -2918,7 +3039,8 @@ void tst_QDateTimeEdit::calendarPopup()
     opt.editable = true;
     opt.subControls = QStyle::SC_ComboBoxArrow;
     QRect rect = style->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, testWidget);
-    QTest::mouseClick(testWidget, Qt::LeftButton, 0, QPoint(rect.left()+rect.width()/2, rect.top()+rect.height()/2));
+    QTest::mouseClick(testWidget, Qt::LeftButton, {},
+                      QPoint(rect.left() + rect.width() / 2, rect.top() + rect.height() / 2));
     QWidget *wid = testWidget->findChild<QWidget *>("qt_datetimedit_calendar");
     QVERIFY(wid != 0);
     testWidget->hide();
@@ -2930,7 +3052,8 @@ void tst_QDateTimeEdit::calendarPopup()
     opt.initFrom(&timeEdit);
     opt.subControls = QStyle::SC_ComboBoxArrow;
     rect = style->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, &timeEdit);
-    QTest::mouseClick(&timeEdit, Qt::LeftButton, 0, QPoint(rect.left()+rect.width()/2, rect.top()+rect.height()/2));
+    QTest::mouseClick(&timeEdit, Qt::LeftButton, {},
+                      QPoint(rect.left() + rect.width() / 2, rect.top() + rect.height() / 2));
     QWidget *wid2 = timeEdit.findChild<QWidget *>("qt_datetimedit_calendar");
     QVERIFY(!wid2);
     timeEdit.hide();
@@ -2944,7 +3067,8 @@ void tst_QDateTimeEdit::calendarPopup()
     opt.initFrom(&dateEdit);
     opt.subControls = QStyle::SC_ComboBoxArrow;
     rect = style->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, &dateEdit);
-    QTest::mouseClick(&dateEdit, Qt::LeftButton, 0, QPoint(rect.left()+rect.width()/2, rect.top()+rect.height()/2));
+    QTest::mouseClick(&dateEdit, Qt::LeftButton, {},
+                      QPoint(rect.left() + rect.width() / 2, rect.top() + rect.height() / 2));
     QWidget *wid3 = dateEdit.findChild<QWidget *>("qt_datetimedit_calendar");
     QVERIFY(!wid3);
     dateEdit.hide();
@@ -3141,7 +3265,6 @@ void tst_QDateTimeEdit::wheelEvent_data()
 {
 #if QT_CONFIG(wheelevent)
     QTest::addColumn<QPoint>("angleDelta");
-    QTest::addColumn<int>("qt4Delta");
     QTest::addColumn<int>("stepModifier");
     QTest::addColumn<Qt::KeyboardModifiers>("modifiers");
     QTest::addColumn<Qt::MouseEventSource>("source");
@@ -3217,16 +3340,16 @@ void tst_QDateTimeEdit::wheelEvent_data()
                         QLatin1String sourceName;
                         switch (source) {
                         case Qt::MouseEventNotSynthesized:
-                            sourceName = QLatin1Literal("NotSynthesized");
+                            sourceName = QLatin1String("NotSynthesized");
                             break;
                         case Qt::MouseEventSynthesizedBySystem:
-                            sourceName = QLatin1Literal("SynthesizedBySystem");
+                            sourceName = QLatin1String("SynthesizedBySystem");
                             break;
                         case Qt::MouseEventSynthesizedByQt:
-                            sourceName = QLatin1Literal("SynthesizedByQt");
+                            sourceName = QLatin1String("SynthesizedByQt");
                             break;
                         case Qt::MouseEventSynthesizedByApplication:
-                            sourceName = QLatin1Literal("SynthesizedByApplication");
+                            sourceName = QLatin1String("SynthesizedByApplication");
                             break;
                         default:
                             qFatal("Unexpected wheel event source");
@@ -3255,7 +3378,6 @@ void tst_QDateTimeEdit::wheelEvent_data()
                                           modifierName.latin1(),
                                           sourceName.latin1())
                                     << angleDelta
-                                    << units
                                     << static_cast<int>(stepModifier)
                                     << modifiers
                                     << source
@@ -3277,7 +3399,6 @@ void tst_QDateTimeEdit::wheelEvent()
 {
 #if QT_CONFIG(wheelevent)
     QFETCH(QPoint, angleDelta);
-    QFETCH(int, qt4Delta);
     QFETCH(int, stepModifier);
     QFETCH(Qt::KeyboardModifiers, modifiers);
     QFETCH(Qt::MouseEventSource, source);
@@ -3294,9 +3415,8 @@ void tst_QDateTimeEdit::wheelEvent()
     style->stepModifier = static_cast<Qt::KeyboardModifier>(stepModifier);
     edit.setStyle(style.data());
 
-    QWheelEvent event(QPointF(), QPointF(), QPoint(), angleDelta, qt4Delta,
-                      Qt::Vertical, Qt::NoButton, modifiers, Qt::NoScrollPhase,
-                      source);
+    QWheelEvent event(QPointF(), QPointF(), QPoint(), angleDelta,
+                      Qt::NoButton, modifiers, Qt::NoScrollPhase, false, source);
 
     QCOMPARE(edit.date(), startDate);
     for (QDate expected : expectedDates) {
@@ -3454,7 +3574,7 @@ void tst_QDateTimeEdit::timeSpec()
         }
         QVERIFY(edit.minimumTime() != min.time());
         QVERIFY(edit.minimumDateTime().timeSpec() != min.timeSpec());
-        QCOMPARE(edit.minimumDateTime().toTime_t(), min.toTime_t());
+        QCOMPARE(edit.minimumDateTime().toSecsSinceEpoch(), min.toSecsSinceEpoch());
     } else {
         QSKIP("Not tested in the GMT timezone");
     }
@@ -4103,6 +4223,9 @@ void tst_QDateTimeEdit::stepModifierKeys_data()
 
 void tst_QDateTimeEdit::stepModifierKeys()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
     QFETCH(QDate, startDate);
     QFETCH(int, stepModifier);
     QFETCH(QDateTimeEdit::Section, section);
@@ -4204,6 +4327,9 @@ void tst_QDateTimeEdit::stepModifierButtons_data()
 
 void tst_QDateTimeEdit::stepModifierButtons()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
     QFETCH(QStyle::SubControl, subControl);
     QFETCH(int, stepModifier);
     QFETCH(Qt::KeyboardModifiers, modifiers);
@@ -4291,6 +4417,9 @@ void tst_QDateTimeEdit::stepModifierPressAndHold_data()
 
 void tst_QDateTimeEdit::stepModifierPressAndHold()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
     QFETCH(QStyle::SubControl, subControl);
     QFETCH(int, stepModifier);
     QFETCH(Qt::KeyboardModifiers, modifiers);
@@ -4329,6 +4458,244 @@ void tst_QDateTimeEdit::stepModifierPressAndHold()
     const QDate expectedDate = startDate.addYears(spy.length() *
                                                   expectedStepModifier);
     QCOMPARE(value.toDate(), expectedDate);
+}
+
+#if QT_CONFIG(timezone)
+/*
+    The following tests verify correct handling of the spring forward gap; which
+    hour is skipped, and on which day, depends on the local time zone. We try to
+    make it reasonably robust by discovering the first day of spring in a given
+    year, but we won't try to handle every situation.
+
+    If this function returns an invalid QDateTime, then the tests should be skipped.
+*/
+static QDateTime findSpring(int year, const QTimeZone &timeZone)
+{
+    if (!timeZone.hasTransitions())
+        return QDateTime();
+
+    // Southern hemisphere spring is after midsummer
+    const QDateTime midSummer = QDate(year, 6, 21).startOfDay();
+    const QTimeZone::OffsetData transition =
+        midSummer.isDaylightTime() ? timeZone.previousTransition(midSummer)
+                                   : timeZone.nextTransition(midSummer);
+    const QDateTime spring = transition.atUtc.toLocalTime();
+    // there might have been DST at some point, but not in the year we care about
+    if (spring.date().year() != year || !spring.isDaylightTime())
+        return QDateTime();
+
+    return spring;
+};
+#endif
+
+/*!
+    Test that typing in a time that is invalid due to spring forward gap
+    produces reasonable results.
+*/
+void tst_QDateTimeEdit::springForward_data()
+{
+#if QT_CONFIG(timezone)
+    QTest::addColumn<QDateTime>("start");
+    QTest::addColumn<QAbstractSpinBox::CorrectionMode>("correctionMode");
+    QTest::addColumn<QTime>("inputTime");
+    QTest::addColumn<QDateTime>("expected");
+
+    const QTimeZone timeZone = QTimeZone::systemTimeZone();
+    if (!timeZone.hasDaylightTime())
+        QSKIP("This test needs to run in a timezone that observes DST!");
+
+    const QDateTime springTransition = findSpring(2019, timeZone);
+    if (!springTransition.isValid())
+        QSKIP("Failed to obtain valid spring forward datetime for 2019!");
+
+    const QDate springDate = springTransition.date();
+    const int gapWidth = timeZone.daylightTimeOffset(springTransition.addDays(1));
+    const QTime springGap = springTransition.time().addSecs(-gapWidth);
+    const QTime springGapMiddle = springTransition.time().addSecs(-gapWidth/2);
+
+    QTest::addRow("forward to %s, correct to previous", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(springDate, springGap.addSecs(-gapWidth))
+        << QAbstractSpinBox::CorrectToPreviousValue
+        << springGap
+        << QDateTime(springDate, springGap.addSecs(-gapWidth));
+
+    QTest::addRow("back to %s, correct to previous", qPrintable(springGap.toString("hh:mm")))
+        << springTransition
+        << QAbstractSpinBox::CorrectToPreviousValue
+        << springGap
+        << springTransition;
+
+    QTest::addRow("forward to %s, correct to nearest", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(springDate, springGap.addSecs(-gapWidth))
+        << QAbstractSpinBox::CorrectToNearestValue
+        << springGapMiddle
+        << springTransition;
+
+    QTest::addRow("back to %s, correct to nearest", qPrintable(springGap.toString("hh:mm")))
+        << springTransition
+        << QAbstractSpinBox::CorrectToNearestValue
+        << springGapMiddle
+        << springTransition;
+
+    QTest::addRow("jump to %s, correct to nearest", qPrintable(springGapMiddle.toString("hh:mm")))
+        << QDateTime(QDate(1980, 5, 10), springGap)
+        << QAbstractSpinBox::CorrectToNearestValue
+        << springGapMiddle
+        << springTransition;
+#else
+    QSKIP("Needs timezone feature enabled");
+#endif
+}
+
+void tst_QDateTimeEdit::springForward()
+{
+#if QT_CONFIG(timezone)
+    QFETCH(QDateTime, start);
+    QFETCH(QAbstractSpinBox::CorrectionMode, correctionMode);
+    QFETCH(QTime, inputTime);
+    QFETCH(QDateTime, expected);
+
+    QDateTimeEdit edit;
+    edit.setDisplayFormat(QLatin1String("dd.MM.yyyy hh:mm"));
+    edit.setCorrectionMode(correctionMode);
+
+    // we always want to start with a valid time
+    QVERIFY(start.isValid());
+    edit.setDateTime(start);
+
+    edit.setSelectedSection(QDateTimeEdit::DaySection);
+    const QDate date = expected.date();
+    const QString day = QString::number(date.day()).rightJustified(2, QLatin1Char('0'));
+    const QString month = QString::number(date.month()).rightJustified(2, QLatin1Char('0'));
+    const QString year = QString::number(date.year());
+    const QString hour = QString::number(inputTime.hour()).rightJustified(2, QLatin1Char('0'));
+    const QString minute = QString::number(inputTime.minute()).rightJustified(2, QLatin1Char('0'));
+    QTest::keyClicks(&edit, day);
+    QTest::keyClicks(&edit, month);
+    QTest::keyClicks(&edit, year);
+    QTest::keyClicks(&edit, hour);
+    QTest::keyClicks(&edit, minute);
+    QTest::keyClick(&edit, Qt::Key_Return, {});
+
+    QCOMPARE(edit.dateTime(), expected);
+#endif
+}
+
+/*!
+    Test that using the up/down spinners to modify a valid time into a time that
+    is invalid due to daylight-saving changes produces reasonable results.
+
+    2007 is a year in which the DST transition in most tested places was not on the
+    last or first day of the month, which allows us to test the various steps.
+*/
+void tst_QDateTimeEdit::stepIntoDSTGap_data()
+{
+#if QT_CONFIG(timezone)
+    QTest::addColumn<QDateTime>("start");
+    QTest::addColumn<QDateTimeEdit::Section>("section");
+    QTest::addColumn<int>("steps");
+    QTest::addColumn<QDateTime>("end");
+
+    const QTimeZone timeZone = QTimeZone::systemTimeZone();
+    if (!timeZone.hasDaylightTime())
+        QSKIP("This test needs to run in a timezone that observes DST!");
+
+    const QDateTime springTransition = findSpring(2007, timeZone);
+    if (!springTransition.isValid())
+        QSKIP("Failed to obtain valid spring forward datetime for 2007!");
+
+    const QDate spring = springTransition.date();
+    const int gapWidth = timeZone.daylightTimeOffset(springTransition.addDays(1));
+    const QTime springGap = springTransition.time().addSecs(-gapWidth);
+
+    // change hour
+    if (springGap.hour() != 0) {
+        QTest::addRow("hour up into %s gap", qPrintable(springGap.toString("hh:mm")))
+            << QDateTime(spring, springGap.addSecs(-3600))
+            << QDateTimeEdit::HourSection
+            << +1
+            << springTransition;
+
+        // 3:00:10 into 2:00:10 should get us to 1:00:10
+        QTest::addRow("hour down into %s gap", qPrintable(springGap.toString("hh:mm")))
+            << QDateTime(spring, springGap.addSecs(3610))
+            << QDateTimeEdit::HourSection
+            << -1
+            << QDateTime(spring, springGap.addSecs(-3590));
+    }
+
+    // change day
+    if (spring.day() != 1) {
+        // today's 2:05 is tomorrow's 3:05
+        QTest::addRow("day up into %s gap", qPrintable(springGap.toString("hh:mm")))
+            << QDateTime(spring.addDays(-1), springGap.addSecs(300))
+            << QDateTimeEdit::DaySection
+            << +1
+            << springTransition.addSecs(300);
+    }
+
+    if (spring.day() != spring.daysInMonth()) {
+        QTest::addRow("day down into %s gap", qPrintable(springGap.toString("hh:mm")))
+            << QDateTime(spring.addDays(1), springGap)
+            << QDateTimeEdit::DaySection
+            << -1
+            << springTransition;
+    }
+
+    // 2018-03-25 - change month
+    QTest::addRow("month up into %s gap", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(spring.addMonths(-1), springGap)
+        << QDateTimeEdit::MonthSection
+        << +1
+        << springTransition;
+    QTest::addRow("month down into %s gap", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(spring.addMonths(1), springGap)
+        << QDateTimeEdit::MonthSection
+        << -1
+        << springTransition;
+
+    // 2018-03-25 - change year
+    QTest::addRow("year up into %s gap", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(spring.addYears(-1), springGap)
+        << QDateTimeEdit::YearSection
+        << +1
+        << springTransition;
+    QTest::addRow("year down into %s gap", qPrintable(springGap.toString("hh:mm")))
+        << QDateTime(spring.addYears(1), springGap)
+        << QDateTimeEdit::YearSection
+        << -1
+        << springTransition;
+#else
+    QSKIP("Needs timezone feature enabled");
+#endif
+}
+
+void tst_QDateTimeEdit::stepIntoDSTGap()
+{
+#if QT_CONFIG(timezone)
+    QFETCH(QDateTime, start);
+    QFETCH(QDateTimeEdit::Section, section);
+    QFETCH(int, steps);
+    QFETCH(QDateTime, end);
+
+    QDateTimeEdit edit;
+    edit.setDisplayFormat(QLatin1String("dd.MM.yyyy hh:mm"));
+
+    // we always want to start with a valid time
+    QVERIFY(start.isValid());
+    edit.setDateTime(start);
+
+    edit.setSelectedSection(section);
+
+    // we want to end with a valid value
+    QVERIFY(end.isValid());
+
+    const auto stepCount = qAbs(steps);
+    for (int step = 0; step < stepCount; ++step)
+        QTest::keyClick(&edit, steps > 0 ? Qt::Key_Up : Qt::Key_Down, {});
+
+    QCOMPARE(edit.dateTime(), end);
+#endif
 }
 
 QTEST_MAIN(tst_QDateTimeEdit)

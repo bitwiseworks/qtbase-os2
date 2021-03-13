@@ -83,10 +83,8 @@ QSslEllipticCurve QSslEllipticCurve::fromShortName(const QString &name)
     const QByteArray curveNameLatin1 = name.toLatin1();
     int nid = q_OBJ_sn2nid(curveNameLatin1.data());
 
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-    if (nid == 0 && QSslSocket::sslLibraryVersionNumber() >= 0x10002000L)
+    if (nid == 0)
         nid = q_EC_curve_nist2nid(curveNameLatin1.data());
-#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
     result.id = nid;
 
@@ -170,7 +168,7 @@ static const int tlsNamedCurveNIDs[] = {
 
 static const size_t tlsNamedCurveNIDCount = sizeof(tlsNamedCurveNIDs) / sizeof(tlsNamedCurveNIDs[0]);
 
-bool QSslEllipticCurve::isTlsNamedCurve() const Q_DECL_NOTHROW
+bool QSslEllipticCurve::isTlsNamedCurve() const noexcept
 {
     const int * const tlsNamedCurveNIDsEnd = tlsNamedCurveNIDs + tlsNamedCurveNIDCount;
     return std::find(tlsNamedCurveNIDs, tlsNamedCurveNIDsEnd, id) != tlsNamedCurveNIDsEnd;

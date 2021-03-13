@@ -14,12 +14,18 @@ os2: TARGET = qt.mylib
 # We want to test if we can load a shared library with *any* filename...
 
 win32|os2 {
-    CONFIG(debug, debug|release) {
-        BUILD_FOLDER = debug
+
+    debug_and_release {
+        CONFIG(debug, debug|release)) {
+            BUILD_FOLDER = debug
+        } else {
+            BUILD_FOLDER = release
+        }
+        DESTDIR = ../$$BUILD_FOLDER/
     } else {
-        BUILD_FOLDER = release
+        BUILD_FOLDER =
+        DESTDIR = ../
     }
-    DESTDIR = ../$$BUILD_FOLDER/
 
     # vcproj and Makefile generators refer to target differently
     contains(TEMPLATE,vc.*) {

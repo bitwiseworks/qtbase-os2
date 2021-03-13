@@ -41,7 +41,7 @@
 
 #include <QtCore/qglobal.h>
 
-#include "qt_mac_p.h"
+#include <QtCore/private/qcore_mac_p.h>
 
 #ifndef QT_NO_ACCESSIBILITY
 
@@ -50,9 +50,7 @@
 
 #import <qaccessible.h>
 
-@class QT_MANGLE_NAMESPACE(QMacAccessibilityElement);
-
-@interface QT_MANGLE_NAMESPACE(QMacAccessibilityElement) : NSObject
+@interface QT_MANGLE_NAMESPACE(QMacAccessibilityElement) : NSObject <NSAccessibilityElement>
 
 - (instancetype)initWithId:(QAccessible::Id)anId;
 + (instancetype)elementWithId:(QAccessible::Id)anId;

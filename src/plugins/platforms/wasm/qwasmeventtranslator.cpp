@@ -32,6 +32,7 @@
 #include "qwasmcompositor.h"
 #include "qwasmintegration.h"
 #include "qwasmclipboard.h"
+#include "qwasmstring.h"
 
 #include <QtGui/qevent.h>
 #include <qpa/qwindowsysteminterface.h>
@@ -47,8 +48,9 @@
 
 #include <iostream>
 
-QT_BEGIN_NAMESPACE
 using namespace emscripten;
+
+QT_BEGIN_NAMESPACE
 
 typedef struct emkb2qt {
     const char *em;
@@ -303,7 +305,7 @@ static constexpr const auto DeadKeyShiftTbl = qMakeArray(
 
 // macOS CTRL <-> META switching. We most likely want to enable
 // the existing switching code in QtGui, but for now do it here.
-static bool g_usePlatformMacCtrlMetaSwitching = false;
+static bool g_usePlatformMacSpecifics = false;
 
 bool g_useNaturalScrolling = true; // natural scrolling is default on linux/windows
 
@@ -335,10 +337,30 @@ QWasmEventTranslator::QWasmEventTranslator(QWasmScreen *screen)
     initEventHandlers();
 }
 
+QWasmEventTranslator::~QWasmEventTranslator()
+{
+    // deregister event handlers
+    QByteArray canvasSelector = "#" + screen()->canvasId().toUtf8();
+    emscripten_set_keydown_callback(canvasSelector.constData(), 0, 0, NULL);
+    emscripten_set_keyup_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_mousedown_callback(canvasSelector.constData(), 0, 0, NULL);
+    emscripten_set_mouseup_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_mousemove_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_focus_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_wheel_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_touchstart_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchend_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchmove_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchcancel_callback(canvasSelector.constData(),  0, 0, NULL);
+}
+
 void QWasmEventTranslator::initEventHandlers()
 {
-    QByteArray _canvasId = screen()->canvasId().toUtf8();
-    const char *canvasId = _canvasId.constData();
+    QByteArray canvasSelector = "#" + screen()->canvasId().toUtf8();
 
     // The Platform Detect: expand coverage and move as needed
     enum Platform {
@@ -347,34 +369,34 @@ void QWasmEventTranslator::initEventHandlers()
     };
     Platform platform = Platform(emscripten::val::global("navigator")["platform"]
             .call<bool>("includes", emscripten::val("Mac")));
-    g_usePlatformMacCtrlMetaSwitching = (platform == MacOSPlatform);
+    g_usePlatformMacSpecifics = (platform == MacOSPlatform);
 
     if (platform == MacOSPlatform) {
         g_useNaturalScrolling = false; // make this !default on macOS
 
-        if (emscripten::val::global("window")["safari"].isUndefined()) {
-
-            emscripten::val::global(canvasId).call<void>("addEventListener",
-                                                         std::string("wheel"),
-                                                         val::module_property("qtMouseWheelEvent"));
+        if (!emscripten::val::global("window")["safari"].isUndefined()) {
+            val canvas = screen()->canvas();
+            canvas.call<void>("addEventListener",
+                              val("wheel"),
+                              val::module_property("qtMouseWheelEvent"));
         }
     }
 
-    emscripten_set_keydown_callback(canvasId, (void *)this, 1, &keyboard_cb);
-    emscripten_set_keyup_callback(canvasId, (void *)this, 1, &keyboard_cb);
+    emscripten_set_keydown_callback(canvasSelector.constData(), (void *)this, 1, &keyboard_cb);
+    emscripten_set_keyup_callback(canvasSelector.constData(), (void *)this, 1, &keyboard_cb);
 
-    emscripten_set_mousedown_callback(canvasId, (void *)this, 1, &mouse_cb);
-    emscripten_set_mouseup_callback(canvasId, (void *)this, 1, &mouse_cb);
-    emscripten_set_mousemove_callback(canvasId, (void *)this, 1, &mouse_cb);
+    emscripten_set_mousedown_callback(canvasSelector.constData(), (void *)this, 1, &mouse_cb);
+    emscripten_set_mouseup_callback(canvasSelector.constData(), (void *)this, 1, &mouse_cb);
+    emscripten_set_mousemove_callback(canvasSelector.constData(), (void *)this, 1, &mouse_cb);
 
-    emscripten_set_focus_callback(canvasId, (void *)this, 1, &focus_cb);
+    emscripten_set_focus_callback(canvasSelector.constData(), (void *)this, 1, &focus_cb);
 
-    emscripten_set_wheel_callback(canvasId, (void *)this, 1, &wheel_cb);
+    emscripten_set_wheel_callback(canvasSelector.constData(), (void *)this, 1, &wheel_cb);
 
-    emscripten_set_touchstart_callback(canvasId, (void *)this, 1, &touchCallback);
-    emscripten_set_touchend_callback(canvasId, (void *)this, 1, &touchCallback);
-    emscripten_set_touchmove_callback(canvasId, (void *)this, 1, &touchCallback);
-    emscripten_set_touchcancel_callback(canvasId, (void *)this, 1, &touchCallback);
+    emscripten_set_touchstart_callback(canvasSelector.constData(), (void *)this, 1, &touchCallback);
+    emscripten_set_touchend_callback(canvasSelector.constData(), (void *)this, 1, &touchCallback);
+    emscripten_set_touchmove_callback(canvasSelector.constData(), (void *)this, 1, &touchCallback);
+    emscripten_set_touchcancel_callback(canvasSelector.constData(), (void *)this, 1, &touchCallback);
 }
 
 template <typename Event>
@@ -384,7 +406,7 @@ QFlags<Qt::KeyboardModifier> QWasmEventTranslator::translatKeyModifier(const Eve
     if (event->shiftKey)
         keyModifier |= Qt::ShiftModifier;
     if (event->ctrlKey) {
-        if (g_usePlatformMacCtrlMetaSwitching)
+        if (g_usePlatformMacSpecifics)
             keyModifier |= Qt::MetaModifier;
         else
             keyModifier |= Qt::ControlModifier;
@@ -392,7 +414,7 @@ QFlags<Qt::KeyboardModifier> QWasmEventTranslator::translatKeyModifier(const Eve
     if (event->altKey)
         keyModifier |= Qt::AltModifier;
     if (event->metaKey) {
-        if (g_usePlatformMacCtrlMetaSwitching)
+        if (g_usePlatformMacSpecifics)
             keyModifier |= Qt::ControlModifier;
         else
             keyModifier |= Qt::MetaModifier;
@@ -432,20 +454,20 @@ Qt::Key QWasmEventTranslator::translateEmscriptKey(const EmscriptenKeyboardEvent
 {
     Qt::Key qtKey = Qt::Key_unknown;
 
-    if (qstrncmp(emscriptKey->code, "Key", 3) == 0 || qstrncmp(emscriptKey->code, "Numpad", 6) == 0 ||
-        qstrncmp(emscriptKey->code, "Digit", 5) == 0) {
-
-        emkb2qt_t searchKey{emscriptKey->code, 0}; // search emcsripten code
-        auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
-        if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
-            qtKey = static_cast<Qt::Key>(it1->qt);
-        }
-    } else if (qstrncmp(emscriptKey->key, "Dead", 4) == 0 ) {
+    if (qstrncmp(emscriptKey->key, "Dead", 4) == 0 ) {
         emkb2qt_t searchKey1{emscriptKey->code, 0};
         for (auto it1 = KeyTbl.cbegin(); it1 != KeyTbl.end(); ++it1)
             if (it1 != KeyTbl.end() && (qstrcmp(searchKey1.em, it1->em) == 0)) {
                 qtKey = static_cast<Qt::Key>(it1->qt);
             }
+
+    } else if (qstrncmp(emscriptKey->code, "Key", 3) == 0 || qstrncmp(emscriptKey->code, "Numpad", 6) == 0 ||
+                 qstrncmp(emscriptKey->code, "Digit", 5) == 0) {
+        emkb2qt_t searchKey{emscriptKey->code, 0}; // search emcsripten code
+        auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
+        if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
+            qtKey = static_cast<Qt::Key>(it1->qt);
+        }
     }
 
     if (qtKey == Qt::Key_unknown) {
@@ -544,7 +566,7 @@ void resizeWindow(QWindow *window, QWasmWindow::ResizeMode mode,
 
 void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEvent *mouseEvent)
 {
-    auto timestamp = mouseEvent->timestamp;
+    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent->targetX, mouseEvent->targetY);
     QPoint globalPoint = screen()->geometry().topLeft() + targetPoint;
 
@@ -670,7 +692,7 @@ int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wh
 
     QWasmEventTranslator *translator = (QWasmEventTranslator*)userData;
     Qt::KeyboardModifiers modifiers = translator->translateMouseEventModifier(&mouseEvent);
-    auto timestamp = mouseEvent.timestamp;
+    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent.targetX, mouseEvent.targetY);
     QPoint globalPoint = eventTranslator->screen()->geometry().topLeft() + targetPoint;
 
@@ -780,34 +802,92 @@ quint64 QWasmEventTranslator::getTimestamp()
     return QDeadlineTimer::current().deadlineNSecs() / 1000;
 }
 
+struct KeyMapping { Qt::Key from, to; };
+
+constexpr KeyMapping tildeKeyTable[] = { // ~
+    { Qt::Key_A, Qt::Key_Atilde },
+    { Qt::Key_N, Qt::Key_Ntilde },
+    { Qt::Key_O, Qt::Key_Otilde },
+};
+constexpr KeyMapping graveKeyTable[] = { // `
+    { Qt::Key_A, Qt::Key_Agrave },
+    { Qt::Key_E, Qt::Key_Egrave },
+    { Qt::Key_I, Qt::Key_Igrave },
+    { Qt::Key_O, Qt::Key_Ograve },
+    { Qt::Key_U, Qt::Key_Ugrave },
+};
+constexpr KeyMapping acuteKeyTable[] = { // '
+    { Qt::Key_A, Qt::Key_Aacute },
+    { Qt::Key_E, Qt::Key_Eacute },
+    { Qt::Key_I, Qt::Key_Iacute },
+    { Qt::Key_O, Qt::Key_Oacute },
+    { Qt::Key_U, Qt::Key_Uacute },
+    { Qt::Key_Y, Qt::Key_Yacute },
+};
+constexpr KeyMapping diaeresisKeyTable[] = { // umlaut ¨
+    { Qt::Key_A, Qt::Key_Adiaeresis },
+    { Qt::Key_E, Qt::Key_Ediaeresis },
+    { Qt::Key_I, Qt::Key_Idiaeresis },
+    { Qt::Key_O, Qt::Key_Odiaeresis },
+    { Qt::Key_U, Qt::Key_Udiaeresis },
+    { Qt::Key_Y, Qt::Key_ydiaeresis },
+};
+constexpr KeyMapping circumflexKeyTable[] = { // ^
+    { Qt::Key_A, Qt::Key_Acircumflex },
+    { Qt::Key_E, Qt::Key_Ecircumflex },
+    { Qt::Key_I, Qt::Key_Icircumflex },
+    { Qt::Key_O, Qt::Key_Ocircumflex },
+    { Qt::Key_U, Qt::Key_Ucircumflex },
+};
+
+static Qt::Key find_impl(const KeyMapping *first, const KeyMapping *last, Qt::Key key) noexcept
+{
+    while (first != last) {
+        if (first->from == key)
+            return first->to;
+        ++first;
+    }
+    return Qt::Key_unknown;
+}
+
+template <size_t N>
+static Qt::Key find(const KeyMapping (&map)[N], Qt::Key key) noexcept
+{
+    return find_impl(map, map + N, key);
+}
+
 Qt::Key QWasmEventTranslator::translateDeadKey(Qt::Key deadKey, Qt::Key accentBaseKey)
 {
     Qt::Key wasmKey = Qt::Key_unknown;
+
+    if (deadKey == Qt::Key_QuoteLeft ) {
+        if (g_usePlatformMacSpecifics) { // ` macOS: Key_Dead_Grave
+            wasmKey = find(graveKeyTable, accentBaseKey);
+        } else {
+            wasmKey = find(diaeresisKeyTable, accentBaseKey);
+        }
+        return wasmKey;
+    }
+
     switch (deadKey) {
-#ifdef Q_OS_MACOS
-    case Qt::Key_QuoteLeft: // ` macOS: Key_Dead_Grave
-#else
+    //    case Qt::Key_QuoteLeft:
     case Qt::Key_O: // ´ Key_Dead_Grave
-#endif
-        wasmKey = graveKeyTable.value(accentBaseKey);
+        wasmKey = find(graveKeyTable, accentBaseKey);
         break;
     case Qt::Key_E: // ´ Key_Dead_Acute
-        wasmKey = acuteKeyTable.value(accentBaseKey);
+        wasmKey = find(acuteKeyTable, accentBaseKey);
         break;
     case Qt::Key_AsciiTilde:
     case Qt::Key_N:// Key_Dead_Tilde
-        wasmKey = tildeKeyTable.value(accentBaseKey);
+        wasmKey = find(tildeKeyTable, accentBaseKey);
         break;
-#ifndef Q_OS_MACOS
-    case Qt::Key_QuoteLeft:
-#endif
     case Qt::Key_U:// ¨ Key_Dead_Diaeresis
-        wasmKey = diaeresisKeyTable.value(accentBaseKey);
+        wasmKey = find(diaeresisKeyTable, accentBaseKey);
         break;
     case Qt::Key_I:// macOS Key_Dead_Circumflex
     case Qt::Key_6:// linux
     case Qt::Key_Apostrophe:// linux
-        wasmKey = circumflexKeyTable.value(accentBaseKey);
+        wasmKey = find(circumflexKeyTable, accentBaseKey);
         break;
     default:
         break;

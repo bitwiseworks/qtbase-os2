@@ -123,6 +123,7 @@ public:
         _NET_WM_STATE_MODAL,
         _NET_WM_STATE_STAYS_ON_TOP,
         _NET_WM_STATE_DEMANDS_ATTENTION,
+        _NET_WM_STATE_HIDDEN,
 
         _NET_WM_USER_TIME,
         _NET_WM_USER_TIME_WINDOW,
@@ -182,6 +183,7 @@ public:
         XdndActionCopy,
         XdndActionLink,
         XdndActionMove,
+        XdndActionAsk,
         XdndActionPrivate,
 
         // Xkb

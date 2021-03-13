@@ -40,6 +40,7 @@
 #include <qhostinfo.h>
 #include <qtcpsocket.h>
 #include <qmap.h>
+#include <qelapsedtimer.h>
 #include <qnetworkdatagram.h>
 #include <QNetworkProxy>
 #include <QNetworkInterface>
@@ -235,6 +236,7 @@ void tst_QUdpSocket::initTestCase_data()
     // hack: we only enable the Socks5 over UDP tests on the old
     // test server, because they fail on the new one. See QTBUG-35490
     bool newTestServer = true;
+#ifndef QT_TEST_SERVER
     QTcpSocket socket;
     socket.connectToHost(QtNetworkSettings::serverName(), 22);
     if (socket.waitForConnected(10000)) {
@@ -244,6 +246,7 @@ void tst_QUdpSocket::initTestCase_data()
             newTestServer = false;
         socket.disconnectFromHost();
     }
+#endif
 
     QTest::addColumn<bool>("setProxy");
     QTest::addColumn<int>("proxyType");
@@ -257,8 +260,13 @@ void tst_QUdpSocket::initTestCase_data()
 
 void tst_QUdpSocket::initTestCase()
 {
+#ifdef QT_TEST_SERVER
+     QVERIFY(QtNetworkSettings::verifyConnection(QtNetworkSettings::socksProxyServerName(), 1080));
+     QVERIFY(QtNetworkSettings::verifyConnection(QtNetworkSettings::echoServerName(), 7));
+#else
     if (!QtNetworkSettings::verifyTestNetworkSettings())
         QSKIP("No network test server available");
+#endif
     allAddresses = QNetworkInterface::allAddresses();
     m_skipUnsupportedIPv6Tests = shouldSkipIpv6TestsForBrokenSetsockopt();
 
@@ -300,7 +308,7 @@ void tst_QUdpSocket::init()
 #if QT_CONFIG(socks5)
         QFETCH_GLOBAL(int, proxyType);
         if (proxyType == QNetworkProxy::Socks5Proxy) {
-            QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QtNetworkSettings::serverName(), 1080));
+            QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QtNetworkSettings::socksProxyServerName(), 1080));
         }
 #else
         QSKIP("No proxy support");
@@ -875,7 +883,7 @@ void tst_QUdpSocket::writeDatagram()
     qRegisterMetaType<QAbstractSocket::SocketError>("QAbstractSocket::SocketError");
 
     for(int i=0;;i++) {
-        QSignalSpy errorspy(&client, SIGNAL(error(QAbstractSocket::SocketError)));
+        QSignalSpy errorspy(&client, SIGNAL(errorOccurred(QAbstractSocket::SocketError)));
         QSignalSpy bytesspy(&client, SIGNAL(bytesWritten(qint64)));
 
         qint64 written = client.writeDatagram(QByteArray(i * 1024, 'w'), serverAddress,
@@ -915,7 +923,7 @@ void tst_QUdpSocket::performance()
     client.connectToHost(serverAddress, server.localPort());
     QVERIFY(client.waitForConnected(10000));
 
-    QTime stopWatch;
+    QElapsedTimer stopWatch;
     stopWatch.start();
 
     qint64 nbytes = 0;
@@ -981,7 +989,7 @@ void tst_QUdpSocket::writeDatagramToNonExistingPeer_data()
     QTest::addColumn<bool>("bind");
     QTest::addColumn<QHostAddress>("peerAddress");
     QHostAddress localhost(QHostAddress::LocalHost);
-    QList<QHostAddress> serverAddresses(QHostInfo::fromName(QtNetworkSettings::serverName()).addresses());
+    QList<QHostAddress> serverAddresses(QHostInfo::fromName(QtNetworkSettings::socksProxyServerName()).addresses());
     if (serverAddresses.isEmpty())
         return;
 
@@ -995,7 +1003,7 @@ void tst_QUdpSocket::writeDatagramToNonExistingPeer_data()
 
 void tst_QUdpSocket::writeDatagramToNonExistingPeer()
 {
-    if (QHostInfo::fromName(QtNetworkSettings::serverName()).addresses().isEmpty())
+    if (QHostInfo::fromName(QtNetworkSettings::socksProxyServerName()).addresses().isEmpty())
         QFAIL("Could not find test server address");
     QFETCH(bool, bind);
     QFETCH(QHostAddress, peerAddress);
@@ -1015,7 +1023,7 @@ void tst_QUdpSocket::writeToNonExistingPeer_data()
 {
     QTest::addColumn<QHostAddress>("peerAddress");
     QHostAddress localhost(QHostAddress::LocalHost);
-    QList<QHostAddress> serverAddresses(QHostInfo::fromName(QtNetworkSettings::serverName()).addresses());
+    QList<QHostAddress> serverAddresses(QHostInfo::fromName(QtNetworkSettings::socksProxyServerName()).addresses());
     if (serverAddresses.isEmpty())
         return;
 
@@ -1028,7 +1036,7 @@ void tst_QUdpSocket::writeToNonExistingPeer_data()
 void tst_QUdpSocket::writeToNonExistingPeer()
 {
     QSKIP("Connected-mode UDP sockets and their behaviour are erratic");
-    if (QHostInfo::fromName(QtNetworkSettings::serverName()).addresses().isEmpty())
+    if (QHostInfo::fromName(QtNetworkSettings::socksProxyServerName()).addresses().isEmpty())
         QFAIL("Could not find test server address");
     QFETCH(QHostAddress, peerAddress);
     quint16 peerPort = 34534;
@@ -1036,7 +1044,7 @@ void tst_QUdpSocket::writeToNonExistingPeer()
 
     QUdpSocket sConnected;
     QSignalSpy sConnectedReadyReadSpy(&sConnected, SIGNAL(readyRead()));
-    QSignalSpy sConnectedErrorSpy(&sConnected, SIGNAL(error(QAbstractSocket::SocketError)));
+    QSignalSpy sConnectedErrorSpy(&sConnected, SIGNAL(errorOccurred(QAbstractSocket::SocketError)));
     sConnected.connectToHost(peerAddress, peerPort, QIODevice::ReadWrite);
     QVERIFY(sConnected.waitForConnected(10000));
 
@@ -1082,12 +1090,21 @@ void tst_QUdpSocket::outOfProcessConnectedClientServerTest()
     QProcess serverProcess;
     serverProcess.start(QLatin1String("clientserver/clientserver server 1 1"),
                         QIODevice::ReadWrite | QIODevice::Text);
-    QVERIFY2(serverProcess.waitForStarted(3000),
-             qPrintable("Failed to start subprocess: " + serverProcess.errorString()));
+
+    const auto serverProcessCleaner = qScopeGuard([&serverProcess] {
+        serverProcess.kill();
+        serverProcess.waitForFinished();
+    });
+
+    if (!serverProcess.waitForStarted(3000))
+        QSKIP("Failed to start server as a subprocess");
 
     // Wait until the server has started and reports success.
-    while (!serverProcess.canReadLine())
-        QVERIFY(serverProcess.waitForReadyRead(3000));
+    while (!serverProcess.canReadLine()) {
+       if (!serverProcess.waitForReadyRead(3000))
+           QSKIP("No output from the server process, bailing out");
+    }
+
     QByteArray serverGreeting = serverProcess.readLine();
     QVERIFY(serverGreeting != QByteArray("XXX\n"));
     int serverPort = serverGreeting.trimmed().toInt();
@@ -1097,12 +1114,21 @@ void tst_QUdpSocket::outOfProcessConnectedClientServerTest()
     clientProcess.start(QString::fromLatin1("clientserver/clientserver connectedclient %1 %2")
                         .arg(QLatin1String("127.0.0.1")).arg(serverPort),
                         QIODevice::ReadWrite | QIODevice::Text);
-    QVERIFY2(clientProcess.waitForStarted(3000),
-             qPrintable("Failed to start subprocess: " + clientProcess.errorString()));
 
-    // Wait until the server has started and reports success.
-    while (!clientProcess.canReadLine())
-        QVERIFY(clientProcess.waitForReadyRead(3000));
+    const auto clientProcessCleaner = qScopeGuard([&clientProcess] {
+        clientProcess.kill();
+        clientProcess.waitForFinished();
+    });
+
+    if (!clientProcess.waitForStarted(3000))
+        QSKIP("Client process did not start");
+
+    // Wait until the client has started and reports success.
+    while (!clientProcess.canReadLine()) {
+        if (!clientProcess.waitForReadyRead(3000))
+            QSKIP("No output from the client process, bailing out");
+    }
+
     QByteArray clientGreeting = clientProcess.readLine();
     QCOMPARE(clientGreeting, QByteArray("ok\n"));
 
@@ -1127,11 +1153,6 @@ void tst_QUdpSocket::outOfProcessConnectedClientServerTest()
         QCOMPARE(serverData.at(i * 3 + 2).trimmed().mid(8).toInt(),
                  sdata.mid(4).trimmed().toInt() * 2);
     }
-
-    clientProcess.kill();
-    QVERIFY(clientProcess.waitForFinished());
-    serverProcess.kill();
-    QVERIFY(serverProcess.waitForFinished());
 #endif
 }
 
@@ -1143,12 +1164,21 @@ void tst_QUdpSocket::outOfProcessUnconnectedClientServerTest()
     QProcess serverProcess;
     serverProcess.start(QLatin1String("clientserver/clientserver server 1 1"),
                         QIODevice::ReadWrite | QIODevice::Text);
-    QVERIFY2(serverProcess.waitForStarted(3000),
-             qPrintable("Failed to start subprocess: " + serverProcess.errorString()));
+
+    const auto serverProcessCleaner = qScopeGuard([&serverProcess] {
+        serverProcess.kill();
+        serverProcess.waitForFinished();
+    });
+
+    if (!serverProcess.waitForStarted(3000))
+        QSKIP("Failed to start the server subprocess");
 
     // Wait until the server has started and reports success.
-    while (!serverProcess.canReadLine())
-        QVERIFY(serverProcess.waitForReadyRead(3000));
+    while (!serverProcess.canReadLine()) {
+        if (!serverProcess.waitForReadyRead(3000))
+            QSKIP("No output from the server, probably, it is not running");
+    }
+
     QByteArray serverGreeting = serverProcess.readLine();
     QVERIFY(serverGreeting != QByteArray("XXX\n"));
     int serverPort = serverGreeting.trimmed().toInt();
@@ -1158,12 +1188,21 @@ void tst_QUdpSocket::outOfProcessUnconnectedClientServerTest()
     clientProcess.start(QString::fromLatin1("clientserver/clientserver unconnectedclient %1 %2")
                         .arg(QLatin1String("127.0.0.1")).arg(serverPort),
                         QIODevice::ReadWrite | QIODevice::Text);
-    QVERIFY2(clientProcess.waitForStarted(3000),
-             qPrintable("Failed to start subprocess: " + clientProcess.errorString()));
 
-    // Wait until the server has started and reports success.
-    while (!clientProcess.canReadLine())
-        QVERIFY(clientProcess.waitForReadyRead(3000));
+    const auto clientProcessCleaner = qScopeGuard([&clientProcess] {
+        clientProcess.kill();
+        clientProcess.waitForFinished();
+    });
+
+    if (!clientProcess.waitForStarted(3000))
+        QSKIP("Failed to start the client's subprocess");
+
+    // Wait until the client has started and reports success.
+    while (!clientProcess.canReadLine()) {
+        if (!clientProcess.waitForReadyRead(3000))
+            QSKIP("The client subprocess produced not output, exiting.");
+    }
+
     QByteArray clientGreeting = clientProcess.readLine();
     QCOMPARE(clientGreeting, QByteArray("ok\n"));
 
@@ -1189,11 +1228,6 @@ void tst_QUdpSocket::outOfProcessUnconnectedClientServerTest()
         QCOMPARE(serverData.at(i * 3 + 2).trimmed().mid(8).toInt(),
                  sdata.mid(4).trimmed().toInt() * 2);
     }
-
-    clientProcess.kill();
-    QVERIFY(clientProcess.waitForFinished());
-    serverProcess.kill();
-    QVERIFY(serverProcess.waitForFinished());
 #endif
 }
 
@@ -1551,7 +1585,7 @@ void tst_QUdpSocket::echo_data()
 void tst_QUdpSocket::echo()
 {
     QFETCH(bool, connect);
-    QHostInfo info = QHostInfo::fromName(QtNetworkSettings::serverName());
+    QHostInfo info = QHostInfo::fromName(QtNetworkSettings::echoServerName());
     QVERIFY(info.addresses().count());
     QHostAddress remote = info.addresses().first();
 

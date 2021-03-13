@@ -55,7 +55,6 @@ QT_BEGIN_NAMESPACE
     \class QWindowsBackingStore
     \brief Backing store for windows.
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsBackingStore::QWindowsBackingStore(QWindow *window) :
@@ -158,7 +157,7 @@ void QWindowsBackingStore::resize(const QSize &size, const QRegion &region)
             format = qt_maybeAlphaVersionWithSameDepth(format);
 
         QWindowsNativeImage *oldwni = m_image.data();
-        QWindowsNativeImage *newwni = new QWindowsNativeImage(size.width(), size.height(), format);
+        auto *newwni = new QWindowsNativeImage(size.width(), size.height(), format);
 
         if (oldwni && !region.isEmpty()) {
             const QImage &oldimg(oldwni->image());

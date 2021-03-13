@@ -55,7 +55,7 @@ public:
         : QObjectPrivate()
     {
         engine = new QPdfEngine();
-        output = 0;
+        output = nullptr;
         pdfVersion = QPdfWriter::PdfVersion_1_4;
     }
     ~QPdfWriterPrivate()
@@ -170,17 +170,11 @@ void QPdfWriter::setPdfVersion(PdfVersion version)
 {
     Q_D(QPdfWriter);
 
-    static const QHash<QPdfWriter::PdfVersion, QPdfEngine::PdfVersion> engineMapping {
-        {QPdfWriter::PdfVersion_1_4, QPdfEngine::Version_1_4},
-        {QPdfWriter::PdfVersion_A1b, QPdfEngine::Version_A1b},
-        {QPdfWriter::PdfVersion_1_6, QPdfEngine::Version_1_6}
-    };
-
     if (d->pdfVersion == version)
         return;
 
     d->pdfVersion = version;
-    d->engine->setPdfVersion(engineMapping.value(version, QPdfEngine::Version_1_4));
+    d->engine->setPdfVersion(static_cast<QPdfEngine::PdfVersion>(static_cast<int>(version)));
 }
 
 /*!
@@ -272,6 +266,50 @@ int QPdfWriter::resolution() const
     return d->engine->resolution();
 }
 
+/*!
+    \since 5.15
+
+    Sets the document metadata. This metadata is not influenced by the setTitle / setCreator methods,
+    so is up to the user to keep it consistent.
+    \a xmpMetadata contains XML formatted metadata to embed into the PDF file.
+
+    \sa documentXmpMetadata()
+*/
+
+void QPdfWriter::setDocumentXmpMetadata(const QByteArray &xmpMetadata)
+{
+    Q_D(const QPdfWriter);
+    d->engine->setDocumentXmpMetadata(xmpMetadata);
+}
+
+/*!
+    \since 5.15
+
+    Gets the document metadata, as it was provided with a call to setDocumentXmpMetadata. It will not
+    return the default metadata.
+
+    \sa setDocumentXmpMetadata()
+*/
+
+QByteArray QPdfWriter::documentXmpMetadata() const
+{
+    Q_D(const QPdfWriter);
+    return d->engine->documentXmpMetadata();
+}
+
+/*!
+    \since 5.15
+
+    Adds \a fileName attachment to the PDF with (optional) \a mimeType.
+    \a data contains the raw file data to embed into the PDF file.
+*/
+
+void QPdfWriter::addFileAttachment(const QString &fileName, const QByteArray &data, const QString &mimeType)
+{
+    Q_D(QPdfWriter);
+    d->engine->addFileAttachment(fileName, data, mimeType);
+}
+
 // Defined in QPagedPaintDevice but non-virtual, add QPdfWriter specific doc here
 #ifdef Q_QDOC
 /*!
@@ -322,7 +360,7 @@ int QPdfWriter::resolution() const
     You should not call any painting methods between a call to setPageOrientation()
     and newPage() as the wrong paint metrics may be used.
 
-    To get the current QPageLayout::Orientation use pageLayout().pageOrientation().
+    To get the current QPageLayout::Orientation use pageLayout().orientation().
 
     Returns true if the page orientation was successfully set to \a orientation.
 
@@ -340,7 +378,7 @@ int QPdfWriter::resolution() const
     You should not call any painting methods between a call to setPageMargins()
     and newPage() as the wrong paint metrics may be used.
 
-    To get the current page margins use pageLayout().pageMargins().
+    To get the current page margins use pageLayout().margins().
 
     Returns true if the page margins were successfully set to \a margins.
 
@@ -358,7 +396,7 @@ int QPdfWriter::resolution() const
     You should not call any painting methods between a call to setPageMargins()
     and newPage() as the wrong paint metrics may be used.
 
-    To get the current page margins use pageLayout().pageMargins().
+    To get the current page margins use pageLayout().margins().
 
     Returns true if the page margins were successfully set to \a margins.
 
@@ -379,6 +417,9 @@ int QPdfWriter::resolution() const
 */
 #endif
 
+#if QT_DEPRECATED_SINCE(5, 14)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
     \reimp
 
@@ -404,6 +445,8 @@ void QPdfWriter::setPageSizeMM(const QSizeF &size)
 {
     setPageSize(QPageSize(size, QPageSize::Millimeter));
 }
+QT_WARNING_POP
+#endif
 
 /*!
     \internal
@@ -427,6 +470,9 @@ bool QPdfWriter::newPage()
 }
 
 
+#if QT_DEPRECATED_SINCE(5, 14)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
     \reimp
 
@@ -438,6 +484,8 @@ void QPdfWriter::setMargins(const Margins &m)
 {
     setPageMargins(QMarginsF(m.left, m.top, m.right, m.bottom), QPageLayout::Millimeter);
 }
+QT_WARNING_POP
+#endif
 
 QT_END_NAMESPACE
 

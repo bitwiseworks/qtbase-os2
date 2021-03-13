@@ -132,7 +132,7 @@ static void qt_cleanup_icon_cache()
     if Qt::AA_UseHighDpiPixmaps is not set this function
     returns 1.0 to keep non-hihdpi aware code working.
 */
-static qreal qt_effective_device_pixel_ratio(QWindow *window = 0)
+static qreal qt_effective_device_pixel_ratio(QWindow *window = nullptr)
 {
     if (!qApp->testAttribute(Qt::AA_UseHighDpiPixmaps))
         return qreal(1.0);
@@ -165,6 +165,11 @@ QIconPrivate::QIconPrivate(QIconEngine *e)
 qreal QIconPrivate::pixmapDevicePixelRatio(qreal displayDevicePixelRatio, const QSize &requestedSize, const QSize &actualSize)
 {
     QSize targetSize = requestedSize * displayDevicePixelRatio;
+    if ((actualSize.width() == targetSize.width() && actualSize.height() <= targetSize.height()) ||
+        (actualSize.width() <= targetSize.width() && actualSize.height() == targetSize.height())) {
+        // Correctly scaled for dpr, just having different aspect ratio
+        return displayDevicePixelRatio;
+    }
     qreal scale = 0.5 * (qreal(actualSize.width()) / qreal(targetSize.width()) +
                          qreal(actualSize.height() / qreal(targetSize.height())));
     return qMax(qreal(1.0), displayDevicePixelRatio *scale);
@@ -185,7 +190,12 @@ QPixmapIconEngine::~QPixmapIconEngine()
 
 void QPixmapIconEngine::paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state)
 {
-    QSize pixmapSize = rect.size() * qt_effective_device_pixel_ratio(0);
+    qreal dpr = 1.0;
+    if (QCoreApplication::testAttribute(Qt::AA_UseHighDpiPixmaps)) {
+      auto paintDevice = painter->device();
+      dpr = paintDevice ? paintDevice->devicePixelRatioF() : qApp->devicePixelRatio();
+    }
+    const QSize pixmapSize = rect.size() * dpr;
     QPixmap px = pixmap(pixmapSize, mode, state);
     painter->drawPixmap(rect, px);
 }
@@ -218,7 +228,7 @@ static QPixmapIconEngineEntry *bestSizeMatch( const QSize &size, QPixmapIconEngi
 
 QPixmapIconEngineEntry *QPixmapIconEngine::tryMatch(const QSize &size, QIcon::Mode mode, QIcon::State state)
 {
-    QPixmapIconEngineEntry *pe = 0;
+    QPixmapIconEngineEntry *pe = nullptr;
     for (int i = 0; i < pixmaps.count(); ++i)
         if (pixmaps.at(i).mode == mode && pixmaps.at(i).state == state) {
             if (pe)
@@ -663,8 +673,8 @@ QFactoryLoader *qt_iconEngineFactoryLoader()
 /*!
   Constructs a null icon.
 */
-QIcon::QIcon() Q_DECL_NOEXCEPT
-    : d(0)
+QIcon::QIcon() noexcept
+    : d(nullptr)
 {
 }
 
@@ -672,7 +682,7 @@ QIcon::QIcon() Q_DECL_NOEXCEPT
   Constructs an icon from a \a pixmap.
  */
 QIcon::QIcon(const QPixmap &pixmap)
-    :d(0)
+    :d(nullptr)
 {
     addPixmap(pixmap);
 }
@@ -713,7 +723,7 @@ QIcon::QIcon(const QIcon &other)
     complete list of the supported file formats.
 */
 QIcon::QIcon(const QString &fileName)
-    : d(0)
+    : d(nullptr)
 {
     addFile(fileName);
 }
@@ -772,7 +782,7 @@ QIcon &QIcon::operator=(const QIcon &other)
 */
 QIcon::operator QVariant() const
 {
-    return QVariant(QVariant::Icon, this);
+    return QVariant(QMetaType::QIcon, this);
 }
 
 /*! \fn int QIcon::serialNumber() const
@@ -828,7 +838,7 @@ QPixmap QIcon::pixmap(const QSize &size, Mode mode, State state) const
 {
     if (!d)
         return QPixmap();
-    return pixmap(0, size, mode, state);
+    return pixmap(nullptr, size, mode, state);
 }
 
 /*!
@@ -868,7 +878,7 @@ QSize QIcon::actualSize(const QSize &size, Mode mode, State state) const
 {
     if (!d)
         return QSize();
-    return actualSize(0, size, mode, state);
+    return actualSize(nullptr, size, mode, state);
 }
 
 /*!
@@ -987,7 +997,7 @@ bool QIcon::isNull() const
  */
 bool QIcon::isDetached() const
 {
-    return !d || d->ref.load() == 1;
+    return !d || d->ref.loadRelaxed() == 1;
 }
 
 /*! \internal
@@ -998,9 +1008,9 @@ void QIcon::detach()
         if (d->engine->isNull()) {
             if (!d->ref.deref())
                 delete d;
-            d = 0;
+            d = nullptr;
             return;
-        } else if (d->ref.load() != 1) {
+        } else if (d->ref.loadRelaxed() != 1) {
             QIconPrivate *x = new QIconPrivate(d->engine->clone());
             if (!d->ref.deref())
                 delete d;
@@ -1245,6 +1255,9 @@ QString QIcon::fallbackThemeName()
     The \a name should correspond to a directory name in the
     themeSearchPath() containing an index.theme
     file describing its contents.
+
+    \note This should be done before creating \l QGuiApplication, to ensure
+    correct initialization.
 
     \sa fallbackThemeName(), themeSearchPaths(), themeName()
 */
@@ -1496,7 +1509,7 @@ QDebug operator<<(QDebug dbg, const QIcon &i)
         if (!i.name().isEmpty())
             dbg << i.name() << ',';
         dbg << "availableSizes[normal,Off]=" << i.availableSizes()
-            << ",cacheKey=" << showbase << hex << i.cacheKey() << dec << noshowbase;
+            << ",cacheKey=" << Qt::showbase << Qt::hex << i.cacheKey() << Qt::dec << Qt::noshowbase;
     }
     dbg << ')';
     return dbg;
@@ -1517,7 +1530,7 @@ QDebug operator<<(QDebug dbg, const QIcon &i)
     \internal
     \since 5.6
     Attempts to find a suitable @Nx file for the given \a targetDevicePixelRatio
-    Returns the the \a baseFileName if no such file was found.
+    Returns the \a baseFileName if no such file was found.
 
     Given base foo.png and a target dpr of 2.5, this function will look for
     foo@3x.png, then foo@2x, then fall back to foo.png if not found.

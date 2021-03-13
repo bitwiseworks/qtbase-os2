@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Copyright (C) 2016 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -49,10 +49,21 @@
 #include <QtCore/private/qcore_unix_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 #include <QtGui/private/qguiapplication_p.h>
+
+#include <mutex>
+
 #ifdef Q_OS_FREEBSD
 #include <dev/evdev/input.h>
 #else
 #include <linux/input.h>
+#endif
+
+#ifndef input_event_sec
+#define input_event_sec time.tv_sec
+#endif
+
+#ifndef input_event_usec
+#define input_event_usec time.tv_usec
 #endif
 
 #include <math.h>
@@ -66,6 +77,7 @@ extern "C" {
 QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(qLcEvdevTouch, "qt.qpa.input")
+Q_LOGGING_CATEGORY(qLcEvents, "qt.qpa.input.events")
 
 /* android (and perhaps some other linux-derived stuff) don't define everything
  * in linux/input.h, so we'll need to do that ourselves.
@@ -74,7 +86,7 @@ Q_LOGGING_CATEGORY(qLcEvdevTouch, "qt.qpa.input")
 #define ABS_MT_TOUCH_MAJOR      0x30    /* Major axis of touching ellipse */
 #endif
 #ifndef ABS_MT_POSITION_X
-#define ABS_MT_POSITION_X 0x35    /* Center X ellipse position */
+#define ABS_MT_POSITION_X       0x35    /* Center X ellipse position */
 #endif
 #ifndef ABS_MT_POSITION_Y
 #define ABS_MT_POSITION_Y       0x36    /* Center Y ellipse position */
@@ -87,6 +99,9 @@ Q_LOGGING_CATEGORY(qLcEvdevTouch, "qt.qpa.input")
 #endif
 #ifndef ABS_MT_TRACKING_ID
 #define ABS_MT_TRACKING_ID      0x39    /* Unique ID of initiated contact */
+#endif
+#ifndef ABS_MT_PRESSURE
+#define ABS_MT_PRESSURE         0x3a
 #endif
 #ifndef SYN_MT_REPORT
 #define SYN_MT_REPORT           2
@@ -106,16 +121,13 @@ public:
     QList<QWindowSystemInterface::TouchPoint> m_lastTouchPoints;
 
     struct Contact {
-        int trackingId;
-        int x;
-        int y;
-        int maj;
-        int pressure;
-        Qt::TouchPointState state;
+        int trackingId = -1;
+        int x = 0;
+        int y = 0;
+        int maj = -1;
+        int pressure = 0;
+        Qt::TouchPointState state = Qt::TouchPointPressed;
         QTouchEvent::TouchPoint::InfoFlags flags;
-        Contact() : trackingId(-1),
-            x(0), y(0), maj(-1), pressure(0),
-            state(Qt::TouchPointPressed), flags(0) { }
     };
     QHash<int, Contact> m_contacts; // The key is a tracking id for type A, slot number for type B.
     QHash<int, Contact> m_lastContacts;
@@ -225,7 +237,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
         }
     }
 
-    qCDebug(qLcEvdevTouch, "evdevtouch: Using device %s", qPrintable(device));
+    qCDebug(qLcEvdevTouch, "evdevtouch: Using device %ls", qUtf16Printable(device));
 
     m_fd = QT_OPEN(device.toLocal8Bit().constData(), O_RDONLY | O_NDELAY, 0);
 
@@ -233,7 +245,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
         m_notify = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
         connect(m_notify, &QSocketNotifier::activated, this, &QEvdevTouchScreenHandler::readData);
     } else {
-        qErrnoWarning(errno, "evdevtouch: Cannot open input device %s", qPrintable(device));
+        qErrnoWarning("evdevtouch: Cannot open input device %ls", qUtf16Printable(device));
         return;
     }
 
@@ -243,6 +255,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     if (mtdeverr) {
         qWarning("evdevtouch: mtdev_open failed: %d", mtdeverr);
         QT_CLOSE(m_fd);
+        free(m_mtdev);
         return;
     }
 #endif
@@ -263,8 +276,8 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
 
     d->deviceNode = device;
     qCDebug(qLcEvdevTouch,
-            "evdevtouch: %s: Protocol type %c %s (%s), filtered=%s",
-            qPrintable(d->deviceNode),
+            "evdevtouch: %ls: Protocol type %c %s (%s), filtered=%s",
+            qUtf16Printable(d->deviceNode),
             d->m_typeB ? 'B' : 'A', mtdevStr,
             d->m_singleTouch ? "single" : "multi",
             d->m_filtered ? "yes" : "no");
@@ -276,7 +289,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     bool has_x_range = false, has_y_range = false;
 
     if (ioctl(m_fd, EVIOCGABS((d->m_singleTouch ? ABS_X : ABS_MT_POSITION_X)), &absInfo) >= 0) {
-        qCDebug(qLcEvdevTouch, "evdevtouch: %s: min X: %d max X: %d", qPrintable(device),
+        qCDebug(qLcEvdevTouch, "evdevtouch: %ls: min X: %d max X: %d", qUtf16Printable(device),
                 absInfo.minimum, absInfo.maximum);
         d->hw_range_x_min = absInfo.minimum;
         d->hw_range_x_max = absInfo.maximum;
@@ -284,7 +297,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     }
 
     if (ioctl(m_fd, EVIOCGABS((d->m_singleTouch ? ABS_Y : ABS_MT_POSITION_Y)), &absInfo) >= 0) {
-        qCDebug(qLcEvdevTouch, "evdevtouch: %s: min Y: %d max Y: %d", qPrintable(device),
+        qCDebug(qLcEvdevTouch, "evdevtouch: %ls: min Y: %d max Y: %d", qUtf16Printable(device),
                 absInfo.minimum, absInfo.maximum);
         d->hw_range_y_min = absInfo.minimum;
         d->hw_range_y_max = absInfo.maximum;
@@ -292,10 +305,10 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     }
 
     if (!has_x_range || !has_y_range)
-        qWarning("evdevtouch: %s: Invalid ABS limits, behavior unspecified", qPrintable(device));
+        qWarning("evdevtouch: %ls: Invalid ABS limits, behavior unspecified", qUtf16Printable(device));
 
     if (ioctl(m_fd, EVIOCGABS(ABS_PRESSURE), &absInfo) >= 0) {
-        qCDebug(qLcEvdevTouch, "evdevtouch: %s: min pressure: %d max pressure: %d", qPrintable(device),
+        qCDebug(qLcEvdevTouch, "evdevtouch: %ls: min pressure: %d max pressure: %d", qUtf16Printable(device),
                 absInfo.minimum, absInfo.maximum);
         if (absInfo.maximum > absInfo.minimum) {
             d->hw_pressure_min = absInfo.minimum;
@@ -306,7 +319,7 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     char name[1024];
     if (ioctl(m_fd, EVIOCGNAME(sizeof(name) - 1), name) >= 0) {
         d->hw_name = QString::fromLocal8Bit(name);
-        qCDebug(qLcEvdevTouch, "evdevtouch: %s: device name: %s", qPrintable(device), name);
+        qCDebug(qLcEvdevTouch, "evdevtouch: %ls: device name: %s", qUtf16Printable(device), name);
     }
 
     // Fix up the coordinate ranges for am335x in case the kernel driver does not have them fixed.
@@ -342,8 +355,8 @@ QEvdevTouchScreenHandler::QEvdevTouchScreenHandler(const QString &device, const 
     if (mapping.load()) {
         d->m_screenName = mapping.screenNameForDeviceNode(d->deviceNode);
         if (!d->m_screenName.isEmpty())
-            qCDebug(qLcEvdevTouch, "evdevtouch: Mapping device %s to screen %s",
-                    qPrintable(d->deviceNode), qPrintable(d->m_screenName));
+            qCDebug(qLcEvdevTouch, "evdevtouch: Mapping device %ls to screen %ls",
+                    qUtf16Printable(d->deviceNode), qUtf16Printable(d->m_screenName));
     }
 
     registerTouchDevice();
@@ -424,7 +437,7 @@ err:
         return;
     } else if (events < 0) {
         if (errno != EINTR && errno != EAGAIN) {
-            qErrnoWarning(errno, "evdevtouch: Could not read from input device");
+            qErrnoWarning("evdevtouch: Could not read from input device");
             if (errno == ENODEV) { // device got disconnected -> stop reading
                 delete m_notify;
                 m_notify = nullptr;
@@ -532,7 +545,10 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
                 m_currentData.state = Qt::TouchPointReleased;
             if (m_typeB)
                 m_contacts[m_currentSlot].maj = m_currentData.maj;
-        } else if (data->code == ABS_PRESSURE) {
+        } else if (data->code == ABS_PRESSURE || data->code == ABS_MT_PRESSURE) {
+            if (Q_UNLIKELY(qLcEvents().isDebugEnabled()))
+                qCDebug(qLcEvents, "EV_ABS code 0x%x: pressure %d; bounding to [%d,%d]",
+                        data->code, data->value, hw_pressure_min, hw_pressure_max);
             m_currentData.pressure = qBound(hw_pressure_min, data->value, hw_pressure_max);
             if (m_typeB || m_singleTouch)
                 m_contacts[m_currentSlot].pressure = m_currentData.pressure;
@@ -560,20 +576,22 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
         if (!m_contacts.isEmpty() && m_contacts.constBegin().value().trackingId == -1)
             assignIds();
 
+        std::unique_lock<QMutex> locker;
         if (m_filtered)
-            m_mutex.lock();
+            locker = std::unique_lock<QMutex>{m_mutex};
 
         // update timestamps
         m_lastTimeStamp = m_timeStamp;
-        m_timeStamp = data->time.tv_sec + data->time.tv_usec / 1000000.0;
+        m_timeStamp = data->input_event_sec + data->input_event_usec / 1000000.0;
 
         m_lastTouchPoints = m_touchPoints;
         m_touchPoints.clear();
         Qt::TouchPointStates combinedStates;
+        bool hasPressure = false;
 
-        QMutableHashIterator<int, Contact> it(m_contacts);
-        while (it.hasNext()) {
-            it.next();
+        for (auto i = m_contacts.begin(), end = m_contacts.end(); i != end; /*erasing*/) {
+            auto it = i++;
+
             Contact &contact(it.value());
 
             if (!contact.state)
@@ -596,17 +614,18 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
             // Avoid reporting a contact in released state more than once.
             if (!m_typeB && contact.state == Qt::TouchPointReleased
                     && !m_lastContacts.contains(key)) {
-                it.remove();
+                m_contacts.erase(it);
                 continue;
             }
+
+            if (contact.pressure)
+                hasPressure = true;
 
             addTouchPoint(contact, &combinedStates);
         }
 
         // Now look for contacts that have disappeared since the last sync.
-        it = m_lastContacts;
-        while (it.hasNext()) {
-            it.next();
+        for (auto it = m_lastContacts.begin(), end = m_lastContacts.end(); it != end; ++it) {
             Contact &contact(it.value());
             int key = m_typeB ? it.key() : contact.trackingId;
             if (m_typeB) {
@@ -623,9 +642,9 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
         }
 
         // Remove contacts that have just been reported as released.
-        it = m_contacts;
-        while (it.hasNext()) {
-            it.next();
+        for (auto i = m_contacts.begin(), end = m_contacts.end(); i != end; /*erasing*/) {
+            auto it = i++;
+
             Contact &contact(it.value());
 
             if (!contact.state)
@@ -635,7 +654,7 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
                 if (m_typeB)
                     contact.state = static_cast<Qt::TouchPointState>(0);
                 else
-                    it.remove();
+                    m_contacts.erase(it);
             } else {
                 contact.state = Qt::TouchPointStationary;
             }
@@ -646,11 +665,8 @@ void QEvdevTouchScreenData::processInputEvent(input_event *data)
             m_contacts.clear();
 
 
-        if (!m_touchPoints.isEmpty() && combinedStates != Qt::TouchPointStationary)
+        if (!m_touchPoints.isEmpty() && (hasPressure || combinedStates != Qt::TouchPointStationary))
             reportPoints();
-
-        if (m_filtered)
-            m_mutex.unlock();
     }
 
     m_lastEventType = data->type;
@@ -775,6 +791,9 @@ void QEvdevTouchScreenData::reportPoints()
             tp.pressure = tp.state == Qt::TouchPointReleased ? 0 : 1;
         else
             tp.pressure = (tp.pressure - hw_pressure_min) / qreal(hw_pressure_max - hw_pressure_min);
+
+        if (Q_UNLIKELY(qLcEvents().isDebugEnabled()))
+            qCDebug(qLcEvents) << "reporting" << tp;
     }
 
     // Let qguiapp pick the target window.

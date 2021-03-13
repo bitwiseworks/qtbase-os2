@@ -57,11 +57,13 @@
 #include "qwindowsmenu.h"
 #include "qwindowsscreen.h"
 
+#include <QtGui/qguiapplication.h>
 #include <QtGui/qpixmap.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qrect.h>
 #include <QtCore/qvector.h>
 #include <QtCore/qsettings.h>
+#include <qpa/qwindowsysteminterface.h>
 
 #include <qt_windows.h>
 #include <commctrl.h>
@@ -117,7 +119,7 @@ struct QWindowsHwndSystemTrayIconEntry
     QWindowsSystemTrayIcon *trayIcon;
 };
 
-typedef QVector<QWindowsHwndSystemTrayIconEntry> HwndTrayIconEntries;
+using HwndTrayIconEntries = QVector<QWindowsHwndSystemTrayIconEntry>;
 
 Q_GLOBAL_STATIC(HwndTrayIconEntries, hwndTrayIconEntries)
 
@@ -134,9 +136,12 @@ static int indexOfHwnd(HWND hwnd)
 extern "C" LRESULT QT_WIN_CALLBACK qWindowsTrayIconWndProc(HWND hwnd, UINT message,
                                                            WPARAM wParam, LPARAM lParam)
 {
+    // QTBUG-79248: Trigger screen update if there are no other windows.
+    if (message == WM_DPICHANGED && QGuiApplication::topLevelWindows().isEmpty())
+        QWindowsContext::instance()->screenManager().handleScreenChanges();
     if (message == MYWM_TASKBARCREATED || message == MYWM_NOTIFYICON
         || message == WM_INITMENU || message == WM_INITMENUPOPUP
-        || message == WM_COMMAND) {
+        || message == WM_CLOSE || message == WM_COMMAND) {
         const int index = indexOfHwnd(hwnd);
         if (index >= 0) {
             MSG msg;
@@ -163,7 +168,7 @@ static inline HWND createTrayIconMessageWindow()
         return nullptr;
     // Register window class in the platform plugin.
     const QString className =
-        ctx->registerWindowClass(QStringLiteral("QTrayIconMessageWindowClass"),
+        ctx->registerWindowClass(QWindowsContext::classNamePrefix() + QStringLiteral("TrayIconMessageWindowClass"),
                                  qWindowsTrayIconWndProc);
     const wchar_t windowName[] = L"QTrayIconMessageWindow";
     return CreateWindowEx(0, reinterpret_cast<const wchar_t *>(className.utf16()),
@@ -179,7 +184,6 @@ static inline HWND createTrayIconMessageWindow()
     \brief Windows native system tray icon
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsSystemTrayIcon::QWindowsSystemTrayIcon()
@@ -256,7 +260,7 @@ void QWindowsSystemTrayIcon::showMessage(const QString &title, const QString &me
     // For empty messages, ensures that they show when only title is set
     QString message = messageIn;
     if (message.isEmpty() && !title.isEmpty())
-        message.append(QLatin1Char(' '));
+        message.append(u' ');
 
     NOTIFYICONDATA tnd;
     initNotifyIconData(tnd);
@@ -419,8 +423,12 @@ bool QWindowsSystemTrayIcon::winEvent(const MSG &message, long *result)
             if (screen) {
                 emit contextMenuRequested(globalPos, screen);
                 emit activated(Context);
-                if (m_menu)
+                if (m_menu) {
+                    // Set the foreground window to the controlling window so that clicking outside
+                    // of the menu or window will cause the menu to close
+                    SetForegroundWindow(m_hwnd);
                     m_menu->trackPopupMenu(message.hwnd, globalPos.x(), globalPos.y());
+                }
             }
         }
             break;
@@ -438,6 +446,9 @@ bool QWindowsSystemTrayIcon::winEvent(const MSG &message, long *result)
     case WM_INITMENU:
     case WM_INITMENUPOPUP:
         QWindowsPopupMenu::notifyAboutToShow(reinterpret_cast<HMENU>(message.wParam));
+        break;
+    case WM_CLOSE:
+        QWindowSystemInterface::handleApplicationTermination<QWindowSystemInterface::SynchronousDelivery>();
         break;
     case WM_COMMAND:
         QWindowsPopupMenu::notifyTriggered(LOWORD(message.wParam));

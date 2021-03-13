@@ -45,8 +45,10 @@ class tst_QEventDispatcher : public QObject
     Q_OBJECT
 
     QAbstractEventDispatcher *eventDispatcher;
-    int receivedEventType;
-    int timerIdFromEvent;
+
+    int receivedEventType = -1;
+    int timerIdFromEvent = -1;
+    bool doubleTimer = false;
 
 protected:
     bool event(QEvent *e);
@@ -54,9 +56,7 @@ protected:
 public:
     inline tst_QEventDispatcher()
         : QObject(),
-          eventDispatcher(QAbstractEventDispatcher::instance(thread())),
-          receivedEventType(-1),
-          timerIdFromEvent(-1)
+          eventDispatcher(QAbstractEventDispatcher::instance(thread()))
     { }
 
 private slots:
@@ -67,6 +67,8 @@ private slots:
     void sendPostedEvents_data();
     void sendPostedEvents();
     void processEventsOnlySendsQueuedEvents();
+    void postedEventsPingPong();
+    void eventLoopExit();
 };
 
 bool tst_QEventDispatcher::event(QEvent *e)
@@ -74,6 +76,9 @@ bool tst_QEventDispatcher::event(QEvent *e)
     switch (receivedEventType = e->type()) {
     case QEvent::Timer:
     {
+        // sometimes, two timers fire during a single QTRY_xxx wait loop
+        if (timerIdFromEvent != -1)
+            doubleTimer = true;
         timerIdFromEvent = static_cast<QTimerEvent *>(e)->timerId();
         return true;
     }
@@ -205,10 +210,31 @@ void tst_QEventDispatcher::registerTimer()
     QVERIFY(timers.foundCoarse());
     QVERIFY(timers.foundVeryCoarse());
 
+#ifdef Q_OS_DARWIN
+    /*
+        We frequently experience flaky failures on macOS. Assumption is that this is
+        due to undeterministic VM scheduling, making us process events for significantly
+        longer than expected and resulting in timers firing in undefined order.
+        To detect this condition, we use a QElapsedTimer, and skip the test.
+    */
+    QElapsedTimer elapsedTimer;
+    elapsedTimer.start();
+#endif
+
     // process events, waiting for the next event... this should only fire the precise timer
     receivedEventType = -1;
     timerIdFromEvent = -1;
+    doubleTimer = false;
     QTRY_COMPARE_WITH_TIMEOUT(receivedEventType, int(QEvent::Timer), PreciseTimerInterval * 2);
+
+#ifdef Q_OS_DARWIN
+    if (doubleTimer)
+        QSKIP("Double timer during a single timeout - aborting test as flaky on macOS");
+    if (timerIdFromEvent != timers.preciseTimerId()
+        && elapsedTimer.elapsed() > PreciseTimerInterval * 3)
+        QSKIP("Ignore flaky test behavior due to VM scheduling on macOS");
+#endif
+
     QCOMPARE(timerIdFromEvent, timers.preciseTimerId());
     // now unregister it and make sure it's gone
     timers.unregister(timers.preciseTimerId());
@@ -222,7 +248,17 @@ void tst_QEventDispatcher::registerTimer()
     // do the same again for the coarse timer
     receivedEventType = -1;
     timerIdFromEvent = -1;
+    doubleTimer = false;
     QTRY_COMPARE_WITH_TIMEOUT(receivedEventType, int(QEvent::Timer), CoarseTimerInterval * 2);
+
+#ifdef Q_OS_DARWIN
+    if (doubleTimer)
+        QSKIP("Double timer during a single timeout - aborting test as flaky on macOS");
+    if (timerIdFromEvent != timers.coarseTimerId()
+        && elapsedTimer.elapsed() > CoarseTimerInterval * 3)
+        QSKIP("Ignore flaky test behavior due to VM scheduling on macOS");
+#endif
+
     QCOMPARE(timerIdFromEvent, timers.coarseTimerId());
     // now unregister it and make sure it's gone
     timers.unregister(timers.coarseTimerId());
@@ -312,6 +348,75 @@ void tst_QEventDispatcher::processEventsOnlySendsQueuedEvents()
     QCOMPARE(object.eventsReceived, 3);
     QCoreApplication::processEvents();
     QCOMPARE(object.eventsReceived, 4);
+}
+
+void tst_QEventDispatcher::postedEventsPingPong()
+{
+    QEventLoop mainLoop;
+
+    // We need to have at least two levels of nested loops
+    // for the posted event to get stuck (QTBUG-85981).
+    QMetaObject::invokeMethod(this, [this, &mainLoop]() {
+        QMetaObject::invokeMethod(this, [&mainLoop]() {
+            // QEventLoop::quit() should be invoked on the next
+            // iteration of mainLoop.exec().
+            QMetaObject::invokeMethod(&mainLoop, &QEventLoop::quit,
+                                      Qt::QueuedConnection);
+        }, Qt::QueuedConnection);
+        mainLoop.processEvents();
+    }, Qt::QueuedConnection);
+
+    // We should use Qt::CoarseTimer on Windows, to prevent event
+    // dispatcher from sending a posted event.
+    QTimer::singleShot(500, Qt::CoarseTimer, [&mainLoop]() {
+        mainLoop.exit(1);
+    });
+
+    QCOMPARE(mainLoop.exec(), 0);
+}
+
+void tst_QEventDispatcher::eventLoopExit()
+{
+    // This test was inspired by QTBUG-79477. A particular
+    // implementation detail in QCocoaEventDispatcher allowed
+    // QEventLoop::exit() to fail to really exit the event loop.
+    // Thus this test is a part of the dispatcher auto-test.
+
+    // Imitates QApplication::exec():
+    QEventLoop mainLoop;
+    // The test itself is a lambda:
+    QTimer::singleShot(0, [&mainLoop]() {
+        // Two more single shots, both will be posted as events
+        // (zero timeout) and supposed to be processes by the
+        // mainLoop:
+
+        QTimer::singleShot(0, [&mainLoop]() {
+            // wakeUp triggers QCocoaEventDispatcher into incrementing
+            // its 'serialNumber':
+            mainLoop.wakeUp();
+            // QCocoaEventDispatcher::processEvents() will process
+            // posted events and execute the second lambda defined below:
+            QCoreApplication::processEvents();
+        });
+
+        QTimer::singleShot(0, [&mainLoop]() {
+            // With QCocoaEventDispatcher this is executed while in the
+            // processEvents (see above) and would fail to actually
+            // interrupt the loop.
+            mainLoop.exit();
+        });
+    });
+
+    bool timeoutObserved = false;
+    QTimer::singleShot(500, [&timeoutObserved, &mainLoop]() {
+        // In case the QEventLoop::exit above failed, we have to bail out
+        // early, not wasting time:
+        mainLoop.exit();
+        timeoutObserved = true;
+    });
+
+    mainLoop.exec();
+    QVERIFY(!timeoutObserved);
 }
 
 QTEST_MAIN(tst_QEventDispatcher)

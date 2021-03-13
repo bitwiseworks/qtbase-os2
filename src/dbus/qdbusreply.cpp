@@ -75,6 +75,13 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \fn template<typename T> QDBusReply<T>::QDBusReply(const QDBusReply &other)
+    \since 5.15
+
+    Constructs a copy of \a other.
+*/
+
+/*!
     \fn template<typename T> QDBusReply<T>::QDBusReply(const QDBusMessage &reply)
     Automatically construct a QDBusReply object from the reply message \a reply, extracting the
     first return value from it if it is a success reply.
@@ -202,7 +209,7 @@ void qDBusReplyFill(const QDBusMessage &reply, QDBusError &error, QVariant &data
     }
 
     const char *expectedSignature = QDBusMetaType::typeToSignature(data.userType());
-    const char *receivedType = 0;
+    const char *receivedType = nullptr;
     QByteArray receivedSignature;
 
     if (reply.arguments().count() >= 1) {
@@ -228,14 +235,14 @@ void qDBusReplyFill(const QDBusMessage &reply, QDBusError &error, QVariant &data
         receivedSignature = "<empty signature>";
     QString errorMsg;
     if (receivedType) {
-        errorMsg = QString::fromLatin1("Unexpected reply signature: got \"%1\" (%4), "
+        errorMsg = QLatin1String("Unexpected reply signature: got \"%1\" (%4), "
                                          "expected \"%2\" (%3)")
                    .arg(QLatin1String(receivedSignature),
                         QLatin1String(expectedSignature),
                         QLatin1String(data.typeName()),
                         QLatin1String(receivedType));
     } else {
-        errorMsg = QString::fromLatin1("Unexpected reply signature: got \"%1\", "
+        errorMsg = QLatin1String("Unexpected reply signature: got \"%1\", "
                                          "expected \"%2\" (%3)")
                    .arg(QLatin1String(receivedSignature),
                         QLatin1String(expectedSignature),

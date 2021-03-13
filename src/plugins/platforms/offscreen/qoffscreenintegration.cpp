@@ -83,7 +83,7 @@ template <typename BaseEventDispatcher>
 class QOffscreenEventDispatcher : public BaseEventDispatcher
 {
 public:
-    explicit QOffscreenEventDispatcher(QObject *parent = 0)
+    explicit QOffscreenEventDispatcher(QObject *parent = nullptr)
         : BaseEventDispatcher(parent)
     {
     }

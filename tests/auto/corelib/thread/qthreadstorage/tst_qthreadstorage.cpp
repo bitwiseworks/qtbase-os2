@@ -367,7 +367,7 @@ void tst_QThreadStorage::leakInDestructor()
             QVERIFY(tls.hasLocalData());
         }
     };
-    int c = SPointer::count.load();
+    int c = SPointer::count.loadRelaxed();
 
     QThreadStorage<ThreadStorageLocalDataTester *> tls;
 
@@ -391,7 +391,7 @@ void tst_QThreadStorage::leakInDestructor()
     QVERIFY(t3.wait());
 
     //check all the constructed things have been destructed
-    QCOMPARE(int(SPointer::count.load()), c);
+    QCOMPARE(int(SPointer::count.loadRelaxed()), c);
 }
 
 class ThreadStorageResetLocalDataTester {
@@ -419,7 +419,7 @@ void tst_QThreadStorage::resetInDestructor()
             QVERIFY(ThreadStorageResetLocalDataTesterTls()->hasLocalData());
         }
     };
-    int c = SPointer::count.load();
+    int c = SPointer::count.loadRelaxed();
 
     Thread t1;
     Thread t2;
@@ -432,7 +432,7 @@ void tst_QThreadStorage::resetInDestructor()
     QVERIFY(t3.wait());
 
     //check all the constructed things have been destructed
-    QCOMPARE(int(SPointer::count.load()), c);
+    QCOMPARE(int(SPointer::count.loadRelaxed()), c);
 }
 
 
@@ -483,7 +483,7 @@ void tst_QThreadStorage::valueBased()
     QThreadStorage<QString> tlsString;
     QThreadStorage<int> tlsInt;
 
-    int c = SPointer::count.load();
+    int c = SPointer::count.loadRelaxed();
 
     Thread t1(tlsSPointer, tlsString, tlsInt);
     Thread t2(tlsSPointer, tlsString, tlsInt);
@@ -503,7 +503,7 @@ void tst_QThreadStorage::valueBased()
     QVERIFY(t2.wait());
     QVERIFY(t3.wait());
 
-    QCOMPARE(c, int(SPointer::count.load()));
+    QCOMPARE(c, int(SPointer::count.loadRelaxed()));
 
 }
 

@@ -35,16 +35,12 @@ QT_BEGIN_NAMESPACE
 
 class MingwMakefileGenerator : public Win32MakefileGenerator
 {
-public:
-    MingwMakefileGenerator();
-    ~MingwMakefileGenerator();
 protected:
     using MakefileGenerator::escapeDependencyPath;
     QString escapeDependencyPath(const QString &path) const override;
     ProString fixLibFlag(const ProString &lib) override;
     bool processPrlFileBase(QString &origFile, const QStringRef &origName,
                             const QStringRef &fixedBase, int slashOff) override;
-    QString getManifestFileForRcFile() const override;
     bool writeMakefile(QTextStream &) override;
     void init() override;
     QString installRoot() const override;
@@ -64,9 +60,6 @@ private:
 
     QString objectsLinkLine;
 };
-
-inline MingwMakefileGenerator::~MingwMakefileGenerator()
-{ }
 
 QT_END_NAMESPACE
 

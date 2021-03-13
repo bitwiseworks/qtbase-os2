@@ -93,7 +93,7 @@ struct QPainterPathPrivateDeleter
 {
     static inline void cleanup(QPainterPathPrivate *d)
     {
-        // note - we must up-cast to QPainterPathData since QPainterPathPrivate
+        // note - we must downcast to QPainterPathData since QPainterPathPrivate
         // has a non-virtual destructor!
         if (d && !d->ref.deref())
             delete static_cast<QPainterPathData *>(d);
@@ -545,8 +545,8 @@ void QPainterPath::setElementPositionAt(int i, qreal x, qreal y)
 /*!
     Constructs an empty QPainterPath object.
 */
-QPainterPath::QPainterPath() Q_DECL_NOEXCEPT
-    : d_ptr(0)
+QPainterPath::QPainterPath() noexcept
+    : d_ptr(nullptr)
 {
 }
 
@@ -578,7 +578,7 @@ QPainterPath::QPainterPath(const QPointF &startPoint)
 
 void QPainterPath::detach()
 {
-    if (d_ptr->ref.load() != 1)
+    if (d_ptr->ref.loadRelaxed() != 1)
         detach_helper();
     setDirty(true);
 }
@@ -602,7 +602,7 @@ void QPainterPath::ensureData_helper()
     QPainterPath::Element e = { 0, 0, QPainterPath::MoveToElement };
     data->elements << e;
     d_ptr.reset(data);
-    Q_ASSERT(d_ptr != 0);
+    Q_ASSERT(d_ptr != nullptr);
 }
 
 /*!
@@ -1036,7 +1036,7 @@ void QPainterPath::arcMoveTo(const QRectF &rect, qreal angle)
         return;
 
     QPointF pt;
-    qt_find_ellipse_coords(rect, angle, 0, &pt, 0);
+    qt_find_ellipse_coords(rect, angle, 0, &pt, nullptr);
     moveTo(pt);
 }
 
@@ -1253,7 +1253,7 @@ void QPainterPath::addText(const QPointF &point, const QFont &f, const QString &
             fe->addOutlineToPath(x, y, glyphs, this,
                                  si.analysis.bidiLevel % 2
                                  ? QTextItem::RenderFlags(QTextItem::RightToLeft)
-                                 : QTextItem::RenderFlags(0));
+                                 : QTextItem::RenderFlags{});
 
             const qreal lw = fe->lineThickness().toReal();
             if (f.d->underline) {
@@ -1660,13 +1660,18 @@ QList<QPolygonF> QPainterPath::toSubpathPolygons(const QTransform &matrix) const
     return flatCurves;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
   \overload
+  \obsolete
+
+  Use toSubpathPolygons(const QTransform &matrix) instead.
  */
 QList<QPolygonF> QPainterPath::toSubpathPolygons(const QMatrix &matrix) const
 {
     return toSubpathPolygons(QTransform(matrix));
 }
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 /*!
     Converts the path into a list of polygons using the
@@ -1787,13 +1792,18 @@ QList<QPolygonF> QPainterPath::toFillPolygons(const QTransform &matrix) const
     return polys;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
   \overload
+  \obsolete
+
+  Use toFillPolygons(const QTransform &matrix) instead.
  */
 QList<QPolygonF> QPainterPath::toFillPolygons(const QMatrix &matrix) const
 {
     return toFillPolygons(QTransform(matrix));
 }
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 //same as qt_polygon_isect_line in qpolygon.cpp
 static void qt_painterpath_isect_line(const QPointF &p1,
@@ -1855,10 +1865,9 @@ static void qt_painterpath_isect_curve(const QBezier &bezier, const QPointF &pt,
         }
 
         // split curve and try again...
-        QBezier first_half, second_half;
-        bezier.split(&first_half, &second_half);
-        qt_painterpath_isect_curve(first_half, pt, winding, depth + 1);
-        qt_painterpath_isect_curve(second_half, pt, winding, depth + 1);
+        const auto halves = bezier.split();
+        qt_painterpath_isect_curve(halves.first,  pt, winding, depth + 1);
+        qt_painterpath_isect_curve(halves.second, pt, winding, depth + 1);
     }
 }
 
@@ -2013,10 +2022,9 @@ static bool qt_isect_curve_horizontal(const QBezier &bezier, qreal y, qreal x1, 
         if (depth == 32 || (bounds.width() < lower_bound && bounds.height() < lower_bound))
             return true;
 
-        QBezier first_half, second_half;
-        bezier.split(&first_half, &second_half);
-        if (qt_isect_curve_horizontal(first_half, y, x1, x2, depth + 1)
-            || qt_isect_curve_horizontal(second_half, y, x1, x2, depth + 1))
+        const auto halves = bezier.split();
+        if (qt_isect_curve_horizontal(halves.first, y, x1, x2, depth + 1)
+            || qt_isect_curve_horizontal(halves.second, y, x1, x2, depth + 1))
             return true;
     }
     return false;
@@ -2032,10 +2040,9 @@ static bool qt_isect_curve_vertical(const QBezier &bezier, qreal x, qreal y1, qr
         if (depth == 32 || (bounds.width() < lower_bound && bounds.height() < lower_bound))
             return true;
 
-        QBezier first_half, second_half;
-        bezier.split(&first_half, &second_half);
-        if (qt_isect_curve_vertical(first_half, x, y1, y2, depth + 1)
-            || qt_isect_curve_vertical(second_half, x, y1, y2, depth + 1))
+        const auto halves = bezier.split();
+        if (qt_isect_curve_vertical(halves.first, x, y1, y2, depth + 1)
+            || qt_isect_curve_vertical(halves.second, x, y1, y2, depth + 1))
             return true;
     }
      return false;
@@ -2907,14 +2914,18 @@ QPolygonF QPainterPath::toFillPolygon(const QTransform &matrix) const
     return polygon;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
   \overload
+  \obsolete
+
+  Use toFillPolygon(const QTransform &matrix) instead.
 */
 QPolygonF QPainterPath::toFillPolygon(const QMatrix &matrix) const
 {
     return toFillPolygon(QTransform(matrix));
 }
-
+#endif // QT_DEPRECATED_SINCE(5, 15)
 
 //derivative of the equation
 static inline qreal slopeAt(qreal t, qreal a, qreal b, qreal c, qreal d)
@@ -3520,8 +3531,7 @@ void QPainterPath::setDirty(bool dirty)
 {
     d_func()->dirtyBounds        = dirty;
     d_func()->dirtyControlBounds = dirty;
-    delete d_func()->pathConverter;
-    d_func()->pathConverter = 0;
+    d_func()->pathConverter.reset();
     d_func()->convex = false;
 }
 
@@ -3597,10 +3607,10 @@ void QPainterPath::computeControlPointRect() const
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug s, const QPainterPath &p)
 {
-    s.nospace() << "QPainterPath: Element count=" << p.elementCount() << endl;
+    s.nospace() << "QPainterPath: Element count=" << p.elementCount() << Qt::endl;
     const char *types[] = {"MoveTo", "LineTo", "CurveTo", "CurveToData"};
     for (int i=0; i<p.elementCount(); ++i) {
-        s.nospace() << " -> " << types[p.elementAt(i).type] << "(x=" << p.elementAt(i).x << ", y=" << p.elementAt(i).y << ')' << endl;
+        s.nospace() << " -> " << types[p.elementAt(i).type] << "(x=" << p.elementAt(i).x << ", y=" << p.elementAt(i).y << ')' << Qt::endl;
 
     }
     return s;

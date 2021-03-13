@@ -162,12 +162,12 @@ public:
 
 
 const char *const QXmlStreamReader_Table::spell [] = {
-  "end of file", 0, " ", "<", ">", "&", "#", "\'", "\"", "[", 
+  "end of file", nullptr, " ", "<", ">", "&", "#", "\'", "\"", "[",
   "]", "(", ")", "|", "=", "%", "/", ":", ";", ",", 
   "-", "+", "*", ".", "?", "!", "[a-zA-Z]", "[0-9]", "[CDATA[", "DOCTYPE", 
   "ELEMENT", "ATTLIST", "ENTITY", "NOTATION", "SYSTEM", "PUBLIC", "NDATA", "REQUIRED", "IMPLIED", "FIXED", 
-  "EMPTY", "ANY", "PCDATA", 0, 0, 0, 0, "CDATA", "ID", "IDREF", 
-  "IDREFS", "ENTITIES", "NMTOKEN", "NMTOKENS", "<?xml", "version", 0};
+  "EMPTY", "ANY", "PCDATA", nullptr, nullptr, nullptr, nullptr, "CDATA", "ID", "IDREF",
+  "IDREFS", "ENTITIES", "NMTOKEN", "NMTOKENS", "<?xml", "version", nullptr};
 
 const short QXmlStreamReader_Table::lhs [] = {
   57, 57, 59, 59, 59, 59, 59, 59, 59, 59, 
@@ -645,7 +645,7 @@ template <typename T> class QXmlStreamSimpleStack {
     T *data;
     int tos, cap;
 public:
-    inline QXmlStreamSimpleStack():data(0), tos(-1), cap(0){}
+    inline QXmlStreamSimpleStack():data(nullptr), tos(-1), cap(0){}
     inline ~QXmlStreamSimpleStack(){ if (data) free(data); }
 
     inline void reserve(int extraCapacity) {
@@ -774,9 +774,19 @@ public:
     QHash<QStringView, Entity> entityHash;
     QHash<QStringView, Entity> parameterEntityHash;
     QXmlStreamSimpleStack<Entity *>entityReferenceStack;
+    int entityExpansionLimit = 4096;
+    int entityLength = 0;
     inline bool referenceEntity(Entity &entity) {
         if (entity.isCurrentlyReferenced) {
-            raiseWellFormedError(QXmlStream::tr("Recursive entity detected."));
+            raiseWellFormedError(QXmlStream::tr("Self-referencing entity detected."));
+            return false;
+        }
+        // entityLength represents the amount of additional characters the
+        // entity expands into (can be negative for e.g. &amp;). It's used to
+        // avoid DoS attacks through recursive entity expansions
+        entityLength += entity.value.size() - entity.name.size() - 2;
+        if (entityLength > entityExpansionLimit) {
+            raiseWellFormedError(QXmlStream::tr("Entity expands to more characters than the entity expansion limit."));
             return false;
         }
         entity.isCurrentlyReferenced = true;
@@ -981,7 +991,7 @@ public:
 
     QString resolveUndeclaredEntity(const QString &name);
     void parseEntity(const QString &value);
-    QXmlStreamReaderPrivate *entityParser;
+    std::unique_ptr<QXmlStreamReaderPrivate> entityParser;
 
     bool scanAfterLangleBang();
     bool scanPublicOrSystem();
@@ -995,7 +1005,7 @@ public:
     int fastScanLiteralContent();
     int fastScanSpace();
     int fastScanContentCharList();
-    int fastScanName(int *prefix = 0);
+    int fastScanName(int *prefix = nullptr);
     inline int fastScanNMTOKEN();
 
 
@@ -1308,6 +1318,8 @@ bool QXmlStreamReaderPrivate::parse()
 
         case 10:
             entityReferenceStack.pop()->isCurrentlyReferenced = false;
+            if (entityReferenceStack.isEmpty())
+                entityLength = 0;
             clearSym();
         break;
 

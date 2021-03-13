@@ -55,11 +55,20 @@
 # include "qcoreapplication.h"
 #endif
 
+#include <private/qmemory_p.h>
+
 #ifdef QT_NO_QOBJECT
 #define tr(X) QString::fromLatin1(X)
 #endif
 
 QT_BEGIN_NAMESPACE
+
+Q_DECL_COLD_FUNCTION
+static bool file_already_open(QFile &file, const char *where = nullptr)
+{
+    qWarning("QFile::%s: File (%ls) already open", where ? where : "open", qUtf16Printable(file.fileName()));
+    return false;
+}
 
 //************* QFilePrivate
 QFilePrivate::QFilePrivate()
@@ -78,10 +87,9 @@ QFilePrivate::openExternalFile(int flags, int fd, QFile::FileHandleFlags handleF
     Q_UNUSED(fd);
     return false;
 #else
-    delete fileEngine;
-    fileEngine = 0;
-    QFSFileEngine *fe = new QFSFileEngine;
-    fileEngine = fe;
+    auto fs = qt_make_unique<QFSFileEngine>();
+    auto fe = fs.get();
+    fileEngine = std::move(fs);
     return fe->open(QIODevice::OpenMode(flags), fd, handleFlags);
 #endif
 }
@@ -94,10 +102,9 @@ QFilePrivate::openExternalFile(int flags, FILE *fh, QFile::FileHandleFlags handl
     Q_UNUSED(fh);
     return false;
 #else
-    delete fileEngine;
-    fileEngine = 0;
-    QFSFileEngine *fe = new QFSFileEngine;
-    fileEngine = fe;
+    auto fs = qt_make_unique<QFSFileEngine>();
+    auto fe = fs.get();
+    fileEngine = std::move(fs);
     return fe->open(QIODevice::OpenMode(flags), fh, handleFlags);
 #endif
 }
@@ -105,8 +112,8 @@ QFilePrivate::openExternalFile(int flags, FILE *fh, QFile::FileHandleFlags handl
 QAbstractFileEngine *QFilePrivate::engine() const
 {
     if (!fileEngine)
-        fileEngine = QAbstractFileEngine::create(fileName);
-    return fileEngine;
+        fileEngine.reset(QAbstractFileEngine::create(fileName));
+    return fileEngine.get();
 }
 
 //************* QFile
@@ -244,7 +251,7 @@ QFile::QFile(QFilePrivate &dd)
     Constructs a QFile object.
 */
 QFile::QFile()
-    : QFileDevice(*new QFilePrivate, 0)
+    : QFileDevice(*new QFilePrivate, nullptr)
 {
 }
 /*!
@@ -258,7 +265,7 @@ QFile::QFile(QObject *parent)
     Constructs a new file object to represent the file with the given \a name.
 */
 QFile::QFile(const QString &name)
-    : QFileDevice(*new QFilePrivate, 0)
+    : QFileDevice(*new QFilePrivate, nullptr)
 {
     Q_D(QFile);
     d->fileName = name;
@@ -324,14 +331,10 @@ QFile::setFileName(const QString &name)
 {
     Q_D(QFile);
     if (isOpen()) {
-        qWarning("QFile::setFileName: File (%s) is already opened",
-                 qPrintable(fileName()));
+        file_already_open(*this, "setFileName");
         close();
     }
-    if(d->fileEngine) { //get a new file engine later
-        delete d->fileEngine;
-        d->fileEngine = 0;
-    }
+    d->fileEngine.reset(); //get a new file engine later
     d->fileName = name;
 }
 
@@ -546,6 +549,66 @@ bool
 QFile::remove(const QString &fileName)
 {
     return QFile(fileName).remove();
+}
+
+/*!
+    \since 5.15
+
+    Moves the file specified by fileName() to the trash. Returns \c true if successful,
+    and sets the fileName() to the path at which the file can be found within the trash;
+    otherwise returns \c false.
+
+    \note On systems where the system API doesn't report the location of the file in the
+    trash, fileName() will be set to the null string once the file has been moved. On
+    systems that don't have a trash can, this function always returns false.
+*/
+bool
+QFile::moveToTrash()
+{
+    Q_D(QFile);
+    if (d->fileName.isEmpty() &&
+        !static_cast<QFSFileEngine *>(d->engine())->isUnnamedFile()) {
+        qWarning("QFile::remove: Empty or null file name");
+        return false;
+    }
+    unsetError();
+    close();
+    if (error() == QFile::NoError) {
+        QFileSystemEntry fileEntry(d->fileName);
+        QFileSystemEntry trashEntry;
+        QSystemError error;
+        if (QFileSystemEngine::moveFileToTrash(fileEntry, trashEntry, error)) {
+            setFileName(trashEntry.filePath());
+            unsetError();
+            return true;
+        }
+        d->setError(QFile::RenameError, error.toString());
+    }
+    return false;
+}
+
+/*!
+    \since 5.15
+    \overload
+
+    Moves the file specified by fileName() to the trash. Returns \c true if successful,
+    and sets \a pathInTrash (if provided) to the path at which the file can be found within
+    the trash; otherwise returns \c false.
+
+    \note On systems where the system API doesn't report the path of the file in the
+    trash, \a pathInTrash will be set to the null string once the file has been moved.
+    On systems that don't have a trash can, this function always returns false.
+*/
+bool
+QFile::moveToTrash(const QString &fileName, QString *pathInTrash)
+{
+    QFile file(fileName);
+    if (file.moveToTrash()) {
+        if (pathInTrash)
+            *pathInTrash = file.fileName();
+        return true;
+    }
+    return false;
 }
 
 /*!
@@ -804,7 +867,7 @@ QFile::copy(const QString &newName)
                 error = true;
                 d->setError(QFile::CopyError, tr("Cannot open %1 for input").arg(d->fileName));
             } else {
-                QString fileTemplate = QLatin1String("%1/qt_temp.XXXXXX");
+                const auto fileTemplate = QLatin1String("%1/qt_temp.XXXXXX");
 #ifdef QT_NO_TEMPORARYFILE
                 QFile out(fileTemplate.arg(QFileInfo(newName).path()));
                 if (!out.open(QIODevice::ReadWrite))
@@ -910,10 +973,8 @@ QFile::copy(const QString &fileName, const QString &newName)
 bool QFile::open(OpenMode mode)
 {
     Q_D(QFile);
-    if (isOpen()) {
-        qWarning("QFile::open: File (%s) already open", qPrintable(fileName()));
-        return false;
-    }
+    if (isOpen())
+        return file_already_open(*this);
     // Either Append or NewOnly implies WriteOnly
     if (mode & (Append | NewOnly))
         mode |= WriteOnly;
@@ -982,10 +1043,8 @@ bool QFile::open(OpenMode mode)
 bool QFile::open(FILE *fh, OpenMode mode, FileHandleFlags handleFlags)
 {
     Q_D(QFile);
-    if (isOpen()) {
-        qWarning("QFile::open: File (%s) already open", qPrintable(fileName()));
-        return false;
-    }
+    if (isOpen())
+        return file_already_open(*this);
     // Either Append or NewOnly implies WriteOnly
     if (mode & (Append | NewOnly))
         mode |= WriteOnly;
@@ -1023,11 +1082,6 @@ bool QFile::open(FILE *fh, OpenMode mode, FileHandleFlags handleFlags)
     then calling close() closes the adopted handle.
     Otherwise, close() does not actually close the file, but only flushes it.
 
-    The QFile that is opened using this function is automatically set
-    to be in raw mode; this means that the file input/output functions
-    are slow. If you run into performance issues, you should try to
-    use one of the other open functions.
-
     \warning If \a fd is not a regular file, e.g, it is 0 (\c stdin),
     1 (\c stdout), or 2 (\c stderr), you may not be able to seek(). In
     those cases, size() returns \c 0.  See QIODevice::isSequential()
@@ -1041,10 +1095,8 @@ bool QFile::open(FILE *fh, OpenMode mode, FileHandleFlags handleFlags)
 bool QFile::open(int fd, OpenMode mode, FileHandleFlags handleFlags)
 {
     Q_D(QFile);
-    if (isOpen()) {
-        qWarning("QFile::open: File (%s) already open", qPrintable(fileName()));
-        return false;
-    }
+    if (isOpen())
+        return file_already_open(*this);
     // Either Append or NewOnly implies WriteOnly
     if (mode & (Append | NewOnly))
         mode |= WriteOnly;

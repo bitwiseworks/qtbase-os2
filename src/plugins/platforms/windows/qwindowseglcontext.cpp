@@ -63,7 +63,6 @@ QT_BEGIN_NAMESPACE
     there is no need to differentiate between dynamic or Angle-only builds in here.
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsLibEGL QWindowsEGLStaticContext::libEGL;
@@ -88,7 +87,7 @@ static void *resolveFunc(HMODULE lib, const char *name)
     while (!proc && argSize <= 64) {
         nameStr = baseNameStr;
         if (argSize >= 0)
-            nameStr += QLatin1Char('@') + QString::number(argSize);
+            nameStr += u'@' + QString::number(argSize);
         argSize = argSize < 0 ? 0 : argSize + 4;
         proc = (void *) ::GetProcAddress(lib, nameStr.toLatin1().constData());
     }
@@ -376,7 +375,6 @@ QSurfaceFormat QWindowsEGLStaticContext::formatFromConfig(EGLDisplay display, EG
     \endlist
 
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsEGLContext::QWindowsEGLContext(QWindowsEGLStaticContext *staticContext,
@@ -469,10 +467,10 @@ bool QWindowsEGLContext::makeCurrent(QPlatformSurface *surface)
 
     QWindowsEGLStaticContext::libEGL.eglBindAPI(m_api);
 
-    QWindowsWindow *window = static_cast<QWindowsWindow *>(surface);
+    auto *window = static_cast<QWindowsWindow *>(surface);
     window->aboutToMakeCurrent();
     int err = 0;
-    EGLSurface eglSurface = static_cast<EGLSurface>(window->surface(m_eglConfig, &err));
+    auto eglSurface = static_cast<EGLSurface>(window->surface(m_eglConfig, &err));
     if (eglSurface == EGL_NO_SURFACE) {
         if (err == EGL_CONTEXT_LOST) {
             m_eglContext = EGL_NO_CONTEXT;
@@ -531,9 +529,9 @@ void QWindowsEGLContext::doneCurrent()
 void QWindowsEGLContext::swapBuffers(QPlatformSurface *surface)
 {
     QWindowsEGLStaticContext::libEGL.eglBindAPI(m_api);
-    QWindowsWindow *window = static_cast<QWindowsWindow *>(surface);
+    auto *window = static_cast<QWindowsWindow *>(surface);
     int err = 0;
-    EGLSurface eglSurface = static_cast<EGLSurface>(window->surface(m_eglConfig, &err));
+    auto eglSurface = static_cast<EGLSurface>(window->surface(m_eglConfig, &err));
     if (eglSurface == EGL_NO_SURFACE) {
         if (err == EGL_CONTEXT_LOST) {
             m_eglContext = EGL_NO_CONTEXT;

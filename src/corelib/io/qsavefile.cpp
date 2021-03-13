@@ -116,7 +116,7 @@ QSaveFile::QSaveFile(const QString &name)
     Constructs a new file object to represent the file with the given \a name.
 */
 QSaveFile::QSaveFile(const QString &name)
-    : QFileDevice(*new QSaveFilePrivate, 0)
+    : QFileDevice(*new QSaveFilePrivate, nullptr)
 {
     Q_D(QSaveFile);
     d->fileName = name;
@@ -150,8 +150,7 @@ QSaveFile::~QSaveFile()
     QFileDevice::close();
     if (d->fileEngine) {
         d->fileEngine->remove();
-        delete d->fileEngine;
-        d->fileEngine = 0;
+        d->fileEngine.reset();
     }
 }
 
@@ -193,7 +192,7 @@ bool QSaveFile::open(OpenMode mode)
 {
     Q_D(QSaveFile);
     if (isOpen()) {
-        qWarning("QSaveFile::open: File (%s) already open", qPrintable(fileName()));
+        qWarning("QSaveFile::open: File (%ls) already open", qUtf16Printable(fileName()));
         return false;
     }
     unsetError();
@@ -235,7 +234,7 @@ bool QSaveFile::open(OpenMode mode)
     }
 
     auto openDirectly = [&]() {
-        d->fileEngine = QAbstractFileEngine::create(d->finalFileName);
+        d->fileEngine.reset(QAbstractFileEngine::create(d->finalFileName));
         if (d->fileEngine->open(mode | QIODevice::Unbuffered)) {
             d->useTemporaryFile = false;
             QFileDevice::open(mode);
@@ -244,39 +243,41 @@ bool QSaveFile::open(OpenMode mode)
         return false;
     };
 
+    bool requiresDirectWrite = false;
 #ifdef Q_OS_WIN
     // check if it is an Alternate Data Stream
-    if (d->finalFileName == d->fileName && d->fileName.indexOf(QLatin1Char(':'), 2) > 1) {
+    requiresDirectWrite = d->finalFileName == d->fileName && d->fileName.indexOf(QLatin1Char(':'), 2) > 1;
+#elif defined(Q_OS_ANDROID)
+    // check if it is a content:// URL
+    requiresDirectWrite  = d->fileName.startsWith(QLatin1String("content://"));
+#endif
+    if (requiresDirectWrite) {
         // yes, we can't rename onto it...
         if (d->directWriteFallback) {
             if (openDirectly())
                 return true;
             d->setError(d->fileEngine->error(), d->fileEngine->errorString());
-            delete d->fileEngine;
-            d->fileEngine = 0;
+            d->fileEngine.reset();
         } else {
             QString msg =
-                    QSaveFile::tr("QSaveFile cannot open '%1' without direct write fallback "
-                                  "enabled: path contains an Alternate Data Stream specifier")
-                    .arg(QDir::toNativeSeparators(d->fileName));
+                    QSaveFile::tr("QSaveFile cannot open '%1' without direct write fallback enabled.")
+                     .arg(QDir::toNativeSeparators(d->fileName));
             d->setError(QFileDevice::OpenError, msg);
         }
         return false;
     }
-#endif
 
-    d->fileEngine = new QTemporaryFileEngine(&d->finalFileName, QTemporaryFileEngine::Win32NonShared);
+    d->fileEngine.reset(new QTemporaryFileEngine(&d->finalFileName, QTemporaryFileEngine::Win32NonShared));
     // if the target file exists, we'll copy its permissions below,
     // but until then, let's ensure the temporary file is not accessible
     // to a third party
     int perm = (existingFile.exists() ? 0600 : 0666);
-    static_cast<QTemporaryFileEngine *>(d->fileEngine)->initialize(d->finalFileName, perm);
+    static_cast<QTemporaryFileEngine *>(d->fileEngine.get())->initialize(d->finalFileName, perm);
     // Same as in QFile: QIODevice provides the buffering, so there's no need to request it from the file engine.
     if (!d->fileEngine->open(mode | QIODevice::Unbuffered)) {
         QFileDevice::FileError err = d->fileEngine->error();
 #ifdef Q_OS_UNIXLIKE
         if (d->directWriteFallback && err == QFileDevice::OpenError && errno == EACCES) {
-            delete d->fileEngine;
             if (openDirectly())
                 return true;
             err = d->fileEngine->error();
@@ -285,8 +286,7 @@ bool QSaveFile::open(OpenMode mode)
         if (err == QFileDevice::UnspecifiedError)
             err = QFileDevice::OpenError;
         d->setError(err, d->fileEngine->errorString());
-        delete d->fileEngine;
-        d->fileEngine = 0;
+        d->fileEngine.reset();
         return false;
     }
 
@@ -327,35 +327,31 @@ bool QSaveFile::commit()
         return false;
 
     if (!isOpen()) {
-        qWarning("QSaveFile::commit: File (%s) is not open", qPrintable(fileName()));
+        qWarning("QSaveFile::commit: File (%ls) is not open", qUtf16Printable(fileName()));
         return false;
     }
     QFileDevice::close(); // calls flush()
 
+    const auto fe = std::move(d->fileEngine);
+
     // Sync to disk if possible. Ignore errors (e.g. not supported).
-    d->fileEngine->syncToDisk();
+    fe->syncToDisk();
 
     if (d->useTemporaryFile) {
         if (d->writeError != QFileDevice::NoError) {
-            d->fileEngine->remove();
+            fe->remove();
             d->writeError = QFileDevice::NoError;
-            delete d->fileEngine;
-            d->fileEngine = 0;
             return false;
         }
         // atomically replace old file with new file
         // Can't use QFile::rename for that, must use the file engine directly
-        Q_ASSERT(d->fileEngine);
-        if (!d->fileEngine->renameOverwrite(d->finalFileName)) {
-            d->setError(d->fileEngine->error(), d->fileEngine->errorString());
-            d->fileEngine->remove();
-            delete d->fileEngine;
-            d->fileEngine = 0;
+        Q_ASSERT(fe);
+        if (!fe->renameOverwrite(d->finalFileName)) {
+            d->setError(fe->error(), fe->errorString());
+            fe->remove();
             return false;
         }
     }
-    delete d->fileEngine;
-    d->fileEngine = 0;
     return true;
 }
 

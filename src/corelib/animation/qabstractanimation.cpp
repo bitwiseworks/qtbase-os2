@@ -152,6 +152,7 @@
 #include <QtCore/qthreadstorage.h>
 #include <QtCore/qcoreevent.h>
 #include <QtCore/qpointer.h>
+#include <QtCore/qscopedvaluerollback.h>
 
 #define DEFAULT_TIMER_INTERVAL 16
 #define PAUSE_TIMER_COARSE_THRESHOLD 2000
@@ -219,7 +220,7 @@ QUnifiedTimer::QUnifiedTimer() :
     QObject(), defaultDriver(this), lastTick(0), timingInterval(DEFAULT_TIMER_INTERVAL),
     currentAnimationIdx(0), insideTick(false), insideRestart(false), consistentTiming(false), slowMode(false),
     startTimersPending(false), stopTimerPending(false),
-    slowdownFactor(5.0f), profilerCallback(0),
+    slowdownFactor(5.0f), profilerCallback(nullptr),
     driverStartTime(0), temporalDrift(0)
 {
     time.invalidate();
@@ -315,14 +316,13 @@ void QUnifiedTimer::updateAnimationTimers(qint64 currentTick)
     //* it might happen in some cases that the delta is negative because the animation driver
     //  advances faster than time.elapsed()
     if (delta > 0) {
-        insideTick = true;
+        QScopedValueRollback<bool> guard(insideTick, true);
         if (profilerCallback)
             profilerCallback(delta);
         for (currentAnimationIdx = 0; currentAnimationIdx < animationTimers.count(); ++currentAnimationIdx) {
             QAbstractAnimationTimer *animation = animationTimers.at(currentAnimationIdx);
             animation->updateAnimationsTime(delta);
         }
-        insideTick = false;
         currentAnimationIdx = 0;
     }
 }
@@ -361,10 +361,11 @@ void QUnifiedTimer::localRestart()
 
 void QUnifiedTimer::restart()
 {
-    insideRestart = true;
-    for (int i = 0; i < animationTimers.count(); ++i)
-        animationTimers.at(i)->restartAnimationTimer();
-    insideRestart = false;
+    {
+        QScopedValueRollback<bool> guard(insideRestart, true);
+        for (int i = 0; i < animationTimers.count(); ++i)
+            animationTimers.at(i)->restartAnimationTimer();
+    }
 
     localRestart();
 }
@@ -599,14 +600,13 @@ void QAnimationTimer::updateAnimationsTime(qint64 delta)
     //it might happen in some cases that the time doesn't change because events are delayed
     //when the CPU load is high
     if (delta) {
-        insideTick = true;
+        QScopedValueRollback<bool> guard(insideTick, true);
         for (currentAnimationIdx = 0; currentAnimationIdx < animations.count(); ++currentAnimationIdx) {
             QAbstractAnimation *animation = animations.at(currentAnimationIdx);
             int elapsed = QAbstractAnimationPrivate::get(animation)->totalCurrentTime
                           + (animation->direction() == QAbstractAnimation::Forward ? delta : -delta);
             animation->setCurrentTime(elapsed);
         }
-        insideTick = false;
         currentAnimationIdx = 0;
     }
 }
@@ -922,7 +922,7 @@ qint64 QAnimationDriver::elapsed() const
    The default animation driver just spins the timer...
  */
 QDefaultAnimationDriver::QDefaultAnimationDriver(QUnifiedTimer *timer)
-    : QAnimationDriver(0), m_unified_timer(timer)
+    : QAnimationDriver(nullptr), m_unified_timer(timer)
 {
     connect(this, SIGNAL(started()), this, SLOT(startTimer()));
     connect(this, SIGNAL(stopped()), this, SLOT(stopTimer()));
@@ -1035,7 +1035,7 @@ void QAbstractAnimationPrivate::setState(QAbstractAnimation::State newState)
     \sa QVariantAnimation, QAnimationGroup
 */
 QAbstractAnimation::QAbstractAnimation(QObject *parent)
-    : QObject(*new QAbstractAnimationPrivate, 0)
+    : QObject(*new QAbstractAnimationPrivate, nullptr)
 {
     // Allow auto-add on reparent
     setParent(parent);
@@ -1045,7 +1045,7 @@ QAbstractAnimation::QAbstractAnimation(QObject *parent)
     \internal
 */
 QAbstractAnimation::QAbstractAnimation(QAbstractAnimationPrivate &dd, QObject *parent)
-    : QObject(dd, 0)
+    : QObject(dd, nullptr)
 {
     // Allow auto-add on reparent
    setParent(parent);

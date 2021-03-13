@@ -58,6 +58,8 @@
 #include <QtCore/qmutex.h>
 #include <QtCore/qmap.h>
 
+#ifndef QT_NO_BEARERMANAGEMENT
+
 QT_BEGIN_NAMESPACE
 
 typedef QExplicitlySharedDataPointer<QNetworkConfigurationPrivate> QNetworkConfigurationPrivatePointer;
@@ -65,22 +67,14 @@ class QNetworkConfigurationPrivate : public QSharedData
 {
 public:
     QNetworkConfigurationPrivate() :
-        mutex(QMutex::Recursive),
         type(QNetworkConfiguration::Invalid),
         purpose(QNetworkConfiguration::UnknownPurpose),
         bearerType(QNetworkConfiguration::BearerUnknown),
         isValid(false), roamingSupported(false),
         timeout(DefaultTimeout)
     {}
-    virtual ~QNetworkConfigurationPrivate()
-    {
-        //release pointers to member configurations
-        serviceNetworkMembers.clear();
-    }
 
-    QMap<unsigned int, QNetworkConfigurationPrivatePointer> serviceNetworkMembers;
-
-    mutable QMutex mutex;
+    mutable QRecursiveMutex mutex;
 
     QString name;
     QString id;
@@ -103,5 +97,5 @@ private:
 QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(QNetworkConfigurationPrivatePointer)
-
+#endif
 #endif // QNETWORKCONFIGURATIONPRIVATE_H

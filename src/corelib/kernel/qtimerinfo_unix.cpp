@@ -83,7 +83,7 @@ QTimerInfoList::QTimerInfoList()
     }
 #endif
 
-    firstTimerInfo = 0;
+    firstTimerInfo = nullptr;
 
 #ifdef Q_OS_OS2
     zeroTimers = 0;
@@ -220,7 +220,7 @@ static timespec roundToMillisecond(timespec val)
 QDebug operator<<(QDebug s, timespec tv)
 {
     QDebugStateSaver saver(s);
-    s.nospace() << tv.tv_sec << "." << qSetFieldWidth(6) << qSetPadChar(QChar(48)) << tv.tv_nsec << reset;
+    s.nospace() << tv.tv_sec << "." << qSetFieldWidth(6) << qSetPadChar(QChar(48)) << tv.tv_nsec << Qt::reset;
     return s;
 }
 QDebug operator<<(QDebug s, Qt::TimerType t)
@@ -378,7 +378,7 @@ static void calculateNextTimeout(QTimerInfo *t, timespec currentTime)
 
 #ifdef QTIMERINFO_DEBUG
     if (t->timerType != Qt::PreciseTimer)
-    qDebug() << "timer" << t->timerType << hex << t->id << dec << "interval" << t->interval
+    qDebug() << "timer" << t->timerType << Qt::hex << t->id << Qt::dec << "interval" << t->interval
             << "originally expected at" << t->expected << "will fire at" << t->timeout
             << "or" << (t->timeout - t->expected) << "s late";
 #endif
@@ -394,7 +394,7 @@ bool QTimerInfoList::timerWait(timespec &tm)
     repairTimersIfNeeded();
 
     // Find first waiting timer not already active
-    QTimerInfo *t = 0;
+    QTimerInfo *t = nullptr;
     for (QTimerInfoList::const_iterator it = constBegin(); it != constEnd(); ++it) {
         if (!(*it)->activateRef) {
             t = *it;
@@ -455,7 +455,7 @@ void QTimerInfoList::registerTimer(int timerId, int interval, Qt::TimerType time
     t->interval = interval;
     t->timerType = timerType;
     t->obj = object;
-    t->activateRef = 0;
+    t->activateRef = nullptr;
 
     timespec expected = updateCurrentTime() + interval;
 
@@ -512,7 +512,7 @@ void QTimerInfoList::registerTimer(int timerId, int interval, Qt::TimerType time
     t->cumulativeError = 0;
     t->count = 0;
     if (t->timerType != Qt::PreciseTimer)
-    qDebug() << "timer" << t->timerType << hex <<t->id << dec << "interval" << t->interval << "expected at"
+    qDebug() << "timer" << t->timerType << Qt::hex <<t->id << Qt::dec << "interval" << t->interval << "expected at"
             << t->expected << "will fire first at" << t->timeout;
 #endif
 }
@@ -526,9 +526,9 @@ bool QTimerInfoList::unregisterTimer(int timerId)
             // found it
             removeAt(i);
             if (t == firstTimerInfo)
-                firstTimerInfo = 0;
+                firstTimerInfo = nullptr;
             if (t->activateRef)
-                *(t->activateRef) = 0;
+                *(t->activateRef) = nullptr;
 #ifdef Q_OS_OS2
             if (t->interval == 0) {
                 Q_ASSERT(zeroTimers);
@@ -553,9 +553,9 @@ bool QTimerInfoList::unregisterTimers(QObject *object)
             // object found
             removeAt(i);
             if (t == firstTimerInfo)
-                firstTimerInfo = 0;
+                firstTimerInfo = nullptr;
             if (t->activateRef)
-                *(t->activateRef) = 0;
+                *(t->activateRef) = nullptr;
 #ifdef Q_OS_OS2
             if (t->interval == 0) {
                 Q_ASSERT(zeroTimers);
@@ -595,7 +595,7 @@ int QTimerInfoList::activateTimers()
         return 0; // nothing to do
 
     int n_act = 0, maxCount = 0;
-    firstTimerInfo = 0;
+    firstTimerInfo = nullptr;
 
     timespec currentTime = updateCurrentTime();
     // qDebug() << "Thread" << QThread::currentThreadId() << "woken up at" << currentTime;
@@ -644,7 +644,7 @@ int QTimerInfoList::activateTimers()
         currentTimerInfo->cumulativeError += diff;
         ++currentTimerInfo->count;
         if (currentTimerInfo->timerType != Qt::PreciseTimer)
-        qDebug() << "timer" << currentTimerInfo->timerType << hex << currentTimerInfo->id << dec << "interval"
+        qDebug() << "timer" << currentTimerInfo->timerType << Qt::hex << currentTimerInfo->id << Qt::dec << "interval"
                 << currentTimerInfo->interval << "firing at" << currentTime
                 << "(orig" << currentTimerInfo->expected << "scheduled at" << currentTimerInfo->timeout
                 << ") off by" << diff << "activation" << currentTimerInfo->count
@@ -667,11 +667,11 @@ int QTimerInfoList::activateTimers()
             QCoreApplication::sendEvent(currentTimerInfo->obj, &e);
 
             if (currentTimerInfo)
-                currentTimerInfo->activateRef = 0;
+                currentTimerInfo->activateRef = nullptr;
         }
     }
 
-    firstTimerInfo = 0;
+    firstTimerInfo = nullptr;
     // qDebug() << "Thread" << QThread::currentThreadId() << "activated" << n_act << "timers";
     return n_act;
 }

@@ -41,7 +41,6 @@
 
 #include "qvariant.h"
 #include "qhash.h"
-#include "qregexp.h"
 #include "qsqlerror.h"
 #include "qsqlfield.h"
 #include "qsqlrecord.h"
@@ -127,6 +126,13 @@ QString QSqlResultPrivate::positionalToNamedBinding(const QString &query) const
 
 QString QSqlResultPrivate::namedToPositionalBinding(const QString &query)
 {
+    // In the Interbase case if it is an EXECUTE BLOCK then it is up to the
+    // caller to make sure that it is not using named bindings for the wrong
+    // parts of the query since Interbase uses them literally
+    if (sqldriver->dbmsType() == QSqlDriver::Interbase &&
+        query.trimmed().startsWith(QLatin1String("EXECUTE BLOCK"), Qt::CaseInsensitive))
+        return query;
+
     int n = query.size();
 
     QString result;
@@ -646,7 +652,7 @@ bool QSqlResult::exec()
         for (i = d->holders.count() - 1; i >= 0; --i) {
             holder = d->holders.at(i).holderName;
             val = d->values.value(d->indexes.value(holder).value(0,-1));
-            QSqlField f(QLatin1String(""), val.type());
+            QSqlField f(QLatin1String(""), QVariant::Type(val.userType()));
             f.setValue(val);
             query = query.replace(d->holders.at(i).holderPos,
                                    holder.length(), driver()->formatValue(f));
@@ -660,7 +666,7 @@ bool QSqlResult::exec()
             if (i == -1)
                 continue;
             QVariant var = d->values.value(idx);
-            QSqlField f(QLatin1String(""), var.type());
+            QSqlField f(QLatin1String(""), QVariant::Type(var.userType()));
             if (var.isNull())
                 f.clear();
             else
@@ -1023,7 +1029,7 @@ bool QSqlResult::nextResult()
 
     This snippet returns the handle for PostgreSQL or MySQL:
 
-    \snippet code/src_sql_kernel_qsqlresult.cpp 2
+    \snippet code/src_sql_kernel_qsqlresult_snippet.cpp 2
 
     \sa QSqlDriver::handle()
 */

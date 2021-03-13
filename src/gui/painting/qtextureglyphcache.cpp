@@ -43,6 +43,8 @@
 #include "private/qfontengine_p.h"
 #include "private/qnumeric_p.h"
 
+#include <QtGui/qpainterpath.h>
+
 QT_BEGIN_NAMESPACE
 
 // #define CACHE_DEBUG
@@ -73,7 +75,7 @@ int QTextureGlyphCache::calculateSubPixelPositionCount(glyph_t glyph) const
             if (path.isEmpty())
                 break;
 
-            images[numImages++] = qMove(img);
+            images[numImages++] = std::move(img);
         } else {
             bool found = false;
             for (int j = 0; j < numImages; ++j) {
@@ -83,7 +85,7 @@ int QTextureGlyphCache::calculateSubPixelPositionCount(glyph_t glyph) const
                 }
             }
             if (!found)
-                images[numImages++] = qMove(img);
+                images[numImages++] = std::move(img);
         }
     }
 
@@ -127,7 +129,7 @@ bool QTextureGlyphCache::populate(QFontEngine *fontEngine, int numGlyphs, const 
 
         QFixed subPixelPosition;
         if (supportsSubPixelPositions) {
-            QFixed x = positions != 0 ? positions[i].x : QFixed();
+            QFixed x = positions != nullptr ? positions[i].x : QFixed();
             subPixelPosition = fontEngine->subPixelPositionForX(x);
         }
 
@@ -285,6 +287,8 @@ QImageTextureGlyphCache::~QImageTextureGlyphCache()
 void QImageTextureGlyphCache::resizeTextureData(int width, int height)
 {
     m_image = m_image.copy(0, 0, width, height);
+    // Regions not part of the copy are initialized to 0, and that is just what
+    // we need.
 }
 
 void QImageTextureGlyphCache::createTextureData(int width, int height)
@@ -305,6 +309,12 @@ void QImageTextureGlyphCache::createTextureData(int width, int height)
     default:
         Q_UNREACHABLE();
     }
+
+    // Regions not touched by the glyphs must be initialized to 0. (such
+    // locations may in fact be sampled with styled (shifted) text materials)
+    // When resizing, the QImage copy() does this implicitly but the initial
+    // contents must be zeroed out explicitly here.
+    m_image.fill(0);
 }
 
 void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subPixelPosition)
@@ -333,9 +343,10 @@ void QImageTextureGlyphCache::fillTexture(const Coord &c, glyph_t g, QFixed subP
     } else if (m_format == QFontEngine::Format_Mono) {
         if (mask.depth() > 1) {
             // TODO optimize this
-            mask = mask.alphaChannel();
+            mask.convertTo(QImage::Format_Alpha8);
+            mask.reinterpretAsFormat(QImage::Format_Grayscale8);
             mask.invertPixels();
-            mask = mask.convertToFormat(QImage::Format_Mono, Qt::ThresholdDither);
+            mask.convertTo(QImage::Format_Mono, Qt::ThresholdDither);
         }
 
         int mw = qMin(mask.width(), c.w);

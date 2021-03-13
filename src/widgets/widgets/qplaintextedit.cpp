@@ -54,6 +54,7 @@
 #endif
 #include <qstyle.h>
 #include <qtimer.h>
+#include "private/qapplication_p.h"
 #include "private/qtextdocumentlayout_p.h"
 #include "private/qabstracttextdocumentlayout_p.h"
 #include "qtextdocument.h"
@@ -80,7 +81,7 @@ class QPlainTextDocumentLayoutPrivate : public QAbstractTextDocumentLayoutPrivat
     Q_DECLARE_PUBLIC(QPlainTextDocumentLayout)
 public:
     QPlainTextDocumentLayoutPrivate() {
-        mainViewPrivate = 0;
+        mainViewPrivate = nullptr;
         width = 0;
         maximumWidth = 0;
         maximumWidthBlockNumber = 0;
@@ -754,7 +755,7 @@ void QPlainTextEditPrivate::updateViewport()
 }
 
 QPlainTextEditPrivate::QPlainTextEditPrivate()
-    : control(0),
+    : control(nullptr),
       tabChangesFocus(false),
       lineWrap(QPlainTextEdit::WidgetWidth),
       wordWrap(QTextOption::WrapAtWordBoundaryOrAnywhere),
@@ -824,9 +825,6 @@ void QPlainTextEditPrivate::init(const QString &txt)
     viewport->setCursor(Qt::IBeamCursor);
 #endif
     originalOffsetY = 0;
-#if 0 // Used to be included in Qt4 for Q_WS_WIN
-    setSingleFingerPanEnabled(true);
-#endif
 }
 
 void QPlainTextEditPrivate::_q_textChanged()
@@ -841,7 +839,8 @@ void QPlainTextEditPrivate::_q_textChanged()
 
     placeholderVisible = !placeholderText.isEmpty()
             && q->document()->isEmpty()
-            && q->firstVisibleBlock().layout()->preeditAreaText().isEmpty();
+            && (!q->firstVisibleBlock().isValid() ||
+                 q->firstVisibleBlock().layout()->preeditAreaText().isEmpty());
 
     if (placeholderCurrentyVisible != placeholderVisible)
         viewport->update();
@@ -1304,7 +1303,7 @@ QPlainTextEdit::~QPlainTextEdit()
     Q_D(QPlainTextEdit);
     if (d->documentLayoutPtr) {
         if (d->documentLayoutPtr->priv()->mainViewPrivate == d)
-            d->documentLayoutPtr->priv()->mainViewPrivate = 0;
+            d->documentLayoutPtr->priv()->mainViewPrivate = nullptr;
     }
 }
 
@@ -1323,7 +1322,7 @@ QPlainTextEdit::~QPlainTextEdit()
 void QPlainTextEdit::setDocument(QTextDocument *document)
 {
     Q_D(QPlainTextEdit);
-    QPlainTextDocumentLayout *documentLayout = 0;
+    QPlainTextDocumentLayout *documentLayout = nullptr;
 
     if (!document) {
         document = new QTextDocument(d->control);
@@ -1573,7 +1572,7 @@ bool QPlainTextEdit::event(QEvent *e)
     }
 #ifdef QT_KEYPAD_NAVIGATION
     else if (e->type() == QEvent::EnterEditFocus || e->type() == QEvent::LeaveEditFocus) {
-        if (QApplication::keypadNavigationEnabled())
+        if (QApplicationPrivate::keypadNavigationEnabled())
             d->sendControlEvent(e);
     }
 #endif
@@ -1588,7 +1587,7 @@ bool QPlainTextEdit::event(QEvent *e)
                 d->originalOffsetY = vBar->value();
             QPointF offset = g->offset();
             if (!offset.isNull()) {
-                if (QApplication::isRightToLeft())
+                if (QGuiApplication::isRightToLeft())
                     offset.rx() *= -1;
                 // QPlainTextEdit scrolls by lines only in vertical direction
                 QFontMetrics fm(document()->defaultFont());
@@ -1691,7 +1690,7 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
     switch (e->key()) {
         case Qt::Key_Select:
-            if (QApplication::keypadNavigationEnabled()) {
+            if (QApplicationPrivate::keypadNavigationEnabled()) {
                 if (!(d->control->textInteractionFlags() & Qt::LinksAccessibleByKeyboard))
                     setEditFocus(!hasEditFocus());
                 else {
@@ -1709,14 +1708,14 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
             break;
         case Qt::Key_Back:
         case Qt::Key_No:
-            if (!QApplication::keypadNavigationEnabled()
-                    || (QApplication::keypadNavigationEnabled() && !hasEditFocus())) {
+            if (!QApplicationPrivate::keypadNavigationEnabled()
+                    || (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus())) {
                 e->ignore();
                 return;
             }
             break;
         default:
-            if (QApplication::keypadNavigationEnabled()) {
+            if (QApplicationPrivate::keypadNavigationEnabled()) {
                 if (!hasEditFocus() && !(e->modifiers() & Qt::ControlModifier)) {
                     if (e->text()[0].isPrint()) {
                         setEditFocus(true);
@@ -1792,7 +1791,7 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
         switch (e->key()) {
             case Qt::Key_Up:
             case Qt::Key_Down:
-                if (QApplication::keypadNavigationEnabled()) {
+                if (QApplicationPrivate::keypadNavigationEnabled()) {
                     // Cursor position didn't change, so we want to leave
                     // these keys to change focus.
                     e->ignore();
@@ -1801,7 +1800,7 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
                 break;
             case Qt::Key_Left:
             case Qt::Key_Right:
-                if (QApplication::keypadNavigationEnabled()
+                if (QApplicationPrivate::keypadNavigationEnabled()
                         && QApplication::navigationMode() == Qt::NavigationModeKeypadDirectional) {
                     // Same as for Key_Up and Key_Down.
                     e->ignore();
@@ -1810,7 +1809,7 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
                 break;
             case Qt::Key_Back:
                 if (!e->isAutoRepeat()) {
-                    if (QApplication::keypadNavigationEnabled()) {
+                    if (QApplicationPrivate::keypadNavigationEnabled()) {
                         if (document()->isEmpty()) {
                             setEditFocus(false);
                             e->accept();
@@ -1836,7 +1835,7 @@ void QPlainTextEdit::keyReleaseEvent(QKeyEvent *e)
 {
 #ifdef QT_KEYPAD_NAVIGATION
     Q_D(QPlainTextEdit);
-    if (QApplication::keypadNavigationEnabled()) {
+    if (QApplicationPrivate::keypadNavigationEnabled()) {
         if (!e->isAutoRepeat() && e->key() == Qt::Key_Back
             && d->deleteAllTimer.isActive()) {
             d->deleteAllTimer.stop();
@@ -1893,7 +1892,7 @@ void QPlainTextEditPrivate::relayoutDocument()
 
     int width = viewport->width();
 
-    if (documentLayout->priv()->mainViewPrivate == 0
+    if (documentLayout->priv()->mainViewPrivate == nullptr
         || documentLayout->priv()->mainViewPrivate == this
         || width > documentLayout->textWidth()) {
         documentLayout->priv()->mainViewPrivate = this;
@@ -2080,7 +2079,7 @@ void QPlainTextEdit::mousePressEvent(QMouseEvent *e)
 {
     Q_D(QPlainTextEdit);
 #ifdef QT_KEYPAD_NAVIGATION
-    if (QApplication::keypadNavigationEnabled() && !hasEditFocus())
+    if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus())
         setEditFocus(true);
 #endif
     d->sendControlEvent(e);
@@ -2212,7 +2211,7 @@ void QPlainTextEdit::inputMethodEvent(QInputMethodEvent *e)
     Q_D(QPlainTextEdit);
 #ifdef QT_KEYPAD_NAVIGATION
     if (d->control->textInteractionFlags() & Qt::TextEditable
-        && QApplication::keypadNavigationEnabled()
+        && QApplicationPrivate::keypadNavigationEnabled()
         && !hasEditFocus()) {
         setEditFocus(true);
         selectAll();    // so text is replaced rather than appended to
@@ -2251,17 +2250,17 @@ QVariant QPlainTextEdit::inputMethodQuery(Qt::InputMethodQuery query, QVariant a
     }
 
     const QPointF offset = contentOffset();
-    switch (argument.type()) {
-    case QVariant::RectF:
+    switch (argument.userType()) {
+    case QMetaType::QRectF:
         argument = argument.toRectF().translated(-offset);
         break;
-    case QVariant::PointF:
+    case QMetaType::QPointF:
         argument = argument.toPointF() - offset;
         break;
-    case QVariant::Rect:
+    case QMetaType::QRect:
         argument = argument.toRect().translated(-offset.toPoint());
         break;
-    case QVariant::Point:
+    case QMetaType::QPoint:
         argument = argument.toPoint() - offset;
         break;
     default:
@@ -2269,14 +2268,14 @@ QVariant QPlainTextEdit::inputMethodQuery(Qt::InputMethodQuery query, QVariant a
     }
 
     const QVariant v = d->control->inputMethodQuery(query, argument);
-    switch (v.type()) {
-    case QVariant::RectF:
+    switch (v.userType()) {
+    case QMetaType::QRectF:
         return v.toRectF().translated(offset);
-    case QVariant::PointF:
+    case QMetaType::QPointF:
         return v.toPointF() + offset;
-    case QVariant::Rect:
+    case QMetaType::QRect:
         return v.toRect().translated(offset.toPoint());
-    case QVariant::Point:
+    case QMetaType::QPoint:
         return v.toPoint() + offset.toPoint();
     default:
         break;
@@ -2330,6 +2329,7 @@ void QPlainTextEdit::changeEvent(QEvent *e)
             d->autoScrollTimer.stop();
     } else if (e->type() == QEvent::EnabledChange) {
         e->setAccepted(isEnabled());
+        d->control->setPalette(palette());
         d->sendControlEvent(e);
     } else if (e->type() == QEvent::PaletteChange) {
         d->control->setPalette(palette());
@@ -2649,7 +2649,7 @@ void QPlainTextEdit::setReadOnly(bool ro)
     d->control->setTextInteractionFlags(flags);
     setAttribute(Qt::WA_InputMethodEnabled, shouldEnableInputMethod(this));
     QEvent event(QEvent::ReadOnlyChange);
-    QApplication::sendEvent(this, &event);
+    QCoreApplication::sendEvent(this, &event);
 }
 
 /*!

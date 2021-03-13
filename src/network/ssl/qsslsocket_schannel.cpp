@@ -408,13 +408,17 @@ QByteArray createAlpnString(const QByteArrayList &nextAllowedProtocols)
             for (QByteArray proto : nextAllowedProtocols) {
                 if (proto.size() > 255) {
                     qCWarning(lcSsl) << "TLS ALPN extension" << proto
-                                     << "is too long and will be truncated to 255 characters.";
-                    proto = proto.left(255);
+                                     << "is too long and will be ignored.";
+                    continue;
+                } else if (proto.isEmpty()) {
+                    continue;
                 }
                 protocolString += char(proto.length()) + proto;
             }
             return protocolString;
         }();
+        if (names.isEmpty())
+            return alpnString;
 
         const quint16 namesSize = names.size();
         const quint32 alpnId = SecApplicationProtocolNegotiationExt_ALPN;
@@ -427,11 +431,58 @@ QByteArray createAlpnString(const QByteArrayList &nextAllowedProtocols)
     return alpnString;
 }
 #endif // SUPPORTS_ALPN
+
+qint64 readToBuffer(QByteArray &buffer, QTcpSocket *plainSocket)
+{
+    Q_ASSERT(plainSocket);
+    static const qint64 shrinkCutoff = 1024 * 12;
+    static const qint64 defaultRead = 1024 * 16;
+    qint64 bytesRead = 0;
+
+    const auto toRead = std::min(defaultRead, plainSocket->bytesAvailable());
+    if (toRead > 0) {
+        const auto bufferSize = buffer.size();
+        buffer.reserve(bufferSize + toRead); // avoid growth strategy kicking in
+        buffer.resize(bufferSize + toRead);
+        bytesRead = plainSocket->read(buffer.data() + bufferSize, toRead);
+        buffer.resize(bufferSize + bytesRead);
+        // In case of excessive memory usage we shrink:
+        if (buffer.size() < shrinkCutoff && buffer.capacity() > defaultRead)
+            buffer.shrink_to_fit();
+    }
+
+    return bytesRead;
+}
+
+void retainExtraData(QByteArray &buffer, const SecBuffer &secBuffer)
+{
+    Q_ASSERT(secBuffer.BufferType == SECBUFFER_EXTRA);
+    if (int(secBuffer.cbBuffer) >= buffer.size())
+        return;
+
+#ifdef QSSLSOCKET_DEBUG
+    qCDebug(lcSsl, "We got SECBUFFER_EXTRA, will retain %lu bytes", secBuffer.cbBuffer);
+#endif
+    std::move(buffer.end() - secBuffer.cbBuffer, buffer.end(), buffer.begin());
+    buffer.resize(secBuffer.cbBuffer);
+}
+
+qint64 checkIncompleteData(const SecBuffer &secBuffer)
+{
+    if (secBuffer.BufferType == SECBUFFER_MISSING) {
+#ifdef QSSLSOCKET_DEBUG
+        qCDebug(lcSsl, "Need %lu more bytes.", secBuffer.cbBuffer);
+#endif
+        return secBuffer.cbBuffer;
+}
+    return 0;
+}
+
 } // anonymous namespace
 
 bool QSslSocketPrivate::s_loadRootCertsOnDemand = true;
 bool QSslSocketPrivate::s_loadedCiphersAndCerts = false;
-Q_GLOBAL_STATIC_WITH_ARGS(QMutex, qt_schannel_mutex, (QMutex::Recursive))
+Q_GLOBAL_STATIC(QRecursiveMutex, qt_schannel_mutex)
 
 void QSslSocketPrivate::ensureInitialized()
 {
@@ -615,8 +666,8 @@ bool QSslSocketBackendPrivate::acquireCredentialsHandle()
                                             nullptr);
         if (!chainContext) {
             const QString message = isClient
-                ? QSslSocket::tr("The certificate provided cannot be used for a client.")
-                : QSslSocket::tr("The certificate provided cannot be used for a server.");
+                    ? QSslSocket::tr("The certificate provided cannot be used for a client.")
+                    : QSslSocket::tr("The certificate provided cannot be used for a server.");
             setErrorAndEmit(QAbstractSocket::SocketError::SslInvalidUserDataError, message);
             return false;
         }
@@ -770,7 +821,11 @@ bool QSslSocketBackendPrivate::acceptContext()
     Q_ASSERT(mode == QSslSocket::SslServerMode);
     ULONG contextReq = getContextRequirements();
 
-    intermediateBuffer += plainSocket->read(16384);
+    if (missingData > plainSocket->bytesAvailable())
+        return true;
+
+    missingData = 0;
+    readToBuffer(intermediateBuffer, plainSocket);
     if (intermediateBuffer.isEmpty())
         return true; // definitely need more data..
 
@@ -824,13 +879,19 @@ bool QSslSocketBackendPrivate::acceptContext()
             &expiry // ptsTimeStamp
     );
 
+    if (status == SEC_E_INCOMPLETE_MESSAGE) {
+        // Need more data
+        missingData = checkIncompleteData(outBuffers[0]);
+        return true;
+    }
+
     if (inBuffers[1].BufferType == SECBUFFER_EXTRA) {
         // https://docs.microsoft.com/en-us/windows/desktop/secauthn/extra-buffers-returned-by-schannel
         // inBuffers[1].cbBuffer indicates the amount of bytes _NOT_ processed, the rest need to
         // be stored.
-        intermediateBuffer = intermediateBuffer.right(int(inBuffers[1].cbBuffer));
-    } else if (status != SEC_E_INCOMPLETE_MESSAGE) {
-        intermediateBuffer.clear();
+        retainExtraData(intermediateBuffer, inBuffers[1]);
+    } else { /* No 'extra' data, message not incomplete */
+        intermediateBuffer.resize(0);
     }
 
     if (status != SEC_I_CONTINUE_NEEDED) {
@@ -856,65 +917,83 @@ bool QSslSocketBackendPrivate::performHandshake()
     Q_ASSERT(schannelState == SchannelState::PerformHandshake);
 
 #ifdef QSSLSOCKET_DEBUG
-    qCDebug(lcSsl) << "Bytes available from socket:" << plainSocket->bytesAvailable();
-    qCDebug(lcSsl) << "intermediateBuffer size:" << intermediateBuffer.size();
+    qCDebug(lcSsl, "Bytes available from socket: %lld", plainSocket->bytesAvailable());
+    qCDebug(lcSsl, "intermediateBuffer size: %d", intermediateBuffer.size());
 #endif
 
-    intermediateBuffer += plainSocket->read(16384);
+    if (missingData > plainSocket->bytesAvailable())
+        return true;
+
+    missingData = 0;
+    readToBuffer(intermediateBuffer, plainSocket);
     if (intermediateBuffer.isEmpty())
         return true; // no data, will fail
 
-    SecBuffer inputBuffers[2];
-    inputBuffers[0] = createSecBuffer(intermediateBuffer, SECBUFFER_TOKEN);
-    inputBuffers[1] = createSecBuffer(nullptr, 0, SECBUFFER_EMPTY);
-    SecBufferDesc inputBufferDesc{
-        SECBUFFER_VERSION,
-        ARRAYSIZE(inputBuffers),
-        inputBuffers
-    };
-
-    SecBuffer outBuffers[3];
-    outBuffers[0] = createSecBuffer(nullptr, 0, SECBUFFER_TOKEN);
-    outBuffers[1] = createSecBuffer(nullptr, 0, SECBUFFER_ALERT);
-    outBuffers[2] = createSecBuffer(nullptr, 0, SECBUFFER_EMPTY);
-    auto freeBuffers = qScopeGuard([&outBuffers]() {
+    SecBuffer outBuffers[3] = {};
+    const auto freeOutBuffers = [&outBuffers]() {
         for (auto i = 0ull; i < ARRAYSIZE(outBuffers); i++) {
             if (outBuffers[i].pvBuffer)
                 FreeContextBuffer(outBuffers[i].pvBuffer);
         }
-    });
-    SecBufferDesc outputBufferDesc{
-        SECBUFFER_VERSION,
-        ARRAYSIZE(outBuffers),
-        outBuffers
     };
+    const auto outBuffersGuard = qScopeGuard(freeOutBuffers);
+    // For this call to InitializeSecurityContext we may need to call it twice.
+    // In some cases us not having a certificate isn't actually an error, but just a request.
+    // With Schannel, to ignore this warning, we need to call InitializeSecurityContext again
+    // when we get SEC_I_INCOMPLETE_CREDENTIALS! As far as I can tell it's not documented anywhere.
+    // https://stackoverflow.com/a/47479968/2493610
+    SECURITY_STATUS status;
+    short attempts = 2;
+    do {
+        SecBuffer inputBuffers[2];
+        inputBuffers[0] = createSecBuffer(intermediateBuffer, SECBUFFER_TOKEN);
+        inputBuffers[1] = createSecBuffer(nullptr, 0, SECBUFFER_EMPTY);
+        SecBufferDesc inputBufferDesc{
+            SECBUFFER_VERSION,
+            ARRAYSIZE(inputBuffers),
+            inputBuffers
+        };
 
-    ULONG contextReq = getContextRequirements();
-    TimeStamp expiry;
-    auto status = InitializeSecurityContext(&credentialHandle, // phCredential
-                                            &contextHandle, // phContext
-                                            const_reinterpret_cast<SEC_WCHAR *>(targetName().utf16()), // pszTargetName
-                                            contextReq, // fContextReq
-                                            0, // Reserved1
-                                            0, // TargetDataRep (unused)
-                                            &inputBufferDesc, // pInput
-                                            0, // Reserved2
-                                            nullptr, // phNewContext (we already have one)
-                                            &outputBufferDesc, // pOutput
-                                            &contextAttributes, // pfContextAttr
-                                            &expiry // ptsExpiry
-    );
+        freeOutBuffers(); // free buffers from any previous attempt
+        outBuffers[0] = createSecBuffer(nullptr, 0, SECBUFFER_TOKEN);
+        outBuffers[1] = createSecBuffer(nullptr, 0, SECBUFFER_ALERT);
+        outBuffers[2] = createSecBuffer(nullptr, 0, SECBUFFER_EMPTY);
+        SecBufferDesc outputBufferDesc{
+            SECBUFFER_VERSION,
+            ARRAYSIZE(outBuffers),
+            outBuffers
+        };
 
-    if (inputBuffers[1].BufferType == SECBUFFER_EXTRA) {
-        // https://docs.microsoft.com/en-us/windows/desktop/secauthn/extra-buffers-returned-by-schannel
-        // inputBuffers[1].cbBuffer indicates the amount of bytes _NOT_ processed, the rest need to
-        // be stored.
-        intermediateBuffer = intermediateBuffer.right(int(inputBuffers[1].cbBuffer));
-    } else {
-        // Clear the buffer if we weren't asked for more data
-        if (status != SEC_E_INCOMPLETE_MESSAGE)
-            intermediateBuffer.clear();
-    }
+        ULONG contextReq = getContextRequirements();
+        TimeStamp expiry;
+        status = InitializeSecurityContext(
+                &credentialHandle, // phCredential
+                &contextHandle, // phContext
+                const_reinterpret_cast<SEC_WCHAR *>(targetName().utf16()), // pszTargetName
+                contextReq, // fContextReq
+                0, // Reserved1
+                0, // TargetDataRep (unused)
+                &inputBufferDesc, // pInput
+                0, // Reserved2
+                nullptr, // phNewContext (we already have one)
+                &outputBufferDesc, // pOutput
+                &contextAttributes, // pfContextAttr
+                &expiry // ptsExpiry
+        );
+
+        if (inputBuffers[1].BufferType == SECBUFFER_EXTRA) {
+            // https://docs.microsoft.com/en-us/windows/desktop/secauthn/extra-buffers-returned-by-schannel
+            // inputBuffers[1].cbBuffer indicates the amount of bytes _NOT_ processed, the rest need
+            // to be stored.
+            retainExtraData(intermediateBuffer, inputBuffers[1]);
+        } else if (status != SEC_E_INCOMPLETE_MESSAGE) {
+            // Clear the buffer if we weren't asked for more data
+            intermediateBuffer.resize(0);
+        }
+
+        --attempts;
+    } while (status == SEC_I_INCOMPLETE_CREDENTIALS && attempts > 0);
+
     switch (status) {
     case SEC_E_OK:
         // Need to transmit a final token in the handshake if 'cbBuffer' is non-zero.
@@ -946,6 +1025,7 @@ bool QSslSocketBackendPrivate::performHandshake()
         return true;
     case SEC_E_INCOMPLETE_MESSAGE:
         // Simply incomplete, wait for more data
+        missingData = checkIncompleteData(outBuffers[0]);
         return true;
     case SEC_E_ALGORITHM_MISMATCH:
         setErrorAndEmit(QAbstractSocket::SslHandshakeFailedError,
@@ -965,6 +1045,7 @@ bool QSslSocketBackendPrivate::performHandshake()
 bool QSslSocketBackendPrivate::verifyHandshake()
 {
     Q_Q(QSslSocket);
+    sslErrors.clear();
 
     const bool isClient = mode == QSslSocket::SslClientMode;
 #define CHECK_STATUS(status)                                                  \
@@ -1053,7 +1134,7 @@ bool QSslSocketBackendPrivate::verifyHandshake()
     }
 
     // verifyCertContext returns false if the user disconnected while it was checking errors.
-    if (certificateContext && sslErrors.isEmpty() && !verifyCertContext(certificateContext))
+    if (certificateContext && !verifyCertContext(certificateContext))
         return false;
 
     if (!checkSslErrors() || state != QAbstractSocket::ConnectedState) {
@@ -1065,7 +1146,6 @@ bool QSslSocketBackendPrivate::verifyHandshake()
     }
 
     schannelState = SchannelState::Done;
-    peerCertVerified = true;
     return true;
 }
 
@@ -1148,8 +1228,9 @@ void QSslSocketBackendPrivate::reset()
 
     connectionEncrypted = false;
     shutdown = false;
-    peerCertVerified = false;
     renegotiating = false;
+
+    missingData = 0;
 }
 
 void QSslSocketBackendPrivate::startClientEncryption()
@@ -1221,8 +1302,7 @@ void QSslSocketBackendPrivate::transmit()
             fullMessage.resize(inputBuffers[0].cbBuffer + inputBuffers[1].cbBuffer + inputBuffers[2].cbBuffer);
             const qint64 bytesWritten = plainSocket->write(fullMessage);
 #ifdef QSSLSOCKET_DEBUG
-            qCDebug(lcSsl) << "Wrote" << bytesWritten << "of total"
-                           << fullMessage.length() << "bytes";
+            qCDebug(lcSsl, "Wrote %lld of total %d bytes", bytesWritten, fullMessage.length());
 #endif
             if (bytesWritten >= 0) {
                 totalBytesWritten += bytesWritten;
@@ -1247,36 +1327,33 @@ void QSslSocketBackendPrivate::transmit()
         int totalRead = 0;
         bool hadIncompleteData = false;
         while (!readBufferMaxSize || buffer.size() < readBufferMaxSize) {
-            QByteArray ciphertext;
-            if (intermediateBuffer.length()) {
+            if (missingData > plainSocket->bytesAvailable()
+                && (!readBufferMaxSize || readBufferMaxSize >= missingData)) {
 #ifdef QSSLSOCKET_DEBUG
-                qCDebug(lcSsl) << "Restoring data from intermediateBuffer:"
-                               << intermediateBuffer.length() << "bytes";
+                qCDebug(lcSsl, "We're still missing %lld bytes, will check later.", missingData);
 #endif
-                ciphertext.swap(intermediateBuffer);
+                break;
             }
-            int initialLength = ciphertext.length();
-            ciphertext += plainSocket->read(16384);
+
+            missingData = 0;
+            const qint64 bytesRead = readToBuffer(intermediateBuffer, plainSocket);
 #ifdef QSSLSOCKET_DEBUG
-            qCDebug(lcSsl) << "Read" << ciphertext.length() - initialLength
-                           << "encrypted bytes from the socket";
+            qCDebug(lcSsl, "Read %lld encrypted bytes from the socket", bytesRead);
 #endif
-            if (ciphertext.length() == 0 || (hadIncompleteData && initialLength == ciphertext.length())) {
+            if (intermediateBuffer.length() == 0 || (hadIncompleteData && bytesRead == 0)) {
 #ifdef QSSLSOCKET_DEBUG
-                qCDebug(lcSsl) << (hadIncompleteData ? "No new data received, leaving loop!"
-                                                     : "Nothing to decrypt, leaving loop!");
+                qCDebug(lcSsl, (hadIncompleteData ? "No new data received, leaving loop!"
+                                                    : "Nothing to decrypt, leaving loop!"));
 #endif
-                if (ciphertext.length()) // We have data, it came from intermediateBuffer, swap back
-                    intermediateBuffer.swap(ciphertext);
                 break;
             }
             hadIncompleteData = false;
 #ifdef QSSLSOCKET_DEBUG
-            qCDebug(lcSsl) << "Total amount of bytes to decrypt:" << ciphertext.length();
+            qCDebug(lcSsl, "Total amount of bytes to decrypt: %d", intermediateBuffer.length());
 #endif
 
             SecBuffer dataBuffer[4]{
-                createSecBuffer(ciphertext, SECBUFFER_DATA),
+                createSecBuffer(intermediateBuffer, SECBUFFER_DATA),
                 createSecBuffer(nullptr, 0, SECBUFFER_EMPTY),
                 createSecBuffer(nullptr, 0, SECBUFFER_EMPTY),
                 createSecBuffer(nullptr, 0, SECBUFFER_EMPTY)
@@ -1292,32 +1369,30 @@ void QSslSocketBackendPrivate::transmit()
                 if (dataBuffer[1].cbBuffer > 0) {
                     // It is always decrypted in-place.
                     // But [0] is the STREAM_HEADER, [1] is the DATA and [2] is the STREAM_TRAILER.
-                    // The pointers in all of those still point into the 'ciphertext' byte array.
+                    // The pointers in all of those still point into 'intermediateBuffer'.
                     buffer.append(static_cast<char *>(dataBuffer[1].pvBuffer),
                                   dataBuffer[1].cbBuffer);
                     totalRead += dataBuffer[1].cbBuffer;
 #ifdef QSSLSOCKET_DEBUG
-                    qCDebug(lcSsl) << "Decrypted" << dataBuffer[1].cbBuffer
-                                   << "bytes. New read buffer size:" << buffer.size();
+                    qCDebug(lcSsl, "Decrypted %lu bytes. New read buffer size: %d",
+                            dataBuffer[1].cbBuffer, buffer.size());
 #endif
                 }
                 if (dataBuffer[3].BufferType == SECBUFFER_EXTRA) {
                     // https://docs.microsoft.com/en-us/windows/desktop/secauthn/extra-buffers-returned-by-schannel
                     // dataBuffer[3].cbBuffer indicates the amount of bytes _NOT_ processed,
                     // the rest need to be stored.
-#ifdef QSSLSOCKET_DEBUG
-                    qCDebug(lcSsl) << "We've got excess data, moving it to the intermediate buffer:"
-                                   << dataBuffer[3].cbBuffer << "bytes";
-#endif
-                    intermediateBuffer = ciphertext.right(int(dataBuffer[3].cbBuffer));
+                    retainExtraData(intermediateBuffer, dataBuffer[3]);
+                } else {
+                    intermediateBuffer.resize(0);
                 }
-            } else if (status == SEC_E_INCOMPLETE_MESSAGE) {
-                // Need more data before we can decrypt.. to the buffer it goes!
+            }
+
+            if (status == SEC_E_INCOMPLETE_MESSAGE) {
+                missingData = checkIncompleteData(dataBuffer[0]);
 #ifdef QSSLSOCKET_DEBUG
                 qCDebug(lcSsl, "We didn't have enough data to decrypt anything, will try again!");
 #endif
-                Q_ASSERT(intermediateBuffer.isEmpty());
-                intermediateBuffer.swap(ciphertext);
                 // We try again, but if we don't get any more data then we leave
                 hadIncompleteData = true;
             } else if (status == SEC_E_INVALID_HANDLE) {
@@ -1356,6 +1431,7 @@ void QSslSocketBackendPrivate::transmit()
 #endif
                 schannelState = SchannelState::Renegotiate;
                 renegotiating = true;
+
                 // We need to call 'continueHandshake' or else there's no guarantee it ever gets called
                 continueHandshake();
                 break;
@@ -1521,7 +1597,7 @@ void QSslSocketBackendPrivate::continueHandshake()
     case SchannelState::VerifyHandshake:
         // if we're in shutdown or renegotiating then we might not need to verify
         // (since we already did)
-        if (!peerCertVerified && !verifyHandshake()) {
+        if (!verifyHandshake()) {
             shutdown = true; // Skip sending shutdown alert
             q->abort(); // We don't want to send buffered data
             disconnectFromHost();

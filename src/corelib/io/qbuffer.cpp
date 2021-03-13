@@ -50,7 +50,7 @@ class QBufferPrivate : public QIODevicePrivate
 
 public:
     QBufferPrivate()
-    : buf(0)
+        : buf(nullptr)
 #ifndef QT_NO_QOBJECT
         , writtenSinceLastEmit(0), signalConnectionCount(0), signalsEmitted(false)
 #endif
@@ -227,7 +227,7 @@ QBuffer::~QBuffer()
 
     \snippet buffer/buffer.cpp 4
 
-    If \a byteArray is 0, the buffer creates its own internal
+    If \a byteArray is \nullptr, the buffer creates its own internal
     QByteArray to work on. This byte array is initially empty.
 
     \sa buffer(), setData(), open()

@@ -28,12 +28,13 @@
 
 #include <QtTest/QtTest>
 #include <QtGui/QBitmap>
-#include <QtGui/QPalette>
-#include <QtGui/QPixmap>
-#include <QtGui/QPicture>
-#include <QtGui/QTextLength>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
+#include <QtGui/QPalette>
 #include <QtGui/QPen>
+#include <QtGui/QPicture>
+#include <QtGui/QPixmap>
+#include <QtGui/QTextLength>
 
 class tst_QDataStream : public QObject
 {
@@ -113,6 +114,11 @@ private slots:
     void stream_QRegExp_data();
     void stream_QRegExp();
 
+#if QT_CONFIG(regularexpression)
+    void stream_QRegularExpression_data();
+    void stream_QRegularExpression();
+#endif
+
     void stream_Map_data();
     void stream_Map();
 
@@ -181,6 +187,8 @@ private slots:
 
     void streamRealDataTypes();
 
+    void enumTest();
+
     void floatingPointPrecision();
 
     void compatibility_Qt5();
@@ -219,6 +227,9 @@ private:
     void writeQSize(QDataStream *s);
     void writeQString(QDataStream* dev);
     void writeQRegExp(QDataStream* dev);
+#if QT_CONFIG(regularexpression)
+    void writeQRegularExpression(QDataStream *dev);
+#endif
     void writeMap(QDataStream* dev);
     void writeHash(QDataStream* dev);
     void writeqint64(QDataStream *s);
@@ -248,6 +259,9 @@ private:
     void readQSize(QDataStream *s);
     void readQString(QDataStream *s);
     void readQRegExp(QDataStream *s);
+#if QT_CONFIG(regularexpression)
+    void readQRegularExpression(QDataStream *s);
+#endif
     void readMap(QDataStream *s);
     void readHash(QDataStream *s);
     void readqint64(QDataStream *s);
@@ -556,6 +570,69 @@ void tst_QDataStream::readQRegExp(QDataStream *s)
     QCOMPARE(V.type(), QVariant::RegExp);
     QCOMPARE(V.toRegExp(), test);
 }
+
+// ************************************
+
+#if QT_CONFIG(regularexpression)
+static QRegularExpression QRegularExpressionData(int index)
+{
+    switch (index) {
+    case 0: return QRegularExpression();
+    case 1: return QRegularExpression("");
+    case 2: return QRegularExpression("A", QRegularExpression::CaseInsensitiveOption);
+    case 3: return QRegularExpression(QRegularExpression::wildcardToRegularExpression("ABCDE FGHI"));
+    case 4: return QRegularExpression(QRegularExpression::anchoredPattern("This is a long string"), QRegularExpression::CaseInsensitiveOption);
+    case 5: return QRegularExpression("And again a string with a \nCRLF", QRegularExpression::CaseInsensitiveOption);
+    case 6: return QRegularExpression("abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRESTUVWXYZ 1234567890 ~`!@#$%^&*()_-+={[}]|\\:;\"'<,>.?/", QRegularExpression::InvertedGreedinessOption);
+    }
+    return QRegularExpression("foo");
+}
+#define MAX_QREGULAREXPRESSION_DATA 7
+
+void tst_QDataStream::stream_QRegularExpression_data()
+{
+    stream_data(MAX_QREGULAREXPRESSION_DATA);
+}
+
+void tst_QDataStream::stream_QRegularExpression()
+{
+    STREAM_IMPL(QRegularExpression);
+}
+
+void tst_QDataStream::writeQRegularExpression(QDataStream* s)
+{
+    QRegularExpression test(QRegularExpressionData(dataIndex(QTest::currentDataTag())));
+    *s << test;
+    *s << QString("Her er det noe tekst");
+    *s << test;
+    *s << QString("nonempty");
+    *s << test;
+    *s << QVariant(test);
+}
+
+void tst_QDataStream::readQRegularExpression(QDataStream *s)
+{
+    QRegularExpression R;
+    QString S;
+    QVariant V;
+    QRegularExpression test(QRegularExpressionData(dataIndex(QTest::currentDataTag())));
+
+    *s >> R;
+
+    QCOMPARE(R, test);
+    *s >> S;
+    QCOMPARE(S, QString("Her er det noe tekst"));
+    *s >> R;
+    QCOMPARE(R, test);
+    *s >> S;
+    QCOMPARE(S, QString("nonempty"));
+    *s >> R;
+    QCOMPARE(R, test);
+    *s >> V;
+    QCOMPARE(V.type(), QVariant::RegularExpression);
+    QCOMPARE(V.toRegularExpression(), test);
+}
+#endif //QT_CONFIG(regularexpression)
 
 // ************************************
 
@@ -1094,18 +1171,18 @@ void tst_QDataStream::readQCursor(QDataStream *s)
 
     QVERIFY(d5.shape() == test.shape()); //## lacks operator==
     QCOMPARE(d5.hotSpot(), test.hotSpot());
-    QVERIFY((d5.bitmap() != 0 && test.bitmap() != 0) || (d5.bitmap() == 0 && test.bitmap() == 0));
-    if (d5.bitmap() != 0) {
-        QPixmap actual = *(d5.bitmap());
-        QPixmap expected = *(test.bitmap());
-        QCOMPARE(actual, expected);
-    }
-    QVERIFY((d5.mask() != 0 && test.mask() != 0) || (d5.mask() == 0 && test.mask() == 0));
-    if (d5.mask() != 0) {
-        QPixmap actual = *(d5.mask());
-        QPixmap expected = *(test.mask());
-        QCOMPARE(actual, expected);
-    }
+
+    // Comparing non-null QBitmaps will fail. Upcast them first to pass.
+    QCOMPARE(d5.bitmap(Qt::ReturnByValue).isNull(), test.bitmap(Qt::ReturnByValue).isNull());
+    QCOMPARE(
+        static_cast<QPixmap>(d5.bitmap(Qt::ReturnByValue)),
+        static_cast<QPixmap>(test.bitmap(Qt::ReturnByValue))
+    );
+    QCOMPARE(d5.mask(Qt::ReturnByValue).isNull(), test.mask(Qt::ReturnByValue).isNull());
+    QCOMPARE(
+        static_cast<QPixmap>(d5.mask(Qt::ReturnByValue)),
+        static_cast<QPixmap>(test.mask(Qt::ReturnByValue))
+    );
 }
 #endif
 
@@ -2315,10 +2392,10 @@ void tst_QDataStream::setVersion()
 
         if (vers == 1) {
             for (int grp = 0; grp < (int)QPalette::NColorGroups; ++grp) {
-                QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::Foreground)
-                        == inPal1.color((QPalette::ColorGroup)grp, QPalette::Foreground));
-                QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::Background)
-                        == inPal1.color((QPalette::ColorGroup)grp, QPalette::Background));
+                QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::WindowText)
+                        == inPal1.color((QPalette::ColorGroup)grp, QPalette::WindowText));
+                QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::Window)
+                        == inPal1.color((QPalette::ColorGroup)grp, QPalette::Window));
                 QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::Light)
                         == inPal1.color((QPalette::ColorGroup)grp, QPalette::Light));
                 QVERIFY(pal1.color((QPalette::ColorGroup)grp, QPalette::Dark)
@@ -2988,24 +3065,6 @@ void tst_QDataStream::status_QHash_QMap()
             } \
         } \
         { \
-            LinkedList expectedLinkedList; \
-            for (int i = 0; i < expectedList.count(); ++i) \
-                expectedLinkedList << expectedList.at(i); \
-            QByteArray ba = byteArray; \
-            QDataStream stream(&ba, QIODevice::ReadOnly); \
-            if (inTransaction) \
-                stream.startTransaction(); \
-            stream.setStatus(initialStatus); \
-            stream >> linkedList; \
-            QCOMPARE((int)stream.status(), (int)expectedStatus); \
-            if (!inTransaction || stream.commitTransaction()) { \
-                QCOMPARE(linkedList.size(), expectedLinkedList.size()); \
-                QCOMPARE(linkedList, expectedLinkedList); \
-            } else { \
-                QVERIFY(linkedList.isEmpty()); \
-            } \
-        } \
-        { \
             Vector expectedVector; \
             for (int i = 0; i < expectedList.count(); ++i) \
                 expectedVector << expectedList.at(i); \
@@ -3027,12 +3086,34 @@ void tst_QDataStream::status_QHash_QMap()
             break; \
     }
 
+#define LINKED_LIST_TEST(byteArray, initialStatus, expectedStatus, expectedList) \
+    for (bool inTransaction = false;; inTransaction = true) { \
+        { \
+            LinkedList expectedLinkedList; \
+            for (int i = 0; i < expectedList.count(); ++i) \
+                expectedLinkedList << expectedList.at(i); \
+            QByteArray ba = byteArray; \
+            QDataStream stream(&ba, QIODevice::ReadOnly); \
+            if (inTransaction) \
+                stream.startTransaction(); \
+            stream.setStatus(initialStatus); \
+            stream >> linkedList; \
+            QCOMPARE((int)stream.status(), (int)expectedStatus); \
+            if (!inTransaction || stream.commitTransaction()) { \
+                QCOMPARE(linkedList.size(), expectedLinkedList.size()); \
+                QCOMPARE(linkedList, expectedLinkedList); \
+            } else { \
+                QVERIFY(linkedList.isEmpty()); \
+            } \
+        } \
+        if (inTransaction) \
+            break; \
+    }
+
 void tst_QDataStream::status_QLinkedList_QList_QVector()
 {
-    typedef QLinkedList<QString> LinkedList;
     typedef QList<QString> List;
     typedef QVector<QString> Vector;
-    LinkedList linkedList;
     List list;
     Vector vector;
 
@@ -3079,6 +3160,61 @@ void tst_QDataStream::status_QLinkedList_QList_QVector()
         LIST_TEST(QByteArray("\x00\x00\x00\x01", 4), QDataStream::ReadCorruptData, QDataStream::ReadCorruptData, List());
         LIST_TEST(QByteArray("\x00\x00\x00\x01\x00\x00\x00\x01", 8), QDataStream::ReadPastEnd, QDataStream::ReadPastEnd, List());
     }
+
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+    // The same as above with QLinkedList
+
+    typedef QLinkedList<QString> LinkedList;
+    LinkedList linkedList;
+
+    // ok
+    {
+        List listWithEmptyString;
+        listWithEmptyString.append("");
+
+        List someList;
+        someList.append("J");
+        someList.append("MN");
+
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x00", 4), QDataStream::Ok, QDataStream::Ok, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01\x00\x00\x00\x00", 8), QDataStream::Ok, QDataStream::Ok, listWithEmptyString);
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x02\x00\x00\x00\x02\x00J"
+                                    "\x00\x00\x00\x04\x00M\x00N", 18), QDataStream::Ok, QDataStream::Ok, someList);
+    }
+
+    // past end
+    {
+        LINKED_LIST_TEST(QByteArray(), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        LINKED_LIST_TEST(QByteArray("\x00", 1), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00", 2), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00", 3), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01", 4), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        for (int i = 4; i < 12; ++i) {
+            LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00", i), QDataStream::Ok, QDataStream::ReadPastEnd, List());
+        }
+    }
+
+    // corrupt data
+    {
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01\x00\x00\x00\x01", 8), QDataStream::Ok, QDataStream::ReadCorruptData, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x02\x00\x00\x00\x01\x00J"
+                                    "\x00\x00\x00\x02\x00M\x00N", 18), QDataStream::Ok, QDataStream::ReadCorruptData, List());
+    }
+
+    // test the previously latched error status is not affected by reading
+    {
+        List listWithEmptyString;
+        listWithEmptyString.append("");
+
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01\x00\x00\x00\x00", 8), QDataStream::ReadPastEnd, QDataStream::ReadPastEnd, listWithEmptyString);
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01", 4), QDataStream::ReadCorruptData, QDataStream::ReadCorruptData, List());
+        LINKED_LIST_TEST(QByteArray("\x00\x00\x00\x01\x00\x00\x00\x01", 8), QDataStream::ReadPastEnd, QDataStream::ReadPastEnd, List());
+    }
+
+QT_WARNING_POP
+#endif
 }
 
 void tst_QDataStream::streamToAndFromQByteArray()
@@ -3220,7 +3356,10 @@ void tst_QDataStream::streamRealDataTypes()
         QCOMPARE(col, color);
         stream >> rGrad;
         QCOMPARE(rGrad.style(), radialBrush.style());
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         QCOMPARE(rGrad.matrix(), radialBrush.matrix());
+QT_WARNING_POP
         QCOMPARE(rGrad.gradient()->type(), radialBrush.gradient()->type());
         QCOMPARE(rGrad.gradient()->stops(), radialBrush.gradient()->stops());
         QCOMPARE(rGrad.gradient()->spread(), radialBrush.gradient()->spread());
@@ -3229,7 +3368,10 @@ void tst_QDataStream::streamRealDataTypes()
         QCOMPARE(((QRadialGradient *)rGrad.gradient())->radius(), ((QRadialGradient *)radialBrush.gradient())->radius());
         stream >> cGrad;
         QCOMPARE(cGrad.style(), conicalBrush.style());
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         QCOMPARE(cGrad.matrix(), conicalBrush.matrix());
+QT_WARNING_POP
         QCOMPARE(cGrad.gradient()->type(), conicalBrush.gradient()->type());
         QCOMPARE(cGrad.gradient()->stops(), conicalBrush.gradient()->stops());
         QCOMPARE(cGrad.gradient()->spread(), conicalBrush.gradient()->spread());
@@ -3439,6 +3581,90 @@ void tst_QDataStream::floatingPointNaN()
         stream >> fr;
         QCOMPARE(fr, xs[1].f);
     }
+}
+
+void tst_QDataStream::enumTest()
+{
+    QByteArray ba;
+
+    enum class E1 : qint8
+    {
+        A,
+        B,
+        C
+    };
+    {
+        QDataStream stream(&ba, QIODevice::WriteOnly);
+        stream << E1::A;
+        QCOMPARE(ba.size(), int(sizeof(E1)));
+    }
+    {
+        QDataStream stream(ba);
+        E1 e;
+        stream >> e;
+        QCOMPARE(e, E1::A);
+    }
+    ba.clear();
+
+    enum class E2 : qint16
+    {
+        A,
+        B,
+        C
+    };
+    {
+        QDataStream stream(&ba, QIODevice::WriteOnly);
+        stream << E2::B;
+        QCOMPARE(ba.size(), int(sizeof(E2)));
+    }
+    {
+        QDataStream stream(ba);
+        E2 e;
+        stream >> e;
+        QCOMPARE(e, E2::B);
+    }
+    ba.clear();
+
+    enum class E4 : qint32
+    {
+        A,
+        B,
+        C
+    };
+    {
+        QDataStream stream(&ba, QIODevice::WriteOnly);
+        stream << E4::C;
+        QCOMPARE(ba.size(), int(sizeof(E4)));
+    }
+    {
+        QDataStream stream(ba);
+        E4 e;
+        stream >> e;
+        QCOMPARE(e, E4::C);
+    }
+    ba.clear();
+
+
+    enum E
+    {
+        A,
+        B,
+        C,
+        D
+    };
+    {
+        QDataStream stream(&ba, QIODevice::WriteOnly);
+        stream << E::D;
+        QCOMPARE(ba.size(), 4);
+    }
+    {
+        QDataStream stream(ba);
+        E e;
+        stream >> e;
+        QCOMPARE(e, E::D);
+    }
+    ba.clear();
+
 }
 
 void tst_QDataStream::floatingPointPrecision()

@@ -40,17 +40,14 @@
 #include <QPointer>
 #include <QObject>
 #include <QtCore/qmath.h>
-#if 0 // Used to be included in Qt4 for Q_WS_WIN
-#  include <QLibrary>
-#endif
 
 #include "qscrollerproperties.h"
 #include "private/qscrollerproperties_p.h"
 
 QT_BEGIN_NAMESPACE
 
-static QScrollerPropertiesPrivate *userDefaults = 0;
-static QScrollerPropertiesPrivate *systemDefaults = 0;
+static QScrollerPropertiesPrivate *userDefaults = nullptr;
+static QScrollerPropertiesPrivate *systemDefaults = nullptr;
 
 QScrollerPropertiesPrivate *QScrollerPropertiesPrivate::defaults()
 {
@@ -73,10 +70,6 @@ QScrollerPropertiesPrivate *QScrollerPropertiesPrivate::defaults()
         spp.overshootDragDistanceFactor = qreal(1);
         spp.overshootScrollDistanceFactor = qreal(0.5);
         spp.overshootScrollTime = qreal(0.7);
-#  if 0 // Used to be included in Qt4 for Q_WS_WIN
-        if (QLibrary::resolve(QLatin1String("UxTheme"), "BeginPanningFeedback"))
-            spp.overshootScrollTime = qreal(0.35);
-#  endif
         spp.hOvershootPolicy = QScrollerProperties::OvershootWhenScrollable;
         spp.vOvershootPolicy = QScrollerProperties::OvershootWhenScrollable;
         spp.frameRate = QScrollerProperties::Standard;
@@ -207,7 +200,7 @@ void QScrollerProperties::setDefaultScrollerProperties(const QScrollerProperties
 void QScrollerProperties::unsetDefaultScrollerProperties()
 {
     delete userDefaults;
-    userDefaults = 0;
+    userDefaults = nullptr;
 }
 
 /*!
@@ -268,9 +261,9 @@ void QScrollerProperties::setScrollMetric(ScrollMetric metric, const QVariant &v
     case OvershootDragDistanceFactor:   d->overshootDragDistanceFactor = qBound(qreal(0), value.toReal(), qreal(1)); break;
     case OvershootScrollDistanceFactor: d->overshootScrollDistanceFactor = qBound(qreal(0), value.toReal(), qreal(1)); break;
     case OvershootScrollTime:           d->overshootScrollTime = value.toReal(); break;
-    case HorizontalOvershootPolicy:     d->hOvershootPolicy = value.value<QScrollerProperties::OvershootPolicy>(); break;
-    case VerticalOvershootPolicy:       d->vOvershootPolicy = value.value<QScrollerProperties::OvershootPolicy>(); break;
-    case FrameRate:                     d->frameRate = value.value<QScrollerProperties::FrameRates>(); break;
+    case HorizontalOvershootPolicy:     d->hOvershootPolicy = qvariant_cast<QScrollerProperties::OvershootPolicy>(value); break;
+    case VerticalOvershootPolicy:       d->vOvershootPolicy = qvariant_cast<QScrollerProperties::OvershootPolicy>(value); break;
+    case FrameRate:                     d->frameRate = qvariant_cast<QScrollerProperties::FrameRates>(value); break;
     case ScrollMetricCount:             break;
     }
 }

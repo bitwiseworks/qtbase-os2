@@ -44,12 +44,12 @@
 
 QT_BEGIN_NAMESPACE
 
-static QStringList cupsOptionsList(QPrinter *printer) Q_DECL_NOTHROW
+static QStringList cupsOptionsList(QPrinter *printer) noexcept
 {
     return printer->printEngine()->property(PPK_CupsOptions).toStringList();
 }
 
-void setCupsOptions(QPrinter *printer, const QStringList &cupsOptions) Q_DECL_NOTHROW
+void setCupsOptions(QPrinter *printer, const QStringList &cupsOptions) noexcept
 {
     printer->printEngine()->setProperty(PPK_CupsOptions, QVariant(cupsOptions));
 }
@@ -106,7 +106,7 @@ static inline QString jobHoldToString(const QCUPSSupport::JobHoldUntil jobHold, 
             if (holdUntilTime < localDateTime.time())
                 localDateTime = localDateTime.addDays(1);
             localDateTime.setTime(holdUntilTime);
-            return localDateTime.toUTC().time().toString(QStringViewLiteral("HH:mm"));
+            return localDateTime.toUTC().time().toString(u"HH:mm");
         }
         // else fall through:
         Q_FALLTHROUGH();
@@ -149,7 +149,7 @@ QCUPSSupport::JobHoldUntilWithTime QCUPSSupport::parseJobHoldUntil(const QString
 
 ppd_option_t *QCUPSSupport::findPpdOption(const char *optionName, QPrintDevice *printDevice)
 {
-    ppd_file_t *ppd = printDevice->property(PDPK_PpdFile).value<ppd_file_t*>();
+    ppd_file_t *ppd = qvariant_cast<ppd_file_t*>(printDevice->property(PDPK_PpdFile));
 
     if (ppd) {
         for (int i = 0; i < ppd->num_groups; ++i) {

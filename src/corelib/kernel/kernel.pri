@@ -7,7 +7,7 @@ HEADERS += \
         kernel/qdeadlinetimer.h \
         kernel/qdeadlinetimer_p.h \
         kernel/qelapsedtimer.h \
-        kernel/qeventloop.h\
+        kernel/qeventloop.h \
         kernel/qpointer.h \
         kernel/qcorecmdlineargs_p.h \
         kernel/qcoreapplication.h \
@@ -88,8 +88,10 @@ win32 {
             SOURCES += kernel/qeventdispatcher_winrt.cpp
             HEADERS += kernel/qeventdispatcher_winrt_p.h
         } else {
-            SOURCES += kernel/qeventdispatcher_win.cpp
-            HEADERS += kernel/qeventdispatcher_win_p.h
+            SOURCES += kernel/qeventdispatcher_win.cpp \
+                       kernel/qwinregistry.cpp
+            HEADERS += kernel/qeventdispatcher_win_p.h \
+                       kernel/qwinregistry_p.h
         }
 
         !winrt: LIBS_PRIVATE += -lversion
@@ -112,13 +114,11 @@ mac {
     SOURCES += \
         kernel/qcfsocketnotifier.cpp \
         kernel/qcoreapplication_mac.cpp \
-        kernel/qcore_mac.cpp \
-        kernel/qcore_foundation.mm
-    !nacl: SOURCES += kernel/qelapsedtimer_mac.cpp
-
-    OBJECTIVE_SOURCES += \
-        kernel/qcore_mac_objc.mm \
+        kernel/qcore_foundation.mm \
+        kernel/qcore_mac.mm \
         kernel/qeventdispatcher_cf.mm
+
+    !nacl: SOURCES += kernel/qelapsedtimer_mac.cpp
 
     LIBS_PRIVATE += -framework Foundation
 

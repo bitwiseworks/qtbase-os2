@@ -113,7 +113,7 @@ int QSqlQueryModelPrivate::columnInQuery(int modelColumn) const
     the lower-level QSqlQuery and can be used to provide data to
     view classes such as QTableView. For example:
 
-    \snippet sqldatabase/sqldatabase.cpp 16
+    \snippet sqldatabase/sqldatabase_snippet.cpp 16
 
     We set the model's query, then we set up the labels displayed in
     the view header.
@@ -124,8 +124,8 @@ int QSqlQueryModelPrivate::columnInQuery(int modelColumn) const
     \snippet sqldatabase/sqldatabase.cpp 21
 
     The code snippet above extracts the \c salary field from record 4 in
-    the result set of the query \c{SELECT * from employee}. Assuming
-    that \c salary is column 2, we can rewrite the last line as follows:
+    the result set of the \c SELECT query. Since \c salary is the 2nd
+    column (or column index 1), we can rewrite the last line as follows:
 
     \snippet sqldatabase/sqldatabase.cpp 22
 

@@ -26,12 +26,15 @@
 **
 ****************************************************************************/
 
-
-#include <qxml.h>
-#include <qregexp.h>
-
 #include "parser.h"
 
+#if QT_DEPRECATED_SINCE(5, 15)
+
+#include <qxml.h>
+#include <qregularexpression.h>
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 class ContentHandler : public QXmlDefaultHandler
 {
 public:
@@ -139,11 +142,11 @@ bool ContentHandler::startElement(const QString &namespaceURI,
 QString ContentHandler::escapeStr(const QString &s)
 {
     QString result = s;
-    result.replace(QRegExp("\""), "\\\"");
-    result.replace(QRegExp("\\"), "\\\\");
-    result.replace(QRegExp("\n"), "\\n");
-    result.replace(QRegExp("\r"), "\\r");
-    result.replace(QRegExp("\t"), "\\t");
+    result.replace(QRegularExpression("\""), "\\\"");
+    result.replace(QRegularExpression("\\"), "\\\\");
+    result.replace(QRegularExpression("\n"), "\\n");
+    result.replace(QRegularExpression("\r"), "\\r");
+    result.replace(QRegularExpression("\t"), "\\t");
     return result;
 }
 
@@ -440,3 +443,6 @@ QString Parser::errorMsg() const
 {
     return handler->errorMsg();
 }
+
+QT_WARNING_POP
+#endif // QT_DEPRECATED_SINCE(5, 15)

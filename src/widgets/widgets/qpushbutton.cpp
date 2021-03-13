@@ -297,7 +297,7 @@ QDialog *QPushButtonPrivate::dialogParent() const
         if (const QDialog *dialog = qobject_cast<const QDialog *>(p))
             return const_cast<QDialog *>(dialog);
     }
-    return 0;
+    return nullptr;
 }
 #endif
 
@@ -353,7 +353,7 @@ bool QPushButton::autoDefault() const
 {
     Q_D(const QPushButton);
     if(d->autoDefault == QPushButtonPrivate::Auto)
-        return ( d->dialogParent() != 0 );
+        return ( d->dialogParent() != nullptr );
     return d->autoDefault;
 }
 
@@ -496,7 +496,7 @@ void QPushButton::focusOutEvent(QFocusEvent *e)
 #if QT_CONFIG(dialog)
         QDialog *dlg = qobject_cast<QDialog*>(window());
         if (dlg)
-            dlg->d_func()->setDefault(0);
+            dlg->d_func()->setDefault(nullptr);
         else
             d->defaultButton = false;
 #endif
@@ -507,6 +507,17 @@ void QPushButton::focusOutEvent(QFocusEvent *e)
     if (d->menu && d->menu->isVisible())        // restore pressed status
         setDown(true);
 #endif
+}
+
+/*!
+    \reimp
+*/
+bool QPushButton::hitButton(const QPoint &pos) const
+{
+    QStyleOptionButton option;
+    initStyleOption(&option);
+    const QRect bevel = style()->subElementRect(QStyle::SE_PushButtonBevel, &option, this);
+    return bevel.contains(pos);
 }
 
 #if QT_CONFIG(menu)
@@ -683,38 +694,6 @@ bool QPushButton::event(QEvent *e)
     }
     return QAbstractButton::event(e);
 }
-
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-/* \reimp */
-bool QPushButton::hitButton(const QPoint &pos) const
-{
-    QStyleOptionButton opt;
-    initStyleOption(&opt);
-    if (qt_mac_buttonIsRenderedFlat(this, &opt))
-        return QAbstractButton::hitButton(pos);
-
-    // Now that we know we are using the native style, let's proceed.
-    Q_D(const QPushButton);
-    QPushButtonPrivate *nonConst = const_cast<QPushButtonPrivate *>(d);
-    // In OSX buttons are round, which causes the hit method to be special.
-    // We cannot simply relay on detecting if something is inside the rect or not,
-    // we need to check if it is inside the "rounded area" or not. A point might
-    // be inside the rect but not inside the rounded area.
-    // Notice this method is only reimplemented for OSX.
-    return nonConst->hitButton(pos);
-}
-
-bool QPushButtonPrivate::hitButton(const QPoint &pos)
-{
-    Q_Q(QPushButton);
-    QRect roundedRect(q->rect().left() + QMacStylePrivate::PushButtonLeftOffset,
-                      q->rect().top() + QMacStylePrivate::PushButtonContentPadding,
-                      q->rect().width() - QMacStylePrivate::PushButtonRightOffset,
-                      q->rect().height() - QMacStylePrivate::PushButtonBottomOffset);
-    return roundedRect.contains(pos);
-}
-#endif
-
 
 QT_END_NAMESPACE
 

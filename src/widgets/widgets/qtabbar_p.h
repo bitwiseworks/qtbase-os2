@@ -88,18 +88,17 @@ class Q_WIDGETS_EXPORT QTabBarPrivate : public QWidgetPrivate
     Q_DECLARE_PUBLIC(QTabBar)
 public:
     QTabBarPrivate()
-        :currentIndex(-1), pressedIndex(-1), shape(QTabBar::RoundedNorth), layoutDirty(false),
+        :currentIndex(-1), pressedIndex(-1), firstVisible(0), lastVisible(-1), shape(QTabBar::RoundedNorth), layoutDirty(false),
         drawBase(true), scrollOffset(0), hoverIndex(-1), elideModeSetByUser(false), useScrollButtonsSetByUser(false), expanding(true), closeButtonOnTabs(false),
         selectionBehaviorOnRemove(QTabBar::SelectRightTab), paintWithOffsets(true), movable(false),
         dragInProgress(false), documentMode(false), autoHide(false), changeCurrentOnDrag(false),
-        switchTabCurrentIndex(-1), switchTabTimerId(0), movingTab(0)
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-        , previousPressedIndex(-1)
-#endif
+        switchTabCurrentIndex(-1), switchTabTimerId(0), movingTab(nullptr)
         {}
 
     int currentIndex;
     int pressedIndex;
+    int firstVisible;
+    int lastVisible;
     QTabBar::Shape shape;
     bool layoutDirty;
     bool drawBase;
@@ -107,14 +106,15 @@ public:
 
     struct Tab {
         inline Tab(const QIcon &ico, const QString &txt)
-            : enabled(true) , shortcutId(0), text(txt), icon(ico),
-            leftWidget(0), rightWidget(0), lastTab(-1), dragOffset(0)
+            : enabled(true) , visible(true), shortcutId(0), text(txt), icon(ico),
+            leftWidget(nullptr), rightWidget(nullptr), lastTab(-1), dragOffset(0)
 #if QT_CONFIG(animation)
-            , animation(0)
+            , animation(nullptr)
 #endif // animation
         {}
         bool operator==(const Tab &other) const { return &other == this; }
         bool enabled;
+        bool visible;
         int shortcutId;
         QString text;
 #ifndef QT_NO_TOOLTIP
@@ -173,6 +173,8 @@ public:
     QList<Tab> tabList;
     mutable QHash<QString, QSize> textSizes;
 
+    void calculateFirstLastVisible(int index, bool visible, bool remove);
+    int selectNewCurrentIndexFrom(int currentIndex);
     int calculateNewPosition(int from, int to, int index) const;
     void slide(int from, int to);
     void init();
@@ -182,7 +184,7 @@ public:
 
     int indexAtPos(const QPoint &p) const;
 
-    inline bool isAnimated() const { Q_Q(const QTabBar); return q->style()->styleHint(QStyle::SH_Widget_Animation_Duration, 0, q) > 0; }
+    inline bool isAnimated() const { Q_Q(const QTabBar); return q->style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, q) > 0; }
     inline bool validIndex(int index) const { return index >= 0 && index < tabList.count(); }
     void setCurrentNextEnabledIndex(int offset);
 
@@ -232,9 +234,6 @@ public:
     int switchTabTimerId;
 
     QMovableTabWidget *movingTab;
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    int previousPressedIndex;
-#endif
     // shared by tabwidget and qtabbar
     static void initStyleBaseOption(QStyleOptionTabBarBase *optTabBase, QTabBar *tabbar, QSize size)
     {

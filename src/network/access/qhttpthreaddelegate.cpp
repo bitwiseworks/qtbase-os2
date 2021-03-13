@@ -185,12 +185,12 @@ public:
     QNetworkAccessCachedHttpConnection(const QString &hostName, quint16 port, bool encrypt,
                                        QHttpNetworkConnection::ConnectionType connectionType)
         : QHttpNetworkConnection(hostName, port, encrypt, connectionType)
-#else
+#else // ### Qt6: Remove section
     QNetworkAccessCachedHttpConnection(const QString &hostName, quint16 port, bool encrypt,
                                        QHttpNetworkConnection::ConnectionType connectionType,
                                        QSharedPointer<QNetworkSession> networkSession)
-        : QHttpNetworkConnection(hostName, port, encrypt, connectionType, /*parent=*/0,
-                                 qMove(networkSession))
+        : QHttpNetworkConnection(hostName, port, encrypt, connectionType, /*parent=*/nullptr,
+                                 std::move(networkSession))
 #endif
     {
         setExpires(true);
@@ -241,9 +241,9 @@ QHttpThreadDelegate::QHttpThreadDelegate(QObject *parent) :
     , removedContentLength(-1)
     , incomingErrorCode(QNetworkReply::NoError)
     , downloadBuffer()
-    , httpConnection(0)
-    , httpReply(0)
-    , synchronousRequestLoop(0)
+    , httpConnection(nullptr)
+    , httpReply(nullptr)
+    , synchronousRequestLoop(nullptr)
 {
 }
 
@@ -297,6 +297,11 @@ void QHttpThreadDelegate::startRequest()
         connectionType = QHttpNetworkConnection::ConnectionTypeHTTP2Direct;
     }
 
+#if QT_CONFIG(ssl)
+    // See qnetworkreplyhttpimpl, delegate's initialization code.
+    Q_ASSERT(!ssl || incomingSslConfiguration.data());
+#endif // QT_CONFIG(ssl)
+
     const bool isH2 = httpRequest.isHTTP2Allowed() || httpRequest.isHTTP2Direct();
     if (isH2) {
 #if QT_CONFIG(ssl)
@@ -316,9 +321,6 @@ void QHttpThreadDelegate::startRequest()
     }
 
 #ifndef QT_NO_SSL
-    if (ssl && !incomingSslConfiguration.data())
-        incomingSslConfiguration.reset(new QSslConfiguration);
-
     if (!isH2 && httpRequest.isSPDYAllowed() && ssl) {
         connectionType = QHttpNetworkConnection::ConnectionTypeSPDY;
         urlCopy.setScheme(QStringLiteral("spdy")); // to differentiate SPDY requests from HTTPS requests
@@ -346,15 +348,15 @@ void QHttpThreadDelegate::startRequest()
 #ifdef QT_NO_BEARERMANAGEMENT
         httpConnection = new QNetworkAccessCachedHttpConnection(urlCopy.host(), urlCopy.port(), ssl,
                                                                 connectionType);
-#else
+#else // ### Qt6: Remove section
         httpConnection = new QNetworkAccessCachedHttpConnection(urlCopy.host(), urlCopy.port(), ssl,
                                                                 connectionType,
                                                                 networkSession);
 #endif // QT_NO_BEARERMANAGEMENT
         if (connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
-            && http2Parameters.validate()) {
+            || connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
             httpConnection->setHttp2Parameters(http2Parameters);
-        } // else we ignore invalid parameters and use our own defaults.
+        }
 #ifndef QT_NO_SSL
         // Set the QSslConfiguration from this QNetworkRequest.
         if (ssl)
@@ -426,6 +428,12 @@ void QHttpThreadDelegate::startRequest()
 
     connect(httpReply, SIGNAL(cacheCredentials(QHttpNetworkRequest,QAuthenticator*)),
             this, SLOT(cacheCredentialsSlot(QHttpNetworkRequest,QAuthenticator*)));
+    if (httpReply->errorCode() != QNetworkReply::NoError) {
+        if (synchronous)
+            synchronousFinishedWithErrorSlot(httpReply->errorCode(), httpReply->errorString());
+        else
+            finishedWithErrorSlot(httpReply->errorCode(), httpReply->errorString());
+    }
 }
 
 // This gets called from the user thread or by the synchronous HTTP timeout timer
@@ -437,7 +445,7 @@ void QHttpThreadDelegate::abortRequest()
     if (httpReply) {
         httpReply->abort();
         delete httpReply;
-        httpReply = 0;
+        httpReply = nullptr;
     }
 
     // Got aborted by the timeout timer
@@ -543,7 +551,7 @@ void QHttpThreadDelegate::finishedSlot()
 
     QMetaObject::invokeMethod(httpReply, "deleteLater", Qt::QueuedConnection);
     QMetaObject::invokeMethod(this, "deleteLater", Qt::QueuedConnection);
-    httpReply = 0;
+    httpReply = nullptr;
 }
 
 void QHttpThreadDelegate::synchronousFinishedSlot()
@@ -566,7 +574,7 @@ void QHttpThreadDelegate::synchronousFinishedSlot()
 
     QMetaObject::invokeMethod(httpReply, "deleteLater", Qt::QueuedConnection);
     QMetaObject::invokeMethod(synchronousRequestLoop, "quit", Qt::QueuedConnection);
-    httpReply = 0;
+    httpReply = nullptr;
 }
 
 void QHttpThreadDelegate::finishedWithErrorSlot(QNetworkReply::NetworkError errorCode, const QString &detail)
@@ -588,7 +596,7 @@ void QHttpThreadDelegate::finishedWithErrorSlot(QNetworkReply::NetworkError erro
 
     QMetaObject::invokeMethod(httpReply, "deleteLater", Qt::QueuedConnection);
     QMetaObject::invokeMethod(this, "deleteLater", Qt::QueuedConnection);
-    httpReply = 0;
+    httpReply = nullptr;
 }
 
 
@@ -607,7 +615,7 @@ void QHttpThreadDelegate::synchronousFinishedWithErrorSlot(QNetworkReply::Networ
 
     QMetaObject::invokeMethod(httpReply, "deleteLater", Qt::QueuedConnection);
     QMetaObject::invokeMethod(synchronousRequestLoop, "quit", Qt::QueuedConnection);
-    httpReply = 0;
+    httpReply = nullptr;
 }
 
 static void downloadBufferDeleter(char *ptr)

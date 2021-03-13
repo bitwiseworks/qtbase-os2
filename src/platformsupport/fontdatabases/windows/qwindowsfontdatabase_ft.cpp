@@ -48,7 +48,11 @@
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
 #include <QtCore/QSettings>
+#if QT_CONFIG(regularexpression)
 #include <QtCore/QRegularExpression>
+#else
+#include <QtCore/QRegExp>
+#endif
 #include <QtGui/QGuiApplication>
 #include <QtGui/QFontDatabase>
 
@@ -211,17 +215,15 @@ static bool addFontToDatabase(QString familyName,
 
     QString subFamilyName;
     QString subFamilyStyle;
-    if (ttf) {
-        // Look-up names registered in the font
-        QFontNames canonicalNames = qt_getCanonicalFontNames(logFont);
-        if (qt_localizedName(familyName) && !canonicalNames.name.isEmpty())
-            englishName = canonicalNames.name;
-        if (!canonicalNames.preferredName.isEmpty()) {
-            subFamilyName = familyName;
-            subFamilyStyle = styleName;
-            familyName = canonicalNames.preferredName;
-            styleName = canonicalNames.preferredStyle;
-        }
+    // Look-up names registered in the font
+    QFontNames canonicalNames = qt_getCanonicalFontNames(logFont);
+    if (qt_localizedName(familyName) && !canonicalNames.name.isEmpty())
+        englishName = canonicalNames.name;
+    if (!canonicalNames.preferredName.isEmpty()) {
+        subFamilyName = familyName;
+        subFamilyStyle = styleName;
+        familyName = canonicalNames.preferredName;
+        styleName = canonicalNames.preferredStyle;
     }
 
     QSupportedWritingSystems writingSystems;

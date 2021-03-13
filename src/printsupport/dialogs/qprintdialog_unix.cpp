@@ -398,12 +398,12 @@ static const char *ppdOriginallySelectedChoiceProperty = "_q_ppd_originally_sele
 // Used to store the warning label pointer for each QComboBox that represents an advanced option
 static const char *warningLabelProperty = "_q_warning_label";
 
-static bool isBlacklistedGroup(const ppd_group_t *group) Q_DECL_NOTHROW
+static bool isBlacklistedGroup(const ppd_group_t *group) noexcept
 {
     return qstrcmp(group->name, "InstallableOptions") == 0;
 };
 
-static bool isBlacklistedOption(const char *keyword) Q_DECL_NOTHROW
+static bool isBlacklistedOption(const char *keyword) noexcept
 {
     // We already let the user set these options elsewhere
     const char *cupsOptionBlacklist[] = {
@@ -426,7 +426,7 @@ bool QPrintPropertiesDialog::createAdvancedOptionsWidget()
 {
     bool anyWidgetCreated = false;
 
-    ppd_file_t *ppd = m_currentPrintDevice->property(PDPK_PpdFile).value<ppd_file_t*>();
+    ppd_file_t *ppd = qvariant_cast<ppd_file_t*>(m_currentPrintDevice->property(PDPK_PpdFile));
 
     if (ppd) {
         m_cupsCodec = QTextCodec::codecForName(ppd->lang_encoding);
@@ -532,7 +532,7 @@ bool QPrintPropertiesDialog::createAdvancedOptionsWidget()
 void QPrintPropertiesDialog::setPrinterAdvancedCupsOptions() const
 {
     for (const QComboBox *choicesCb : m_advancedOptionsCombos) {
-        const ppd_option_t *option = choicesCb->property(ppdOptionProperty).value<const ppd_option_t *>();
+        const ppd_option_t *option = qvariant_cast<const ppd_option_t *>(choicesCb->property(ppdOptionProperty));
 
         // We can't use choicesCb->currentIndex() to know the index of the option in the choices[] array
         // because some of them may not be present in the list because they conflict with the
@@ -551,7 +551,7 @@ void QPrintPropertiesDialog::setPrinterAdvancedCupsOptions() const
 void QPrintPropertiesDialog::revertAdvancedOptionsToSavedValues() const
 {
     for (QComboBox *choicesCb : m_advancedOptionsCombos) {
-        const int originallySelectedChoice = choicesCb->property(ppdOriginallySelectedChoiceProperty).value<int>();
+        const int originallySelectedChoice = qvariant_cast<int>(choicesCb->property(ppdOriginallySelectedChoiceProperty));
         const int newComboIndexToSelect = choicesCb->findData(originallySelectedChoice);
         choicesCb->setCurrentIndex(newComboIndexToSelect);
         // The currentIndexChanged lambda takes care of resetting the ppd option
@@ -580,8 +580,8 @@ bool QPrintPropertiesDialog::anyAdvancedOptionConflict() const
     bool anyConflicted = false;
 
     for (const QComboBox *choicesCb : m_advancedOptionsCombos) {
-        const ppd_option_t *option = choicesCb->property(ppdOptionProperty).value<const ppd_option_t *>();
-        QLabel *warningLabel = choicesCb->property(warningLabelProperty).value<QLabel *>();
+        const ppd_option_t *option = qvariant_cast<const ppd_option_t *>(choicesCb->property(ppdOptionProperty));
+        QLabel *warningLabel = qvariant_cast<QLabel *>(choicesCb->property(warningLabelProperty));
         if (option->conflicted) {
             anyConflicted = true;
             const int pixmap_size = choicesCb->sizeHint().height() * .75;
@@ -637,8 +637,10 @@ void QPrintDialogPrivate::init()
     options.pageSetCombo->addItem(tr("Odd Pages"), QVariant::fromValue(QCUPSSupport::OddPages));
     options.pageSetCombo->addItem(tr("Even Pages"), QVariant::fromValue(QCUPSSupport::EvenPages));
 #else
-    for (int i = options.pagesLayout->count() - 1; i >= 0; --i)
-        delete options.pagesLayout->itemAt(i)->widget();
+    delete options.pagesRadioButton;
+    delete options.pagesLineEdit;
+    options.pagesRadioButton = nullptr;
+    options.pagesLineEdit = nullptr;
 #endif
 
     top->d->setOptionsPane(this);
@@ -728,13 +730,18 @@ void QPrintDialogPrivate::selectPrinter(const QPrinter::OutputFormat outputForma
             options.pageSetCombo->setEnabled(true);
 
 #if QT_CONFIG(cups)
+        // Disable complex page ranges widget when printing to pdf
+        // It doesn't work since it relies on cups to do the heavy lifting and cups
+        // is not used when printing to PDF
+        options.pagesRadioButton->setEnabled(outputFormat != QPrinter::PdfFormat);
+
         // Disable color options on main dialog if not printing to file, it will be handled by CUPS advanced dialog
         options.colorMode->setVisible(outputFormat == QPrinter::PdfFormat);
 #endif
 }
 
 #if QT_CONFIG(cups)
-static std::vector<std::pair<int, int>> pageRangesFromString(const QString &pagesString) Q_DECL_NOTHROW
+static std::vector<std::pair<int, int>> pageRangesFromString(const QString &pagesString) noexcept
 {
     std::vector<std::pair<int, int>> result;
     const QStringList items = pagesString.split(',');
@@ -788,7 +795,7 @@ static std::vector<std::pair<int, int>> pageRangesFromString(const QString &page
     return result;
 }
 
-static QString stringFromPageRanges(const std::vector<std::pair<int, int>> &pageRanges) Q_DECL_NOTHROW
+static QString stringFromPageRanges(const std::vector<std::pair<int, int>> &pageRanges) noexcept
 {
     QString result;
 
@@ -805,7 +812,7 @@ static QString stringFromPageRanges(const std::vector<std::pair<int, int>> &page
     return result;
 }
 
-static bool isValidPagesString(const QString &pagesString) Q_DECL_NOTHROW
+static bool isValidPagesString(const QString &pagesString) noexcept
 {
     if (pagesString.isEmpty())
         return false;
@@ -895,7 +902,7 @@ void QPrintDialogPrivate::setupPrinter()
     // page set
     if (p->printRange() == QPrinter::AllPages || p->printRange() == QPrinter::PageRange) {
         //If the application is selecting pages and the first page number is even then need to adjust the odd-even accordingly
-        QCUPSSupport::PageSet pageSet = options.pageSetCombo->itemData(options.pageSetCombo->currentIndex()).value<QCUPSSupport::PageSet>();
+        QCUPSSupport::PageSet pageSet = qvariant_cast<QCUPSSupport::PageSet>(options.pageSetCombo->itemData(options.pageSetCombo->currentIndex()));
         if (q->isOptionEnabled(QPrintDialog::PrintPageRange)
             && p->printRange() == QPrinter::PageRange
             && (q->fromPage() % 2 == 0)) {
@@ -1082,7 +1089,7 @@ void QPrintDialog::setVisible(bool visible)
 
 int QPrintDialog::exec()
 {
-    return QDialog::exec();
+    return QAbstractPrintDialog::exec();
 }
 
 void QPrintDialog::accept()
@@ -1171,7 +1178,7 @@ QUnixPrintWidgetPrivate::QUnixPrintWidgetPrivate(QUnixPrintWidget *p, QPrinter *
 
 void QUnixPrintWidgetPrivate::updateWidget()
 {
-    const bool printToFile = q == 0 || q->isOptionEnabled(QPrintDialog::PrintToFile);
+    const bool printToFile = q == nullptr || q->isOptionEnabled(QPrintDialog::PrintToFile);
     if (printToFile && !filePrintersAdded) {
         if (widget.printers->count())
             widget.printers->insertSeparator(widget.printers->count());
@@ -1318,10 +1325,10 @@ bool QUnixPrintWidgetPrivate::checkFields()
 
 #if QT_CONFIG(cups)
     if (propertiesDialog) {
-        QCUPSSupport::PagesPerSheet pagesPerSheet = propertiesDialog->widget.pageSetup->m_ui.pagesPerSheetCombo
-                                                                    ->currentData().value<QCUPSSupport::PagesPerSheet>();
+        QCUPSSupport::PagesPerSheet pagesPerSheet = qvariant_cast<QCUPSSupport::PagesPerSheet>(propertiesDialog->widget.pageSetup->m_ui.pagesPerSheetCombo
+                                                                    ->currentData());
 
-        QCUPSSupport::PageSet pageSet = optionsPane->options.pageSetCombo->currentData().value<QCUPSSupport::PageSet>();
+        QCUPSSupport::PageSet pageSet = qvariant_cast<QCUPSSupport::PageSet>(optionsPane->options.pageSetCombo->currentData());
 
 
         if (pagesPerSheet != QCUPSSupport::OnePagePerSheet

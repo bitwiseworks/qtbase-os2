@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
@@ -52,6 +52,7 @@
 //
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
+#include <QtCore/qcalendar.h>
 #include "QtWidgets/qcalendarwidget.h"
 #include "QtWidgets/qspinbox.h"
 #include "QtWidgets/qtoolbutton.h"
@@ -70,7 +71,6 @@ class Q_AUTOTEST_EXPORT QDateTimeEditPrivate : public QAbstractSpinBoxPrivate, p
     Q_DECLARE_PUBLIC(QDateTimeEdit)
 public:
     QDateTimeEditPrivate();
-    ~QDateTimeEditPrivate();
 
     void init(const QVariant &var);
     void readLocaleSettings();
@@ -94,8 +94,22 @@ public:
 
     // Override QDateTimeParser:
     QString displayText() const override { return edit->text(); }
-    QDateTime getMinimum() const override { return minimum.toDateTime(); }
-    QDateTime getMaximum() const override { return maximum.toDateTime(); }
+    QDateTime getMinimum() const override
+    {
+        if (keyboardTracking)
+            return minimum.toDateTime();
+        if (spec != Qt::LocalTime)
+            return QDateTime(QDATETIMEEDIT_DATE_MIN.startOfDay(spec));
+        return QDateTimeParser::getMinimum();
+    }
+    QDateTime getMaximum() const override
+    {
+        if (keyboardTracking)
+            return maximum.toDateTime();
+        if (spec != Qt::LocalTime)
+            return QDateTime(QDATETIMEEDIT_DATE_MIN.startOfDay(spec));
+        return QDateTimeParser::getMaximum();
+    }
     QLocale locale() const override { return q_func()->locale(); }
     QString getAmPmText(AmPm ap, Case cs) const override;
     int cursorPosition() const override { return edit ? edit->cursorPosition() : -1; }
@@ -123,7 +137,7 @@ public:
     static QDateTimeEdit::Sections convertSections(QDateTimeParser::Sections s);
     static QDateTimeEdit::Section convertToPublic(QDateTimeParser::Section s);
 
-    void initCalendarPopup(QCalendarWidget *cw = 0);
+    void initCalendarPopup(QCalendarWidget *cw = nullptr);
     void positionCalendarPopup();
 
     QDateTimeEdit::Sections sections;
@@ -138,6 +152,8 @@ public:
 #ifdef QT_KEYPAD_NAVIGATION
     bool focusOnButton;
 #endif
+
+    Qt::TimeSpec spec = Qt::LocalTime;
 };
 
 
@@ -145,21 +161,22 @@ class QCalendarPopup : public QWidget
 {
     Q_OBJECT
 public:
-    explicit QCalendarPopup(QWidget *parent = 0, QCalendarWidget *cw = 0);
+    explicit QCalendarPopup(QWidget *parent = nullptr, QCalendarWidget *cw = nullptr,
+                            QCalendar ca = QCalendar());
     QDate selectedDate() { return verifyCalendarInstance()->selectedDate(); }
-    void setDate(const QDate &date);
-    void setDateRange(const QDate &min, const QDate &max);
+    void setDate(QDate date);
+    void setDateRange(QDate min, QDate max);
     void setFirstDayOfWeek(Qt::DayOfWeek dow) { verifyCalendarInstance()->setFirstDayOfWeek(dow); }
     QCalendarWidget *calendarWidget() const { return const_cast<QCalendarPopup*>(this)->verifyCalendarInstance(); }
     void setCalendarWidget(QCalendarWidget *cw);
 Q_SIGNALS:
-    void activated(const QDate &date);
-    void newDateSelected(const QDate &newDate);
-    void hidingCalendar(const QDate &oldDate);
+    void activated(QDate date);
+    void newDateSelected(QDate newDate);
+    void hidingCalendar(QDate oldDate);
     void resetButton();
 
 private Q_SLOTS:
-    void dateSelected(const QDate &date);
+    void dateSelected(QDate date);
     void dateSelectionChanged();
 
 protected:
@@ -174,6 +191,7 @@ private:
     QPointer<QCalendarWidget> calendar;
     QDate oldDate;
     bool dateChanged;
+    QCalendar calendarSystem;
 };
 
 QT_END_NAMESPACE

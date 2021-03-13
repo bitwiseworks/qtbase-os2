@@ -39,6 +39,7 @@
 
 #include "qtabwidget.h"
 
+#include "private/qapplication_p.h"
 #include "private/qwidget_p.h"
 #include "private/qtabbar_p.h"
 #include "qapplication.h"
@@ -214,9 +215,9 @@ public:
 };
 
 QTabWidgetPrivate::QTabWidgetPrivate()
-    : tabs(0), stack(0), dirty(true),
+    : tabs(nullptr), stack(nullptr), dirty(true),
       pos(QTabWidget::North), shape(QTabWidget::Rounded),
-      leftCornerWidget(0), rightCornerWidget(0)
+      leftCornerWidget(nullptr), rightCornerWidget(nullptr)
 {}
 
 QTabWidgetPrivate::~QTabWidgetPrivate()
@@ -241,14 +242,14 @@ void QTabWidgetPrivate::init()
     q->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding,
                                  QSizePolicy::TabWidget));
 #ifdef QT_KEYPAD_NAVIGATION
-    if (QApplication::keypadNavigationEnabled())
+    if (QApplicationPrivate::keypadNavigationEnabled())
         q->setFocusPolicy(Qt::NoFocus);
     else
 #endif
     q->setFocusPolicy(Qt::TabFocus);
     q->setFocusProxy(tabs);
     q->setTabPosition(static_cast<QTabWidget::TabPosition> (q->style()->styleHint(
-                      QStyle::SH_TabWidget_DefaultTabPosition, 0, q )));
+                      QStyle::SH_TabWidget_DefaultTabPosition, nullptr, q )));
 
 }
 
@@ -279,7 +280,7 @@ void QTabWidgetPrivate::initBasicStyleOption(QStyleOptionTabWidgetFrame *option)
     if (q->documentMode())
         option->lineWidth = 0;
     else
-        option->lineWidth = q->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, 0, q);
+        option->lineWidth = q->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, q);
 
     switch (pos) {
     case QTabWidget::North:
@@ -318,7 +319,7 @@ void QTabWidget::initStyleOption(QStyleOptionTabWidgetFrame *option) const
     Q_D(const QTabWidget);
     d->initBasicStyleOption(option);
 
-    int exth = style()->pixelMetric(QStyle::PM_TabBarBaseHeight, 0, this);
+    int exth = style()->pixelMetric(QStyle::PM_TabBarBaseHeight, nullptr, this);
     QSize t(0, d->stack->frameWidth());
     if (d->tabs->isVisibleTo(const_cast<QTabWidget *>(this))) {
         t = d->tabs->sizeHint();
@@ -358,7 +359,7 @@ void QTabWidget::initStyleOption(QStyleOptionTabWidgetFrame *option) const
     Constructs a tabbed widget with parent \a parent.
 */
 QTabWidget::QTabWidget(QWidget *parent)
-    : QWidget(*new QTabWidgetPrivate, parent, 0)
+    : QWidget(*new QTabWidgetPrivate, parent, { })
 {
     Q_D(QTabWidget);
     d->init();
@@ -543,8 +544,8 @@ bool QTabWidget::isTabEnabled(int index) const
 }
 
 /*!
-    If \a enable is true, the page at position \a index is enabled; otherwise the page at position \a index is
-    disabled. The page's tab is redrawn appropriately.
+    If \a enable is true, the page at position \a index is enabled; otherwise the page at
+    position \a index is disabled. The page's tab is redrawn appropriately.
 
     QTabWidget uses QWidget::setEnabled() internally, rather than
     keeping a separate flag.
@@ -565,6 +566,44 @@ void QTabWidget::setTabEnabled(int index, bool enable)
 }
 
 /*!
+    Returns true if the page at position \a index is visible; otherwise returns false.
+
+    \sa setTabVisible()
+    \since 5.15
+*/
+
+bool QTabWidget::isTabVisible(int index) const
+{
+    Q_D(const QTabWidget);
+    return d->tabs->isTabVisible(index);
+}
+
+/*!
+    If \a visible is true, the page at position \a index is visible; otherwise the page at
+    position \a index is hidden. The page's tab is redrawn appropriately.
+
+    \sa isTabVisible()
+    \since 5.15
+*/
+
+void QTabWidget::setTabVisible(int index, bool visible)
+{
+    Q_D(QTabWidget);
+    QWidget *widget = d->stack->widget(index);
+    bool currentVisible = d->tabs->isTabVisible(d->tabs->currentIndex());
+    d->tabs->setTabVisible(index, visible);
+    if (!visible) {
+        if (widget)
+            widget->setVisible(false);
+    } else if (!currentVisible) {
+        setCurrentIndex(index);
+        if (widget)
+            widget->setVisible(true);
+    }
+    setUpLayout();
+}
+
+/*!
   \fn void QTabWidget::setCornerWidget(QWidget *widget, Qt::Corner corner)
 
   Sets the given \a widget to be shown in the specified \a corner of the
@@ -573,7 +612,7 @@ void QTabWidget::setTabEnabled(int index, bool enable)
 
   Only the horizontal element of the \a corner will be used.
 
-  Passing 0 shows no widget in the corner.
+  Passing \nullptr shows no widget in the corner.
 
   Any previously set corner widget is hidden.
 
@@ -847,7 +886,13 @@ QSize QTabWidget::sizeHint() const
         QTabWidget *that = const_cast<QTabWidget*>(this);
         that->setUpLayout(true);
     }
-    QSize s(d->stack->sizeHint());
+    QSize s;
+    for (int i=0; i< d->stack->count(); ++i) {
+        if (const QWidget* w = d->stack->widget(i)) {
+            if (d->tabs->isTabVisible(i))
+                s = s.expandedTo(w->sizeHint());
+        }
+    }
     QSize t;
     if (!d->isAutoHidden()) {
         t = d->tabs->sizeHint();
@@ -1108,14 +1153,14 @@ void QTabWidget::keyPressEvent(QKeyEvent *e)
     if (((e->key() == Qt::Key_Tab || e->key() == Qt::Key_Backtab) &&
           count() > 1 && e->modifiers() & Qt::ControlModifier)
 #ifdef QT_KEYPAD_NAVIGATION
-          || QApplication::keypadNavigationEnabled() && (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) && count() > 1
+          || QApplicationPrivate::keypadNavigationEnabled() && (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) && count() > 1
 #endif
        ) {
         int pageCount = d->tabs->count();
         int page = currentIndex();
         int dx = (e->key() == Qt::Key_Backtab || e->modifiers() & Qt::ShiftModifier) ? -1 : 1;
 #ifdef QT_KEYPAD_NAVIGATION
-        if (QApplication::keypadNavigationEnabled() && (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right))
+        if (QApplicationPrivate::keypadNavigationEnabled() && (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right))
             dx = e->key() == (isRightToLeft() ? Qt::Key_Right : Qt::Key_Left) ? -1 : 1;
 #endif
         for (int pass = 0; pass < pageCount; ++pass) {

@@ -113,6 +113,7 @@ private slots:
     void guiVariantAtExit();
 
     void iconEquality();
+    void qt4QPolygonFDataStream();
 };
 
 void tst_QGuiVariant::constructor_invalid_data()
@@ -401,6 +402,9 @@ void tst_QGuiVariant::toString()
     QCOMPARE( str, result );
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 void tst_QGuiVariant::matrix()
 {
     QVariant variant;
@@ -413,6 +417,8 @@ void tst_QGuiVariant::matrix()
     QVERIFY(mmatrix);
     QMetaType::destroy(QVariant::Matrix, mmatrix);
 }
+QT_WARNING_POP
+#endif
 
 void tst_QGuiVariant::matrix4x4()
 {
@@ -781,6 +787,26 @@ void tst_QGuiVariant::iconEquality()
     // even if the contents are the same
     b = QIcon(":/black2.png");
     QVERIFY(a != b);
+}
+
+void tst_QGuiVariant::qt4QPolygonFDataStream()
+{
+    qRegisterMetaTypeStreamOperators<QPolygonF>();
+
+    QByteArray data;
+    QDataStream stream(&data, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_4_8);
+    QPolygonF polygon;
+    polygon.append(QPointF(2, 3));
+    stream << QVariant::fromValue(polygon);
+    const QByteArray qt4Data = QByteArray::fromHex("0000007f000000000a51506f6c79676f6e46000000000140000000000000004008000000000000");
+    QCOMPARE(data, qt4Data);
+
+    QDataStream input(&data, QIODevice::ReadOnly);
+    input.setVersion(QDataStream::Qt_4_8);
+    QVariant result;
+    input >> result;
+    QCOMPARE(result.value<QPolygonF>(), polygon);
 }
 
 QTEST_MAIN(tst_QGuiVariant)

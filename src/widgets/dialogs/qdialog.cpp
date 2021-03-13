@@ -187,7 +187,7 @@ QWindow *QDialogPrivate::transientParentWindow() const
         return parent->windowHandle();
     else if (q->windowHandle())
         return q->windowHandle()->transientParent();
-    return 0;
+    return nullptr;
 }
 
 bool QDialogPrivate::setNativeDialogVisible(bool visible)
@@ -214,7 +214,7 @@ QVariant QDialogPrivate::styleHint(QPlatformDialogHelper::StyleHint hint) const
 void QDialogPrivate::deletePlatformHelper()
 {
     delete m_platformHelper;
-    m_platformHelper = 0;
+    m_platformHelper = nullptr;
     m_platformHelperCreated = false;
     nativeDialogInUse = false;
 }
@@ -270,12 +270,11 @@ void QDialogPrivate::deletePlatformHelper()
 
     The most common way to display a modal dialog is to call its
     exec() function. When the user closes the dialog, exec() will
-    provide a useful \l{#return}{return value}. Typically,
-    to get the dialog to close and return the appropriate value, we
-    connect a default button, e.g. \uicontrol OK, to the accept() slot and a
-    \uicontrol Cancel button to the reject() slot.
-    Alternatively you can call the done() slot with \c Accepted or
-    \c Rejected.
+    provide a useful \l{#return}{return value}. To close the dialog
+    and return the appropriate value, you must connect a default button,
+    e.g. an \uicontrol OK button to the accept() slot and a
+    \uicontrol Cancel button to the reject() slot. Alternatively, you
+    can call the done() slot with \c Accepted or \c Rejected.
 
     An alternative is to call setModal(true) or setWindowModality(),
     then show(). Unlike exec(), show() returns control to the caller
@@ -283,7 +282,7 @@ void QDialogPrivate::deletePlatformHelper()
     progress dialogs, where the user must have the ability to interact
     with the dialog, e.g.  to cancel a long running operation. If you
     use show() and setModal(true) together to perform a long operation,
-    you must call QApplication::processEvents() periodically during
+    you must call QCoreApplication::processEvents() periodically during
     processing to enable the user to interact with the dialog. (See
     QProgressDialog.)
 
@@ -461,7 +460,7 @@ void QDialogPrivate::setDefault(QPushButton *pushButton)
 */
 void QDialogPrivate::setMainDefault(QPushButton *pushButton)
 {
-    mainDef = 0;
+    mainDef = nullptr;
     setDefault(pushButton);
 }
 
@@ -603,7 +602,7 @@ int QDialog::exec()
     }
     if (guard.isNull())
         return QDialog::Rejected;
-    d->eventLoop = 0;
+    d->eventLoop = nullptr;
 
     setAttribute(Qt::WA_ShowModal, wasShowModal);
 
@@ -680,19 +679,19 @@ void QDialog::contextMenuEvent(QContextMenuEvent *e)
 #else
     QWidget *w = childAt(e->pos());
     if (!w) {
-        w = rect().contains(e->pos()) ? this : 0;
+        w = rect().contains(e->pos()) ? this : nullptr;
         if (!w)
             return;
     }
     while (w && w->whatsThis().size() == 0 && !w->testAttribute(Qt::WA_CustomWhatsThis))
-        w = w->isWindow() ? 0 : w->parentWidget();
+        w = w->isWindow() ? nullptr : w->parentWidget();
     if (w) {
         QPointer<QMenu> p = new QMenu(this);
         QAction *wt = p.data()->addAction(tr("What's This?"));
         if (p.data()->exec(e->globalPos()) == wt) {
             QHelpEvent e(QEvent::WhatsThis, w->rect().center(),
                          w->mapToGlobal(w->rect().center()));
-            QApplication::sendEvent(w, &e);
+            QCoreApplication::sendEvent(w, &e);
         }
         delete p.data();
     }
@@ -827,7 +826,7 @@ QT_WARNING_POP
 #endif
         if (fw && !fw->hasFocus()) {
             QFocusEvent e(QEvent::FocusIn, Qt::TabFocusReason);
-            QApplication::sendEvent(fw, &e);
+            QCoreApplication::sendEvent(fw, &e);
         }
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -921,7 +920,7 @@ void QDialog::adjustPosition(QWidget* w)
     if (w) {
         // Use pos() if the widget is embedded into a native window
         QPoint pp;
-        if (w->windowHandle() && w->windowHandle()->property("_q_embedded_native_parent_handle").value<WId>())
+        if (w->windowHandle() && qvariant_cast<WId>(w->windowHandle()->property("_q_embedded_native_parent_handle")))
             pp = w->pos();
         else
             pp = w->mapToGlobal(QPoint(0,0));
@@ -1192,7 +1191,7 @@ void QDialog::setSizeGripEnabled(bool enabled)
             d->resizer->show();
         } else {
             delete d->resizer;
-            d->resizer = 0;
+            d->resizer = nullptr;
         }
     }
 #endif // QT_CONFIG(sizegrip)

@@ -58,7 +58,7 @@ QT_BEGIN_NAMESPACE
 class QNetworkAccessBackendFactoryData: public QList<QNetworkAccessBackendFactory *>
 {
 public:
-    QNetworkAccessBackendFactoryData() : mutex(QMutex::Recursive)
+    QNetworkAccessBackendFactoryData()
     {
         valid.ref();
     }
@@ -68,7 +68,7 @@ public:
         valid.deref();
     }
 
-    QMutex mutex;
+    QRecursiveMutex mutex;
     //this is used to avoid (re)constructing factory data from destructors of other global classes
     static QBasicAtomicInt valid;
 };
@@ -83,7 +83,7 @@ QNetworkAccessBackendFactory::QNetworkAccessBackendFactory()
 
 QNetworkAccessBackendFactory::~QNetworkAccessBackendFactory()
 {
-    if (QNetworkAccessBackendFactoryData::valid.load()) {
+    if (QNetworkAccessBackendFactoryData::valid.loadRelaxed()) {
         QMutexLocker locker(&factoryData()->mutex);
         factoryData()->removeAll(this);
     }
@@ -92,7 +92,7 @@ QNetworkAccessBackendFactory::~QNetworkAccessBackendFactory()
 QNetworkAccessBackend *QNetworkAccessManagerPrivate::findBackend(QNetworkAccessManager::Operation op,
                                                                  const QNetworkRequest &request)
 {
-    if (QNetworkAccessBackendFactoryData::valid.load()) {
+    if (QNetworkAccessBackendFactoryData::valid.loadRelaxed()) {
         QMutexLocker locker(&factoryData()->mutex);
         QNetworkAccessBackendFactoryData::ConstIterator it = factoryData()->constBegin(),
                                                            end = factoryData()->constEnd();
@@ -105,12 +105,12 @@ QNetworkAccessBackend *QNetworkAccessManagerPrivate::findBackend(QNetworkAccessM
             ++it;
         }
     }
-    return 0;
+    return nullptr;
 }
 
 QStringList QNetworkAccessManagerPrivate::backendSupportedSchemes() const
 {
-    if (QNetworkAccessBackendFactoryData::valid.load()) {
+    if (QNetworkAccessBackendFactoryData::valid.loadRelaxed()) {
         QMutexLocker locker(&factoryData()->mutex);
         QNetworkAccessBackendFactoryData::ConstIterator it = factoryData()->constBegin();
         QNetworkAccessBackendFactoryData::ConstIterator end = factoryData()->constEnd();
@@ -131,7 +131,7 @@ QNonContiguousByteDevice* QNetworkAccessBackend::createUploadByteDevice()
     else if (reply->outgoingData) {
         uploadByteDevice = QNonContiguousByteDeviceFactory::createShared(reply->outgoingData);
     } else {
-        return 0;
+        return nullptr;
     }
 
     // We want signal emissions only for normal asynchronous uploads
@@ -151,8 +151,8 @@ void QNetworkAccessBackend::emitReplyUploadProgress(qint64 bytesSent, qint64 byt
 }
 
 QNetworkAccessBackend::QNetworkAccessBackend()
-    : manager(0)
-    , reply(0)
+    : manager(nullptr)
+    , reply(nullptr)
     , synchronous(false)
 {
 }
@@ -223,7 +223,7 @@ QList<QNetworkProxy> QNetworkAccessBackend::proxyList() const
 QAbstractNetworkCache *QNetworkAccessBackend::networkCache() const
 {
     if (!manager)
-        return 0;
+        return nullptr;
     return manager->networkCache;
 }
 
@@ -371,7 +371,7 @@ void QNetworkAccessBackend::sslErrors(const QList<QSslError> &errors)
 */
 bool QNetworkAccessBackend::start()
 {
-#ifndef QT_NO_BEARERMANAGEMENT
+#ifndef QT_NO_BEARERMANAGEMENT // ### Qt6: Remove section
     // For bearer, check if session start is required
     QSharedPointer<QNetworkSession> networkSession(manager->getNetworkSession());
     if (networkSession) {

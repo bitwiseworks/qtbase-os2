@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2019 Intel Corporation.
 **
 ** Permission is hereby granted, free of charge, to any person obtaining a copy
 ** of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@
 
 #include <fcntl.h>
 #include <stdint.h>
+#include <sys/wait.h>
 #include <unistd.h> // to get the POSIX flags
 
 #if _POSIX_SPAWN > 0
@@ -37,10 +38,14 @@
 extern "C" {
 #endif
 
-#define FFD_CLOEXEC  1
-#define FFD_NONBLOCK 2
+#define FFD_CLOEXEC             1
+#define FFD_NONBLOCK            2
+#define FFD_USE_FORK            4
 
 #define FFD_CHILD_PROCESS (-2)
+
+#define FFDW_NOHANG             1       /* WNOHANG */
+#define FFDW_NOWAIT             2       /* WNOWAIT */
 
 struct forkfd_info {
     int32_t code;
@@ -48,7 +53,11 @@ struct forkfd_info {
 };
 
 int forkfd(int flags, pid_t *ppid);
-int forkfd_wait(int ffd, forkfd_info *info, struct rusage *rusage);
+int forkfd_wait4(int ffd, struct forkfd_info *info, int options, struct rusage *rusage);
+static inline int forkfd_wait(int ffd, struct forkfd_info *info, struct rusage *rusage)
+{
+    return forkfd_wait4(ffd, info, 0, rusage);
+}
 int forkfd_close(int ffd);
 
 #if _POSIX_SPAWN > 0

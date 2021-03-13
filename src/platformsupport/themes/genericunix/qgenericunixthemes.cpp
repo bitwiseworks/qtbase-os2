@@ -175,15 +175,9 @@ QStringList QGenericUnixTheme::xdgIconThemePaths()
     if (homeIconDir.isDir())
         paths.prepend(homeIconDir.absoluteFilePath());
 
-    QString xdgDirString = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
-    if (xdgDirString.isEmpty())
-        xdgDirString = QLatin1String("/usr/local/share/:/usr/share/");
-    const auto xdgDirs = xdgDirString.splitRef(QLatin1Char(':'));
-    for (const QStringRef &xdgDir : xdgDirs) {
-        const QFileInfo xdgIconsDir(xdgDir + QLatin1String("/icons"));
-        if (xdgIconsDir.isDir())
-            paths.append(xdgIconsDir.absoluteFilePath());
-    }
+    paths.append(QStandardPaths::locateAll(QStandardPaths::GenericDataLocation,
+                                           QStringLiteral("icons"),
+                                           QStandardPaths::LocateDirectory));
 
     return paths;
 }
@@ -523,7 +517,7 @@ QFont *QKdeThemePrivate::kdeFont(const QVariant &fontValue)
         // causing recursion.
         QString fontDescription;
         QString fontFamily;
-        if (fontValue.type() == QVariant::StringList) {
+        if (fontValue.userType() == QMetaType::QStringList) {
             const QStringList list = fontValue.toStringList();
             if (!list.isEmpty()) {
                 fontFamily = list.first();
@@ -647,7 +641,7 @@ QPlatformTheme *QKdeTheme::createKdeTheme()
 
     const QString kdeDirsVar = QFile::decodeName(qgetenv("KDEDIRS"));
     if (!kdeDirsVar.isEmpty())
-        kdeDirs += kdeDirsVar.split(QLatin1Char(':'), QString::SkipEmptyParts);
+        kdeDirs += kdeDirsVar.split(QLatin1Char(':'), Qt::SkipEmptyParts);
 
     const QString kdeVersionHomePath = QDir::homePath() + QLatin1String("/.kde") + QLatin1String(kdeVersionBA);
     if (QFileInfo(kdeVersionHomePath).isDir())

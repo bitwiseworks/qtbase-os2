@@ -54,6 +54,9 @@
 
 #if defined(Q_OS_WIN)
 #include <QtCore/qt_windows.h>
+#ifndef Q_OS_WINRT
+#  include <private/qwinregistry_p.h>
+#endif
 #else
 #include <unistd.h>
 #endif
@@ -311,8 +314,11 @@ void tst_QSettings::initTestCase()
 
 void tst_QSettings::cleanupTestFiles()
 {
-    QSettings::setSystemIniPath(settingsPath("__system__"));
-    QSettings::setUserIniPath(settingsPath("__user__"));
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsPath("__system__"));
+    QSettings::setPath(QSettings::NativeFormat, QSettings::SystemScope, settingsPath("__system__"));
+
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsPath("__user__"));
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, settingsPath("__user__"));
 
     QDir settingsDir(settingsPath());
     if (settingsDir.exists())
@@ -1143,7 +1149,7 @@ void tst_QSettings::setValue()
     QCOMPARE(settings.value("key 2").toStringList(), QStringList() << "" << "a" << "" << "bc" << "");
 
     settings.setValue("key 3", QList<QVariant>());
-    QCOMPARE(settings.value("key 3").toList(), QList<QVariant>());
+    QVERIFY(settings.value("key 3").toList().isEmpty());
     settings.setValue("key 3", QList<QVariant>() << 1 << QString("a"));
     QCOMPARE(settings.value("key 3").toList(), QList<QVariant>() << 1 << QString("a"));
 
@@ -1363,7 +1369,9 @@ void tst_QSettings::testVariantTypes()
     if (format >= QSettings::InvalidFormat) {
         testVal("keysequence", QKeySequence(Qt::ControlModifier + Qt::Key_F1), QKeySequence, KeySequence);
     } else {
-        testVal("keysequence", QKeySequence(Qt::ControlModifier + Qt::Key_F1), QString, String);
+        testVal("keysequence",
+                QKeySequence(Qt::ControlModifier + Qt::Key_F1).toString(QKeySequence::NativeText),
+                QString, String);
     }
 
 #undef testVal
@@ -2323,14 +2331,15 @@ void tst_QSettings::testRegistry32And64Bit()
 
 void tst_QSettings::trailingWhitespace()
 {
+    const QString path = settingsPath("trailingWhitespace");
     {
-        QSettings s("tst_QSettings_trailingWhitespace");
+        QSettings s(path, QSettings::IniFormat);
         s.setValue("trailingSpace", "x  ");
         s.setValue("trailingTab", "x\t");
         s.setValue("trailingNewline", "x\n");
     }
     {
-        QSettings s("tst_QSettings_trailingWhitespace");
+        QSettings s(path, QSettings::IniFormat);
         QCOMPARE(s.value("trailingSpace").toString(), QLatin1String("x  "));
         QCOMPARE(s.value("trailingTab").toString(), QLatin1String("x\t"));
         QCOMPARE(s.value("trailingNewline").toString(), QLatin1String("x\n"));
@@ -2923,8 +2932,10 @@ void tst_QSettings::testEscapes()
     testVariant(QString("Hello, World!"), QString("Hello, World!"), toString);
     testVariant(QString("@Hello World!"), QString("@@Hello World!"), toString);
     testVariant(QString("@@Hello World!"), QString("@@@Hello World!"), toString);
+#if QT_DEPRECATED_SINCE(5, 15)
     testVariant(QByteArray("Hello World!"), QString("@ByteArray(Hello World!)"), toString);
     testVariant(QByteArray("@Hello World!"), QString("@ByteArray(@Hello World!)"), toString);
+#endif
     testVariant(QVariant(100), QString("100"), toString);
     testVariant(QStringList() << "ene" << "due" << "rike", QString::fromLatin1("@Variant(\x0\x0\x0\xb\x0\x0\x0\x3\x0\x0\x0\x6\x0\x65\x0n\x0\x65\x0\x0\x0\x6\x0\x64\x0u\x0\x65\x0\x0\x0\x8\x0r\x0i\x0k\x0\x65)", 50), toStringList);
     testVariant(QRect(1, 2, 3, 4), QString("@Rect(1 2 3 4)"), toRect);
@@ -3618,16 +3629,13 @@ void tst_QSettings::recursionBug()
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 
-static DWORD readKeyType(HKEY handle, const QString &rSubKey)
+static DWORD readKeyType(HKEY handle, QStringView rSubKey)
 {
     DWORD dataType;
     DWORD dataSize;
-    LONG res = RegQueryValueEx(handle, reinterpret_cast<const wchar_t *>(rSubKey.utf16()), 0, &dataType, 0, &dataSize);
-
-    if (res == ERROR_SUCCESS)
-        return dataType;
-
-    return 0;
+    LONG res = RegQueryValueEx(handle, reinterpret_cast<const wchar_t *>(rSubKey.utf16()),
+                               nullptr, &dataType, nullptr, &dataSize);
+    return res == ERROR_SUCCESS ? dataType : 0;
 }
 
 // This is a regression test for QTBUG-13249, where QSettings was storing
@@ -3647,29 +3655,12 @@ void tst_QSettings::consistentRegistryStorage()
     QCOMPARE(settings1.value("quint64_value").toULongLong(), (quint64)1024);
     settings1.sync();
 
-    HKEY handle;
-    LONG res;
-    QString keyName = "Software\\software.org\\KillerAPP";
-    res = RegOpenKeyEx(HKEY_CURRENT_USER, reinterpret_cast<const wchar_t *>(keyName.utf16()), 0, KEY_READ, &handle);
-    if (res == ERROR_SUCCESS)
-    {
-        DWORD dataType;
-        dataType = readKeyType(handle, QString("qint32_value"));
-        if (dataType != 0) {
-            QCOMPARE((int)REG_DWORD, (int)dataType);
-        }
-        dataType = readKeyType(handle, QString("quint32_value"));
-        if (dataType != 0) {
-            QCOMPARE((int)REG_DWORD, (int)dataType);
-        }
-        dataType = readKeyType(handle, QString("qint64_value"));
-        if (dataType != 0) {
-            QCOMPARE((int)REG_QWORD, (int)dataType);
-        }
-        dataType = readKeyType(handle, QString("quint64_value"));
-        if (dataType != 0) {
-            QCOMPARE((int)REG_QWORD, (int)dataType);
-        }
+    QWinRegistryKey handle(HKEY_CURRENT_USER, LR"(Software\software.org\KillerAPP)");
+    if (handle.isValid()) {
+        QCOMPARE(readKeyType(handle, L"qint32_value"), DWORD(REG_DWORD));
+        QCOMPARE(readKeyType(handle, L"quint32_value"), DWORD(REG_DWORD));
+        QCOMPARE(readKeyType(handle, L"qint64_value"), DWORD(REG_QWORD));
+        QCOMPARE(readKeyType(handle, L"quint64_value"), DWORD(REG_QWORD));
         RegCloseKey(handle);
     }
 }

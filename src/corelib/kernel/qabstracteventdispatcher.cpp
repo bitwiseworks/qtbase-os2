@@ -90,7 +90,14 @@ Q_GLOBAL_STATIC(QtTimerIdFreeList, timerIdFreeList)
 
 int QAbstractEventDispatcherPrivate::allocateTimerId()
 {
-    return timerIdFreeList()->next();
+    // This function may be called after timerIdFreeList() has been destructed
+    // for example in case when application exits without waiting for
+    // running threads to exit and running thread finished() has been connected
+    // to a slot which triggers a sequence that registers new timer.
+    // See https://bugreports.qt-project.org/browse/QTBUG-38957.
+    if (QtTimerIdFreeList *fl = timerIdFreeList())
+        return fl->next();
+    return 0; // Note! returning 0 generates a warning
 }
 
 void QAbstractEventDispatcherPrivate::releaseTimerId(int timerId)
@@ -160,7 +167,7 @@ QAbstractEventDispatcher::~QAbstractEventDispatcher()
 
 /*!
     Returns a pointer to the event dispatcher object for the specified
-    \a thread. If \a thread is zero, the current thread is used. If no
+    \a thread. If \a thread is \nullptr, the current thread is used. If no
     event dispatcher exists for the specified thread, this function
     returns \nullptr.
 
@@ -170,7 +177,7 @@ QAbstractEventDispatcher::~QAbstractEventDispatcher()
 QAbstractEventDispatcher *QAbstractEventDispatcher::instance(QThread *thread)
 {
     QThreadData *data = thread ? QThreadData::get2(thread) : QThreadData::current();
-    return data->eventDispatcher.load();
+    return data->eventDispatcher.loadRelaxed();
 }
 
 /*!
@@ -470,7 +477,11 @@ void QAbstractEventDispatcher::removeNativeEventFilter(QAbstractNativeEventFilte
     \sa installNativeEventFilter(), QAbstractNativeEventFilter::nativeEventFilter()
     \since 5.0
 */
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+bool QAbstractEventDispatcher::filterNativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+#else
 bool QAbstractEventDispatcher::filterNativeEvent(const QByteArray &eventType, void *message, long *result)
+#endif
 {
     Q_D(QAbstractEventDispatcher);
     if (!d->eventFilters.isEmpty()) {

@@ -173,25 +173,22 @@ template <class Iterator> bool qt_stroke_side(Iterator *it, QStroker *stroker,
                                               bool capFirst, QLineF *startTangent);
 
 /*******************************************************************************
- * QLineF::angle gives us the smalles angle between two lines. Here we
- * want to identify the line's angle direction on the unit circle.
+ * QLineF::angleTo gives us the angle between two lines with respecting the direction.
+ * Here we want to identify the line's angle direction on the unit circle.
  */
 static inline qreal adapted_angle_on_x(const QLineF &line)
 {
-    qreal angle = line.angle(QLineF(0, 0, 1, 0));
-    if (line.dy() > 0)
-        angle = 360 - angle;
-    return angle;
+    return QLineF(0, 0, 1, 0).angleTo(line);
 }
 
 QStrokerOps::QStrokerOps()
     : m_elements(0)
     , m_curveThreshold(qt_real_to_fixed(0.25))
     , m_dashThreshold(qt_real_to_fixed(0.25))
-    , m_customData(0)
-    , m_moveTo(0)
-    , m_lineTo(0)
-    , m_cubicTo(0)
+    , m_customData(nullptr)
+    , m_moveTo(nullptr)
+    , m_lineTo(nullptr)
+    , m_cubicTo(nullptr)
 {
 }
 
@@ -222,7 +219,7 @@ void QStrokerOps::end()
 {
     if (m_elements.size() > 1)
         processCurrentSubpath();
-    m_customData = 0;
+    m_customData = nullptr;
 }
 
 /*!
@@ -459,7 +456,7 @@ void QStroker::joinPoints(qfixed focal_x, qfixed focal_y, const QLineF &nextLine
     QLineF prevLine(qt_fixed_to_real(m_back2X), qt_fixed_to_real(m_back2Y),
                     qt_fixed_to_real(m_back1X), qt_fixed_to_real(m_back1Y));
     QPointF isect;
-    QLineF::IntersectType type = prevLine.intersect(nextLine, &isect);
+    QLineF::IntersectionType type = prevLine.intersects(nextLine, &isect);
 
     if (join == FlatJoin) {
         QLineF shortCut(prevLine.p2(), nextLine.p1());

@@ -157,11 +157,6 @@ QSslSocketBackendPrivate::~QSslSocketBackendPrivate()
     g->syncCaCertificates(QSet<QSslCertificate>(), previousCaCertificates);
 }
 
-void QSslSocketPrivate::deinitialize()
-{
-    Q_UNIMPLEMENTED();
-}
-
 bool QSslSocketPrivate::supportsSsl()
 {
     return true;
@@ -177,6 +172,7 @@ void QSslSocketPrivate::ensureInitialized()
 
 long QSslSocketPrivate::sslLibraryVersionNumber()
 {
+    // ### Qt 6: Find a proper replacement for the deprecated method below.
     return QSysInfo::windowsVersion();
 }
 

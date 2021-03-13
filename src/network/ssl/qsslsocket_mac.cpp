@@ -66,7 +66,7 @@
 
 #include <QtCore/private/qcore_mac_p.h>
 
-#ifdef Q_OS_OSX
+#ifdef Q_OS_MACOS
 #include <CoreServices/CoreServices.h>
 #endif
 
@@ -215,7 +215,7 @@ void QSecureTransportContext::reset(SSLContextRef newContext)
     context = newContext;
 }
 
-Q_GLOBAL_STATIC_WITH_ARGS(QMutex, qt_securetransport_mutex, (QMutex::Recursive))
+Q_GLOBAL_STATIC(QRecursiveMutex, qt_securetransport_mutex)
 
 //#define QSSLSOCKET_DEBUG
 
@@ -928,6 +928,13 @@ bool QSslSocketBackendPrivate::initSslContext()
         QCFType<CFMutableArrayRef> cfNames(CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks));
         if (cfNames) {
             for (const QByteArray &name : protocolNames) {
+                if (name.size() > 255) {
+                    qCWarning(lcSsl) << "TLS ALPN extension" << name
+                                     << "is too long and will be ignored.";
+                    continue;
+                } else if (name.isEmpty()) {
+                    continue;
+                }
                 QCFString cfName(QString::fromLatin1(name).toCFString());
                 CFArrayAppendValue(cfNames, cfName);
             }

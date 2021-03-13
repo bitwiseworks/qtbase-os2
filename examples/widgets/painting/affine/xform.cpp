@@ -160,10 +160,7 @@ void XFormView::updateCtrlPoints(const QPolygonF &points)
     ctrlPoints = points;
 
     QLineF line(ctrlPoints.at(0), ctrlPoints.at(1));
-    m_rotation = line.angle(QLineF(0, 0, 1, 0));
-    if (line.dy() < 0)
-        m_rotation = 360 - m_rotation;
-
+    m_rotation = 360 - QLineF(0, 0, 1, 0).angleTo(line);
     if (trans.isNull())
         emit rotationChanged(int(m_rotation*10));
 }
@@ -226,7 +223,7 @@ void XFormView::setRotation(qreal r)
     m_rotation = r;
 
     QPointF center(pts->points().at(0));
-    QMatrix m;
+    QTransform m;
     m.translate(center.x(), center.y());
     m.rotate(m_rotation - old_rot);
     m.translate(-center.x(), -center.y());
@@ -239,7 +236,7 @@ void XFormView::timerEvent(QTimerEvent *e)
 {
     if (e->timerId() == timer.timerId()) {
         QPointF center(pts->points().at(0));
-        QMatrix m;
+        QTransform m;
         m.translate(center.x(), center.y());
         m.rotate(0.2);
         m.translate(-center.x(), -center.y());
@@ -263,7 +260,7 @@ void XFormView::timerEvent(QTimerEvent *e)
 #if QT_CONFIG(wheelevent)
 void XFormView::wheelEvent(QWheelEvent *e)
 {
-    m_scale += e->delta() / qreal(600);
+    m_scale += e->angleDelta().y() / qreal(600);
     m_scale = qMax(qreal(0.1), qMin(qreal(4), m_scale));
     emit scaleChanged(int(m_scale*1000));
 }
@@ -790,8 +787,8 @@ XFormWidget::XFormWidget(QWidget *parent)
     view = new XFormView(this);
     view->setMinimumSize(200, 200);
 
-    QGroupBox *mainGroup = new QGroupBox(this);
-    mainGroup->setFixedWidth(180);
+    QWidget *mainContentWidget = new QWidget();
+    QGroupBox *mainGroup = new QGroupBox(mainContentWidget);
     mainGroup->setTitle(tr("Affine Transformations"));
 
     QGroupBox *rotateGroup = new QGroupBox(mainGroup);
@@ -840,10 +837,6 @@ XFormWidget::XFormWidget(QWidget *parent)
     whatsThisButton->setText(tr("What's This?"));
     whatsThisButton->setCheckable(true);
 
-    QHBoxLayout *viewLayout = new QHBoxLayout(this);
-    viewLayout->addWidget(view);
-    viewLayout->addWidget(mainGroup);
-
     QVBoxLayout *rotateGroupLayout = new QVBoxLayout(rotateGroup);
     rotateGroupLayout->addWidget(rotateSlider);
 
@@ -873,6 +866,20 @@ XFormWidget::XFormWidget(QWidget *parent)
     mainGroupLayout->addWidget(enableOpenGLButton);
 #endif
     mainGroupLayout->addWidget(whatsThisButton);
+
+    mainGroup->setLayout(mainGroupLayout);
+
+    QVBoxLayout *mainContentLayout = new QVBoxLayout();
+    mainContentLayout->addWidget(mainGroup);
+    mainContentWidget->setLayout(mainContentLayout);
+
+    QScrollArea *mainScrollArea = new QScrollArea();
+    mainScrollArea->setWidget(mainContentWidget);
+    mainScrollArea->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+
+    QHBoxLayout *viewLayout = new QHBoxLayout(this);
+    viewLayout->addWidget(view);
+    viewLayout->addWidget(mainScrollArea);
 
     connect(rotateSlider, &QSlider::valueChanged, view, &XFormView::changeRotation);
     connect(shearSlider, &QSlider::valueChanged, view, &XFormView::changeShear);

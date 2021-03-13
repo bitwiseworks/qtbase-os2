@@ -144,7 +144,7 @@ QT_BEGIN_NAMESPACE
 */
 QTextLength::operator QVariant() const
 {
-    return QVariant(QVariant::TextLength, this);
+    return QVariant(QMetaType::QTextLength, this);
 }
 
 #ifndef QT_NO_DATASTREAM
@@ -288,20 +288,20 @@ static inline uint variantHash(const QVariant &variant)
 {
     // simple and fast hash functions to differentiate between type and value
     switch (variant.userType()) { // sorted by occurrence frequency
-    case QVariant::String: return qHash(variant.toString());
-    case QVariant::Double: return qHash(variant.toDouble());
-    case QVariant::Int: return 0x811890 + variant.toInt();
-    case QVariant::Brush:
+    case QMetaType::QString: return qHash(variant.toString());
+    case QMetaType::Double: return qHash(variant.toDouble());
+    case QMetaType::Int: return 0x811890U + variant.toInt();
+    case QMetaType::QBrush:
         return 0x01010101 + hash(qvariant_cast<QBrush>(variant));
-    case QVariant::Bool: return 0x371818 + variant.toBool();
-    case QVariant::Pen: return 0x02020202 + hash(qvariant_cast<QPen>(variant));
-    case QVariant::List:
-        return 0x8377 + qvariant_cast<QVariantList>(variant).count();
-    case QVariant::Color: return hash(qvariant_cast<QColor>(variant));
-      case QVariant::TextLength:
+    case QMetaType::Bool: return 0x371818 + variant.toBool();
+    case QMetaType::QPen: return 0x02020202 + hash(qvariant_cast<QPen>(variant));
+    case QMetaType::QVariantList:
+        return 0x8377U + qvariant_cast<QVariantList>(variant).count();
+    case QMetaType::QColor: return hash(qvariant_cast<QColor>(variant));
+      case QMetaType::QTextLength:
         return 0x377 + hash(qvariant_cast<QTextLength>(variant).rawValue());
     case QMetaType::Float: return qHash(variant.toFloat());
-    case QVariant::Invalid: return 0;
+    case QMetaType::UnknownType: return 0;
     default: break;
     }
     return qHash(variant.typeName());
@@ -564,6 +564,18 @@ Q_GUI_EXPORT QDataStream &operator>>(QDataStream &stream, QTextFormat &fmt)
     \value BlockTrailingHorizontalRulerWidth The width of a horizontal ruler element.
     \value HeadingLevel     The level of a heading, for example 1 corresponds to an HTML H1 tag; otherwise 0.
                             This enum value has been added in Qt 5.12.
+    \value BlockCodeFence   The character that was used in the "fences" around a Markdown code block.
+                            If the code block was indented rather than fenced, the block should not have this property.
+                            This enum value has been added in Qt 5.14.
+
+    \value BlockQuoteLevel  The depth of nested quoting on this block: 1 means the block is a top-level block quote.
+                            Blocks that are not block quotes should not have this property.
+                            This enum value has been added in Qt 5.14.
+    \value BlockCodeLanguage The programming language in a preformatted or code block.
+                            Blocks that do not contain code should not have this property.
+                            This enum value has been added in Qt 5.14.
+    \value BlockMarker      The \l{QTextBlockFormat::MarkerType}{type of adornment} to be shown alongside the block.
+                            This enum value has been added in Qt 5.14.
 
     Character properties
 
@@ -638,6 +650,7 @@ Q_GUI_EXPORT QDataStream &operator>>(QDataStream &stream, QTextFormat &fmt)
     \value TableColumns
     \value TableColumnWidthConstraints
     \value TableHeaderRowCount
+    \value TableBorderCollapse Specifies the \l QTextTableFormat::borderCollapse property.
 
     Table cell properties
 
@@ -648,9 +661,32 @@ Q_GUI_EXPORT QDataStream &operator>>(QDataStream &stream, QTextFormat &fmt)
     \value TableCellTopPadding
     \value TableCellBottomPadding
 
+    Table cell properties intended for use with \l QTextTableFormat::borderCollapse enabled
+
+    \value TableCellTopBorder
+    \value TableCellBottomBorder
+    \value TableCellLeftBorder
+    \value TableCellRightBorder
+
+    \value TableCellTopBorderStyle
+    \value TableCellBottomBorderStyle
+    \value TableCellLeftBorderStyle
+    \value TableCellRightBorderStyle
+
+    \value TableCellTopBorderBrush
+    \value TableCellBottomBorderBrush
+    \value TableCellLeftBorderBrush
+    \value TableCellRightBorderBrush
+
     Image properties
 
-    \value ImageName
+    \value ImageName        The filename or source of the image.
+    \value ImageTitle       The title attribute of an HTML image tag, or
+                            the quoted string that comes after the URL in a Markdown image link.
+                            This enum value has been added in Qt 5.14.
+    \value ImageAltText     The alt attribute of an HTML image tag, or
+                            the image description in a Markdown image link.
+                            This enum value has been added in Qt 5.14.
     \value ImageWidth
     \value ImageHeight
     \value ImageQuality
@@ -838,7 +874,7 @@ QTextFormat::~QTextFormat()
 */
 QTextFormat::operator QVariant() const
 {
-    return QVariant(QVariant::TextFormat, this);
+    return QVariant(QMetaType::QTextFormat, this);
 }
 
 /*!
@@ -948,7 +984,7 @@ bool QTextFormat::boolProperty(int propertyId) const
     if (!d)
         return false;
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Bool)
+    if (prop.userType() != QMetaType::Bool)
         return false;
     return prop.toBool();
 }
@@ -968,7 +1004,7 @@ int QTextFormat::intProperty(int propertyId) const
     if (!d)
         return def;
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Int)
+    if (prop.userType() != QMetaType::Int)
         return def;
     return prop.toInt();
 }
@@ -986,7 +1022,7 @@ qreal QTextFormat::doubleProperty(int propertyId) const
     if (!d)
         return 0.;
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Double && prop.userType() != QMetaType::Float)
+    if (prop.userType() != QMetaType::Double && prop.userType() != QMetaType::Float)
         return 0.;
     return qvariant_cast<qreal>(prop);
 }
@@ -1004,7 +1040,7 @@ QString QTextFormat::stringProperty(int propertyId) const
     if (!d)
         return QString();
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::String)
+    if (prop.userType() != QMetaType::QString)
         return QString();
     return prop.toString();
 }
@@ -1022,7 +1058,7 @@ QColor QTextFormat::colorProperty(int propertyId) const
     if (!d)
         return QColor();
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Color)
+    if (prop.userType() != QMetaType::QColor)
         return QColor();
     return qvariant_cast<QColor>(prop);
 }
@@ -1040,7 +1076,7 @@ QPen QTextFormat::penProperty(int propertyId) const
     if (!d)
         return QPen(Qt::NoPen);
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Pen)
+    if (prop.userType() != QMetaType::QPen)
         return QPen(Qt::NoPen);
     return qvariant_cast<QPen>(prop);
 }
@@ -1058,7 +1094,7 @@ QBrush QTextFormat::brushProperty(int propertyId) const
     if (!d)
         return QBrush(Qt::NoBrush);
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::Brush)
+    if (prop.userType() != QMetaType::QBrush)
         return QBrush(Qt::NoBrush);
     return qvariant_cast<QBrush>(prop);
 }
@@ -1090,13 +1126,13 @@ QVector<QTextLength> QTextFormat::lengthVectorProperty(int propertyId) const
     if (!d)
         return vector;
     const QVariant prop = d->property(propertyId);
-    if (prop.userType() != QVariant::List)
+    if (prop.userType() != QMetaType::QVariantList)
         return vector;
 
     QList<QVariant> propertyList = prop.toList();
     for (int i=0; i<propertyList.size(); ++i) {
         QVariant var = propertyList.at(i);
-        if (var.userType() == QVariant::TextLength)
+        if (var.userType() == QMetaType::QTextLength)
             vector.append(qvariant_cast<QTextLength>(var));
     }
 
@@ -1186,7 +1222,7 @@ int QTextFormat::objectIndex() const
     if (!d)
         return -1;
     const QVariant prop = d->property(ObjectIndex);
-    if (prop.userType() != QVariant::Int) // ####
+    if (prop.userType() != QMetaType::Int) // ####
         return -1;
     return prop.toInt();
 }
@@ -1823,9 +1859,9 @@ void QTextCharFormat::setUnderlineStyle(UnderlineStyle style)
 QString QTextCharFormat::anchorName() const
 {
     QVariant prop = property(AnchorName);
-    if (prop.userType() == QVariant::StringList)
+    if (prop.userType() == QMetaType::QStringList)
         return prop.toStringList().value(0);
-    else if (prop.userType() != QVariant::String)
+    else if (prop.userType() != QMetaType::QString)
         return QString();
     return prop.toString();
 }
@@ -1842,9 +1878,9 @@ QString QTextCharFormat::anchorName() const
 QStringList QTextCharFormat::anchorNames() const
 {
     QVariant prop = property(AnchorName);
-    if (prop.userType() == QVariant::StringList)
+    if (prop.userType() == QMetaType::QStringList)
         return prop.toStringList();
-    else if (prop.userType() != QVariant::String)
+    else if (prop.userType() != QMetaType::QString)
         return QStringList();
     return QStringList(prop.toString());
 }
@@ -2325,6 +2361,50 @@ QList<QTextOption::Tab> QTextBlockFormat::tabPositions() const
     Returns the paragraph's heading level if it is a heading, or 0 if not.
 
     \sa setHeadingLevel()
+*/
+
+
+/*!
+    \fn void QTextBlockFormat::setMarker(MarkerType marker)
+    \since 5.14
+
+    Sets the type of adornment that should be rendered alongside the paragraph to \a marker.
+    For example, a list item can be adorned with a checkbox, either checked
+    or unchecked, as a replacement for its bullet. The default is \c NoMarker.
+
+    \sa marker()
+*/
+
+
+/*!
+    \fn MarkerType QTextBlockFormat::marker() const
+    \since 5.14
+
+    Returns the paragraph's marker if one has been set, or \c NoMarker if not.
+
+    \sa setMarker()
+*/
+
+
+/*!
+    \since 5.14
+    \enum QTextBlockFormat::MarkerType
+
+    This enum describes the types of markers a list item can have.
+    If a list item (a paragraph for which \l QTextBlock::textList() returns the list)
+    has a marker, it is rendered instead of the normal bullet.
+    In this way, checkable list items can be mixed with plain list items in the
+    same list, overriding the type of bullet specified by the
+    \l QTextListFormat::style() for the entire list.
+
+    \value NoMarker This is the default: the list item's bullet will be shown.
+    \value Unchecked Instead of the list item's bullet, an unchecked checkbox will be shown.
+    \value Checked Instead of the list item's bullet, a checked checkbox will be shown.
+
+    In the future, this may be extended to specify other types of paragraph
+    decorations.
+
+    \sa QTextListFormat::style()
 */
 
 
@@ -3038,6 +3118,8 @@ QTextTableFormat::QTextTableFormat(const QTextFormat &fmt)
 
     Sets the cell \a spacing for the table. This determines the distance
     between adjacent cells.
+
+    This property will be ignored if \l borderCollapse is enabled.
 */
 
 /*!
@@ -3086,6 +3168,44 @@ QTextTableFormat::QTextTableFormat(const QTextFormat &fmt)
     Returns the number of rows in the table that define the header.
 
     \sa setHeaderRowCount()
+*/
+
+/*!
+    \fn void QTextTableFormat::setBorderCollapse(bool borderCollapse)
+    \since 5.14
+
+    Enabling \a borderCollapse will have the following implications:
+    \list
+    \li The borders and grid of the table will be rendered following the
+        CSS table \c border-collapse: \c collapse rules
+    \li Setting the \c border property to a minimum value of \c 1 will render a
+        one pixel solid inner table grid using the \l borderBrush property and an
+        outer border as specified
+    \li The various border style properties of \l QTextTableCellFormat can be used to
+        customize the grid and have precedence over the border and grid of the table
+    \li The \l cellSpacing property will be ignored
+    \li For print pagination:
+        \list
+        \li Columns continued on a page will not have their top cell border rendered
+        \li Repeated header rows will always have their bottom cell border rendered
+        \endlist
+    \endlist
+
+    With borderCollapse disabled, cell borders can still be styled
+    using QTextTableCellFormat but styling will be applied only within
+    the cell's frame, which is probably not very useful in practice.
+
+    \sa setBorder(), setBorderBrush(), setBorderStyle()
+    \sa QTextTableCellFormat
+*/
+
+/*!
+    \fn bool QTextTableFormat::borderCollapse() const
+    \since 5.14
+
+    Returns true if borderCollapse is enabled.
+
+    \sa setBorderCollapse()
 */
 
 /*!
@@ -3424,6 +3544,228 @@ QTextImageFormat::QTextImageFormat(const QTextFormat &fmt)
    Sets the left, right, top, and bottom \a padding of the table cell.
 
    \sa setLeftPadding(), setRightPadding(), setTopPadding(), setBottomPadding()
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setTopBorder(qreal width)
+   \since 5.14
+
+   Sets the top border \a width of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn qreal QTextTableCellFormat::topBorder() const
+   \since 5.14
+
+   Returns the top border width of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBottomBorder(qreal width)
+   \since 5.14
+
+   Sets the bottom border \a width of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn qreal QTextTableCellFormat::bottomBorder() const
+   \since 5.14
+
+   Returns the bottom border width of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setLeftBorder(qreal width)
+   \since 5.14
+
+   Sets the left border \a width of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn qreal QTextTableCellFormat::leftBorder() const
+   \since 5.14
+
+   Returns the left border width of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setRightBorder(qreal width)
+   \since 5.14
+
+   Sets the right border \a width of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn qreal QTextTableCellFormat::rightBorder() const
+   \since 5.14
+
+   Returns the right border width of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBorder(qreal width)
+   \since 5.14
+
+   Sets the left, right, top, and bottom border \a width of the table cell.
+
+   \sa setLeftBorder(), setRightBorder(), setTopBorder(), setBottomBorder()
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setTopBorderStyle(QTextFrameFormat::BorderStyle style)
+   \since 5.14
+
+   Sets the top border \a style of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QTextFrameFormat::BorderStyle QTextTableCellFormat::topBorderStyle() const
+   \since 5.14
+
+   Returns the top border style of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBottomBorderStyle(QTextFrameFormat::BorderStyle style)
+   \since 5.14
+
+   Sets the bottom border \a style of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QTextFrameFormat::BorderStyle QTextTableCellFormat::bottomBorderStyle() const
+   \since 5.14
+
+   Returns the bottom border style of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setLeftBorderStyle(QTextFrameFormat::BorderStyle style)
+   \since 5.14
+
+   Sets the left border \a style of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QTextFrameFormat::BorderStyle QTextTableCellFormat::leftBorderStyle() const
+   \since 5.14
+
+   Returns the left border style of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setRightBorderStyle(QTextFrameFormat::BorderStyle style)
+   \since 5.14
+
+   Sets the right border \a style of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QTextFrameFormat::BorderStyle QTextTableCellFormat::rightBorderStyle() const
+   \since 5.14
+
+   Returns the right border style of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBorderStyle(QTextFrameFormat::BorderStyle style)
+   \since 5.14
+
+   Sets the left, right, top, and bottom border \a style of the table cell.
+
+   \sa setLeftBorderStyle(), setRightBorderStyle(), setTopBorderStyle(), setBottomBorderStyle()
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setTopBorderBrush(const QBrush &brush)
+   \since 5.14
+
+   Sets the top border \a brush of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QBrush QTextTableCellFormat::topBorderBrush() const
+   \since 5.14
+
+   Returns the top border brush of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBottomBorderBrush(const QBrush &brush)
+   \since 5.14
+
+   Sets the bottom border \a brush of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QBrush QTextTableCellFormat::bottomBorderBrush() const
+   \since 5.14
+
+   Returns the bottom border brush of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setLeftBorderBrush(const QBrush &brush)
+   \since 5.14
+
+   Sets the left border \a brush of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QBrush QTextTableCellFormat::leftBorderBrush() const
+   \since 5.14
+
+   Returns the left border brush of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setRightBorderBrush(const QBrush &brush)
+   \since 5.14
+
+   Sets the right border \a brush of the table cell.
+
+   \sa QTextTableFormat::setBorderCollapse
+*/
+
+/*!
+   \fn QBrush QTextTableCellFormat::rightBorderBrush() const
+   \since 5.14
+
+   Returns the right border brush of the table cell.
+*/
+
+/*!
+   \fn void QTextTableCellFormat::setBorderBrush(const QBrush &brush)
+   \since 5.14
+
+   Sets the left, right, top, and bottom border \a brush of the table cell.
+
+   \sa setLeftBorderBrush(), setRightBorderBrush(), setTopBorderBrush(), setBottomBorderBrush()
+   \sa QTextTableFormat::setBorderCollapse
 */
 
 /*!

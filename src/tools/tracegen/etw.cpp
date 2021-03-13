@@ -45,7 +45,6 @@
 #include <qfile.h>
 #include <qfileinfo.h>
 #include <qtextstream.h>
-#include <qregexp.h>
 #include <quuid.h>
 
 static inline QString providerVar(const QString &providerName)
@@ -91,7 +90,7 @@ static QString createGuid(const QUuid &uuid)
 
     QTextStream stream(&guid);
 
-    hex(stream);
+    Qt::hex(stream);
 
     stream << "("
            << "0x" << uuid.data1    << ", "

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtTest module of the Qt Toolkit.
@@ -44,7 +44,7 @@
 #include <QtTest/private/qabstracttestlogger_p.h>
 #include <QtTest/private/qplaintestlogger_p.h>
 #include <QtTest/private/qcsvbenchmarklogger_p.h>
-#include <QtTest/private/qxunittestlogger_p.h>
+#include <QtTest/private/qjunittestlogger_p.h>
 #include <QtTest/private/qxmltestlogger_p.h>
 #include <QtTest/private/qteamcitylogger_p.h>
 #include <QtTest/private/qtaptestlogger_p.h>
@@ -111,7 +111,7 @@ namespace QTest {
     struct IgnoreResultList
     {
         inline IgnoreResultList(QtMsgType tp, const QVariant &patternIn)
-            : type(tp), pattern(patternIn), next(0) {}
+            : type(tp), pattern(patternIn) {}
 
         static inline void clearList(IgnoreResultList *&list)
         {
@@ -152,7 +152,7 @@ namespace QTest {
         inline bool matches(QtMsgType tp, const QString &message) const
         {
             return tp == type
-                   && (pattern.type() == QVariant::String ?
+                   && (pattern.userType() == QMetaType::QString ?
                        stringsMatch(pattern.toString(), message) :
 #if QT_CONFIG(regularexpression)
                        pattern.toRegularExpression().match(message).hasMatch());
@@ -163,10 +163,10 @@ namespace QTest {
 
         QtMsgType type;
         QVariant pattern;
-        IgnoreResultList *next;
+        IgnoreResultList *next = nullptr;
     };
 
-    static IgnoreResultList *ignoreResultList = 0;
+    static IgnoreResultList *ignoreResultList = nullptr;
 
     static QVector<QAbstractTestLogger*> loggers;
     static bool loggerUsingStdout = false;
@@ -181,7 +181,7 @@ namespace QTest {
     {
         if (!ignoreResultList)
             return false;
-        IgnoreResultList *last = 0;
+        IgnoreResultList *last = nullptr;
         IgnoreResultList *list = ignoreResultList;
         while (list) {
             if (list->matches(type, message)) {
@@ -191,7 +191,7 @@ namespace QTest {
                 else if (list->next)
                     ignoreResultList = list->next;
                 else
-                    ignoreResultList = 0;
+                    ignoreResultList = nullptr;
 
                 delete list;
                 return true;
@@ -219,7 +219,7 @@ namespace QTest {
         }
 
         if (type != QtFatalMsg) {
-            if (counter.load() <= 0)
+            if (counter.loadRelaxed() <= 0)
                 return;
 
             if (!counter.deref()) {
@@ -292,7 +292,7 @@ void QTestLog::printUnhandledIgnoreMessages()
     QString message;
     QTest::IgnoreResultList *list = QTest::ignoreResultList;
     while (list) {
-        if (list->pattern.type() == QVariant::String) {
+        if (list->pattern.userType() == QMetaType::QString) {
             message = QStringLiteral("Did not receive message: \"") + list->pattern.toString() + QLatin1Char('"');
         } else {
 #if QT_CONFIG(regularexpression)
@@ -438,11 +438,11 @@ void QTestLog::stopLogging()
 void QTestLog::addLogger(LogMode mode, const char *filename)
 {
     if (filename && strcmp(filename, "-") == 0)
-        filename = 0;
+        filename = nullptr;
     if (!filename)
         QTest::loggerUsingStdout = true;
 
-    QAbstractTestLogger *logger = 0;
+    QAbstractTestLogger *logger = nullptr;
     switch (mode) {
     case QTestLog::Plain:
         logger = new QPlainTestLogger(filename);
@@ -456,8 +456,8 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
     case QTestLog::LightXML:
         logger = new QXmlTestLogger(QXmlTestLogger::Light, filename);
         break;
-    case QTestLog::XunitXML:
-        logger = new QXunitTestLogger(filename);
+    case QTestLog::JUnitXML:
+        logger = new QJUnitTestLogger(filename);
         break;
     case QTestLog::TeamCity:
         logger = new QTeamCityLogger(filename);
@@ -521,7 +521,7 @@ void QTestLog::ignoreMessage(QtMsgType type, const char *msg)
 {
     QTEST_ASSERT(msg);
 
-    QTest::IgnoreResultList::append(QTest::ignoreResultList, type, QString::fromLocal8Bit(msg));
+    QTest::IgnoreResultList::append(QTest::ignoreResultList, type, QString::fromUtf8(msg));
 }
 
 #if QT_CONFIG(regularexpression)
@@ -598,3 +598,5 @@ qint64 QTestLog::nsecsFunctionTime()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qtestlog_p.cpp"

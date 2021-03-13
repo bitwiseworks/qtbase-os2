@@ -252,7 +252,7 @@ void tst_QPluginLoader::loadHints()
     QSKIP("This test requires Qt to create shared libraries.");
 #endif
     QPluginLoader loader;
-    QCOMPARE(loader.loadHints(), (QLibrary::LoadHints)0);   //Do not crash
+    QCOMPARE(loader.loadHints(), QLibrary::LoadHints{});   //Do not crash
     loader.setLoadHints(QLibrary::ResolveAllSymbolsHint);
     loader.setFileName( sys_qualifiedLibraryName(THEPLUGIN));       //a plugin
     QCOMPARE(loader.loadHints(), QLibrary::ResolveAllSymbolsHint);
@@ -562,6 +562,7 @@ void tst_QPluginLoader::staticPlugins()
     QCOMPARE(metaData.value("version").toInt() / 0x100, QT_VERSION / 0x100);
     QCOMPARE(metaData.value("IID").toString(), "SomeIID");
     QCOMPARE(metaData.value("ExtraMetaData"), QJsonArray({ "StaticPlugin", "foo" }));
+    QCOMPARE(metaData.value("URI").toString(), "qt.test.pluginloader.staticplugin");
 }
 
 

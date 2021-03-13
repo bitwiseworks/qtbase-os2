@@ -55,8 +55,8 @@ class QFocusFramePrivate : public QWidgetPrivate
     bool showFrameAboveWidget;
 public:
     QFocusFramePrivate() {
-        widget = 0;
-        frameParent = 0;
+        widget = nullptr;
+        frameParent = nullptr;
         sendChildEvents = false;
         showFrameAboveWidget = false;
     }
@@ -86,8 +86,10 @@ void QFocusFramePrivate::updateSize()
     if (!widget)
         return;
 
-    int vmargin = q->style()->pixelMetric(QStyle::PM_FocusFrameVMargin),
-        hmargin = q->style()->pixelMetric(QStyle::PM_FocusFrameHMargin);
+    QStyleOption opt;
+    q->initStyleOption(&opt);
+    int vmargin = q->style()->pixelMetric(QStyle::PM_FocusFrameVMargin, &opt),
+        hmargin = q->style()->pixelMetric(QStyle::PM_FocusFrameHMargin, &opt);
     QPoint pos(widget->x(), widget->y());
     if (q->parentWidget() != widget->parentWidget())
         pos = widget->parentWidget()->mapTo(q->parentWidget(), pos);
@@ -97,9 +99,9 @@ void QFocusFramePrivate::updateSize()
         return;
 
     q->setGeometry(geom);
+
+    opt.rect = q->rect();
     QStyleHintReturnMask mask;
-    QStyleOption opt;
-    q->initStyleOption(&opt);
     if (q->style()->styleHint(QStyle::SH_FocusFrame_Mask, &opt, q, &mask))
         q->setMask(mask.region);
 }
@@ -154,12 +156,12 @@ void QFocusFrame::initStyleOption(QStyleOption *option) const
 */
 
 QFocusFrame::QFocusFrame(QWidget *parent)
-    : QWidget(*new QFocusFramePrivate, parent, 0)
+    : QWidget(*new QFocusFramePrivate, parent, { })
 {
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_NoChildEventsForParent, true);
-    setAttribute(Qt::WA_AcceptDrops, style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, 0, this));
+    setAttribute(Qt::WA_AcceptDrops, style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, nullptr, this));
 }
 
 /*!
@@ -184,7 +186,7 @@ QFocusFrame::setWidget(QWidget *widget)
 {
     Q_D(QFocusFrame);
 
-    if (style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, 0, this))
+    if (style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, nullptr, this))
         d->showFrameAboveWidget = true;
     else
         d->showFrameAboveWidget = false;
@@ -205,7 +207,7 @@ QFocusFrame::setWidget(QWidget *widget)
         d->widget = widget;
         d->widget->installEventFilter(this);
         QWidget *p = widget->parentWidget();
-        QWidget *prev = 0;
+        QWidget *prev = nullptr;
         if (d->showFrameAboveWidget) {
             // Find the right parent for the focus frame.
             while (p) {
@@ -231,7 +233,7 @@ QFocusFrame::setWidget(QWidget *widget)
         }
         d->update();
     } else {
-        d->widget = 0;
+        d->widget = nullptr;
         hide();
     }
 }
@@ -263,8 +265,8 @@ QFocusFrame::paintEvent(QPaintEvent *)
     QStylePainter p(this);
     QStyleOption option;
     initStyleOption(&option);
-    int vmargin = style()->pixelMetric(QStyle::PM_FocusFrameVMargin);
-    int hmargin = style()->pixelMetric(QStyle::PM_FocusFrameHMargin);
+    const int vmargin = style()->pixelMetric(QStyle::PM_FocusFrameVMargin, &option);
+    const int hmargin = style()->pixelMetric(QStyle::PM_FocusFrameHMargin, &option);
     QWidgetPrivate *wd = qt_widget_private(d->widget);
     QRect rect = wd->clipRect().adjusted(0, 0, hmargin*2, vmargin*2);
     p.setClipRect(rect);
@@ -290,7 +292,7 @@ QFocusFrame::eventFilter(QObject *o, QEvent *e)
         case QEvent::ParentChange:
             if (d->showFrameAboveWidget) {
                 QWidget *w = d->widget;
-                setWidget(0);
+                setWidget(nullptr);
                 setWidget(w);
             } else {
                 d->update();
@@ -304,13 +306,13 @@ QFocusFrame::eventFilter(QObject *o, QEvent *e)
             setPalette(d->widget->palette());
             break;
         case QEvent::ZOrderChange:
-            if (style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, 0, this))
+            if (style()->styleHint(QStyle::SH_FocusFrame_AboveWidget, nullptr, this))
                 raise();
             else
                 stackUnder(d->widget);
             break;
         case QEvent::Destroy:
-            setWidget(0);
+            setWidget(nullptr);
             break;
         default:
             break;

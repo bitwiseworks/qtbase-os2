@@ -48,21 +48,17 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-#include <math.h>
-
 #include "tabletcanvas.h"
+
+#include <QCoreApplication>
+#include <QPainter>
+#include <QtMath>
+#include <cstdlib>
 
 //! [0]
 TabletCanvas::TabletCanvas()
-  : QWidget(nullptr)
-  , m_alphaChannelValuator(TangentialPressureValuator)
-  , m_colorSaturationValuator(NoValuator)
-  , m_lineWidthValuator(PressureValuator)
-  , m_color(Qt::red)
-  , m_brush(m_color)
-  , m_pen(m_brush, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin)
-  , m_deviceDown(false)
+    : QWidget(nullptr), m_brush(m_color)
+    , m_pen(m_brush, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin)
 {
     resize(500, 500);
     setAutoFillBackground(true);
@@ -110,7 +106,7 @@ void TabletCanvas::tabletEvent(QTabletEvent *event)
             break;
         case QEvent::TabletMove:
 #ifndef Q_OS_IOS
-            if (event->device() == QTabletEvent::RotationStylus)
+            if (event->deviceType() == QTabletEvent::RotationStylus)
                 updateCursor(event);
 #endif
             if (m_deviceDown) {
@@ -138,7 +134,7 @@ void TabletCanvas::tabletEvent(QTabletEvent *event)
 void TabletCanvas::initPixmap()
 {
     qreal dpr = devicePixelRatioF();
-    QPixmap newPixmap = QPixmap(width() * dpr, height() * dpr);
+    QPixmap newPixmap = QPixmap(qRound(width() * dpr), qRound(height() * dpr));
     newPixmap.setDevicePixelRatio(dpr);
     newPixmap.fill(Qt::white);
     QPainter painter(&newPixmap);
@@ -165,7 +161,7 @@ void TabletCanvas::paintPixmap(QPainter &painter, QTabletEvent *event)
     static qreal maxPenRadius = pressureToWidth(1.0);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    switch (event->device()) {
+    switch (event->deviceType()) {
 //! [6]
         case QTabletEvent::Airbrush:
             {
@@ -208,7 +204,7 @@ void TabletCanvas::paintPixmap(QPainter &painter, QTabletEvent *event)
                 const QString error(tr("This input device is not supported by the example."));
 #if QT_CONFIG(statustip)
                 QStatusTipEvent status(error);
-                QApplication::sendEvent(this, &status);
+                QCoreApplication::sendEvent(this, &status);
 #else
                 qWarning() << error;
 #endif
@@ -219,7 +215,7 @@ void TabletCanvas::paintPixmap(QPainter &painter, QTabletEvent *event)
                 const QString error(tr("Unknown tablet device - treating as stylus"));
 #if QT_CONFIG(statustip)
                 QStatusTipEvent status(error);
-                QApplication::sendEvent(this, &status);
+                QCoreApplication::sendEvent(this, &status);
 #else
                 qWarning() << error;
 #endif
@@ -255,13 +251,14 @@ void TabletCanvas::updateBrush(const QTabletEvent *event)
             m_color.setAlphaF(event->pressure());
             break;
         case TangentialPressureValuator:
-            if (event->device() == QTabletEvent::Airbrush)
+            if (event->deviceType() == QTabletEvent::Airbrush)
                 m_color.setAlphaF(qMax(0.01, (event->tangentialPressure() + 1.0) / 2.0));
             else
                 m_color.setAlpha(255);
             break;
         case TiltValuator:
-            m_color.setAlpha(maximum(abs(vValue - 127), abs(hValue - 127)));
+            m_color.setAlpha(std::max(std::abs(vValue - 127),
+                                      std::abs(hValue - 127)));
             break;
         default:
             m_color.setAlpha(255);
@@ -288,7 +285,8 @@ void TabletCanvas::updateBrush(const QTabletEvent *event)
             m_pen.setWidthF(pressureToWidth(event->pressure()));
             break;
         case TiltValuator:
-            m_pen.setWidthF(maximum(abs(vValue - 127), abs(hValue - 127)) / 12);
+            m_pen.setWidthF(std::max(std::abs(vValue - 127),
+                                     std::abs(hValue - 127)) / 12);
             break;
         default:
             m_pen.setWidthF(1);
@@ -314,7 +312,7 @@ void TabletCanvas::updateCursor(const QTabletEvent *event)
         if (event->pointerType() == QTabletEvent::Eraser) {
             cursor = QCursor(QPixmap(":/images/cursor-eraser.png"), 3, 28);
         } else {
-            switch (event->device()) {
+            switch (event->deviceType()) {
             case QTabletEvent::Stylus:
                 cursor = QCursor(QPixmap(":/images/cursor-pencil.png"), 0, 0);
                 break;

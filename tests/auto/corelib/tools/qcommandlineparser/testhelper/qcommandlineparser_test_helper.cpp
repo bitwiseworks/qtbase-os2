@@ -74,10 +74,12 @@ int main(int argc, char *argv[])
     hiddenOption.setDescription(QStringLiteral("THIS SHOULD NEVER APPEAR"));
     hiddenOption.setFlags(QCommandLineOption::HiddenFromHelp);
     parser.addOption(hiddenOption);
+#if QT_DEPRECATED_SINCE(5, 8)
     QCommandLineOption hiddenOption2(QStringList() << QStringLiteral("hidden2"));
     hiddenOption2.setDescription(QStringLiteral("NEITHER SHOULD THIS"));
     hiddenOption2.setHidden(true);
     parser.addOption(hiddenOption2);
+#endif
 
     // This program supports different options depending on the "command" (first argument).
     // Call parse() to find out the positional arguments.
@@ -95,6 +97,13 @@ int main(int argc, char *argv[])
         parser.process(app);
         const QString size = parser.value("size");
         printf("Resizing %s to %s and saving to %s\n", qPrintable(parser.value("load")), qPrintable(size), qPrintable(parser.value("o")));
+    } else if (command == "long") {
+        // A very long option (QTBUG-79926)
+        QCommandLineOption longOption(QStringList{QStringLiteral("looooooooooooong-option"), QStringLiteral("looooong-opt-alias")});
+        longOption.setDescription(QStringLiteral("Short description"));
+        longOption.setValueName(QStringLiteral("looooooooooooong-value-name"));
+        parser.addOption(longOption);
+        parser.process(app);
     } else {
         // Call process again, to handle unknown options this time.
         parser.process(app);

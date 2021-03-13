@@ -169,7 +169,7 @@ QIODevicePrivate::QIODevicePrivate()
        , baseReadLineDataCalled(false)
        , accessMode(Unset)
 #ifdef QT_NO_QOBJECT
-       , q_ptr(0)
+       , q_ptr(nullptr)
 #endif
 {
 }
@@ -461,7 +461,7 @@ QIODevice::QIODevice(QIODevicePrivate &dd)
 */
 
 QIODevice::QIODevice()
-    : QObject(*new QIODevicePrivate, 0)
+    : QObject(*new QIODevicePrivate, nullptr)
 {
 #if defined QIODEVICE_DEBUG
     QFile *file = qobject_cast<QFile *>(this);
@@ -714,7 +714,7 @@ void QIODevicePrivate::setReadChannelCount(int count)
 /*!
     \since 5.7
 
-    Returns the the index of the current write channel.
+    Returns the index of the current write channel.
 
     \sa setCurrentWriteChannel(), writeChannelCount()
 */
@@ -1829,7 +1829,7 @@ QByteArray QIODevicePrivate::peek(qint64 maxSize)
 /*! \fn bool QIODevice::getChar(char *c)
 
     Reads one character from the device and stores it in \a c. If \a c
-    is 0, the character is discarded. Returns \c true on success;
+    is \nullptr, the character is discarded. Returns \c true on success;
     otherwise returns \c false.
 
     \sa read(), putChar(), ungetChar()

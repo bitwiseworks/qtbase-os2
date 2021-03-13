@@ -425,7 +425,7 @@ bool QRfbPointerEvent::read(QTcpSocket *s)
     if (buttonMask & 1)
         buttons |= Qt::LeftButton;
     if (buttonMask & 2)
-        buttons |= Qt::MidButton;
+        buttons |= Qt::MiddleButton;
     if (buttonMask & 4)
         buttons |= Qt::RightButton;
 
@@ -537,7 +537,7 @@ QVncClientCursor::QVncClientCursor()
 {
     QWindow *w = QGuiApplication::focusWindow();
     QCursor c = w ? w->cursor() : QCursor(Qt::ArrowCursor);
-    changeCursor(&c, 0);
+    changeCursor(&c, nullptr);
 }
 
 QVncClientCursor::~QVncClientCursor()
@@ -595,7 +595,7 @@ void QVncClientCursor::changeCursor(QCursor *widgetCursor, QWindow *window)
         cursor = widgetCursor->pixmap().toImage();
     } else {
         // system cursor
-        QPlatformCursorImage platformImage(0, 0, 0, 0, 0, 0);
+        QPlatformCursorImage platformImage(nullptr, nullptr, 0, 0, 0, 0);
         platformImage.set(shape);
         cursor = *platformImage.image();
         hotspot = platformImage.hotspot();
@@ -606,8 +606,11 @@ void QVncClientCursor::changeCursor(QCursor *widgetCursor, QWindow *window)
 
 void QVncClientCursor::addClient(QVncClient *client)
 {
-    if (!clients.contains(client))
+    if (!clients.contains(client)) {
         clients.append(client);
+        // Force a cursor update when the client connects.
+        client->setDirtyCursor();
+    }
 }
 
 uint QVncClientCursor::removeClient(QVncClient *client)

@@ -155,7 +155,7 @@ struct QWindowsShcoreDLL {
 
 class QWindowsContext
 {
-    Q_DISABLE_COPY(QWindowsContext)
+    Q_DISABLE_COPY_MOVE(QWindowsContext)
 public:
 
     enum SystemInfoFlags
@@ -176,15 +176,18 @@ public:
     bool initTablet(unsigned integrationOptions);
     bool initPointer(unsigned integrationOptions);
 
+    bool initPowerNotificationHandler();
+
     int defaultDPI() const;
 
+    static QString classNamePrefix();
     QString registerWindowClass(const QWindow *w);
     QString registerWindowClass(QString cname, WNDPROC proc,
-                                unsigned style = 0, HBRUSH brush = 0,
+                                unsigned style = 0, HBRUSH brush = nullptr,
                                 bool icon = false);
     HWND createDummyWindow(const QString &classNameIn,
                            const wchar_t *windowName,
-                           WNDPROC wndProc = 0, DWORD style = WS_OVERLAPPED);
+                           WNDPROC wndProc = nullptr, DWORD style = WS_OVERLAPPED);
 
     HDC displayContext() const;
     int screenDepth() const;
@@ -223,6 +226,8 @@ public:
     void setProcessDpiAwareness(QtWindows::ProcessDpiAwareness dpiAwareness);
     static int processDpiAwareness();
 
+    static bool isDarkMode();
+
     void setDetectAltGrModifier(bool a);
 
     // Returns a combination of SystemInfoFlags
@@ -243,6 +248,8 @@ public:
     static QByteArray comErrorString(HRESULT hr);
     bool asyncExpose() const;
     void setAsyncExpose(bool value);
+
+    static void forceNcCalcSize(HWND hwnd);
 
     static bool systemParametersInfo(unsigned action, unsigned param, void *out, unsigned dpi = 0);
     static bool systemParametersInfoForScreen(unsigned action, unsigned param, void *out,

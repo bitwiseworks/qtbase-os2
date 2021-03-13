@@ -132,7 +132,7 @@ QString QSystemError::os2String(int errorCode)
 
 static QString standardLibraryErrorString(int errorCode)
 {
-    const char *s = 0;
+    const char *s = nullptr;
     QString ret;
     switch (errorCode) {
     case 0:

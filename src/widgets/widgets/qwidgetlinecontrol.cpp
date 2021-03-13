@@ -54,6 +54,7 @@
 #endif
 
 #include "qapplication.h"
+#include "private/qapplication_p.h"
 #if QT_CONFIG(graphicsview)
 #include "qgraphicssceneevent.h"
 #endif
@@ -76,11 +77,6 @@ int QWidgetLineControl::redoTextLayout() const
     m_textLayout.beginLayout();
     QTextLine l = m_textLayout.createLine();
     m_textLayout.endLayout();
-
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-    if (m_threadChecks)
-        m_textLayoutThread = QThread::currentThread();
-#endif
 
     return qRound(l.ascent());
 }
@@ -158,7 +154,7 @@ void QWidgetLineControl::copy(QClipboard::Mode mode) const
 {
     QString t = selectedText();
     if (!t.isEmpty() && m_echoMode == QLineEdit::Normal) {
-        QApplication::clipboard()->setText(t, mode);
+        QGuiApplication::clipboard()->setText(t, mode);
     }
 }
 
@@ -172,7 +168,7 @@ void QWidgetLineControl::copy(QClipboard::Mode mode) const
 */
 void QWidgetLineControl::paste(QClipboard::Mode clipboardMode)
 {
-    QString clip = QApplication::clipboard()->text(clipboardMode);
+    QString clip = QGuiApplication::clipboard()->text(clipboardMode);
     if (!clip.isEmpty() || hasSelectedText()) {
         separate(); //make it a separate undo/redo command
         insert(clip);
@@ -968,7 +964,7 @@ void QWidgetLineControl::parseInputMask(const QString &maskFields)
     if (maskFields.isEmpty() || delimiter == 0) {
         if (m_maskData) {
             delete [] m_maskData;
-            m_maskData = 0;
+            m_maskData = nullptr;
             m_maxLength = 32767;
             internalSetText(QString(), -1, false);
         }
@@ -1094,7 +1090,7 @@ bool QWidgetLineControl::isValidInput(QChar key, QChar mask) const
             return true;
         break;
     case 'X':
-        if (key.isPrint())
+        if (key.isPrint() && key != m_blank)
             return true;
         break;
     case 'x':
@@ -1524,9 +1520,9 @@ void QWidgetLineControl::setBlinkingCursorEnabled(bool enable)
     m_blinkEnabled = enable;
 
     if (enable)
-        connect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
+        connect(QGuiApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
     else
-        disconnect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
+        disconnect(QGuiApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
 
     updateCursorBlinking();
 }
@@ -1662,7 +1658,7 @@ void QWidgetLineControl::processKeyEvent(QKeyEvent* event)
             case Qt::Key_F4:
 #ifdef QT_KEYPAD_NAVIGATION
             case Qt::Key_Select:
-                if (!QApplication::keypadNavigationEnabled())
+                if (!QApplicationPrivate::keypadNavigationEnabled())
                     break;
 #endif
                 if (!m_completer->currentCompletion().isEmpty() && hasSelectedText()
@@ -1680,7 +1676,7 @@ void QWidgetLineControl::processKeyEvent(QKeyEvent* event)
     if (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return) {
         if (hasAcceptableInput() || fixup()) {
 
-            QInputMethod *inputMethod = QApplication::inputMethod();
+            QInputMethod *inputMethod = QGuiApplication::inputMethod();
             inputMethod->commit();
             QWidget *lineEdit = qobject_cast<QWidget *>(parent());
             if (!(lineEdit && lineEdit->inputMethodHints() & Qt::ImhMultiLine))
@@ -1912,7 +1908,7 @@ void QWidgetLineControl::processKeyEvent(QKeyEvent* event)
                 break;
 #ifdef QT_KEYPAD_NAVIGATION
             case Qt::Key_Back:
-                if (QApplication::keypadNavigationEnabled() && !event->isAutoRepeat()
+                if (QApplicationPrivate::keypadNavigationEnabled() && !event->isAutoRepeat()
                     && !isReadOnly()) {
                     if (text().length() == 0) {
                         setText(m_cancelText);

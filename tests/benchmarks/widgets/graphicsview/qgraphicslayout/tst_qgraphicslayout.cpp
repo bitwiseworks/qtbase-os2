@@ -47,13 +47,13 @@ private slots:
 class RectWidget : public QGraphicsWidget
 {
 public:
-    RectWidget(QGraphicsItem *parent = 0, Qt::WindowFlags wFlags = 0) : QGraphicsWidget(parent, wFlags), setGeometryCalls(0) {}
+    RectWidget(QGraphicsItem *parent = 0, Qt::WindowFlags wFlags = { }) : QGraphicsWidget(parent, wFlags), setGeometryCalls(0) {}
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
     {
         Q_UNUSED(option);
         Q_UNUSED(widget);
-        painter->drawRoundRect(rect());
+        painter->drawRoundedRect(rect(), 25, 25, Qt::RelativeSize);
         painter->drawLine(rect().topLeft(), rect().bottomRight());
         painter->drawLine(rect().bottomLeft(), rect().topRight());
     }

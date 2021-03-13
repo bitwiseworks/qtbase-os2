@@ -75,7 +75,6 @@ QT_BEGIN_NAMESPACE
 
     \sa QWindowsOleDropSource
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 class QWindowsDragCursorWindow : public QRasterWindow
@@ -135,7 +134,6 @@ void QWindowsDragCursorWindow::setPixmap(const QPixmap &p)
 
     \sa QWindowsDrag
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 IDataObject *QWindowsDropMimeData::retrieveDataObject() const
@@ -192,20 +190,6 @@ static inline Qt::KeyboardModifiers toQtKeyboardModifiers(DWORD keyState)
     return modifiers;
 }
 
-static inline Qt::MouseButtons toQtMouseButtons(DWORD keyState)
-{
-    Qt::MouseButtons buttons = Qt::NoButton;
-
-    if (keyState & MK_LBUTTON)
-        buttons |= Qt::LeftButton;
-    if (keyState & MK_RBUTTON)
-        buttons |= Qt::RightButton;
-    if (keyState & MK_MBUTTON)
-        buttons |= Qt::MidButton;
-
-    return buttons;
-}
-
 static Qt::KeyboardModifiers lastModifiers = Qt::NoModifier;
 static Qt::MouseButtons lastButtons = Qt::NoButton;
 
@@ -217,7 +201,6 @@ static Qt::MouseButtons lastButtons = Qt::NoButton;
 
     \sa QWindowsDrag
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 class QWindowsOleDropSource : public QWindowsComBase<IDropSource>
@@ -389,7 +372,10 @@ void QWindowsOleDropSource::createCursors()
 QT_ENSURE_STACK_ALIGNED_FOR_SSE STDMETHODIMP
 QWindowsOleDropSource::QueryContinueDrag(BOOL fEscapePressed, DWORD grfKeyState)
 {
-    Qt::MouseButtons buttons = toQtMouseButtons(grfKeyState);
+    // In some rare cases, when a mouse button is released but the mouse is static,
+    // grfKeyState will not be updated with these released buttons until the mouse
+    // is moved. So we use the async key state given by queryMouseButtons() instead.
+    Qt::MouseButtons buttons = QWindowsMouseHandler::queryMouseButtons();
 
     SCODE result = S_OK;
     if (fEscapePressed || QWindowsDrag::isCanceled()) {
@@ -428,7 +414,7 @@ QWindowsOleDropSource::QueryContinueDrag(BOOL fEscapePressed, DWORD grfKeyState)
     if (QWindowsContext::verbose > 1 || result != S_OK) {
         qCDebug(lcQpaMime) << __FUNCTION__ << "fEscapePressed=" << fEscapePressed
             << "grfKeyState=" << grfKeyState << "buttons" << m_currentButtons
-            << "returns 0x" << hex << int(result) << dec;
+            << "returns 0x" << Qt::hex << int(result) << Qt::dec;
     }
     return ResultFromScode(result);
 }
@@ -485,7 +471,6 @@ QWindowsOleDropSource::GiveFeedback(DWORD dwEffect)
 
     \sa QWindowsDrag
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 QWindowsOleDropTarget::QWindowsOleDropTarget(QWindow *w) : m_window(w)
@@ -509,7 +494,7 @@ void QWindowsOleDropTarget::handleDrag(QWindow *window, DWORD grfKeyState,
     const Qt::DropActions actions = translateToQDragDropActions(*pdwEffect);
 
     lastModifiers = toQtKeyboardModifiers(grfKeyState);
-    lastButtons = toQtMouseButtons(grfKeyState);
+    lastButtons = QWindowsMouseHandler::queryMouseButtons();
 
     const QPlatformDragQtResponse response =
           QWindowSystemInterface::handleDrag(window, windowsDrag->dropData(),
@@ -607,7 +592,7 @@ QWindowsOleDropTarget::Drop(LPDATAOBJECT pDataObj, DWORD grfKeyState,
     QWindowsDrag *windowsDrag = QWindowsDrag::instance();
 
     lastModifiers = toQtKeyboardModifiers(grfKeyState);
-    lastButtons = toQtMouseButtons(grfKeyState);
+    lastButtons = QWindowsMouseHandler::queryMouseButtons();
 
     const QPlatformDropQtResponse response =
         QWindowSystemInterface::handleDrop(m_window, windowsDrag->dropData(),
@@ -627,7 +612,7 @@ QWindowsOleDropTarget::Drop(LPDATAOBJECT pDataObj, DWORD grfKeyState,
                 m_chosenEffect = DROPEFFECT_COPY;
             HGLOBAL hData = GlobalAlloc(0, sizeof(DWORD));
             if (hData) {
-                DWORD *moveEffect = reinterpret_cast<DWORD *>(GlobalLock(hData));
+                auto *moveEffect = reinterpret_cast<DWORD *>(GlobalLock(hData));
                 *moveEffect = DROPEFFECT_MOVE;
                 GlobalUnlock(hData);
                 STGMEDIUM medium;
@@ -659,7 +644,6 @@ QWindowsOleDropTarget::Drop(LPDATAOBJECT pDataObj, DWORD grfKeyState,
     \class QWindowsDrag
     \brief Windows drag implementation.
     \internal
-    \ingroup qt-lighthouse-win
 */
 
 bool QWindowsDrag::m_canceled = false;
@@ -704,13 +688,13 @@ Qt::DropAction QWindowsDrag::drag(QDrag *drag)
 
     DWORD resultEffect;
     QWindowsDrag::m_canceled = false;
-    QWindowsOleDropSource *windowDropSource = new QWindowsOleDropSource(this);
+    auto *windowDropSource = new QWindowsOleDropSource(this);
     windowDropSource->createCursors();
-    QWindowsDropDataObject *dropDataObject = new QWindowsDropDataObject(dropData);
+    auto *dropDataObject = new QWindowsDropDataObject(dropData);
     const Qt::DropActions possibleActions = drag->supportedActions();
     const DWORD allowedEffects = translateToWinDragEffects(possibleActions);
     qCDebug(lcQpaMime) << '>' << __FUNCTION__ << "possible Actions=0x"
-        << hex << int(possibleActions) << "effects=0x" << allowedEffects << dec;
+        << Qt::hex << int(possibleActions) << "effects=0x" << allowedEffects << Qt::dec;
     // Indicate message handlers we are in DoDragDrop() event loop.
     QWindowsDrag::m_dragging = true;
     const HRESULT r = DoDragDrop(dropDataObject, windowDropSource, allowedEffects, &resultEffect);
@@ -734,9 +718,9 @@ Qt::DropAction QWindowsDrag::drag(QDrag *drag)
     dropDataObject->releaseQt();
     dropDataObject->Release();        // Will delete obj if refcount becomes 0
     windowDropSource->Release();        // Will delete src if refcount becomes 0
-    qCDebug(lcQpaMime) << '<' << __FUNCTION__ << hex << "allowedEffects=0x" << allowedEffects
+    qCDebug(lcQpaMime) << '<' << __FUNCTION__ << Qt::hex << "allowedEffects=0x" << allowedEffects
         << "reportedPerformedEffect=0x" << reportedPerformedEffect
-        <<  " resultEffect=0x" << resultEffect << "hr=0x" << int(r) << dec << "dropAction=" << dragResult;
+        <<  " resultEffect=0x" << resultEffect << "hr=0x" << int(r) << Qt::dec << "dropAction=" << dragResult;
     return dragResult;
 }
 
