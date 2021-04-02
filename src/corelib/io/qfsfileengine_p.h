@@ -195,6 +195,8 @@ public:
 
     mutable int cachedFd;
     mutable DWORD fileAttrib;
+#elif defined(Q_OS_OS2)
+    QMultiHash<uchar *, QPair<int /*offset % PageSize*/, size_t /*length + offset % PageSize*/> > maps;
 #else
     QHash<uchar *, QPair<int /*offset % PageSize*/, size_t /*length + offset % PageSize*/> > maps;
 #endif

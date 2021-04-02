@@ -66,10 +66,6 @@
 #  include <gnu/lib-names.h>
 #endif
 
-#if defined(Q_OS_OS2)
-#include <libcx/net.h>
-#endif
-
 #if defined(Q_OS_FREEBSD) || QT_CONFIG(dlopen)
 #  include <dlfcn.h>
 #endif

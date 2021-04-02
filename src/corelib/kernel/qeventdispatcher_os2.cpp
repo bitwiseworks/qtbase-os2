@@ -243,7 +243,7 @@ MRESULT QEventDispatcherOS2Private::AuxWnd::message(ULONG msg, MPARAM /*mp1*/, M
         // Must get a lock to make sure the select thread has entered the wait state.
         QMutexLocker locker(&d.mutex);
 
-        TRACE(V(d.tid) << V(d.threadState) << "maxfd/nsel" << d.maxfd << hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
+        TRACE(V(d.tid) << V(d.threadState) << "maxfd/nsel" << d.maxfd << Qt::hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
         Q_ASSERT(d.threadState == Waiting);
 
         d.fetchFromSelect();
@@ -270,7 +270,7 @@ MRESULT QEventDispatcherOS2Private::AuxWnd::message(ULONG msg, MPARAM /*mp1*/, M
 
 QEventDispatcherOS2Private::QEventDispatcherOS2Private()
     : hab(NULLHANDLE), hmq(NULLHANDLE), auxWnd(*this), interrupt(false), queuedSockets(false), processedTimers(false)
-    , flags(0), tid(-1), threadState(Terminating), maxfd(-1), timeout(nullptr)
+    , tid(-1), threadState(Terminating), maxfd(-1), timeout(nullptr)
 {
     fdsets[0].type = QSocketNotifier::Read;
     fdsets[1].type = QSocketNotifier::Write;
@@ -308,12 +308,12 @@ void QEventDispatcherOS2Private::createMsgQueue()
                      WinGetLastError(hab));
     }
 
-    TRACE(hex << V(hab) << V(hmq));
+    TRACE(Qt::hex << V(hab) << V(hmq));
 }
 
 void QEventDispatcherOS2Private::destroyMsgQueue()
 {
-    TRACE(hex << V(hab) << V(hmq) << V(tid) << V(threadState));
+    TRACE(Qt::hex << V(hab) << V(hmq) << V(tid) << V(threadState));
 
     if (tid != -1)
         stopThread();
@@ -437,7 +437,7 @@ void QEventDispatcherOS2Private::startThread()
 
     QMutexLocker locker(&mutex);
 
-    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd << hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
+    TRACE(V(tid) << V(threadState) << "maxfd/nsel" << maxfd << Qt::hex << "status" << WinQueryQueueStatus(HWND_DESKTOP));
 
     if (tid == -1 || threadState == Starting) {
         if (tid == -1) {
@@ -650,10 +650,11 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
 
     Q_ASSERT(d->hmq);
 
-    d->interrupt.store(0);
+    d->interrupt.storeRelaxed(false);
 
     emit awake();
 
+    auto threadData = d->threadData.loadRelaxed();
     bool canWait;
     bool retVal = false;
 
@@ -669,24 +670,24 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     // We need to return true if we processed any posted events (some tests, e.g.
     // tst_QEventDispatcher::sendPostedEvents) expect that. See qGlobalPostedEventsCount and
     // QCoreApplicationPrivate::sendPostedEvents for more info on the below code.
-    uint postedCount = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
+    uint postedCount = threadData->postEventList.size() - threadData->postEventList.startOffset;
     TRACE(V(postedCount));
     if (postedCount) {
-        QCoreApplicationPrivate::sendPostedEvents(0, 0, d->threadData);
+        QCoreApplicationPrivate::sendPostedEvents(0, 0, threadData);
         // Below, we use the following logic to detect if any posted events were *actually* sent.
         // If, after calling sendPostedEvents we still have some posted events, this means that
-        // either processing these events resulted in new posted events (d->threadData->canWait will
+        // either processing these events resulted in new posted events (threadData->canWait will
         // be false in this case) or some events were QEvent::DeferredDelete and they were reposted
         // by sendPostedEvents (for processing later on an outer event loop). Such a synthetic
         // reposting should *not* prevent this event loop from entering the wait state - otherwise
         // it will spin in a tight cycle with 100% CPU load until terminated. To detect if there
         // were any "normal" events besides DeferredDelete, we compare the number of posted events
-        // before and after. If d->threadData->canWait is false, there is no way to detect if we
+        // before and after. If threadData->canWait is false, there is no way to detect if we
         // sent any "normal" posted event or not (w/o changing the QCoreApplicationPrivate code).
         // Just pretend that we did hoping it will not break anything else. Note that we call
         // canWaitLocked *after* grabbing the new posted event count (to keep them in sync).
-        uint postedCountAfter = d->threadData->postEventList.size() - d->threadData->postEventList.startOffset;
-        bool canWaitLocked = d->threadData->canWaitLocked();
+        uint postedCountAfter = threadData->postEventList.size() - threadData->postEventList.startOffset;
+        bool canWaitLocked = threadData->canWaitLocked();
         TRACE(V(postedCountAfter) << V(canWaitLocked));
         if (canWaitLocked) {
             Q_ASSERT(postedCount >= postedCountAfter);
@@ -701,7 +702,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
     do {
         bool quit = false;
 
-        while (!d->interrupt.load()) {
+        while (!d->interrupt.loadRelaxed()) {
             QMSG msg;
             bool haveMessage;
 
@@ -745,7 +746,7 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
                 }
             }
             if (haveMessage) {
-                TRACE(hex << V(msg.msg) << "status" << WinQueryQueueStatus(HWND_DESKTOP));
+                TRACE(Qt::hex << V(msg.msg) << "status" << WinQueryQueueStatus(HWND_DESKTOP));
 
                 if (msg.msg == WM_QUIT) {
                     if (QCoreApplication::instance()) {
@@ -783,14 +784,14 @@ bool QEventDispatcherOS2::processEvents(QEventLoop::ProcessEventsFlags flags)
         // Still nothing - wait for message.
         canWait = (!retVal
                    && !d->timerList.zeroTimerCount()
-                   && (flags & QEventLoop::WaitForMoreEvents)
-                   && d->threadData->canWaitLocked()
-                   && !d->interrupt.load());
+                   && (flags.testFlag(QEventLoop::WaitForMoreEvents))
+                   && threadData->canWaitLocked()
+                   && !d->interrupt.loadRelaxed());
         TRACE(V(canWait) << V(retVal) <<
               "zeroTimerCount" << d->timerList.zeroTimerCount() <<
               "WaitForMoreEvents" << !!(flags & QEventLoop::WaitForMoreEvents) <<
-              "canWaitLocked" << d->threadData->canWaitLocked() <<
-              "interrupt" << d->interrupt.load());
+              "canWaitLocked" << threadData->canWaitLocked() <<
+              "interrupt" << d->interrupt.loadRelaxed());
         if (canWait) {
             emit aboutToBlock();
             WinGetMsg(d->hab, &waitMsg, 0, 0, 0);
@@ -825,10 +826,10 @@ void QEventDispatcherOS2::registerSocketNotifier(QSocketNotifier *notifier)
     QSocketNotifier::Type type = notifier->type();
 #ifndef QT_NO_DEBUG
     if (sockfd < 0 || unsigned(sockfd) >= FD_SETSIZE) {
-        qWarning("QSocketNotifier: socket fd is not in [0, FD_SETSIZE]");
+        qWarning("QEventDispatcherOS2: socket fd is not in [0, FD_SETSIZE]");
         return;
     } else if (notifier->thread() != thread() || thread() != QThread::currentThread()) {
-        qWarning("QSocketNotifier: socket notifiers cannot be enabled from another thread");
+        qWarning("QEventDispatcherOS2: socket notifiers cannot be enabled from another thread");
         return;
     }
 #endif
@@ -855,10 +856,10 @@ void QEventDispatcherOS2::unregisterSocketNotifier(QSocketNotifier *notifier)
     QSocketNotifier::Type type = notifier->type();
 #ifndef QT_NO_DEBUG
     if (sockfd < 0 || unsigned(sockfd) >= FD_SETSIZE) {
-        qWarning("QSocketNotifier: socket fd is not in [0, FD_SETSIZE]");
+        qWarning("QEventDispatcherOS2: socket fd is not in [0, FD_SETSIZE]");
         return;
     } else if (notifier->thread() != thread() || thread() != QThread::currentThread()) {
-        qWarning("QSocketNotifier: socket notifier (fd %d) cannot be disabled from another thread.\n"
+        qWarning("QEventDispatcherOS2: socket notifier (fd %d) cannot be disabled from another thread.\n"
                  "(Notifier's thread is %s(%p), event dispatcher's thread is %s(%p), current thread is %s(%p))",
                  sockfd,
                  notifier->thread() ? notifier->thread()->metaObject()->className() : "QThread", notifier->thread(),
@@ -1009,7 +1010,7 @@ void QEventDispatcherOS2::wakeUp()
 void QEventDispatcherOS2::interrupt()
 {
     Q_D(QEventDispatcherOS2);
-    d->interrupt.store(1);
+    d->interrupt.storeRelaxed(true);
     wakeUp();
 }
 

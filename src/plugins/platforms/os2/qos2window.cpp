@@ -370,7 +370,7 @@ QOS2Window::QOS2Window(QWindow *window)
         }
 
         // Create the frame window.
-        qCInfo(lcQpaWindows) << "Creating WC_FRAME" << hex << DV(frameStyle) << DV(frameFlags) << DV(hwndOwner);
+        qCInfo(lcQpaWindows) << "Creating WC_FRAME" << Qt::hex << DV(frameStyle) << DV(frameFlags) << DV(hwndOwner);
         mHwndFrame = WinCreateWindow(HWND_DESKTOP, WC_FRAME, title8bit, frameStyle,
                                      0, 0, 0, 0, hwndOwner, HWND_TOP, 0,
                                      &frameData, nullptr);
@@ -387,13 +387,13 @@ QOS2Window::QOS2Window(QWindow *window)
         RemoveSysMenuAccels(mHwndFrame);
 
         // Create the client window.
-        qCInfo(lcQpaWindows) << "Creating FID_CLIENT" << className << hex << DV(style);
+        qCInfo(lcQpaWindows) << "Creating FID_CLIENT" << className << Qt::hex << DV(style);
         mHwnd = WinCreateWindow(mHwndFrame, className, title8bit, style, 0, 0, 0, 0,
                                 mHwndFrame, HWND_TOP, FID_CLIENT, nullptr, nullptr);
     } else {
         Q_ASSERT(isPopup || hwndOwner);
         HWND hwndParent = isPopup ? HWND_DESKTOP : hwndOwner;
-        qCInfo(lcQpaWindows) << "Creating child" << className << hex << DV(hwndParent) << DV(style) << DV(hwndOwner);
+        qCInfo(lcQpaWindows) << "Creating child" << className << Qt::hex << DV(hwndParent) << DV(style) << DV(hwndOwner);
         mHwnd = WinCreateWindow(hwndParent, className, title8bit, style,
                                 x, y, cx, cy, hwndOwner, HWND_TOP, 0, nullptr, nullptr);
         // Set mHwndFrame to mHwnd for top-level windows to simplify control.
@@ -409,7 +409,7 @@ QOS2Window::QOS2Window(QWindow *window)
     for (LONG i = QWL_USER; i <= WinDataSize - 4; i += 4)
         WinSetWindowULong(mHwnd, i, 0);
 
-    qCInfo(lcQpaWindows) << hex << DV(mHwndFrame) << DV(mHwnd);
+    qCInfo(lcQpaWindows) << Qt::hex << DV(mHwndFrame) << DV(mHwnd);
 
     // Associate mHwnd with this instance.
     sKnownWindows.insert(mHwnd, this);
@@ -716,7 +716,7 @@ void QOS2Window::setWindowState(Qt::WindowStates state)
         }
     }
 
-    qCInfo(lcQpaWindows) << this << hex << DV(fl) << DV(enterFS) << DV(leaveFS);
+    qCInfo(lcQpaWindows) << this << Qt::hex << DV(fl) << DV(enterFS) << DV(leaveFS);
 
     if (!fl && !enterFS && !leaveFS)
         return; // Nothing to do.
@@ -911,7 +911,7 @@ void QOS2Window::handleWmSetFocus(MPARAM mp1, MPARAM mp2)
     if (gotFocus)
         nextActiveWindow = window();
 
-    qCInfo(lcQpaEvents) << this << hex << DV(hwnd) << DV(gotFocus) << DV(nextActiveWindow);
+    qCInfo(lcQpaEvents) << this << Qt::hex << DV(hwnd) << DV(gotFocus) << DV(nextActiveWindow);
 
     QWindowSystemInterface::handleWindowActivated(nextActiveWindow);
 }
@@ -958,7 +958,7 @@ void QOS2Window::handleWmAdjustWindowPos(MPARAM mp1)
 {
     PSWP pswp =(PSWP)mp1;
 
-    qCDebug(lcQpaEvents) << this << hex << "fl" << pswp->fl << "hwnd" << pswp->hwnd << "behind" << pswp->hwndInsertBehind;
+    qCDebug(lcQpaEvents) << this << Qt::hex << "fl" << pswp->fl << "hwnd" << pswp->hwnd << "behind" << pswp->hwndInsertBehind;
 
     if (testFlag(BlockedByModal)) {
         // Forward activation requests for blocked windows to the current modal window forbid
@@ -1009,7 +1009,7 @@ void QOS2Window::handleWmWindowPosChanged(MPARAM mp1)
     }
 
     QRect oldGeo = geometry();
-    qCDebug(lcQpaEvents) << this << hex << pswp->fl << dec << DV(oldGeo) << DV(newGeo)
+    qCDebug(lcQpaEvents) << this << Qt::hex << pswp->fl << Qt::dec << DV(oldGeo) << DV(newGeo)
                          << DV(isExposed()) << DV(window()->isVisible());
 
     if (oldGeo != newGeo) {
@@ -1040,7 +1040,7 @@ void QOS2Window::handleWmMinMaxFrame(MPARAM mp1)
 
     const Qt::WindowStates oldState = w->windowStates();
 
-    qCInfo(lcQpaEvents) << this << hex << pswp->fl << DV(oldState) << testFlag(InSetWindowState);
+    qCInfo(lcQpaEvents) << this << Qt::hex << pswp->fl << DV(oldState) << testFlag(InSetWindowState);
 
     if (!testFlag(InSetWindowState)) {
         if (pswp->fl & (SWP_MINIMIZE | SWP_MAXIMIZE)) {
@@ -1117,7 +1117,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
         break;
     case WM_BUTTON3DOWN:
     case WM_BUTTON3DBLCLK:
-        button = Qt::MidButton;
+        button = Qt::MiddleButton;
         type = QEvent::MouseButtonPress;
         break;
     case WM_BUTTON1UP:
@@ -1129,7 +1129,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
         type = QEvent::MouseButtonRelease;
         break;
     case WM_BUTTON3UP:
-        button = Qt::MidButton;
+        button = Qt::MiddleButton;
         type = QEvent::MouseButtonRelease;
         break;
     case WM_MOUSEMOVE:
@@ -1150,7 +1150,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     if (WinGetKeyState(HWND_DESKTOP, VK_BUTTON2) & 0x8000)
         buttons |= Qt::RightButton;
     if (WinGetKeyState(HWND_DESKTOP, VK_BUTTON3) & 0x8000)
-        buttons |= Qt::MidButton;
+        buttons |= Qt::MiddleButton;
 
     Qt::KeyboardModifiers modifiers;
     const USHORT flags = SHORT2FROMMP(mp2);
@@ -1168,7 +1168,7 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
 
     // MouseMove are REALLY annoying and not worth it (there is lcQpaMessages for low-level PM flow).
     if (type != QEvent::MouseMove)
-        qCDebug(lcQpaEvents) << this << hex << DV (msg) << DV (flags) << dec << DV (ptl.x) << DV (ptl.y)
+        qCDebug(lcQpaEvents) << this << Qt::hex << DV (msg) << DV (flags) << Qt::dec << DV (ptl.x) << DV (ptl.y)
                              << DV (globalPos) << DV (localPos)
                              << DV (button) << DV (buttons) << DV (type) << DV (modifiers);
 
@@ -1314,7 +1314,7 @@ void QOS2Window::handleWheel(ULONG msg, MPARAM mp1, MPARAM mp2)
     // Alt inverts scroll orientation (Qt/Win32 behavior)
     const QPoint point = (msg == WM_VSCROLL || modifiers & Qt::AltModifier) ? QPoint(0, delta) : QPoint(delta, 0);
 
-    qCDebug(lcQpaEvents) << this << hex << DV (msg) << DV (mp2) << dec << DV (ptl.x) << DV (ptl.y)
+    qCDebug(lcQpaEvents) << this << Qt::hex << DV (msg) << DV (mp2) << Qt::dec << DV (ptl.x) << DV (ptl.y)
                          << DV (globalPos) << DV (localPos) << DV (point) << DV (modifiers);
 
     QWindowSystemInterface::handleWheelEvent(window(), localPos, globalPos, QPoint(), point, modifiers);
@@ -1327,7 +1327,7 @@ bool QOS2Window::handleWmChar(MPARAM mp1, MPARAM mp2)
     ((PMPARAM)&chm)[0] = mp1;
     ((PMPARAM)&chm)[1] = mp2;
 
-    qCDebug(lcQpaEvents) << this << hex << DV(chm.fs) << DV(chm.scancode) << DV(chm.vkey) << DV(chm.chr) << dec << DV(chm.cRepeat);
+    qCDebug(lcQpaEvents) << this << Qt::hex << DV(chm.fs) << DV(chm.scancode) << DV(chm.vkey) << DV(chm.chr) << Qt::dec << DV(chm.cRepeat);
 
     return QOS2Integration::instance()->keyMapper()->translateKeyEvent(this, mHwnd, chm);
 }
@@ -1363,7 +1363,7 @@ QDebug operator<<(QDebug d, const QOS2Window *window)
     d.nospace();
     d <<  "QOS2Window(" << (void *)window;
     if (window)
-        d << ',' << hex << window->hwndFrame() << ',' << window->hwnd() << ',' << dec << window->geometry()
+        d << ',' << Qt::hex << window->hwndFrame() << ',' << window->hwnd() << ',' << Qt::dec << window->geometry()
           << ',' << window->window();
     d << ')';
     return d;

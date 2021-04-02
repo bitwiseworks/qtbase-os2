@@ -883,7 +883,7 @@ static int qt_startProcess(const QString &program, const QStringList &arguments,
     Q_ASSERT(arc == NO_ERROR);
     if (arc == NO_ERROR) {
         QString path = QFile::decodeName(libPathBuf);
-        paths = path.split(QLatin1Char(';'), QString::SkipEmptyParts);
+        paths = path.split(QLatin1Char(';'), Qt::SkipEmptyParts);
         if (paths.contains(fullPath, Qt::CaseInsensitive)) {
             DEBUG(("\"%s\" is already in BEGINLIBPATH",
                    qPrintable(fullPath)));
@@ -1305,7 +1305,7 @@ bool QProcessPrivate::waitFor(WaitCond cond, int msecs)
     DEBUG(("pid %d, %s, %d", pid, condStr, msecs));
 #endif
 
-    QTime stopWatch;
+    QElapsedTimer stopWatch;
     stopWatch.start();
 
     APIRET arc;

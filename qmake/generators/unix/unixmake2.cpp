@@ -268,7 +268,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
             }
         }
         if (!project->isEmpty("QMAKE_LINK_IMPLIB_CMD")) {
-            t << "LIB_TARGET    = " << fileVar("LIB_TARGET") << endl;
+            t << "LIB_TARGET    = " << fileVar("LIB_TARGET") << Qt::endl;
         }
     }
     writeExtraCompilerVariables(t);
@@ -656,7 +656,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                 t << "\n\t-$(DEL_FILE) " << destdir << "$(LIB_TARGET)";
                 t << "\n\t" << var("QMAKE_LINK_IMPLIB_CMD").replace("$(LIB_TARGET)", destdir + "$(LIB_TARGET)")
                      .replace("$(TARGET)", destdir + "$(TARGET)");
-                t << endl << endl;
+                t << Qt::endl << Qt::endl;
             }
             t << "staticlib: " << depVar("TARGETA") << "\n\n";
             t << depVar("TARGETA") << ": " << depVar("PRE_TARGETDEPS") << " $(OBJECTS) $(OBJCOMP)";

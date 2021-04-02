@@ -78,7 +78,7 @@ void QOS2BackingStore::flush(QWindow *window, const QRegion &region, const QPoin
     QRect br = region.boundingRect();
     QRect wr = os2window->geometry();
 
-    qCInfo(lcQpaBackingStore) << window << region << offset << os2window << hex << DV(hps);
+    qCInfo(lcQpaBackingStore) << window << region << offset << os2window << Qt::hex << DV(hps);
 
     // Use the reflection + transformation matrix to flip the y axis. This is
     // proven to be much faster than manual image flipping on the real video

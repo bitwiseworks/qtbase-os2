@@ -747,7 +747,7 @@ QList<int> QOS2KeyMapper::possibleKeys(const QKeyEvent *e) const
         }
     }
 
-    qCDebug(lcQpaEvents) << hex << result;
+    qCDebug(lcQpaEvents) << Qt::hex << result;
 
     return result;
 }

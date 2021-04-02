@@ -147,7 +147,7 @@ QFont *qt_sysfont2qfont(PCSZ scope)
             WinReleasePS(hps);
 
             qCInfo(lcQpaWindows) << "gpi metrics" << fm.szFamilyname << fm.szFacename << height << fm.usWeightClass << fm.usWidthClass
-                                 << hex << fm.fsSelection << fm.fsType;
+                                 << Qt::hex << fm.fsSelection << fm.fsType;
         }
 
         delete[] buf;

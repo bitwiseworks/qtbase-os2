@@ -1,7 +1,7 @@
 targetinfofile = $$basename(_PRO_FILE_)
 targetinfofile ~= s/pro$/target.txt/
 
-win32 {
+win32|os2 {
     ext = .exe
 } else:wasm {
     ext = .wasm

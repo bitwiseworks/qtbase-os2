@@ -51,7 +51,10 @@ QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_SHAREDMEMORY
 
-QSharedMemoryPrivate::QSharedMemoryPrivate() : QObjectPrivate(),
+QSharedMemoryPrivate::QSharedMemoryPrivate() :
+#ifndef QT_NO_QOBJECT
+    QObjectPrivate(),
+#endif
         memory(0), size(0), error(QSharedMemory::NoError),
            systemSemaphore(QString()), lockedByMe(false)
 {

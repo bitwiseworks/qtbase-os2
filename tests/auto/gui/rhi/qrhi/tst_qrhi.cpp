@@ -1618,6 +1618,7 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer_data()
 
 void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
 {
+#if defined(TST_GL) || defined(TST_VK) || defined(TST_D3D11) || defined(TST_MTL)
     QFETCH(QRhi::Implementation, impl);
     QFETCH(QRhiInitParams *, initParams);
 
@@ -1813,6 +1814,9 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
 
     QCOMPARE(result1.pixel(204, 45), empty);
     QCOMPARE(result1.pixel(28, 178), empty);
+#else
+    QSKIP("Skipping texture-based QRhi rendering when no QRhi is available");
+#endif
 }
 
 void tst_QRhi::renderToWindowSimple_data()

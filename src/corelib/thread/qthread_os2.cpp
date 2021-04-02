@@ -100,10 +100,10 @@ QThreadData *QThreadData::current(bool createIfNecessary)
         threadData->thread = new QAdoptedThread(threadData);
         threadData->deref();
         threadData->isAdopted = true;
-        threadData->threadId.store(reinterpret_cast<Qt::HANDLE>(_gettid()));
+        threadData->threadId.storeRelaxed(reinterpret_cast<Qt::HANDLE>(_gettid()));
 
         if (!QCoreApplicationPrivate::theMainThread) {
-            QCoreApplicationPrivate::theMainThread = threadData->thread.load();
+            QCoreApplicationPrivate::theMainThread = threadData->thread.loadRelaxed();
         } else {
             qt_watch_adopted_thread(_gettid(), threadData->thread);
         }
@@ -223,14 +223,14 @@ QAbstractEventDispatcher *QThreadPrivate::createEventDispatcher(QThreadData *dat
 #ifndef QT_NO_THREAD
 
 // static
-void QThreadPrivate::start(void *arg) Q_DECL_NOEXCEPT
+void QThreadPrivate::start(void *arg) noexcept
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadData *data = QThreadData::get2(thr);
 
     qt_create_tls();
     *qt_tls = data;
-    data->threadId.store(reinterpret_cast<Qt::HANDLE>(_gettid()));
+    data->threadId.storeRelaxed(reinterpret_cast<Qt::HANDLE>(_gettid()));
 
     QThread::setTerminationEnabled(false);
 
@@ -239,7 +239,7 @@ void QThreadPrivate::start(void *arg) Q_DECL_NOEXCEPT
         data->quitNow = thr->d_func()->exited;
     }
 
-    QAbstractEventDispatcher *eventDispatcher = data->eventDispatcher.load();
+    QAbstractEventDispatcher *eventDispatcher = data->eventDispatcher.loadRelaxed();
     if (!eventDispatcher) {
         eventDispatcher = createEventDispatcher(data);
         data->eventDispatcher.storeRelease(eventDispatcher);
@@ -255,7 +255,7 @@ void QThreadPrivate::start(void *arg) Q_DECL_NOEXCEPT
 }
 
 // static
-void QThreadPrivate::finish(void *arg, bool lockAnyway) Q_DECL_NOEXCEPT
+void QThreadPrivate::finish(void *arg, bool lockAnyway) noexcept
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadPrivate *d = thr->d_func();
@@ -270,7 +270,7 @@ void QThreadPrivate::finish(void *arg, bool lockAnyway) Q_DECL_NOEXCEPT
     QThreadStorageData::finish(tls_data);
     locker.relock();
 
-    QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.load();
+    QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.loadRelaxed();
     if (eventDispatcher) {
         d->data->eventDispatcher = 0;
         locker.unlock();
@@ -431,7 +431,7 @@ void QThread::terminate()
     QThreadPrivate::finish(this, false);
 }
 
-bool QThread::wait(unsigned long time)
+bool QThread::wait(QDeadlineTimer deadline)
 {
     Q_D(QThread);
     QMutexLocker locker(&d->mutex);
@@ -445,6 +445,7 @@ bool QThread::wait(unsigned long time)
 
     locker.mutex()->unlock();
 
+    unsigned long time = deadline.remainingTime();
     bool ret = true;
     TID tid = d->tid;
     APIRET rc = NO_ERROR;
