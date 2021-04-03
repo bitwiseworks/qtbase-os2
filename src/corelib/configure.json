@@ -641,7 +641,7 @@
         },
         "glib": {
             "label": "GLib",
-            "autoDetect": "!config.win32",
+            "autoDetect": "!config.win32 && !config.os2",
             "condition": "libs.glib",
             "output": [ "privateFeature", "feature" ]
         },
