@@ -317,6 +317,7 @@ mac {
     }
 } else:win32|os2 {
     CMAKE_WINDOWS_BUILD = "true"
+    os2:CMAKE_OS2_BUILD = "true"
     CMAKE_FIND_OTHER_LIBRARY_BUILD = "true"
 
     !mingw|qtConfig(debug_and_release): debug_suffix="d"
