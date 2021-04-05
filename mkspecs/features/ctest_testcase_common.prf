@@ -37,6 +37,7 @@ BUILD_DIR = $$replace($$list($$OUT_PWD/build), /, $$QMAKE_DIR_SEP)
 !qtHaveModule(gui): CMAKE_MODULE_DEFINES += -DNO_GUI=True
 !qtHaveModule(widgets): CMAKE_MODULE_DEFINES += -DNO_WIDGETS=True
 !qtHaveModule(dbus): CMAKE_MODULE_DEFINES += -DNO_DBUS=True
+!qtHaveModule(opengl): CMAKE_MODULE_DEFINES += -DNO_OPENGL=True
 
 dependentmodules = $$resolve_depends(CMAKE_QT_MODULES_UNDER_TEST, "QT.")
 dependentmodules -= $$CMAKE_QT_MODULES_UNDER_TEST

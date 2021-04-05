@@ -48,6 +48,9 @@ endif()
 if (NO_DBUS)
   list(APPEND BUILD_OPTIONS_LIST "-DNO_DBUS=True")
 endif()
+if (NO_OPENGL)
+  list(APPEND BUILD_OPTIONS_LIST "-DNO_OPENGL=True")
+endif()
 
 # Qt requires C++11 features in header files, which means
 # the buildsystem needs to add a -std flag for certain compilers

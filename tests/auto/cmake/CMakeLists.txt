@@ -119,8 +119,13 @@ endif()
 if (NOT NO_WIDGETS)
   list(APPEND qt_module_includes
     Widgets QWidget
-    OpenGL QGLBuffer
     PrintSupport QPrinter
+  )
+endif()
+
+if (NOT NO_OPENGL)
+  list(APPEND qt_module_includes
+    OpenGL QGLBuffer
   )
 endif()
 
@@ -134,11 +139,13 @@ test_module_includes(
   ${qt_module_includes}
 )
 expect_pass(test_concurrent_module)
-expect_pass(test_openglextensions_module)
-if (QT_WITH_ANGLE OR (NOT WIN32 AND NOT APPLE AND NOT NO_EGL))
-    expect_pass(test_egl_lib)
+if (NOT NO_OPENGL)
+    expect_pass(test_openglextensions_module)
+    if (QT_WITH_ANGLE OR (NOT WIN32 AND NOT APPLE AND NOT NO_EGL))
+        expect_pass(test_egl_lib)
+    endif()
+    expect_pass(test_opengl_lib)
 endif()
-expect_pass(test_opengl_lib)
 
 if (NOT NO_WIDGETS)
     expect_pass(test_interface)
