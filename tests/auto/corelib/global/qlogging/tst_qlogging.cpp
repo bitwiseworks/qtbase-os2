@@ -820,7 +820,7 @@ void tst_qmessagehandler::qMessagePattern()
 
     QProcess process;
 #ifndef Q_OS_ANDROID
-    const QString appExe(QLatin1String("helper"));
+    const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/helper"));
 #else
     const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/libhelper.so"));
 #endif
@@ -870,7 +870,7 @@ void tst_qmessagehandler::setMessagePattern()
 
     QProcess process;
 #ifndef Q_OS_ANDROID
-    const QString appExe(QLatin1String("helper"));
+    const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/helper"));
 #else
     const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/libhelper.so"));
 #endif
