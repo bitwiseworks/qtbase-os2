@@ -494,6 +494,8 @@ void tst_QGlobal::qAlignOf()
 
 
     // 64-bit integers and double
+    // TODO: Disable on OS/2 until https://github.com/bitwiseworks/gcc-os2/issues/33 is resolved
+#if !defined(Q_OS_OS2)
     TEST_AlignOf_impl(qint64, 8);
     TEST_AlignOf_impl(quint64, 8);
     TEST_AlignOf_impl(double, 8);
@@ -505,6 +507,7 @@ void tst_QGlobal::qAlignOf()
     TEST_AlignOf_RValueRef(qint64 &&, 8);
     TEST_AlignOf_RValueRef(quint64 &&, 8);
     TEST_AlignOf_RValueRef(double &&, 8);
+#endif
 
     // 32-bit x86 ABI idiosyncrasies
 #if defined(Q_PROCESSOR_X86_32) && !defined(Q_OS_WIN)
