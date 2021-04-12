@@ -91,6 +91,8 @@ QOS2Screen::QOS2Screen()
 QOS2Screen::~QOS2Screen()
 {
     qCInfo(lcQpaWindows);
+
+    sInstance = nullptr;
 }
 
 QPixmap QOS2Screen::grabWindow(WId /*winId*/, int /*x*/, int /*y*/, int /*width*/, int /*height*/) const
