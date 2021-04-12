@@ -699,8 +699,9 @@ void tst_QWindow::stateChange()
 {
     QFETCH(WindowStateList, stateSequence);
 
-    if (QGuiApplication::platformName().compare(QLatin1String("windows"), Qt::CaseInsensitive))
-        QSKIP("Windows-only test");
+    if (QGuiApplication::platformName().compare(QLatin1String("windows"), Qt::CaseInsensitive) &&
+        QGuiApplication::platformName().compare(QLatin1String("os2"), Qt::CaseInsensitive))
+        QSKIP("Windows and OS/2 only test");
 
     Window window;
     window.setTitle(QLatin1String(QTest::currentTestFunction()) + QLatin1Char(' ') + QLatin1String(QTest::currentDataTag()));

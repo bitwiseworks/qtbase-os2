@@ -657,8 +657,15 @@ void QOS2Window::requestActivateWindow()
 {
     qCInfo(lcQpaWindows) << this;
 
+    // 'Active' state handling is based in focus since it needs to work for
+    // child windows as well.
+
     if (mHwndFrame)
         WinSetWindowPos(mHwndFrame, NULLHANDLE, 0, 0, 0, 0, SWP_ACTIVATE);
+
+    // Do not focus when blocked by the modal window.
+    if (!testFlag(BlockedByModal))
+        WinSetFocus(HWND_DESKTOP, mHwnd);
 }
 
 void QOS2Window::setWindowState(Qt::WindowStates state)
@@ -1008,6 +1015,23 @@ void QOS2Window::handleWmWindowPosChanged(MPARAM mp1)
 {
     PSWP pswp =(PSWP)mp1;
 
+    // Reflect the exposed state when the window is shown or hidden. Note that we cannot
+    // rely on WM_PAINT for the show part (as we do for unminimize in #handleWmMinMaxFrame)
+    // since WM_PAINT may be deferred and Qt expects exposed changes to be instant in some
+    // cases (tst_qwindow.cpp covers that).
+
+    if (pswp->fl & SWP_SHOW) {
+        // Inform that the window is obscure from the Qt POV (see also #handleWmMinMaxFrame).
+        // Note that there's no need to do the opposite on un-minimize since PM will send a
+        // WM_PAINT in such a case which will cause a proper expose event.
+       QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), geometry().size()));
+    } else if (pswp->fl & SWP_HIDE) {
+        // Inform that the window is obscure from the Qt POV (see also #handleWmMinMaxFrame).
+        // Note that there's no need to do the opposite on un-minimize since PM will send a
+        // WM_PAINT in such a case which will cause a proper expose event.
+       QWindowSystemInterface::handleExposeEvent(window(), QRegion());
+    }
+
     // NOTE: When the window is minimized, PM resizes it to 40x50 and then positions it depending
     // on WPS settings for dealing with minimized windows, e.g. puts it completely off-screen to
     // a point -32000,-32000. It still then issues WM_PAINT requests for such a window which,
@@ -1125,6 +1149,8 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
     Qt::MouseButton button;
     QEvent::Type type;
 
+    bool discardEvent = false;
+
     // Get button and message type.
     switch (msg) {
     case WM_BUTTON1DOWN:
@@ -1237,6 +1263,11 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
                 && sWindowUnderMouse != window)) {
             qCInfo(lcQpaEvents) << "Generating synthetic leave for" << sWindowUnderMouse;
             QWindowSystemInterface::handleLeaveEvent(sWindowUnderMouse);
+            if (type == QEvent::MouseMove) {
+                // PM may also send a dummy WM_MOUSEMOVE event for enter/leave events, ignore it
+                // for consistency with X11 and macOS (tst_QWindow checks that).
+                discardEvent = true;
+            }
             if (currentNotCapturing) {
                 // Clear tracking if capturing and current window is not the capturing window
                 // to avoid leave when mouse actually leaves the application.
@@ -1257,14 +1288,20 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
                 localPos = platformWindow->mapFromGlobal(globalPos);
             }
             QWindowSystemInterface::handleEnterEvent(currentWindowUnderMouse, localPos, globalPos);
+            if (type == QEvent::MouseMove) {
+                // PM may also send a dummy WM_MOUSEMOVE event for enter/leave events, ignore it
+                // for consistency with X11 and macOS (tst_QWindow checks that).
+                discardEvent = true;
+            }
         }
         // We need to track WindowUnderMouse separately from TrackedWindow, as
         // PM will not trigger WM_MOUSELEAVE for leaving window when mouse capture is set.
         sWindowUnderMouse = currentWindowUnderMouse;
     }
 
-    QWindowSystemInterface::handleMouseEvent(window, localPos, globalPos,
-                                             buttons, button, type, modifiers, Qt::MouseEventNotSynthesized);
+    if (!discardEvent)
+        QWindowSystemInterface::handleMouseEvent(window, localPos, globalPos,
+                                                 buttons, button, type, modifiers, Qt::MouseEventNotSynthesized);
 
     sPreviousCaptureWindow = hasCapture ? window : nullptr;
 }
