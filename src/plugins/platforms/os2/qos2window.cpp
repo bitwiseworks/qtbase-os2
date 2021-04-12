@@ -936,9 +936,14 @@ void QOS2Window::handleWmSetFocus(MPARAM mp1, MPARAM mp2)
     HWND hwnd = (HWND)mp1;
     bool gotFocus = SHORT1FROMMP(mp2);
 
-    QWindow *nextActiveWindow = 0;
-    if (gotFocus)
+    QWindow *nextActiveWindow = nullptr;
+    if (gotFocus) {
         nextActiveWindow = window();
+    } else {
+        QOS2Window *next = PlatformWindow(hwnd);
+        if (next)
+            nextActiveWindow = next->window();
+    }
 
     qCInfo(lcQpaEvents) << this << Qt::hex << DV(hwnd) << DV(gotFocus) << DV(nextActiveWindow);
 
