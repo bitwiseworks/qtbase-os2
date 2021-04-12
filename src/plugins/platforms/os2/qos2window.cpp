@@ -516,7 +516,8 @@ void QOS2Window::setGeometry(const QRect &rect)
     qCInfo(lcQpaWindows) << this << DV(rect) << DV(state) << DV(isExposed()) << DV(w->isVisible());
 
     // Note: Don't call QPlatformWindow::setGeometry - it will be called indirectly from
-    // #handleWmWindowPosChanged in response to WM_SIZE and/or WM_MOVE.
+    // #handleWmWindowPosChanged in response to WM_SIZE and/or WM_MOVE (or below, if updating the
+    // normal geometry for a minimized window).
 
     LONG x = rect.x(), y = rect.y(), cx = rect.width(), cy = rect.height();
 
@@ -541,11 +542,24 @@ void QOS2Window::setGeometry(const QRect &rect)
     }
 
     // If the window is minimized, change its normal geometry (see also #handleWmWindowPosChanged).
-    if (mHwndFrame && (state & Qt::WindowMinimized)) {
+    if (mHwndFrame && (state & Qt::WindowMinimized) &&
+        (normX != x || normY != y || normCX != cx || normCY != cy)) {
         WinSetWindowUShort(mHwndFrame, QWS_XRESTORE, x);
         WinSetWindowUShort(mHwndFrame, QWS_YRESTORE, y);
         WinSetWindowUShort(mHwndFrame, QWS_CXRESTORE, cx);
         WinSetWindowUShort(mHwndFrame, QWS_CYRESTORE, cy);
+
+        // Update the normal geometry for future comparison.
+        normX = x;
+        normY = y;
+        normCX = cx;
+        normCY = cy;
+
+        // If QWindow::handle is nullptr (e.g. when this call originates from our ctor), call
+        // QPlatformWindow::setGeometry manually (see QWindowSystemInterface::handleGeometryChange).
+        if (Q_UNLIKELY(!window()->handle()))
+            QPlatformWindow::setGeometry(rect);
+        QWindowSystemInterface::handleGeometryChange(window(), rect);
     } else {
         WinSetWindowPos(mainHwnd(), NULLHANDLE, x, y, cx, cy, SWP_SIZE | SWP_MOVE);
     }
@@ -754,6 +768,14 @@ void QOS2Window::setWindowState(Qt::WindowStates state)
             fl = SWP_RESTORE | SWP_MOVE | SWP_SIZE; // SWP_RESTORE to cancel a possible min/max in PM
             WinSetWindowPos(mHwndFrame, NULLHANDLE, normX, normY, normCX, normCY, fl);
         } else {
+            if (!leaveFS && fl & (SWP_MAXIMIZE | SWP_MINIMIZE) ) {
+                // Remember the normal geometry when going to min/max (will be used e.g. when
+                // moving/sizing a minimized window).
+                normX = WinQueryWindowUShort(mHwndFrame, QWS_XRESTORE);
+                normY = WinQueryWindowUShort(mHwndFrame, QWS_YRESTORE);
+                normCX = WinQueryWindowUShort(mHwndFrame, QWS_CXRESTORE);
+                normCY = WinQueryWindowUShort(mHwndFrame, QWS_CYRESTORE);
+            }
             WinSetWindowPos(mHwndFrame, 0, 0, 0, 0, 0, fl);
             if (leaveFS && fl & (SWP_MAXIMIZE | SWP_MINIMIZE) ) {
                 // Fix the normal geo in PM after min/max (which'd put fullscreen geo there).
@@ -918,7 +940,7 @@ void QOS2Window::handleWmSetFocus(MPARAM mp1, MPARAM mp2)
 
 bool QOS2Window::handleWmPaint()
 {
-    // Ignore WP_PAINT during minimized, see #handleWmWindowPosChanged.
+    // Ignore WM_PAINT during minimized, see #handleWmWindowPosChanged.
     if (window()->windowState() & Qt::WindowMinimized)
         return false;
 
