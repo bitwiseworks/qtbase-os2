@@ -202,7 +202,11 @@ void tst_QTimer::remainingTimeDuringActivation()
                 remainingTime = timer.remainingTime();
             });
     QSignalSpy timeoutSpy(&timer, &QTimer::timeout);
+#ifdef Q_OS_OS2
+    const int timeout = 50; // The timer is quite coarse on OS/2 with granularity around 32 ms
+#else
     const int timeout = 20; // 20 ms is short enough and should not round down to 0 in any timer mode
+#endif
     timer.start(timeout);
 
     QVERIFY(timeoutSpy.wait());

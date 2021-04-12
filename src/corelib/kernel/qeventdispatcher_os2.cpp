@@ -601,13 +601,10 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
                 d->fdsets[1].set = wrSet;
                 d->fdsets[2].set = exSet;
             }
-        } else {
+        } else if (timeout) {
             // No sockets, simply wait for the next timer.
-            Q_ASSERT(timeout);
-            if (timeout) {
-                unsigned long msecs = timeout->tv_sec * 1000ul + timeout->tv_usec / 1000ul;
-                d->cond.wait(locker.mutex(), msecs);
-            }
+            unsigned long msecs = timeout->tv_sec * 1000ul + timeout->tv_usec / 1000ul;
+            d->cond.wait(locker.mutex(), msecs);
         }
 
         // Store the overall result.
@@ -616,9 +613,12 @@ void QEventDispatcherOS2Private::threadMain(void *arg)
         TRACE(V(d->threadState) << V(d->nsel));
 
         if (d->threadState != Terminating) {
-            // Inform the event dispatcher we have sockets or timers.
             d->threadState = Waiting;
-            WinPostMsg(d->auxWnd.hwnd(), WM_QT_TIMER_OR_SOCKET, NULL, NULL);
+            // Inform the event dispatcher we have sockets or timers (unless it was a dummy run
+            // because of e.g. two #prepareForSelect(true) calls in a row w/o giving this thread
+            // time slices for a chance to exit the previous Waiting state in #wait below).
+            if (maxfd >= 0 || timeout)
+                WinPostMsg(d->auxWnd.hwnd(), WM_QT_TIMER_OR_SOCKET, NULL, NULL);
             // Wait until we are given new data.
             d->cond.wait(locker.mutex());
         }
