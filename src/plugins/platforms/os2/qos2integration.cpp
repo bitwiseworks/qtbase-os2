@@ -100,9 +100,7 @@ bool QOS2Integration::hasCapability(QPlatformIntegration::Capability cap) const
 
 QPlatformWindow *QOS2Integration::createPlatformWindow(QWindow *window) const
 {
-    QPlatformWindow *w = new QOS2Window(window);
-    w->requestActivateWindow();
-    return w;
+    return new QOS2Window(window);
 }
 
 QPlatformBackingStore *QOS2Integration::createPlatformBackingStore(QWindow *window) const
