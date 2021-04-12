@@ -211,7 +211,7 @@ static QByteArray runDiff(const QByteArrayList &expected, const QByteArrayList &
 {
     QByteArray result;
 #ifdef USE_DIFF
-#  ifndef Q_OS_WIN
+#  ifndef Q_OS_DOSLIKE
     const QString diff = QStandardPaths::findExecutable("diff");
 #  else
     const QString diff = QStandardPaths::findExecutable("diff.exe");
@@ -423,7 +423,7 @@ void tst_Selftests::initTestCase()
     QVERIFY2(tempDir.isValid(), qPrintable(tempDir.errorString()));
     //Detect the location of the sub programs
     QString subProgram = QLatin1String("pass/pass");
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_DOSLIKE)
     subProgram = QLatin1String("pass/pass.exe");
 #endif
     QString testdataDir = QFINDTESTDATA(subProgram);
@@ -714,9 +714,13 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
         && subdir != QLatin1String("blacklisted") // calls qFatal()
         && subdir != QLatin1String("silent") // calls qFatal()
 #endif
-#ifdef Q_OS_LINUX
-        // QEMU outputs to stderr about uncaught signals
+#if defined(Q_OS_LINUX) || defined(Q_OS_OS2)
+        // QEMU and OS/2 kLIBC output to stderr about uncaught signals
+#if defined(Q_OS_OS2)
+        && !(
+#else
         && !(EmulationDetector::isRunningArmOnX86() &&
+#endif
                 (subdir == QLatin1String("assert")
                  || subdir == QLatin1String("blacklisted")
                  || subdir == QLatin1String("crashes")

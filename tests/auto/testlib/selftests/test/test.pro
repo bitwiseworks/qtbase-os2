@@ -4,10 +4,10 @@ QT = core testlib-private
 
 TARGET = ../tst_selftests
 
-win32 {
+win32|os2 {
   CONFIG(debug, debug|release) {
     TARGET = ../../debug/tst_selftests
-} else {
+  } else {
     TARGET = ../../release/tst_selftests
   }
 }
