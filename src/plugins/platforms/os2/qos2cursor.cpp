@@ -38,6 +38,7 @@
 ****************************************************************************/
 
 #include "qos2cursor.h"
+#include "qos2screen.h"
 
 QOS2Cursor::QOS2Cursor()
 {
@@ -48,3 +49,18 @@ void QOS2Cursor::changeCursor(QCursor */*windowCursor*/, QWindow */*window*/)
 {
 }
 #endif
+
+QPoint QOS2Cursor::pos() const
+{
+    POINTL p;
+    WinQueryPointerPos(HWND_DESKTOP, &p);
+    // Flip y coordinate.
+    return QOS2::ToQPoint(p, QOS2Screen::Height());
+}
+
+void QOS2Cursor::setPos(const QPoint &pos)
+{
+    // Flip y coordinate.
+    POINTL p = QOS2::ToPOINTL(pos, QOS2Screen::Height());
+    WinSetPointerPos(HWND_DESKTOP, p.x, p.y);
+}

@@ -38,11 +38,13 @@
 ****************************************************************************/
 
 #include "qos2screen.h"
+#include "qos2cursor.h"
 
 // OS/2 has only one screen.
 QOS2Screen *QOS2Screen::sInstance = nullptr;
 
 QOS2Screen::QOS2Screen()
+    : mCursor(new QOS2Cursor())
 {
     if (sInstance)
         qFatal("There may be only one instance of QOS2Screen");
@@ -123,7 +125,7 @@ QDpi QOS2Screen::logicalDpi() const
 
 QPlatformCursor *QOS2Screen::cursor() const
 {
-    return nullptr;
+    return mCursor.data();
 }
 
 QT_END_NAMESPACE

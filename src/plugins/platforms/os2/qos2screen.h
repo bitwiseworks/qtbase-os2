@@ -46,6 +46,8 @@
 
 QT_BEGIN_NAMESPACE
 
+class QOS2Cursor;
+
 class QOS2Screen : public QPlatformScreen
 {
 public:
@@ -79,6 +81,8 @@ private:
 
     QSizeF mPhysicalSize;
     QDpi mDpi;
+
+    const QScopedPointer<QOS2Cursor> mCursor;
 
     static QOS2Screen *sInstance;
 };

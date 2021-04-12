@@ -52,6 +52,9 @@ public:
 #ifndef QT_NO_CURSOR
     void changeCursor(QCursor *windowCursor, QWindow *window) override;
 #endif
+
+    QPoint pos() const override;
+    void setPos(const QPoint &pos) override;
 };
 
 QT_END_NAMESPACE
