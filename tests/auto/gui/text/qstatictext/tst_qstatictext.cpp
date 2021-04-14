@@ -265,8 +265,8 @@ void tst_QStaticText::compareToDrawText()
 
 #if defined(DEBUG_SAVE_IMAGE)
     imageDrawText.save("compareToDrawText_imageDrawText.png");
-    imageDrawStaticText.save("compareToDrawText_imageDrawStaticPlainText.png");
-    imageDrawStaticText.save("compareToDrawText_imageDrawStaticRichText.png");
+    imageDrawStaticPlainText.save("compareToDrawText_imageDrawStaticPlainText.png");
+    imageDrawStaticRichText.save("compareToDrawText_imageDrawStaticRichText.png");
 #endif
 
     QVERIFY(imageDrawText.toImage() != m_whiteSquare);

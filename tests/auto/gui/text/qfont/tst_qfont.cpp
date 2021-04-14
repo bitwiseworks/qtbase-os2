@@ -568,11 +568,11 @@ void tst_QFont::defaultFamily_data()
     QTest::addColumn<QFont::StyleHint>("styleHint");
     QTest::addColumn<QStringList>("acceptableFamilies");
 
-    QTest::newRow("serif") << QFont::Serif << (QStringList() << "Times New Roman" << "Times" << "Droid Serif" << getPlatformGenericFont("serif").split(","));
-    QTest::newRow("monospace") << QFont::Monospace << (QStringList() << "Courier New" << "Monaco" << "Menlo" << "Droid Sans Mono" << getPlatformGenericFont("monospace").split(","));
-    QTest::newRow("cursive") << QFont::Cursive << (QStringList() << "Comic Sans MS" << "Apple Chancery" << "Roboto" << "Droid Sans" << getPlatformGenericFont("cursive").split(","));
-    QTest::newRow("fantasy") << QFont::Fantasy << (QStringList() << "Impact" << "Zapfino"  << "Roboto" << "Droid Sans" << getPlatformGenericFont("fantasy").split(","));
-    QTest::newRow("sans-serif") << QFont::SansSerif << (QStringList() << "Arial" << "Lucida Grande" << "Helvetica" << "Roboto" << "Droid Sans" << "Segoe UI" << getPlatformGenericFont("sans-serif").split(","));
+    QTest::newRow("serif") << QFont::Serif << (QStringList() << "Times New Roman" << "Times" << "Droid Serif" << "DejaVu Serif"  << getPlatformGenericFont("serif").split(","));
+    QTest::newRow("monospace") << QFont::Monospace << (QStringList() << "Courier New" << "Monaco" << "Menlo" << "Droid Sans Mono" << "DejaVu Sans Mono" << getPlatformGenericFont("monospace").split(","));
+    QTest::newRow("cursive") << QFont::Cursive << (QStringList() << "Comic Sans MS" << "Apple Chancery" << "Roboto" << "Droid Sans" << "DejaVu Sans" << getPlatformGenericFont("cursive").split(","));
+    QTest::newRow("fantasy") << QFont::Fantasy << (QStringList() << "Impact" << "Zapfino"  << "Roboto" << "Droid Sans" << "DejaVu Sans" << getPlatformGenericFont("fantasy").split(","));
+    QTest::newRow("sans-serif") << QFont::SansSerif << (QStringList() << "Arial" << "Lucida Grande" << "Helvetica" << "Roboto" << "Droid Sans" << "DejaVu Sans" << "Segoe UI" << getPlatformGenericFont("sans-serif").split(","));
 }
 
 void tst_QFont::defaultFamily()
