@@ -77,12 +77,16 @@ if (checkCommand("xmlstarlet")) {
 if ($cmd) {
     # Run the command and read everything
     open CMD, "$cmd |";
+    # Avoid LF->CRLF translation (vital on Windows and OS/2)
+    binmode CMD;
     $data = <CMD>;
     close CMD;
     die("Failed to run $cmd") if ($? >> 8);
 } else {
     # No command, just read the file
     open F, "<$fname";
+    # Avoid LF->CRLF translation (vital on Windows and OS/2)
+    binmode F;
     $data = <F>;
     close F;
 }
