@@ -1,4 +1,5 @@
 TARGET = mock6plugin
+os2:TARGET_SHORT = mck6p
 
 HEADERS += qmock6plugin.h
 SOURCES += qmock6plugin.cpp

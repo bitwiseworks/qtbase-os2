@@ -1,4 +1,5 @@
 TARGET = mock4plugin
+os2:TARGET_SHORT = mck4p
 
 HEADERS += qmock4plugin.h
 SOURCES += qmock4plugin.cpp

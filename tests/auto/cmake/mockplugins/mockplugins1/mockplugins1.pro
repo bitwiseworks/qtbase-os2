@@ -1,4 +1,5 @@
 TARGET = QtMockPlugins1
+os2:TARGET_SHORT = QtMckP1
 QT = core
 MODULE_PLUGIN_TYPES = mockplugin
 

@@ -1,4 +1,5 @@
 TARGET = QtMockPlugins3
+os2:TARGET_SHORT = QtMckP3
 QT = core
 MODULE_PLUGIN_TYPES = mockauxplugin
 
