@@ -1,6 +1,6 @@
-/****************************************************************************
+/***************************************************************************
 **
-** Copyright (C) 2019 bww bitwise works GmbH.
+** Copyright (C) 2021 bww bitwise works GmbH.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -37,63 +37,37 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2CONTEXT_H
-#define QOS2CONTEXT_H
+#ifndef QOS2CLIPBOARD_H
+#define QOS2CLIPBOARD_H
 
-#include <QtCore/qt_os2.h>
+#include <qpa/qplatformclipboard.h>
 
-#include <QtCore/QLoggingCategory>
-#include <QtCore/QRect>
+#if QT_CONFIG(clipboard)
+
+#include <QtGui/private/qinternalmimedata_p.h>
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Window;
-class QWindow;
+class QOS2ClipboardRetrievalMimeData;
 
-Q_DECLARE_LOGGING_CATEGORY(lcQpaWindows)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaEvents)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaMessages)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaMime)
-
-#define DV(var) #var << var
-
-namespace QOS2
+class QOS2Clipboard : public QPlatformClipboard
 {
+    Q_DISABLE_COPY_MOVE(QOS2Clipboard)
+public:
+    QOS2Clipboard();
+    ~QOS2Clipboard();
 
-inline QRect ToQRect(const RECTL &rcl, int parentHeight)
-{
-    // Flip y coordinate (RECTL is inclusive-exclusive).
-    return QRect(QPoint(rcl.xLeft, parentHeight - rcl.yTop),
-                 QPoint(rcl.xRight - 1, parentHeight - (rcl.yBottom + 1)));
-}
+    QMimeData *mimeData(QClipboard::Mode mode = QClipboard::Clipboard) override;
+    void setMimeData(QMimeData *data, QClipboard::Mode mode = QClipboard::Clipboard) override;
+    bool supportsMode(QClipboard::Mode mode) const override;
+    bool ownsMode(QClipboard::Mode mode) const override;
 
-inline QPoint ToQPoint(const POINTL &ptl, int parentHeight)
-{
-    // Flip y coordinate.
-    return QPoint(ptl.x, parentHeight - (ptl.y + 1));
-}
-
-inline RECTL ToRECTL(const QRect &rect, int parentHeight)
-{
-    // Flip y coordinate (RECTL is inclusive-exclusive).
-    return RECTL { rect.left(), parentHeight - (rect.bottom() + 1),
-                   rect.right() + 1, parentHeight - rect.top() };
-}
-
-inline POINTL ToPOINTL(const QPoint &point, int parentHeight)
-{
-    // Flip y coordinate.
-    return POINTL { point.x(), parentHeight - (point.y() + 1) };
-}
-
-QWindow *WindowAt(const QPoint &screenPos);
-
-} // namespace QOS2
-
-#ifndef QT_NO_DEBUG_STREAM
-QDebug operator<<(QDebug d, const QOS2Window *window);
-#endif
+private:
+    QOS2ClipboardRetrievalMimeData *mRetrievalData;
+};
 
 QT_END_NAMESPACE
 
-#endif // QOS2CONTEXT_H
+#endif
+
+#endif

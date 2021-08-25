@@ -45,6 +45,10 @@
 #include "qos2theme.h"
 #include "qos2window.h"
 
+#if QT_CONFIG(clipboard)
+#include "qos2clipboard.h"
+#endif
+
 #include <qpa/qwindowsysteminterface.h>
 
 #include <QtEventDispatcherSupport/private/qos2guieventdispatcher_p.h>
@@ -80,12 +84,20 @@ QOS2Integration::QOS2Integration(const QStringList &paramList)
     mScreen = new QOS2Screen();
     QWindowSystemInterface::handleScreenAdded(mScreen);
 
+#if QT_CONFIG(clipboard)
+    mClipboard = new QOS2Clipboard();
+#endif
+
     mKeyMapper = new QOS2KeyMapper();
 }
 
 QOS2Integration::~QOS2Integration()
 {
     delete mKeyMapper;
+
+#if QT_CONFIG(clipboard)
+    delete mClipboard;
+#endif
 
     QWindowSystemInterface::handleScreenRemoved(mScreen);
     delete mFontDatabase;
@@ -112,6 +124,13 @@ QAbstractEventDispatcher * QOS2Integration::createEventDispatcher() const
 {
     return new QOS2GuiEventDispatcher;
 }
+
+#if QT_CONFIG(clipboard)
+QPlatformClipboard *QOS2Integration::clipboard() const
+{
+    return mClipboard;
+}
+#endif
 
 QPlatformFontDatabase *QOS2Integration::fontDatabase() const
 {

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 bww bitwise works GmbH.
+** Copyright (C) 2021 bww bitwise works GmbH.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -37,63 +37,73 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2CONTEXT_H
-#define QOS2CONTEXT_H
+#ifndef QOS2MIME_H
+#define QOS2MIME_H
 
 #include <QtCore/qt_os2.h>
 
-#include <QtCore/QLoggingCategory>
-#include <QtCore/QRect>
+#include <QtCore/qlist.h>
+#include <QtCore/qvariant.h>
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Window;
-class QWindow;
+class QDebug;
+class QMimeData;
 
-Q_DECLARE_LOGGING_CATEGORY(lcQpaWindows)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaEvents)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaMessages)
-Q_DECLARE_LOGGING_CATEGORY(lcQpaMime)
-
-#define DV(var) #var << var
-
-namespace QOS2
+class QOS2Mime
 {
+    friend class QOS2ClipboardRetrievalMimeData;
 
-inline QRect ToQRect(const RECTL &rcl, int parentHeight)
-{
-    // Flip y coordinate (RECTL is inclusive-exclusive).
-    return QRect(QPoint(rcl.xLeft, parentHeight - rcl.yTop),
-                 QPoint(rcl.xRight - 1, parentHeight - (rcl.yBottom + 1)));
-}
+    Q_DISABLE_COPY_MOVE(QOS2Mime)
+public:
+    QOS2Mime();
+    virtual ~QOS2Mime();
 
-inline QPoint ToQPoint(const POINTL &ptl, int parentHeight)
-{
-    // Flip y coordinate.
-    return QPoint(ptl.x, parentHeight - (ptl.y + 1));
-}
+    struct MimeCFPair
+    {
+        MimeCFPair(const QString &m, ULONG f) : mime(m), format(f) {}
+        QString mime;
+        ULONG format;
+    };
 
-inline RECTL ToRECTL(const QRect &rect, int parentHeight)
-{
-    // Flip y coordinate (RECTL is inclusive-exclusive).
-    return RECTL { rect.left(), parentHeight - (rect.bottom() + 1),
-                   rect.right() + 1, parentHeight - rect.top() };
-}
+    // for converting from Qt
+    virtual QList<MimeCFPair> formatsForMimeData(const QMimeData *mimeData) const = 0;
+    virtual bool convertFromMimeData(const QMimeData *mimeData, ULONG format,
+                                     ULONG &flags, ULONG *data) const = 0;
+    // for converting to Qt
+    virtual QList<MimeCFPair> mimesForFormats(const QList<ULONG> &formats) const = 0;
+    virtual QVariant convertFromFormat(ULONG format, ULONG flags, ULONG data,
+                                       const QString &mimeType,
+                                       QVariant::Type preferredType) const = 0;
 
-inline POINTL ToPOINTL(const QPoint &point, int parentHeight)
-{
-    // Flip y coordinate.
-    return POINTL { point.x(), parentHeight - (point.y() + 1) };
-}
+protected:
 
-QWindow *WindowAt(const QPoint &screenPos);
+    static ULONG registerMimeType(const QString &mime);
+    static void unregisterMimeType(ULONG mimeId);
 
-} // namespace QOS2
+    static QList<QOS2Mime*> all();
 
-#ifndef QT_NO_DEBUG_STREAM
-QDebug operator<<(QDebug d, const QOS2Window *window);
-#endif
+    static ULONG allocateMemory(size_t size);
+    static void freeMemory(ULONG addr);
+
+    static QString formatName(ULONG format);
+
+private:
+    struct Match
+    {
+        Match(QOS2Mime *c, const QString f, ULONG cf, int p) :
+            converter(c), mime(f), format(cf), priority(p) {}
+
+        QOS2Mime *converter;
+        QString mime;
+        ULONG format;
+        int priority;
+    };
+
+    static QList<Match> allConvertersFromFormats(const QList<ULONG> &formats);
+    static QList<Match> allConvertersFromMimeData(const QMimeData *mimeData);
+};
 
 QT_END_NAMESPACE
 
-#endif // QOS2CONTEXT_H
+#endif // QOS2MIME_H

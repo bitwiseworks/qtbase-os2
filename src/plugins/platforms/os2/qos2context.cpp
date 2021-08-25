@@ -54,6 +54,7 @@ QT_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaEvents, "qt.qpa.events", QtWarningMsg)
 Q_LOGGING_CATEGORY(lcQpaMessages, "qt.qpa.messages", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcQpaMime, "qt.qpa.mime", QtWarningMsg)
 
 namespace QOS2
 {

@@ -44,6 +44,7 @@
 
 QT_BEGIN_NAMESPACE
 
+class QOS2Clipboard;
 class QOS2KeyMapper;
 
 class QOS2Integration : public QPlatformIntegration
@@ -57,6 +58,10 @@ public:
     QPlatformWindow *createPlatformWindow(QWindow *window) const override;
     QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
     QAbstractEventDispatcher *createEventDispatcher() const override;
+
+#if QT_CONFIG(clipboard)
+    QPlatformClipboard *clipboard() const override;
+#endif
 
     QPlatformFontDatabase *fontDatabase() const override;
 
@@ -79,6 +84,9 @@ public:
 private:
     QPlatformScreen *mScreen = nullptr;
     QPlatformFontDatabase *mFontDatabase = nullptr;
+#if QT_CONFIG(clipboard)
+    QOS2Clipboard *mClipboard = nullptr;
+#endif
 
     QOS2KeyMapper *mKeyMapper = nullptr;
 
