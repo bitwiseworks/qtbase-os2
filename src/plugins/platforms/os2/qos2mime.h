@@ -52,6 +52,7 @@ class QMimeData;
 
 class QOS2Mime
 {
+    friend class QOS2ClipboardData;
     friend class QOS2ClipboardRetrievalMimeData;
 
     Q_DISABLE_COPY_MOVE(QOS2Mime)

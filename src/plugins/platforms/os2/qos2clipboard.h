@@ -48,7 +48,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class QOS2ClipboardRetrievalMimeData;
+class QOS2ClipboardData;
 
 class QOS2Clipboard : public QPlatformClipboard
 {
@@ -63,7 +63,8 @@ public:
     bool ownsMode(QClipboard::Mode mode) const override;
 
 private:
-    QOS2ClipboardRetrievalMimeData *mRetrievalData;
+    QOS2ClipboardData *data() const;
+    mutable void *d;
 };
 
 QT_END_NAMESPACE

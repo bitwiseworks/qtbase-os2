@@ -42,6 +42,9 @@
 #include "qos2clipboard.h"
 #include "qos2mime.h"
 
+#include <QtCore/qthread.h>
+#include <QtCore/private/qeventdispatcher_os2_p.h>
+
 #if QT_CONFIG(clipboard)
 
 #include <QMimeData>
@@ -85,13 +88,12 @@ bool QOS2ClipboardRetrievalMimeData::peekData(bool leaveOpen) const
     formats = newFormats;
     matches = QOS2Mime::allConvertersFromFormats(formats);
 
-    if (lcQpaMimeDebug)
-    {
+    if (lcQpaMimeDebug) {
         foreach(ULONG cf, formats)
-            qCDebug(lcQpaMime) << "have format" << Qt::hex << cf << QOS2Mime::formatName(cf).utf16();
+            qCDebug(lcQpaMime) << "have format" << Qt::hex << cf << QOS2Mime::formatName(cf);
         foreach(QOS2Mime::Match match, matches)
-            qCDebug(lcQpaMime) << "converter" << match.converter << "mime" << match.mime.utf16() <<
-                   "format" << match.format << "priority" << match.priority;
+            qCDebug(lcQpaMime) << "converter" << match.converter << "mime" << match.mime
+                               << "format" << match.format << "priority" << match.priority;
     }
 
     return true;
@@ -147,8 +149,254 @@ QVariant QOS2ClipboardRetrievalMimeData::retrieveData_sys(const QString &mime,
     return result;
 }
 
+class QOS2ClipboardData : public QPMObjectWindow
+{
+public:
+    QOS2ClipboardData(QOS2Clipboard *q_);
+    ~QOS2ClipboardData();
+
+    void setSource(QMimeData *s);
+
+    void setAsClipboardViewer();
+    bool ownsClipboard() const;
+    void putAllMimeToClipboard(bool isDelayed);
+    void flushClipboard();
+
+    QMimeData *mimeData();
+
+private:
+    bool setClipboard(QOS2Mime *converter, ULONG format, bool isDelayed);
+
+    MRESULT message(ULONG msg, MPARAM mp1, MPARAM mp2);
+
+    QOS2Clipboard *q;
+
+    QMimeData *src;
+    QList<QOS2Mime::Match> matches;
+    HWND prevClipboardViewer;
+
+    QOS2ClipboardRetrievalMimeData retrievalData;
+
+    bool ignore_WM_DESTROYCLIPBOARD;
+};
+
+QOS2ClipboardData::QOS2ClipboardData(QOS2Clipboard *q_)
+    : q(q_), src(0), prevClipboardViewer(NULLHANDLE)
+    , ignore_WM_DESTROYCLIPBOARD(false)
+{
+    HWND clipboardViewer = WinQueryClipbrdViewer(NULLHANDLE);
+
+    qCDebug(lcQpaMime) << Qt::hex << DV(hwnd()) << "cur viewer" <<  clipboardViewer;
+
+    if (hwnd() != clipboardViewer) {
+        prevClipboardViewer = clipboardViewer;
+        BOOL ok = WinSetClipbrdViewer(NULLHANDLE, hwnd());
+        if (!ok)
+            qCWarning(lcQpaMime) << "WinSetClipbrdViewer failed with" << Qt::hex << WinGetLastError(NULLHANDLE);
+    }
+}
+
+QOS2ClipboardData::~QOS2ClipboardData()
+{
+    qCDebug(lcQpaMime) << Qt::hex << DV(hwnd())
+                       << "cur viewer" << WinQueryClipbrdViewer(NULLHANDLE)
+                       << "prev viewer" << prevClipboardViewer
+                       << "owner" << WinQueryClipbrdOwner(NULLHANDLE);
+
+    flushClipboard();
+    setSource(0);
+
+    HWND clipboardViewer = WinQueryClipbrdViewer(NULLHANDLE);
+
+    // make sure we are not the clipboard viewer any more (note that the viewer
+    // may already be reset by some uninit code at this stage but we still need
+    // to restore the previous one to let it do the job)
+    if (hwnd() == clipboardViewer || clipboardViewer == NULLHANDLE)
+        WinSetClipbrdViewer(NULLHANDLE, prevClipboardViewer);
+}
+
+void QOS2ClipboardData::setSource(QMimeData *s)
+{
+    if (s == src)
+        return;
+    delete src;
+    src = s;
+
+    // build the list of all mime <-> cf matches
+    matches.clear();
+    if (src)
+        matches = QOS2Mime::allConvertersFromMimeData(src);
+
+    if (lcQpaMimeDebug) {
+        if (src) {
+            qCDebug(lcQpaMime) << "mimes" << src->formats();
+            foreach(QOS2Mime::Match match, matches)
+                qCDebug(lcQpaMime) << "match: converter" << match.converter
+                                   << "format" << Qt::hex << match.format
+                                   << QOS2Mime::formatName(match.format) << Qt::dec
+                                   << "priority" << match.priority;
+        }
+    }
+}
+
+bool QOS2ClipboardData::ownsClipboard() const
+{
+    return src && hwnd() == WinQueryClipbrdOwner(NULLHANDLE);
+}
+
+bool QOS2ClipboardData::setClipboard(QOS2Mime *converter, ULONG format,
+                                     bool isDelayed)
+{
+    Q_ASSERT(src);
+    if (!src)
+        return false;
+
+    bool ok, ok2;
+    ULONG flags = 0, data = 0;
+
+    if (isDelayed) {
+        // setup delayed rendering of clipboard data
+        ok = converter->convertFromMimeData(src, format, flags, 0);
+        if (ok) {
+            WinSetClipbrdOwner(NULLHANDLE, hwnd());
+            ok2 = WinSetClipbrdData(NULLHANDLE, 0, format, flags);
+        }
+    } else {
+        // render now
+        ok = converter->convertFromMimeData(src, format, flags, &data);
+        if (ok)
+            ok2 = WinSetClipbrdData(NULLHANDLE, data, format, flags);
+    }
+    qCWarning(lcQpaMime) << "convert to format" << Qt::hex << format
+                         << QOS2Mime::formatName(format)
+                         << DV(flags) << DV(data) << Qt::dec
+                         << DV(isDelayed) << DV(ok);
+    if (ok && !ok2) {
+        qCWarning(lcQpaMime) << "WinSetClipbrdData failed with" << Qt::hex << WinGetLastError(NULLHANDLE);
+    }
+
+    return ok && ok2;
+}
+
+void QOS2ClipboardData::putAllMimeToClipboard(bool isDelayed)
+{
+    qCWarning(lcQpaMime) << DV(isDelayed);
+
+    if (!WinOpenClipbrd(NULLHANDLE)) {
+        qCWarning(lcQpaMime) << "WinOpenClipbrd failed with" << Qt::hex << WinGetLastError(NULLHANDLE);
+        return;
+    }
+
+    // delete the clipboard contents before we render everything to make sure
+    // nothing is left there from another owner
+    ignore_WM_DESTROYCLIPBOARD = true;
+    BOOL ok = WinEmptyClipbrd(NULLHANDLE);
+    ignore_WM_DESTROYCLIPBOARD = false;
+    if (!ok) {
+        qCWarning(lcQpaMime) << "WinEmptyClipbrd failed with" << Qt::hex << WinGetLastError(NULLHANDLE);
+        WinCloseClipbrd(NULLHANDLE);
+        return;
+    }
+
+    if (src) {
+        foreach(QOS2Mime::Match match, matches)
+            setClipboard(match.converter, match.format, isDelayed);
+    }
+
+    WinCloseClipbrd(NULLHANDLE);
+}
+
+void QOS2ClipboardData::flushClipboard()
+{
+    if (ownsClipboard()) {
+        putAllMimeToClipboard(false);
+        // make sure we won't be doing this again if asked in WM_RENDERALLFMTS
+        setSource(0);
+    }
+}
+
+QMimeData *QOS2ClipboardData::mimeData()
+{
+    // short cut for local copy / paste
+    if (ownsClipboard())
+        return src;
+    return &retrievalData;
+}
+
+MRESULT QOS2ClipboardData::message(ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    qCDebug(lcQpaMime) << Qt::hex << DV(hwnd()) << DV(msg) << DV(mp1) << DV(mp2);
+
+    switch (msg) {
+
+        case WM_DRAWCLIPBOARD: {
+            qCDebug(lcQpaMime) << "WM_DRAWCLIPBOARD:" << DV(src) << Qt::hex
+                               << "cur viewer" << WinQueryClipbrdViewer(NULLHANDLE)
+                               << "prev viewer" << prevClipboardViewer
+                               << "owner" << WinQueryClipbrdOwner(NULLHANDLE);
+
+            if (hwnd() != WinQueryClipbrdOwner(NULLHANDLE) && src) {
+                // we no longer own the clipboard, clean up the clipboard object
+                setSource(0);
+            }
+
+            // ask QClipboard to emit changed() signals
+            q->emitChanged(QClipboard::Clipboard);
+
+            // PM doesn't inform the previous clipboard viewer if another
+            // app changes it (nor does it support viewer chains in some other
+            // way). The best we can do is to propagate the message to the
+            // previous clipboard viewer ourselves (though there is no guarantee
+            // that all non-Qt apps will do the same).
+            if (prevClipboardViewer) {
+                // propagate the message to the previous clipboard viewer
+                BOOL ok = WinPostMsg(prevClipboardViewer, msg, mp1, mp2);
+                if (!ok)
+                    prevClipboardViewer = NULLHANDLE;
+            }
+        }
+        break;
+
+        case WM_DESTROYCLIPBOARD: {
+            qCDebug(lcQpaMime) << "WM_DESTROYCLIPBOARD";
+            if (!ignore_WM_DESTROYCLIPBOARD)
+                setSource(0);
+        }
+        break;
+
+        case WM_RENDERFMT: {
+            qCDebug(lcQpaMime) << "WM_RENDERFMT: CF" << Qt::hex << (ULONG)mp1
+                               << QOS2Mime::formatName((ULONG)mp1);
+            if (src) {
+                foreach(QOS2Mime::Match match, matches) {
+                    if (match.format == (ULONG)mp1) {
+                        setClipboard(match.converter, match.format, false);
+                        break;
+                    }
+                }
+            }
+        }
+        break;
+
+        case WM_RENDERALLFMTS: {
+            qCDebug(lcQpaMime) << "WM_RENDERALLFMTS";
+            if (src) {
+                foreach(QOS2Mime::Match match, matches)
+                    setClipboard(match.converter, match.format, false);
+            }
+        }
+        break;
+
+        default:
+            break;
+    }
+
+    qCDebug(lcQpaMime) << "END";
+    return FALSE;
+}
+
 QOS2Clipboard::QOS2Clipboard()
-    : mRetrievalData(new QOS2ClipboardRetrievalMimeData())
+    : d(nullptr)
 {
     qCInfo(lcQpaMime);
 }
@@ -157,7 +405,8 @@ QOS2Clipboard::~QOS2Clipboard()
 {
     qCInfo(lcQpaMime);
 
-    delete mRetrievalData;
+    if (d)
+        delete data();
 }
 
 QMimeData *QOS2Clipboard::mimeData(QClipboard::Mode mode)
@@ -167,7 +416,7 @@ QMimeData *QOS2Clipboard::mimeData(QClipboard::Mode mode)
     if (mode != QClipboard::Clipboard)
         return nullptr;
 
-    return mRetrievalData;
+    return data()->mimeData();
 }
 
 void QOS2Clipboard::setMimeData(QMimeData *mimeData, QClipboard::Mode mode)
@@ -176,6 +425,18 @@ void QOS2Clipboard::setMimeData(QMimeData *mimeData, QClipboard::Mode mode)
 
     if (mode != QClipboard::Clipboard)
         return;
+
+    QOS2ClipboardData *d = data();
+    d->setSource(mimeData);
+
+    if (!mimeData)
+        return; // nothing to do
+
+    // use delayed rendering only if the application runs the event loop
+    bool runsEventLoop = QThread::currentThread()->loopLevel() != 0;
+    qCDebug(lcQpaMime) << DV(runsEventLoop);
+
+    d->putAllMimeToClipboard(runsEventLoop);
 }
 
 bool QOS2Clipboard::supportsMode(QClipboard::Mode mode) const
@@ -185,9 +446,23 @@ bool QOS2Clipboard::supportsMode(QClipboard::Mode mode) const
 
 bool QOS2Clipboard::ownsMode(QClipboard::Mode mode) const
 {
-    Q_UNUSED(mode);
+    const bool result = mode == QClipboard::Clipboard && d ?
+        data()->ownsClipboard() : false;
 
-    return false;
+    qCInfo(lcQpaMime) << DV(mode) << DV(result);
+
+    return result;
+}
+
+QOS2ClipboardData *QOS2Clipboard::data() const
+{
+    if (d == nullptr) {
+        // Lazily create the data to avoid PM window creation prior to real use
+        // (and before the event queue creation in which case it would fail).
+        d = new QOS2ClipboardData(const_cast<QOS2Clipboard*>(this));
+    }
+
+    return reinterpret_cast<QOS2ClipboardData*>(d);
 }
 
 #endif
