@@ -654,7 +654,7 @@ static QString getRelocatablePrefix()
 }
 #endif
 
-#if defined(QT_BUILD_QMAKE) && !defined(QT_BUILD_QMAKE_BOOTSTRAP)
+#if defined(QT_BUILD_QMAKE) && !defined(QT_BUILD_QMAKE_BOOTSTRAP) && !defined(Q_OS_OS2)
 QString qmake_abslocation();
 
 static QString getPrefixFromHostBinDir(const char *hostBinDirToPrefixPath)
@@ -687,7 +687,11 @@ static QString getPrefix(
     if (group == QLibraryInfo::DevicePaths)
         return QString::fromLocal8Bit(QT_CONFIGURE_PREFIX_PATH);
 #  endif
+#if !defined(Q_OS_OS2)
     return getExtPrefixFromHostBinDir();
+#else
+    return QString::fromLocal8Bit(QT_CONFIGURE_PREFIX_PATH);
+#endif
 #elif QT_CONFIG(relocatable)
     return getRelocatablePrefix();
 #else
@@ -825,8 +829,12 @@ QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
 #endif
 # ifdef QT_BUILD_QMAKE
         } else if (loc == HostPrefixPath) {
+#if !defined(Q_OS_OS2)
             static const QByteArray hostPrefixPath = getHostPrefixFromHostBinDir().toLatin1();
             path = hostPrefixPath.constData();
+#else
+            path = QT_CONFIGURE_HOST_PREFIX_PATH;
+#endif
 # endif
         }
 
