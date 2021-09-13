@@ -795,7 +795,7 @@
             "label": "Compile libs in debug and release mode",
             "autoDetect": "input.debug == '' && !(config.win32 && config.gcc)",
             "condition": "config.darwin || config.win32 || config.os2",
-            "output": [ "publicFeature", "publicQtConfig", "debugAndRelease" ]
+            "output": [ "publicFeature", "publicQtConfig", "publicConfig", "debugAndRelease" ]
         },
         "force_debug_info": {
             "label": "Add debug info in release mode",
