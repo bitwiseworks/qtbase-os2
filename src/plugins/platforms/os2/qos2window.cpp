@@ -1143,8 +1143,9 @@ void QOS2Window::handleMouse(ULONG msg, MPARAM mp1, MPARAM mp2)
         return;
     }
 
-    // Get window coordinates.
-    POINTL ptl = { SHORT1FROMMP(mp1), SHORT2FROMMP(mp1) };
+    // Get window coordinates (note: SHORT1FROMMP is bogus and actually returns USHORT, so when
+    // converting to long negative values -1, -2 become 65535, 65534 breaking things, e.g. #122).
+    POINTL ptl = { (SHORT)SHORT1FROMMP(mp1), (SHORT)SHORT2FROMMP(mp1) };
     const QPoint localPos = QOS2::ToQPoint(ptl, geometry().height());
 
     // Get screen coordinates.
