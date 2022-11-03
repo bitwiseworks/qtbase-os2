@@ -1,5 +1,9 @@
 # History of changes for Qt 5 Base for OS/2
 
+#### Version 5.15.2 OS/2 Beta 2 (2022-11-04)
+
+* platforms/os2: Fix bogus mouse X coordinate translation [#122].
+
 #### Version 5.15.2 OS/2 Beta 1 (2021-09-22)
 
 * Update source code to version 5.15.2.
