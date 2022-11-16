@@ -103,21 +103,14 @@
     if (!m_platformWindow)
         return;
 
-    // get m_buttons in sync
-    // Don't send frme strut events if we are in the middle of a mouse drag.
-    if (m_buttons != Qt::NoButton)
-        return;
-
     switch (theEvent.type) {
     case NSEventTypeLeftMouseDown:
-    case NSEventTypeLeftMouseDragged:
         m_frameStrutButtons |= Qt::LeftButton;
         break;
     case NSEventTypeLeftMouseUp:
          m_frameStrutButtons &= ~Qt::LeftButton;
          break;
     case NSEventTypeRightMouseDown:
-    case NSEventTypeRightMouseDragged:
         m_frameStrutButtons |= Qt::RightButton;
         break;
     case NSEventTypeRightMouseUp:
@@ -130,6 +123,22 @@
         m_frameStrutButtons &= ~cocoaButton2QtButton(theEvent.buttonNumber);
     default:
         break;
+    }
+
+    // m_buttons can sometimes get out of sync with the button state in AppKit
+    // E.g if the QNSView where a drag starts is reparented to another window
+    // while the drag is ongoing, it will not get the corresponding mouseUp
+    // call. This will result in m_buttons to be stuck on Qt::LeftButton.
+    // Since we know which buttons was pressed/released directly on the frame
+    // strut, we can rectify m_buttons here so that we at least don't return early
+    // from the drag test underneath because of the faulty m_buttons state.
+    // FIXME: get m_buttons in sync with AppKit/NSEvent all over in QNSView.
+    m_buttons &= ~m_frameStrutButtons;
+
+    if (m_buttons != Qt::NoButton) {
+        // Don't send frame strut events if we are in the middle of
+        // a mouse drag that didn't start on the frame strut.
+        return;
     }
 
     NSWindow *window = [self window];
@@ -175,6 +184,39 @@
     qCInfo(lcQpaMouse) << eventType << "at" << qtWindowPoint << "with" << m_frameStrutButtons << "in" << self.window;
     QWindowSystemInterface::handleFrameStrutMouseEvent(m_platformWindow->window(),
         timestamp, qtWindowPoint, qtScreenPoint, m_frameStrutButtons, button, eventType);
+}
+
+- (bool)closePopups:(NSEvent *)theEvent
+{
+    QList<QCocoaWindow *> *popups = QCocoaIntegration::instance()->popupWindowStack();
+    if (!popups->isEmpty()) {
+        // Check if the click is outside all popups.
+        bool inside = false;
+        QPointF qtScreenPoint = QCocoaScreen::mapFromNative([self screenMousePoint:theEvent]);
+        for (QList<QCocoaWindow *>::const_iterator it = popups->begin(); it != popups->end(); ++it) {
+            if ((*it)->geometry().contains(qtScreenPoint.toPoint())) {
+                inside = true;
+                break;
+            }
+        }
+        // Close the popups if the click was outside.
+        if (!inside) {
+            bool selfClosed = false;
+            Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
+            while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
+                selfClosed = self == popup->view();
+                QWindowSystemInterface::handleCloseEvent(popup->window());
+                QWindowSystemInterface::flushWindowSystemEvents();
+                if (!m_platformWindow)
+                    return true; // Bail out if window was destroyed
+            }
+            // Consume the mouse event when closing the popup, except for tool tips
+            // were it's expected that the event is processed normally.
+            if (type != Qt::ToolTip || selfClosed)
+                 return true;
+        }
+    }
+    return false;
 }
 @end
 
@@ -381,34 +423,8 @@
     // that particular poup type (for example context menus). However, Qt expects
     // that plain popup QWindows will also be closed, so we implement the logic
     // here as well.
-    QList<QCocoaWindow *> *popups = QCocoaIntegration::instance()->popupWindowStack();
-    if (!popups->isEmpty()) {
-        // Check if the click is outside all popups.
-        bool inside = false;
-        QPointF qtScreenPoint = QCocoaScreen::mapFromNative([self screenMousePoint:theEvent]);
-        for (QList<QCocoaWindow *>::const_iterator it = popups->begin(); it != popups->end(); ++it) {
-            if ((*it)->geometry().contains(qtScreenPoint.toPoint())) {
-                inside = true;
-                break;
-            }
-        }
-        // Close the popups if the click was outside.
-        if (!inside) {
-            bool selfClosed = false;
-            Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
-            while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
-                selfClosed = self == popup->view();
-                QWindowSystemInterface::handleCloseEvent(popup->window());
-                QWindowSystemInterface::flushWindowSystemEvents();
-                if (!m_platformWindow)
-                    return; // Bail out if window was destroyed
-            }
-            // Consume the mouse event when closing the popup, except for tool tips
-            // were it's expected that the event is processed normally.
-            if (type != Qt::ToolTip || selfClosed)
-                 return;
-        }
-    }
+    if ([self closePopups:theEvent])
+        return;
 
     QPointF qtWindowPoint;
     QPointF qtScreenPoint;

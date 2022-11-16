@@ -126,6 +126,7 @@ FILES="
    jdmaster.c
    jdmaster.h
    jdmerge.c
+   jdmerge.h
    jdmrgext.c
    jdmrg565.c
    jdpostct.c
@@ -164,4 +165,4 @@ for i in $FILES; do
     copy_file "$i" "src/$i"
 done
 
-echo Done. $TARGET_DIR/jconfig.h and jconfigint.h may need manual updating.
+echo Done. $TARGET_DIR/src/jconfig.h and jconfigint.h may need manual updating.

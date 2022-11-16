@@ -88,8 +88,8 @@ public:
 
     bool compositingActive() const;
 
-    QRect workArea() const { return m_workArea; }
     void updateWorkArea();
+    QRect availableGeometry(const QRect &screenGeometry) const;
 
     void handleXFixesSelectionNotify(xcb_xfixes_selection_notify_event_t *notify_event);
     void subscribeToXFixesSelectionNotify();
@@ -117,6 +117,8 @@ private:
                           const QByteArray &expectedIdentifier,
                           QByteArray &stringValue);
     void readXResources();
+
+    bool setDpiFromXSettings(const QVariant &property);
 
     xcb_screen_t *m_screen;
     const int m_number;

@@ -1163,6 +1163,8 @@ static QStyleHelper::WidgetSizePolicy qt_aqua_guess_size(const QWidget *widg, QS
 
 void QMacStylePrivate::drawFocusRing(QPainter *p, const QRectF &targetRect, int hMargin, int vMargin, const CocoaControl &cw) const
 {
+    const bool isBigSurOrAbove = QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSBigSur;
+
     QPainterPath focusRingPath;
     focusRingPath.setFillRule(Qt::OddEvenFill);
 
@@ -1174,6 +1176,8 @@ void QMacStylePrivate::drawFocusRing(QPainter *p, const QRectF &targetRect, int 
     case SegmentedControl_Middle:
     case TextField: {
         auto innerRect = targetRect;
+        if (cw.type == Button_SquareButton)
+            innerRect = cw.adjustedControlFrame(targetRect.adjusted(hMargin, vMargin, -hMargin, -vMargin));
         if (cw.type == TextField)
             innerRect = innerRect.adjusted(hMargin, vMargin, -hMargin, -vMargin).adjusted(0.5, 0.5, -0.5, -0.5);
         const auto outerRect = innerRect.adjusted(-focusRingWidth, -focusRingWidth, focusRingWidth, focusRingWidth);
@@ -1208,15 +1212,48 @@ void QMacStylePrivate::drawFocusRing(QPainter *p, const QRectF &targetRect, int 
         focusRingPath.addEllipse(rbOuterRect);
         break;
     }
-    case Button_PopupButton:
     case Button_PullDown:
-    case Button_PushButton:
-    case SegmentedControl_Single: {
+    case Button_PushButton: {
+        QRectF focusRect;
+        auto *pb = static_cast<NSButton *>(cocoaControl(cw));
+        const QRectF frameRect = cw.adjustedControlFrame(targetRect.adjusted(hMargin, vMargin, -hMargin, -vMargin));
+        pb.frame = frameRect.toCGRect();
+        focusRect = QRectF::fromCGRect([pb alignmentRectForFrame:pb.frame]);
+        if (cw.type == QMacStylePrivate::Button_PushButton) {
+            focusRect -= pushButtonShadowMargins[cw.size];
+        }
+        else if (cw.type == QMacStylePrivate::Button_PullDown) {
+            focusRect -= pullDownButtonShadowMargins[cw.size];
+            //fix focus ring drawn slightly off for pull downs
+            if (cw.size == QStyleHelper::SizeLarge)
+                focusRect = focusRect.adjusted(0, 0, 0, -1);
+            else if (cw.size == QStyleHelper::SizeMini)
+                focusRect = focusRect.adjusted(0, -1, 0, 0);
+        }
+        if (isBigSurOrAbove)
+            focusRect = focusRect.translated(0, 1);
         const qreal innerRadius = cw.type == Button_PushButton ? 3 : 4;
         const qreal outerRadius = innerRadius + focusRingWidth;
-        hOffset = targetRect.left();
-        vOffset = targetRect.top();
-        const auto innerRect = targetRect.translated(-targetRect.topLeft());
+        hOffset = focusRect.left();
+        vOffset = focusRect.top();
+        const auto innerRect = focusRect.translated(-focusRect.topLeft());
+        const auto outerRect = innerRect.adjusted(-hMargin, -vMargin, hMargin, vMargin);
+        focusRingPath.addRoundedRect(innerRect, innerRadius, innerRadius);
+        focusRingPath.addRoundedRect(outerRect, outerRadius, outerRadius);
+        break;
+    }
+    case Button_PopupButton:
+    case SegmentedControl_Single: {
+        QRectF focusRect = targetRect;
+        if (isBigSurOrAbove)
+            focusRect.translate(0, -1.5);
+        else if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSCatalina)
+            focusRect.adjust(0, 0, 0, -1);
+        const qreal innerRadius = 4;
+        const qreal outerRadius = innerRadius + focusRingWidth;
+        hOffset = focusRect.left();
+        vOffset = focusRect.top();
+        const auto innerRect = focusRect.translated(-focusRect.topLeft());
         const auto outerRect = innerRect.adjusted(-hMargin, -vMargin, hMargin, vMargin);
         focusRingPath.addRoundedRect(innerRect, innerRadius, innerRadius);
         focusRingPath.addRoundedRect(outerRect, outerRadius, outerRadius);
@@ -3716,24 +3753,6 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 arrowOpt.rect = ar;
                 proxy()->drawPrimitive(PE_IndicatorArrowDown, &arrowOpt, p, w);
             }
-
-
-            if (btn->state & State_HasFocus) {
-                // TODO Remove and use QFocusFrame instead.
-                const int hMargin = proxy()->pixelMetric(QStyle::PM_FocusFrameHMargin, btn, w);
-                const int vMargin = proxy()->pixelMetric(QStyle::PM_FocusFrameVMargin, btn, w);
-                QRectF focusRect;
-                if (cw.type == QMacStylePrivate::Button_SquareButton) {
-                    focusRect = frameRect;
-                } else {
-                    focusRect = QRectF::fromCGRect([pb alignmentRectForFrame:pb.frame]);
-                    if (cw.type == QMacStylePrivate::Button_PushButton)
-                        focusRect -= pushButtonShadowMargins[cw.size];
-                    else if (cw.type == QMacStylePrivate::Button_PullDown)
-                        focusRect -= pullDownButtonShadowMargins[cw.size];
-                }
-                d->drawFocusRing(p, focusRect, hMargin, vMargin, cw);
-            }
         }
         break;
     case CE_PushButtonLabel:
@@ -3870,6 +3889,7 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
             const auto cs = d->effectiveAquaSizeConstrain(opt, w);
             // Extra hacks to get the proper pressed appreance when not selected or selected and inactive
             const bool needsInactiveHack = (!isActive && isSelected);
+            const bool isBigSurOrAbove = QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSBigSur;
             const auto ct = !needsInactiveHack && (isSelected || tp == QStyleOptionTab::OnlyOneTab) ?
                     QMacStylePrivate::Button_PushButton :
                     QMacStylePrivate::Button_PopupButton;
@@ -3878,6 +3898,12 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
             auto *pb = static_cast<NSButton *>(d->cocoaControl(cw));
 
             auto vOffset = isPopupButton ? 1 : 2;
+            if (isBigSurOrAbove) {
+                // Make it 1, otherwise, offset is very visible compared
+                // to selected tab (which is not a popup button).
+                vOffset = 1;
+            }
+
             if (tabDirection == QMacStylePrivate::East)
                 vOffset -= 1;
             const auto outerAdjust = isPopupButton ? 1 : 4;
@@ -3894,9 +3920,22 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     frameRect = frameRect.adjusted(-innerAdjust, 0, outerAdjust, 0);
                 else
                     frameRect = frameRect.adjusted(-outerAdjust, 0, innerAdjust, 0);
+
+                if (isSelected && isBigSurOrAbove) {
+                    // 1 pixed of 'roundness' is still visible on the right
+                    // (the left is OK, it's rounded).
+                    frameRect = frameRect.adjusted(0, 0, 1, 0);
+                }
+
                 break;
             case QStyleOptionTab::Middle:
                 frameRect = frameRect.adjusted(-innerAdjust, 0, innerAdjust, 0);
+
+                if (isSelected && isBigSurOrAbove) {
+                    // 1 pixel of 'roundness' is still visible on both
+                    // sides - left and right.
+                    frameRect = frameRect.adjusted(-1, 0, 1, 0);
+                }
                 break;
             case QStyleOptionTab::End:
                 // Pressed state hack: tweak adjustments in preparation for flip below
@@ -3904,6 +3943,11 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     frameRect = frameRect.adjusted(-innerAdjust, 0, outerAdjust, 0);
                 else
                     frameRect = frameRect.adjusted(-outerAdjust, 0, innerAdjust, 0);
+
+                if (isSelected && isBigSurOrAbove) {
+                    // 1 pixel of 'roundness' is still visible on the left.
+                    frameRect = frameRect.adjusted(-1, 0, 0, 0);
+                }
                 break;
             case QStyleOptionTab::OnlyOneTab:
                 frameRect = frameRect.adjusted(-outerAdjust, 0, outerAdjust, 0);
@@ -3951,7 +3995,10 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 NSPopUpArrowPosition oldPosition = NSPopUpArrowAtCenter;
                 NSPopUpButtonCell *pbCell = nil;
                 auto rAdjusted = r;
-                if (isPopupButton && tp == QStyleOptionTab::OnlyOneTab) {
+                if (isPopupButton && (tp == QStyleOptionTab::OnlyOneTab || isBigSurOrAbove)) {
+                    // Note: starting from macOS BigSur NSPopupButton has this
+                    // arrow 'button' in a different place and it became
+                    // quite visible 'in between' inactive tabs.
                     pbCell = static_cast<NSPopUpButtonCell *>(pb.cell);
                     oldPosition = pbCell.arrowPosition;
                     pbCell.arrowPosition = NSPopUpNoArrow;
@@ -3959,6 +4006,10 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                         // NSPopUpButton in this state is smaller.
                         rAdjusted.origin.x -= 3;
                         rAdjusted.size.width += 6;
+                        if (isBigSurOrAbove) {
+                            if (tp == QStyleOptionTab::End)
+                                rAdjusted.origin.x -= 2;
+                        }
                     }
                 }
 
@@ -4132,6 +4183,15 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     return QMacStylePrivate::Button_RadioButton;
                 if (ffw->inherits("QLineEdit") || ffw->inherits("QTextEdit"))
                     return QMacStylePrivate::TextField;
+                if (const auto *pb = qobject_cast<const QPushButton *>(ffw)) {
+                    if (pb->isFlat() || (pb->rect().height()
+                        > pushButtonDefaultHeight[QStyleHelper::SizeLarge]
+                        && !(pb->testAttribute(Qt::WA_MacNormalSize))))
+                            return QMacStylePrivate::Button_SquareButton;
+                    if (pb->menu() != nullptr)
+                        return QMacStylePrivate::Button_PullDown;
+                    return QMacStylePrivate::Button_PushButton;
+                }
             }
 
             return QMacStylePrivate::Box; // Not really, just make it the default
@@ -4326,8 +4386,10 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     // line-break the string if it doesn't fit the given rect. It's better to draw outside
                     // the rect and possibly overlap something than to have part of the text disappear.
                     [s.toNSString() drawAtPoint:CGPointMake(xpos, yPos)
-                                withAttributes:@{ NSFontAttributeName:f, NSForegroundColorAttributeName:c,
-                                                  NSObliquenessAttributeName: [NSNumber numberWithDouble: myFont.italic() ? 0.3 : 0.0]}];
+                            withAttributes:@{ NSFontAttributeName:f, NSForegroundColorAttributeName:c,
+                                                NSObliquenessAttributeName: [NSNumber numberWithDouble: myFont.italic() ? 0.3 : 0.0],
+                                                NSUnderlineStyleAttributeName: [NSNumber numberWithInt: myFont.underline() ? NSUnderlineStyleSingle
+                                                                                                                           : NSUnderlineStyleNone]}];
 
                     d->restoreNSGraphicsContext(cgCtx);
                 } else {
@@ -5121,7 +5183,7 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
         if (const QStyleOptionSlider *sb = qstyleoption_cast<const QStyleOptionSlider *>(opt)) {
 
             const bool drawTrack = sb->subControls & SC_ScrollBarGroove;
-            const bool drawKnob = sb->subControls & SC_ScrollBarSlider;
+            const bool drawKnob = sb->subControls & SC_ScrollBarSlider && sb->minimum != sb->maximum;
             if (!drawTrack && !drawKnob)
                 break;
 
@@ -6311,14 +6373,13 @@ QSize QMacStyle::sizeFromContents(ContentsType ct, const QStyleOption *opt,
         break;
 #endif
     case QStyle::CT_PushButton: {
-        if (const QStyleOptionButton *btn = qstyleoption_cast<const QStyleOptionButton *>(opt))
+if (const QStyleOptionButton *btn = qstyleoption_cast<const QStyleOptionButton *>(opt))
             if (btn->features & QStyleOptionButton::CommandLinkButton)
                 return QCommonStyle::sizeFromContents(ct, opt, sz, widget);
 
         // By default, we fit the contents inside a normal rounded push button.
         // Do this by add enough space around the contents so that rounded
         // borders (including highlighting when active) will show.
-        // TODO Use QFocusFrame and get rid of these horrors.
         QSize macsz;
         const auto controlSize = d->effectiveAquaSizeConstrain(opt, widget, CT_PushButton, sz, &macsz);
         // FIXME See comment in CT_PushButton case in qt_aqua_get_known_size().
@@ -6405,9 +6466,9 @@ QSize QMacStyle::sizeFromContents(ContentsType ct, const QStyleOption *opt,
         if (const auto *cb = qstyleoption_cast<const QStyleOptionComboBox *>(opt)) {
             const auto controlSize = d->effectiveAquaSizeConstrain(opt, widget);
             if (!cb->editable) {
-                // Same as CT_PushButton, because we have to fit the focus
+                // See CT_PushButton; we have to fit the focus
                 // ring and a non-editable combo box is a NSPopUpButton.
-                sz.rwidth() += QMacStylePrivate::PushButtonLeftOffset + QMacStylePrivate::PushButtonRightOffset + 12;
+                sz.rwidth() += QMacStylePrivate::PushButtonLeftOffset + QMacStylePrivate::PushButtonRightOffset + 24;
                 // All values as measured from HIThemeGetButtonBackgroundBounds()
                 if (controlSize != QStyleHelper::SizeMini)
                     sz.rwidth() += 12; // We like 12 over here.

@@ -99,7 +99,7 @@ static void saveCoverageTool(const char * appname, bool testfailed, bool install
 static QElapsedTimer elapsedFunctionTime;
 static QElapsedTimer elapsedTotalTime;
 
-#define FOREACH_TEST_LOGGER for (QAbstractTestLogger *logger : QTest::loggers)
+#define FOREACH_TEST_LOGGER for (QAbstractTestLogger *logger : *QTest::loggers())
 
 namespace QTest {
 
@@ -168,8 +168,7 @@ namespace QTest {
 
     static IgnoreResultList *ignoreResultList = nullptr;
 
-    static QVector<QAbstractTestLogger*> loggers;
-    static bool loggerUsingStdout = false;
+    Q_GLOBAL_STATIC(QVector<QAbstractTestLogger *>, loggers)
 
     static int verbosity = 0;
     static int maxWarnings = 2002;
@@ -339,6 +338,8 @@ void QTestLog::addXFail(const char *msg, const char *file, int line)
     QTEST_ASSERT(msg);
     QTEST_ASSERT(file);
 
+    // Will be counted in addPass() if we get there.
+
     FOREACH_TEST_LOGGER
         logger->addIncident(QAbstractTestLogger::XFail, msg, file, line);
 }
@@ -391,7 +392,7 @@ void QTestLog::addBXFail(const char *msg, const char *file, int line)
     QTEST_ASSERT(msg);
     QTEST_ASSERT(file);
 
-    ++QTest::blacklists;
+    // Will be counted in addBPass() if we get there.
 
     FOREACH_TEST_LOGGER
         logger->addIncident(QAbstractTestLogger::BlacklistedXFail, msg, file, line);
@@ -430,8 +431,7 @@ void QTestLog::stopLogging()
         logger->stopLogging();
         delete logger;
     }
-    QTest::loggers.clear();
-    QTest::loggerUsingStdout = false;
+    QTest::loggers()->clear();
     saveCoverageTool(QTestResult::currentAppName(), failCount() != 0, QTestLog::installedTestCoverage());
 }
 
@@ -439,8 +439,6 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
 {
     if (filename && strcmp(filename, "-") == 0)
         filename = nullptr;
-    if (!filename)
-        QTest::loggerUsingStdout = true;
 
     QAbstractTestLogger *logger = nullptr;
     switch (mode) {
@@ -478,17 +476,36 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
     }
 
     QTEST_ASSERT(logger);
-    QTest::loggers.append(logger);
+    addLogger(logger);
+}
+
+/*!
+    \internal
+
+    Adds a new logger to the set of loggers that will be used
+    to report incidents and messages during testing.
+
+    The function takes ownership of the logger.
+*/
+void QTestLog::addLogger(QAbstractTestLogger *logger)
+{
+    QTEST_ASSERT(logger);
+    QTest::loggers()->append(logger);
 }
 
 int QTestLog::loggerCount()
 {
-    return QTest::loggers.size();
+    return QTest::loggers()->size();
 }
 
 bool QTestLog::loggerUsingStdout()
 {
-    return QTest::loggerUsingStdout;
+    FOREACH_TEST_LOGGER {
+        if (logger->isLoggingToStdout())
+            return true;
+    }
+
+    return false;
 }
 
 void QTestLog::warn(const char *msg, const char *file, int line)

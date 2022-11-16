@@ -46,6 +46,7 @@ import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputMethodManager;
+import android.view.KeyEvent;
 import android.graphics.Rect;
 import android.app.Activity;
 import android.util.DisplayMetrics;
@@ -247,6 +248,39 @@ public class QtInputConnection extends BaseInputConnection
             return true;
         }
         return super.performContextMenuAction(id);
+    }
+
+    @Override
+    public boolean sendKeyEvent(KeyEvent event)
+    {
+        // QTBUG-85715
+        // If the sendKeyEvent was invoked, it means that the button not related with composingText was used
+        // In such case composing text (if it exists) should be finished immediately
+        finishComposingText();
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER && m_view != null) {
+            KeyEvent fakeEvent;
+            switch (m_view.m_imeOptions) {
+                case android.view.inputmethod.EditorInfo.IME_ACTION_NEXT:
+                    fakeEvent = new KeyEvent(event.getDownTime(),
+                                            event.getEventTime(),
+                                            event.getAction(),
+                                            KeyEvent.KEYCODE_TAB,
+                                            event.getRepeatCount(),
+                                            event.getMetaState());
+                    return super.sendKeyEvent(fakeEvent);
+               case android.view.inputmethod.EditorInfo.IME_ACTION_PREVIOUS:
+                    fakeEvent = new KeyEvent(event.getDownTime(),
+                                            event.getEventTime(),
+                                            event.getAction(),
+                                            KeyEvent.KEYCODE_TAB,
+                                            event.getRepeatCount(),
+                                            KeyEvent.META_SHIFT_ON);
+                    return super.sendKeyEvent(fakeEvent);
+                default:
+                   break;
+            }
+        }
+        return super.sendKeyEvent(event);
     }
 
     @Override

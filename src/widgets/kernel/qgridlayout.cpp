@@ -149,14 +149,14 @@ public:
     QRect cellRect(int row, int col) const;
 
     inline QLayoutItem *itemAt(int index) const {
-        if (index < things.count())
+        if (index >= 0 && index < things.count())
             return things.at(index)->item();
         else
             return nullptr;
     }
     inline QLayoutItem *takeAt(int index) {
         Q_Q(QGridLayout);
-        if (index < things.count()) {
+        if (index >= 0 && index < things.count()) {
             if (QGridBox *b = things.takeAt(index)) {
                 QLayoutItem *item = b->takeItem();
                 if (QLayout *l = item->layout()) {
@@ -184,7 +184,7 @@ public:
     }
 
     void getItemPosition(int index, int *row, int *column, int *rowSpan, int *columnSpan) const {
-        if (index < things.count()) {
+        if (index >= 0 && index < things.count()) {
             const QGridBox *b =  things.at(index);
             int toRow = b->toRow(rr);
             int toCol = b->toCol(cc);
@@ -1073,6 +1073,12 @@ QRect QGridLayoutPrivate::cellRect(int row, int col) const
     Constructs a new QGridLayout with parent widget, \a parent.  The
     layout has one row and one column initially, and will expand when
     new items are inserted.
+
+    The layout is set directly as the top-level layout for \a parent.
+    There can be only one top-level layout for a widget. It is returned
+    by QWidget::layout().
+
+    \sa QWidget::setLayout()
 */
 QGridLayout::QGridLayout(QWidget *parent)
     : QLayout(*new QGridLayoutPrivate, nullptr, parent)

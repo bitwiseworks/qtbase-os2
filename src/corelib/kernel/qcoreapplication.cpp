@@ -398,10 +398,11 @@ static bool quitLockRefEnabled = true;
 #endif
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-// Check whether the command line arguments match those passed to main()
-// by comparing to the global __argv/__argc (MS extension).
-// Deep comparison is required since argv/argc is rebuilt by WinMain for
-// GUI apps or when using MinGW due to its globbing.
+// Check whether the command line arguments passed to QCoreApplication
+// match those passed into main(), to see if the user has modified them
+// before passing them on to us. We do this by comparing to the global
+// __argv/__argc (MS extension). Deep comparison is required since
+// argv/argc is rebuilt by our WinMain entrypoint.
 static inline bool isArgvModified(int argc, char **argv)
 {
     if (__argc != argc || !__argv /* wmain() */)
@@ -1251,8 +1252,8 @@ bool QCoreApplication::closingDown()
 
 
 /*!
-    Processes all pending events for the calling thread according to
-    the specified \a flags until there are no more events to process.
+    Processes some pending events for the calling thread according to
+    the specified \a flags.
 
     You can call this function occasionally when your program is busy
     performing a long operation (e.g. copying a file).
@@ -1298,6 +1299,9 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
 
     \note Unlike the \l{QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)}{processEvents()}
     overload, this function also processes events that are posted while the function runs.
+
+    \note All events that were queued before the timeout will be processed,
+    however long it takes.
 
     \threadsafe
 
@@ -2430,32 +2434,46 @@ QStringList QCoreApplication::arguments()
         qWarning("QCoreApplication::arguments: Please instantiate the QApplication object first");
         return list;
     }
-    const int ac = self->d_func()->argc;
-    char ** const av = self->d_func()->argv;
-    list.reserve(ac);
-
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-    // On Windows, it is possible to pass Unicode arguments on
-    // the command line. To restore those, we split the command line
-    // and filter out arguments that were deleted by derived application
-    // classes by index.
-    QString cmdline = QString::fromWCharArray(GetCommandLine());
 
     const QCoreApplicationPrivate *d = self->d_func();
-    if (d->origArgv) {
-        const QStringList allArguments = qWinCmdArgs(cmdline);
-        Q_ASSERT(allArguments.size() == d->origArgc);
-        for (int i = 0; i < d->origArgc; ++i) {
-            if (contains(ac, av, d->origArgv[i]))
-                list.append(allArguments.at(i));
+
+    const int argc = d->argc;
+    char ** const argv = d->argv;
+    list.reserve(argc);
+
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+    const bool argsModifiedByUser = d->origArgv == nullptr;
+    if (!argsModifiedByUser) {
+        // On Windows, it is possible to pass Unicode arguments on
+        // the command line, but we don't implement any of the wide
+        // entry-points (wmain/wWinMain), so get the arguments from
+        // the Windows API instead of using argv. Note that we only
+        // do this when argv were not modified by the user in main().
+        QString cmdline = QString::fromWCharArray(GetCommandLine());
+        QStringList commandLineArguments = qWinCmdArgs(cmdline);
+
+        // Even if the user didn't modify argv before passing them
+        // on to QCoreApplication, derived QApplications might have.
+        // If that's the case argc will differ from origArgc.
+        if (argc != d->origArgc) {
+            // Note: On MingGW the arguments from GetCommandLine are
+            // not wildcard expanded (if wildcard expansion is enabled),
+            // as opposed to the arguments in argv. This means we can't
+            // compare commandLineArguments to argv/origArgc, but
+            // must remove elements by value, based on whether they
+            // were filtered out from argc.
+            for (int i = 0; i < d->origArgc; ++i) {
+                if (!contains(argc, argv, d->origArgv[i]))
+                    commandLineArguments.removeAll(QString::fromLocal8Bit(d->origArgv[i]));
+            }
         }
-        return list;
+
+        return commandLineArguments;
     } // Fall back to rebuilding from argv/argc when a modified argv was passed.
 #endif // defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 
-    for (int a = 0; a < ac; ++a) {
-        list << QString::fromLocal8Bit(av[a]);
-    }
+    for (int a = 0; a < argc; ++a)
+        list << QString::fromLocal8Bit(argv[a]);
 
     return list;
 }
@@ -2748,9 +2766,10 @@ QStringList QCoreApplication::libraryPathsLocked()
 
 /*!
 
-    Sets the list of directories to search when loading libraries to
-    \a paths. All existing paths will be deleted and the path list
-    will consist of the paths given in \a paths.
+    Sets the list of directories to search when loading plugins with
+    QLibrary to \a paths. All existing paths will be deleted and the
+    path list will consist of the paths given in \a paths and the path
+    to the application.
 
     The library paths are reset to the default when an instance of
     QCoreApplication is destructed.

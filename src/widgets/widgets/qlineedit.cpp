@@ -82,8 +82,7 @@
 #include "private/qapplication_p.h"
 #include "private/qshortcutmap_p.h"
 #include "qkeysequence.h"
-#define ACCEL_KEY(k) ((!QCoreApplication::testAttribute(Qt::AA_DontShowIconsInMenus) \
-                        && QGuiApplication::styleHints()->showShortcutsInContextMenus()) \
+#define ACCEL_KEY(k) (!QCoreApplication::testAttribute(Qt::AA_DontShowShortcutsInContextMenus) \
                       && !QGuiApplicationPrivate::instance()->shortcutMap.hasShortcutForKeySequence(k) ? \
                       QLatin1Char('\t') + QKeySequence(k).toString(QKeySequence::NativeText) : QString())
 #else
@@ -1901,8 +1900,11 @@ void QLineEdit::focusInEvent(QFocusEvent *e)
             d->control->moveCursor(d->control->nextMaskBlank(0));
         else if (!d->control->hasSelectedText())
             selectAll();
+        else
+            updateMicroFocus();
     } else if (e->reason() == Qt::MouseFocusReason) {
         d->clickCausedFocus = 1;
+        updateMicroFocus();
     }
 #ifdef QT_KEYPAD_NAVIGATION
     if (!QApplicationPrivate::keypadNavigationEnabled() || (hasEditFocus() && ( e->reason() == Qt::PopupFocusReason))) {
@@ -2082,8 +2084,10 @@ void QLineEdit::paintEvent(QPaintEvent *)
 
     // Asian users see an IM selection text as cursor on candidate
     // selection phase of input method, so the ordinary cursor should be
-    // invisible if we have a preedit string.
-    if (d->cursorVisible && !d->control->isReadOnly())
+    // invisible if we have a preedit string. another condition is when inputmask
+    // isn't empty,we don't need draw cursor,because cursor and character overlaping
+    // area is white.
+    if (d->cursorVisible && !d->control->isReadOnly() && d->control->inputMask().isEmpty())
         flags |= QWidgetLineControl::DrawCursor;
 
     d->control->setCursorWidth(style()->pixelMetric(QStyle::PM_TextCursorWidth, &panel));

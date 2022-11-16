@@ -727,8 +727,8 @@
         },
         "pcre2": {
             "label": "PCRE2",
-            "disable": "input.pcre == 'no' || input.pcre == 'system'",
-            "enable": "input.pcre == 'qt'",
+            "disable": "input.pcre == 'no'",
+            "enable": "input.pcre == 'qt' || features.system-pcre2",
             "output": [ "privateConfig" ]
         },
         "system-pcre2": {
@@ -1045,6 +1045,7 @@
             "label": "QTimeZone",
             "purpose": "Provides support for time-zone handling.",
             "section": "Utilities",
+            "condition": "!config.wasm",
             "output": [ "publicFeature" ]
         },
         "datetimeparser": {

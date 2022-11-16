@@ -44,6 +44,7 @@
 #include "qsslkey_p.h"
 #include "qsslcertificateextension_p.h"
 
+#include <QtCore/qscopeguard.h>
 #include <QtCore/qendian.h>
 #include <QtCore/qmutex.h>
 
@@ -65,10 +66,17 @@ bool QSslCertificate::operator==(const QSslCertificate &other) const
 {
     if (d == other.d)
         return true;
+
     if (d->null && other.d->null)
         return true;
-    if (d->x509 && other.d->x509)
-        return q_X509_cmp(d->x509, other.d->x509) == 0;
+
+    if (d->x509 && other.d->x509) {
+        const int ret = q_X509_cmp(d->x509, other.d->x509);
+        if (ret >= -1 && ret <= 1)
+            return ret == 0;
+        QSslSocketBackendPrivate::logAndClearErrorQueue();
+    }
+
     return false;
 }
 
@@ -323,30 +331,48 @@ QSslKey QSslCertificate::publicKey() const
  */
 static QVariant x509UnknownExtensionToValue(X509_EXTENSION *ext)
 {
-    // Get the extension specific method object if available
+    Q_ASSERT(ext);
+    // Get the extension specific method object if available,
     // we cast away the const-ness here because some versions of openssl
     // don't use const for the parameters in the functions pointers stored
     // in the object.
     X509V3_EXT_METHOD *meth = const_cast<X509V3_EXT_METHOD *>(q_X509V3_EXT_get(ext));
     if (!meth) {
         ASN1_OCTET_STRING *value = q_X509_EXTENSION_get_data(ext);
+        Q_ASSERT(value);
         QByteArray result( reinterpret_cast<const char *>(q_ASN1_STRING_get0_data(value)),
                            q_ASN1_STRING_length(value));
         return result;
     }
 
-    //const unsigned char *data = ext->value->data;
     void *ext_internal = q_X509V3_EXT_d2i(ext);
+    if (!ext_internal)
+        return {};
+
+    const auto extCleaner = qScopeGuard([meth, ext_internal]{
+        Q_ASSERT(ext_internal && meth);
+
+        if (meth->it)
+            q_ASN1_item_free(static_cast<ASN1_VALUE *>(ext_internal), ASN1_ITEM_ptr(meth->it));
+        else if (meth->ext_free)
+            meth->ext_free(ext_internal);
+        else
+            qCWarning(lcSsl, "No method to free an unknown extension, a potential memory leak?");
+    });
 
     // If this extension can be converted
-    if (meth->i2v && ext_internal) {
+    if (meth->i2v) {
         STACK_OF(CONF_VALUE) *val = meth->i2v(meth, ext_internal, nullptr);
+        const auto stackCleaner = qScopeGuard([val]{
+            if (val)
+                q_OPENSSL_sk_pop_free((OPENSSL_STACK *)val, (void(*)(void*))q_X509V3_conf_free);
+        });
 
         QVariantMap map;
         QVariantList list;
         bool isMap = false;
 
-        for (int j = 0; j < q_SKM_sk_num(CONF_VALUE, val); j++) {
+        for (int j = 0; j < q_SKM_sk_num(val); j++) {
             CONF_VALUE *nval = q_SKM_sk_value(CONF_VALUE, val, j);
             if (nval->name && nval->value) {
                 isMap = true;
@@ -362,11 +388,12 @@ static QVariant x509UnknownExtensionToValue(X509_EXTENSION *ext)
             return map;
         else
             return list;
-    } else if (meth->i2s && ext_internal) {
-        //qCDebug(lcSsl) << meth->i2s(meth, ext_internal);
-        QVariant result(QString::fromUtf8(meth->i2s(meth, ext_internal)));
+    } else if (meth->i2s) {
+        const char *hexString = meth->i2s(meth, ext_internal);
+        QVariant result(hexString ? QString::fromUtf8(hexString) : QString{});
+        q_OPENSSL_free((void *)hexString);
         return result;
-    } else if (meth->i2r && ext_internal) {
+    } else if (meth->i2r) {
         QByteArray result;
 
         BIO *bio = q_BIO_new(q_BIO_s_mem());
@@ -396,11 +423,36 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
     ASN1_OBJECT *obj = q_X509_EXTENSION_get_object(ext);
     int nid = q_OBJ_obj2nid(obj);
 
+    // We cast away the const-ness here because some versions of openssl
+    // don't use const for the parameters in the functions pointers stored
+    // in the object.
+    X509V3_EXT_METHOD *meth = const_cast<X509V3_EXT_METHOD *>(q_X509V3_EXT_get(ext));
+
+    void *ext_internal = nullptr; // The value, returned by X509V3_EXT_d2i.
+    const auto extCleaner = qScopeGuard([meth, &ext_internal]() {
+        if (!meth || !ext_internal)
+            return;
+
+        if (meth->it)
+            q_ASN1_item_free(static_cast<ASN1_VALUE *>(ext_internal), ASN1_ITEM_ptr(meth->it));
+        else if (meth->ext_free)
+            meth->ext_free(ext_internal);
+        else
+            qWarning(lcSsl, "Cannot free an extension, a potential memory leak?");
+    });
+
+    const char * hexString = nullptr; // The value returned by meth->i2s.
+    const auto hexStringCleaner = qScopeGuard([&hexString](){
+        if (hexString)
+            q_OPENSSL_free((void*)hexString);
+    });
+
     switch (nid) {
     case NID_basic_constraints:
         {
             BASIC_CONSTRAINTS *basic = reinterpret_cast<BASIC_CONSTRAINTS *>(q_X509V3_EXT_d2i(ext));
-
+            if (!basic)
+                return {};
             QVariantMap result;
             result[QLatin1String("ca")] = basic->ca ? true : false;
             if (basic->pathlen)
@@ -413,9 +465,10 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
     case NID_info_access:
         {
             AUTHORITY_INFO_ACCESS *info = reinterpret_cast<AUTHORITY_INFO_ACCESS *>(q_X509V3_EXT_d2i(ext));
-
+            if (!info)
+                return {};
             QVariantMap result;
-            for (int i=0; i < q_SKM_sk_num(ACCESS_DESCRIPTION, info); i++) {
+            for (int i=0; i < q_SKM_sk_num(info); i++) {
                 ACCESS_DESCRIPTION *ad = q_SKM_sk_value(ACCESS_DESCRIPTION, info, i);
 
                 GENERAL_NAME *name = ad->location;
@@ -435,26 +488,25 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
                 }
             }
 
-            q_OPENSSL_sk_pop_free((OPENSSL_STACK*)info, reinterpret_cast<void(*)(void *)>(q_OPENSSL_sk_free));
+            q_AUTHORITY_INFO_ACCESS_free(info);
             return result;
         }
         break;
     case NID_subject_key_identifier:
         {
-            void *ext_internal = q_X509V3_EXT_d2i(ext);
+            ext_internal = q_X509V3_EXT_d2i(ext);
+            if (!ext_internal)
+                return {};
 
-            // we cast away the const-ness here because some versions of openssl
-            // don't use const for the parameters in the functions pointers stored
-            // in the object.
-            X509V3_EXT_METHOD *meth = const_cast<X509V3_EXT_METHOD *>(q_X509V3_EXT_get(ext));
-
-            return QVariant(QString::fromUtf8(meth->i2s(meth, ext_internal)));
+            hexString = meth->i2s(meth, ext_internal);
+            return QVariant(QString::fromUtf8(hexString));
         }
         break;
-    case NID_authority_key_identifier:
+        case NID_authority_key_identifier:
         {
             AUTHORITY_KEYID *auth_key = reinterpret_cast<AUTHORITY_KEYID *>(q_X509V3_EXT_d2i(ext));
-
+            if (!auth_key)
+                return {};
             QVariantMap result;
 
             // keyid
@@ -477,14 +529,21 @@ static QVariant x509ExtensionToValue(X509_EXTENSION *ext)
         break;
     }
 
-    return QVariant();
+    return {};
 }
 
 QSslCertificateExtension QSslCertificatePrivate::convertExtension(X509_EXTENSION *ext)
 {
+    Q_ASSERT(ext);
+
     QSslCertificateExtension result;
 
     ASN1_OBJECT *obj = q_X509_EXTENSION_get_object(ext);
+    if (!obj) {
+        qCWarning(lcSsl, "Invalid (nullptr) ASN1_OBJECT");
+        return result;
+    }
+
     QByteArray oid = QSslCertificatePrivate::asn1ObjectId(obj);
     QByteArray name = QSslCertificatePrivate::asn1ObjectName(obj);
 
@@ -521,10 +580,17 @@ QList<QSslCertificateExtension> QSslCertificate::extensions() const
         return result;
 
     int count = q_X509_get_ext_count(d->x509);
+    if (count <= 0)
+        return result;
+
     result.reserve(count);
 
     for (int i = 0; i < count; i++) {
         X509_EXTENSION *ext = q_X509_get_ext(d->x509, i);
+        if (!ext) {
+            qCWarning(lcSsl) << "Invalid (nullptr) extension at index" << i;
+            continue;
+        }
         result << QSslCertificatePrivate::convertExtension(ext);
     }
 

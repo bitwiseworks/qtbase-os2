@@ -103,6 +103,10 @@ private slots:
 
     void setPixel_data();
     void setPixel();
+    void setPixelWithAlpha_data();
+    void setPixelWithAlpha();
+    void setPixelColorWithAlpha_data();
+    void setPixelColorWithAlpha();
 
     void defaultColorTable_data();
     void defaultColorTable();
@@ -147,6 +151,7 @@ private slots:
     void fillColor_data();
     void fillColor();
 
+    void fillColorWithAlpha_data();
     void fillColorWithAlpha();
 
     void fillRGB888();
@@ -1477,6 +1482,62 @@ void tst_QImage::setPixel()
     }
 }
 
+void tst_QImage::setPixelWithAlpha_data()
+{
+    QTest::addColumn<QImage::Format>("format");
+
+    for (int c = QImage::Format_RGB32; c < QImage::NImageFormats; ++c) {
+        if (c == QImage::Format_Grayscale8)
+            continue;
+        if (c == QImage::Format_Grayscale16)
+            continue;
+        if (c == QImage::Format_Alpha8)
+            continue;
+        QTest::newRow(qPrintable(formatToString(QImage::Format(c)))) << QImage::Format(c);
+    }
+}
+
+void tst_QImage::setPixelWithAlpha()
+{
+    QFETCH(QImage::Format, format);
+    QImage image(1, 1, format);
+    QRgb referenceColor = qRgba(0, 170, 85, 170);
+    image.setPixel(0, 0, referenceColor);
+
+    if (!image.hasAlphaChannel())
+        referenceColor = 0xff000000 | referenceColor;
+
+    QRgb color = image.pixel(0, 0);
+    QCOMPARE(qRed(color) & 0xf0, qRed(referenceColor) & 0xf0);
+    QCOMPARE(qGreen(color) & 0xf0, qGreen(referenceColor) & 0xf0);
+    QCOMPARE(qBlue(color) & 0xf0, qBlue(referenceColor) & 0xf0);
+    QCOMPARE(qAlpha(color) & 0xf0, qAlpha(referenceColor) & 0xf0);
+}
+
+void tst_QImage::setPixelColorWithAlpha_data()
+{
+    setPixelWithAlpha_data();
+}
+
+void tst_QImage::setPixelColorWithAlpha()
+{
+    QFETCH(QImage::Format, format);
+    QImage image(1, 1, format);
+    image.setPixelColor(0, 0, QColor(170, 85, 255, 170));
+    QRgb referenceColor = qRgba(170, 85, 255, 170);
+
+    if (!image.hasAlphaChannel())
+        referenceColor = 0xff000000 | referenceColor;
+    else if (image.pixelFormat().premultiplied() == QPixelFormat::Premultiplied)
+        referenceColor = qPremultiply(referenceColor);
+
+    QRgb color = image.pixel(0, 0);
+    QCOMPARE(qRed(color) & 0xf0, qRed(referenceColor) & 0xf0);
+    QCOMPARE(qGreen(color) & 0xf0, qGreen(referenceColor) & 0xf0);
+    QCOMPARE(qBlue(color) & 0xf0, qBlue(referenceColor) & 0xf0);
+    QCOMPARE(qAlpha(color) & 0xf0, qAlpha(referenceColor) & 0xf0);
+}
+
 void tst_QImage::convertToFormatPreserveDotsPrMeter()
 {
     QImage img(100, 100, QImage::Format_ARGB32_Premultiplied);
@@ -2342,15 +2403,28 @@ void tst_QImage::fillColor()
     }
 }
 
+void tst_QImage::fillColorWithAlpha_data()
+{
+    setPixelWithAlpha_data();
+}
+
 void tst_QImage::fillColorWithAlpha()
 {
-    QImage argb32(1, 1, QImage::Format_ARGB32);
-    argb32.fill(QColor(255, 0, 0, 127));
-    QCOMPARE(argb32.pixel(0, 0), qRgba(255, 0, 0, 127));
+    QFETCH(QImage::Format, format);
+    QImage image(1, 1, format);
+    image.fill(QColor(255, 170, 85, 170));
+    QRgb referenceColor = qRgba(255, 170, 85, 170);
 
-    QImage argb32pm(1, 1, QImage::Format_ARGB32_Premultiplied);
-    argb32pm.fill(QColor(255, 0, 0, 127));
-    QCOMPARE(argb32pm.pixel(0, 0), 0x7f7f0000u);
+    if (!image.hasAlphaChannel())
+        referenceColor = 0xff000000 | referenceColor;
+    else if (image.pixelFormat().premultiplied() == QPixelFormat::Premultiplied)
+        referenceColor = qPremultiply(referenceColor);
+
+    QRgb color = image.pixel(0, 0);
+    QCOMPARE(qRed(color) & 0xf0, qRed(referenceColor) & 0xf0);
+    QCOMPARE(qGreen(color) & 0xf0, qGreen(referenceColor) & 0xf0);
+    QCOMPARE(qBlue(color) & 0xf0, qBlue(referenceColor) & 0xf0);
+    QCOMPARE(qAlpha(color) & 0xf0, qAlpha(referenceColor) & 0xf0);
 }
 
 void tst_QImage::fillRGB888()
@@ -2376,10 +2450,13 @@ void tst_QImage::fillPixel_data()
 
     QTest::newRow("RGB16, transparent") << QImage::Format_RGB16 << 0x0u << 0xff000000u;
     QTest::newRow("RGB32, transparent") << QImage::Format_RGB32 << 0x0u << 0xff000000u;
+    QTest::newRow("RGB444, transparent") << QImage::Format_RGB444 << 0x0u << 0xff000000u;
+    QTest::newRow("RGB666, transparent") << QImage::Format_RGB666 << 0x0u << 0xff000000u;
     QTest::newRow("RGBx8888, transparent") << QImage::Format_RGBX8888 << 0x0u << 0xff000000u;
     QTest::newRow("ARGB32, transparent") << QImage::Format_ARGB32 << 0x0u << 0x00000000u;
     QTest::newRow("ARGB32pm, transparent") << QImage::Format_ARGB32_Premultiplied << 0x0u << 0x00000000u;
     QTest::newRow("RGBA8888pm, transparent") << QImage::Format_RGBA8888_Premultiplied << 0x0u << 0x00000000u;
+    QTest::newRow("Grayscale8, transparent") << QImage::Format_Grayscale8 << 0x0u << 0xff000000u;
     QTest::newRow("Alpha8, transparent") << QImage::Format_Alpha8 << 0x0u << 0x00000000u;
 
     QTest::newRow("RGB16, red") << QImage::Format_RGB16 << (uint)qConvertRgb32To16(0xffff0000) << 0xffff0000u;
@@ -2387,13 +2464,14 @@ void tst_QImage::fillPixel_data()
     QTest::newRow("ARGB32, red") << QImage::Format_ARGB32 << 0xffff0000u << 0xffff0000u;
     QTest::newRow("RGBA8888, red") << QImage::Format_RGBA8888 << 0xff0000ffu << 0xffff0000u;
 
-    QTest::newRow("Grayscale8, grey") << QImage::Format_Grayscale8 << 0xff808080u << 0xff808080u;
+    QTest::newRow("Grayscale8, grey") << QImage::Format_Grayscale8 << 0x80u << 0xff808080u;
 
     QTest::newRow("RGB32, semi-red") << QImage::Format_RGB32 << 0x80ff0000u << 0xffff0000u;
     QTest::newRow("ARGB32, semi-red") << QImage::Format_ARGB32 << 0x80ff0000u << 0x80ff0000u;
     QTest::newRow("ARGB32pm, semi-red") << QImage::Format_ARGB32 << 0x80800000u << 0x80800000u;
     QTest::newRow("RGBA8888pm, semi-red") << QImage::Format_RGBA8888_Premultiplied << 0x80000080u << 0x80800000u;
-    QTest::newRow("Alpha8, semi-red") << QImage::Format_Alpha8 << 0x80000080u << 0x80000000u;
+
+    QTest::newRow("Alpha8, semi-transparent") << QImage::Format_Alpha8 << 0x80u << 0x80000000u;
 }
 
 void tst_QImage::fillPixel()
@@ -2406,6 +2484,8 @@ void tst_QImage::fillPixel()
 
     image.fill(color);
     QCOMPARE(image.pixel(0, 0), pixelValue);
+    if (image.depth() == 8)
+        QCOMPARE(*(const uchar *)image.constBits(), color);
 }
 
 void tst_QImage::rgbSwapped_data()
@@ -3492,6 +3572,13 @@ void tst_QImage::metadataPassthrough()
     QCOMPARE(converted.dotsPerMeterY(), a.dotsPerMeterY());
     QCOMPARE(converted.devicePixelRatio(), a.devicePixelRatio());
 
+    QVector<QRgb> clut({ 0xFFFF0000, 0xFF00FF00, 0xFF0000FF });
+    QImage convertedWithClut = a.convertToFormat(QImage::Format_Indexed8, clut);
+    QCOMPARE(convertedWithClut.text(QStringLiteral("Test")), a.text(QStringLiteral("Test")));
+    QCOMPARE(convertedWithClut.dotsPerMeterX(), a.dotsPerMeterX());
+    QCOMPARE(convertedWithClut.dotsPerMeterY(), a.dotsPerMeterY());
+    QCOMPARE(convertedWithClut.devicePixelRatio(), a.devicePixelRatio());
+
     QImage copied = a.copy(0, 0, a.width() / 2, a.height() / 2);
     QCOMPARE(copied.text(QStringLiteral("Test")), a.text(QStringLiteral("Test")));
     QCOMPARE(copied.dotsPerMeterX(), a.dotsPerMeterX());
@@ -3536,6 +3623,14 @@ void tst_QImage::pixelColor()
     // Try setting an invalid color.
     QTest::ignoreMessage(QtWarningMsg, "QImage::setPixelColor: color is invalid");
     argb32.setPixelColor(0, 0, QColor());
+
+    // Test correct premultiplied handling of RGBA64 as well
+    QImage rgba64(1, 1, QImage::Format_RGBA64);
+    QImage rgba64pm(1, 1, QImage::Format_RGBA64_Premultiplied);
+    rgba64.setPixelColor(QPoint(0, 0), c);
+    rgba64pm.setPixelColor(QPoint(0, 0), c);
+    QCOMPARE(rgba64.pixelColor(QPoint(0, 0)), c);
+    QCOMPARE(rgba64pm.pixelColor(QPoint(0, 0)), c);
 }
 
 void tst_QImage::pixel()

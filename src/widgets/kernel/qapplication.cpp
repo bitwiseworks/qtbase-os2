@@ -1432,9 +1432,11 @@ QFont QApplication::font()
 /*!
     \overload
 
-    Returns the default font for the \a widget.
+    Returns the default font for the \a widget. If a default font was not
+    registered for the \a{widget}'s class, it returns the default font of
+    its nearest registered superclass.
 
-    \sa fontMetrics(), QWidget::setFont()
+    \sa fontMetrics(), setFont(), QWidget::setFont()
 */
 
 QFont QApplication::font(const QWidget *widget)
@@ -1452,14 +1454,16 @@ QFont QApplication::font(const QWidget *widget)
             return hash->value(QByteArrayLiteral("QMiniFont"));
         }
 #endif
-        FontHashConstIt it = hash->constFind(widget->metaObject()->className());
+        // Return the font for the nearest registered superclass
+        const QMetaObject *metaObj = widget->metaObject();
+        FontHashConstIt it = hash->constFind(metaObj->className());
         const FontHashConstIt cend = hash->constEnd();
+        while (it == cend && metaObj != &QWidget::staticMetaObject) {
+            metaObj = metaObj->superClass();
+            it = hash->constFind(metaObj->className());
+        }
         if (it != cend)
             return it.value();
-        for (it = hash->constBegin(); it != cend; ++it) {
-            if (widget->inherits(it.key()))
-                return it.value();
-        }
     }
     return font();
 }
@@ -2050,12 +2054,13 @@ void QApplication::setActiveWindow(QWidget* act)
                 if (w) {
                     w->setFocus(Qt::ActiveWindowFocusReason);
                 } else {
-                    // If the focus widget is not in the activate_window, clear the focus
                     w = QApplicationPrivate::focus_widget;
-                    if (!w && QApplicationPrivate::active_window->focusPolicy() != Qt::NoFocus)
-                        QApplicationPrivate::setFocusWidget(QApplicationPrivate::active_window, Qt::ActiveWindowFocusReason);
-                    else if (!QApplicationPrivate::active_window->isAncestorOf(w))
+                    if (!w && QApplicationPrivate::active_window->focusPolicy() != Qt::NoFocus) {
+                        QApplicationPrivate::active_window->setFocus(Qt::ActiveWindowFocusReason);
+                    } else if (!QApplicationPrivate::active_window->isAncestorOf(w)) {
+                        // If the focus widget is not in the activate_window, clear the focus
                         QApplicationPrivate::setFocusWidget(nullptr, Qt::ActiveWindowFocusReason);
+                    }
                 }
             }
         }

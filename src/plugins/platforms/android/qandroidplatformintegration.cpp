@@ -52,6 +52,7 @@
 #include <qpa/qplatformoffscreensurface.h>
 
 #include "androidjnimain.h"
+#include "androidjniaccessibility.h"
 #include "qabstracteventdispatcher.h"
 #include "qandroideventdispatcher.h"
 #include "qandroidplatformbackingstore.h"
@@ -89,6 +90,7 @@ Qt::ScreenOrientation QAndroidPlatformIntegration::m_orientation = Qt::PrimaryOr
 Qt::ScreenOrientation QAndroidPlatformIntegration::m_nativeOrientation = Qt::PrimaryOrientation;
 
 bool QAndroidPlatformIntegration::m_showPasswordEnabled = false;
+static bool m_running = false;
 
 void *QAndroidPlatformNativeInterface::nativeResourceForIntegration(const QByteArray &resource)
 {
@@ -151,6 +153,16 @@ void QAndroidPlatformNativeInterface::customEvent(QEvent *event)
     QMutexLocker lock(QtAndroid::platformInterfaceMutex());
     QAndroidPlatformIntegration *api = static_cast<QAndroidPlatformIntegration *>(QGuiApplicationPrivate::platformIntegration());
     QtAndroid::setAndroidPlatformIntegration(api);
+
+#ifndef QT_NO_ACCESSIBILITY
+    // Android accessibility activation event might have been already received
+    api->accessibility()->setActive(QtAndroidAccessibility::isActive());
+#endif // QT_NO_ACCESSIBILITY
+
+    if (!m_running) {
+        m_running = true;
+        QtAndroid::notifyQtAndroidPluginRunning(m_running);
+    }
     api->flushPendingUpdates();
 }
 

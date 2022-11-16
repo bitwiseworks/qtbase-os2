@@ -973,13 +973,27 @@ bool QDockWidgetPrivate::mouseMoveEvent(QMouseEvent *event)
             && mwlayout->pluggingWidget == nullptr
             && (event->pos() - state->pressPos).manhattanLength()
                 > QApplication::startDragDistance()) {
-            startDrag();
-            q->grabMouse();
-            ret = true;
+
+#ifdef Q_OS_MACOS
+            if (windowHandle() && !q->isFloating()) {
+                // When using native widgets on mac, we have not yet been successful in
+                // starting a drag on an NSView that belongs to one window (QMainWindow),
+                // but continue the drag on another (QDockWidget). This is what happens if
+                // we try to make this widget floating during a drag. So as a fall back
+                // solution, we simply make this widget floating instead, when we would
+                // otherwise start a drag.
+                q->setFloating(true);
+            } else
+#endif
+            {
+                startDrag();
+                q->grabMouse();
+                ret = true;
+            }
         }
     }
 
-    if (state->dragging && !state->nca) {
+    if (state && state->dragging && !state->nca) {
         QMargins windowMargins = q->window()->windowHandle()->frameMargins();
         QPoint windowMarginOffset = QPoint(windowMargins.left(), windowMargins.top());
         QPoint pos = event->globalPos() - state->pressPos - windowMarginOffset;
@@ -1221,6 +1235,11 @@ void QDockWidgetPrivate::setWindowState(bool floating, bool unplug, const QRect 
     should not be set on the QDockWidget itself, because they change depending
     on whether it is docked; a docked QDockWidget has no frame and a smaller title
     bar.
+
+    \note On macOS, if the QDockWidget has a native window handle (for example,
+    if winId() is called on it or the child widget), then due to a limitation it will not be
+    possible to drag the dock widget when undocking. Starting the drag will undock
+    the dock widget, but a second drag will be needed to move the dock widget itself.
 
     \sa QMainWindow, {Dock Widgets Example}
 */

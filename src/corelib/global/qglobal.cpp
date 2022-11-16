@@ -499,6 +499,14 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     \since 4.2
 
     Returns \c true if the flag \a flag is set, otherwise \c false.
+
+    \note if \a flag contains multiple bits set to 1 (for instance, if
+    it's an enumerator equal to the bitwise-OR of other enumerators)
+    then this function will return \c true if and only if all the bits
+    are set in this flags object. On the other hand, if \a flag contains
+    no bits set to 1 (that is, its value as a integer is 0), then this
+    function will return \c true if and only if this flags object also
+    has no bits set to 1.
 */
 
 /*!
@@ -4224,9 +4232,8 @@ bool qunsetenv(const char *varName)
 
     \list
     \li \c Q_PRIMITIVE_TYPE specifies that \a Type is a POD (plain old
-       data) type with no constructor or destructor, or else a type where
-       every bit pattern is a valid object and memcpy() creates a valid
-       independent copy of the object.
+       data) type with no constructor or destructor, and for which memcpy()ing
+       creates a valid independent copy of the object.
     \li \c Q_MOVABLE_TYPE specifies that \a Type has a constructor
        and/or a destructor but can be moved in memory using \c
        memcpy(). Note: despite the name, this has nothing to do with move

@@ -350,6 +350,11 @@ static QByteArray parseTzPosixRule(QDataStream &ds)
 
 static QDate calculateDowDate(int year, int month, int dayOfWeek, int week)
 {
+    if (dayOfWeek == 0) // Sunday; we represent it as 7, POSIX uses 0
+        dayOfWeek = 7;
+    else if (dayOfWeek & ~7 || month < 1 || month > 12 || week < 1 || week > 5)
+        return QDate();
+
     QDate date(year, month, 1);
     int startDow = date.dayOfWeek();
     if (startDow <= dayOfWeek)
@@ -364,28 +369,34 @@ static QDate calculateDowDate(int year, int month, int dayOfWeek, int week)
 
 static QDate calculatePosixDate(const QByteArray &dateRule, int year)
 {
+    bool ok;
     // Can start with M, J, or a digit
     if (dateRule.at(0) == 'M') {
         // nth week in month format "Mmonth.week.dow"
         QList<QByteArray> dateParts = dateRule.split('.');
-        int month = dateParts.at(0).mid(1).toInt();
-        int week = dateParts.at(1).toInt();
-        int dow = dateParts.at(2).toInt();
-        if (dow == 0)
-            ++dow;
-        return calculateDowDate(year, month, dow, week);
+        if (dateParts.count() > 2) {
+            int month = dateParts.at(0).mid(1).toInt(&ok);
+            int week = ok ? dateParts.at(1).toInt(&ok) : 0;
+            int dow = ok ? dateParts.at(2).toInt(&ok) : 0;
+            if (ok)
+                return calculateDowDate(year, month, dow, week);
+        }
     } else if (dateRule.at(0) == 'J') {
         // Day of Year ignores Feb 29
-        int doy = dateRule.mid(1).toInt();
-        QDate date = QDate(year, 1, 1).addDays(doy - 1);
-        if (QDate::isLeapYear(date.year()))
-            date = date.addDays(-1);
-        return date;
+        int doy = dateRule.mid(1).toInt(&ok);
+        if (ok && doy > 0 && doy < 366) {
+            QDate date = QDate(year, 1, 1).addDays(doy - 1);
+            if (QDate::isLeapYear(date.year()) && date.month() > 2)
+                date = date.addDays(-1);
+            return date;
+        }
     } else {
         // Day of Year includes Feb 29
-        int doy = dateRule.toInt();
-        return QDate(year, 1, 1).addDays(doy - 1);
+        int doy = dateRule.toInt(&ok);
+        if (ok && doy > 0 && doy <= 366)
+            return QDate(year, 1, 1).addDays(doy - 1);
     }
+    return QDate();
 }
 
 // returns the time in seconds, INT_MIN if we failed to parse
@@ -394,29 +405,34 @@ static int parsePosixTime(const char *begin, const char *end)
     // Format "hh[:mm[:ss]]"
     int hour, min = 0, sec = 0;
 
-    // Note that the calls to qstrtoll do *not* check the end pointer, which
-    // means they proceed until they find a non-digit. We check that we're
-    // still in range at the end, but we may have read from past end. It's the
-    // caller's responsibility to ensure that begin is part of a
-    // null-terminated string.
+    // Note that the calls to qstrtoll do *not* check against the end pointer,
+    // which means they proceed until they find a non-digit. We check that we're
+    // still in range at the end, but we may have read past end. It's the
+    // caller's responsibility to ensure that begin is part of a null-terminated
+    // string.
 
+    const int maxHour = QTimeZone::MaxUtcOffsetSecs / 3600;
     bool ok = false;
-    hour = qstrtoll(begin, &begin, 10, &ok);
-    if (!ok || hour < 0)
+    const char *cut = begin;
+    hour = qstrtoll(begin, &cut, 10, &ok);
+    if (!ok || hour < 0 || hour > maxHour || cut > begin + 2)
         return INT_MIN;
+    begin = cut;
     if (begin < end && *begin == ':') {
         // minutes
         ++begin;
-        min = qstrtoll(begin, &begin, 10, &ok);
-        if (!ok || min < 0)
+        min = qstrtoll(begin, &cut, 10, &ok);
+        if (!ok || min < 0 || min > 59 || cut > begin + 2)
             return INT_MIN;
 
+        begin = cut;
         if (begin < end && *begin == ':') {
             // seconds
             ++begin;
-            sec = qstrtoll(begin, &begin, 10, &ok);
-            if (!ok || sec < 0)
+            sec = qstrtoll(begin, &cut, 10, &ok);
+            if (!ok || sec < 0 || sec > 59 || cut > begin + 2)
                 return INT_MIN;
+            begin = cut;
         }
     }
 
@@ -571,7 +587,8 @@ static QVector<QTimeZonePrivate::Data> calculatePosixTransitions(const QByteArra
         result << data;
         return result;
     }
-
+    if (parts.count() < 3 || parts.at(1).isEmpty() || parts.at(2).isEmpty())
+        return result; // Malformed.
 
     // Get the std to dst transtion details
     QList<QByteArray> dstParts = parts.at(1).split('/');
@@ -590,6 +607,9 @@ static QVector<QTimeZonePrivate::Data> calculatePosixTransitions(const QByteArra
         stdTime = parsePosixTransitionTime(stdParts.at(1));
     else
         stdTime = QTime(2, 0, 0);
+
+    if (dstDateRule.isEmpty() || stdDateRule.isEmpty() || !dstTime.isValid() || !stdTime.isValid())
+        return result; // Malformed.
 
     // Limit year to the range QDateTime can represent:
     const int minYear = int(QDateTime::YearRange::First);
@@ -855,20 +875,26 @@ QTzTimeZoneCacheEntry QTzTimeZoneCache::fetchEntry(const QByteArray &ianaId)
 void QTzTimeZonePrivate::init(const QByteArray &ianaId)
 {
     static QTzTimeZoneCache tzCache;
-    const auto &entry = tzCache.fetchEntry(ianaId);
+    auto entry = tzCache.fetchEntry(ianaId);
     if (entry.m_tranTimes.isEmpty() && entry.m_posixRule.isEmpty())
         return; // Invalid after all !
 
     cached_data = std::move(entry);
     m_id = ianaId;
     // Avoid empty ID, if we have an abbreviation to use instead
-    if (m_id.isEmpty()) { // We've read /etc/localtime's contents
-        for (const auto &abbr : cached_data.m_abbreviations) {
-            if (!abbr.isEmpty()) {
-                m_id = abbr;
-                break;
-            }
-        }
+    if (m_id.isEmpty()) {
+        // This can only happen for the system zone, when we've read the
+        // contents of /etc/localtime because it wasn't a symlink.
+#if QT_CONFIG(icu)
+        // Use ICU's system zone, if only to avoid using the abbreviation as ID
+        // (ICU might mis-recognize it) in displayName().
+        m_icu = new QIcuTimeZonePrivate();
+        // Use its ID, as an alternate source of data:
+        m_id = m_icu->id();
+        if (!m_id.isEmpty())
+            return;
+#endif
+        m_id = abbreviation(QDateTime::currentMSecsSinceEpoch()).toUtf8();
     }
 }
 
@@ -897,7 +923,8 @@ QString QTzTimeZonePrivate::displayName(qint64 atMSecsSinceEpoch,
     Q_UNUSED(nameType)
     Q_UNUSED(locale)
 #endif
-    return abbreviation(atMSecsSinceEpoch);
+    // Fall back to base-class:
+    return QTimeZonePrivate::displayName(atMSecsSinceEpoch, nameType, locale);
 }
 
 QString QTzTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
@@ -1157,8 +1184,11 @@ public:
          */
         const StatIdent local = identify("/etc/localtime");
         const StatIdent tz = identify("/etc/TZ");
-        if (!m_name.isEmpty() && m_last.isValid() && (m_last == local || m_last == tz))
+        const StatIdent timezone = identify("/etc/timezone");
+        if (!m_name.isEmpty() && m_last.isValid()
+            && (m_last == local || m_last == tz || m_last == timezone)) {
             return m_name;
+        }
 
         m_name = etcLocalTime();
         if (!m_name.isEmpty()) {
@@ -1166,11 +1196,18 @@ public:
             return m_name;
         }
 
-        m_name = etcTZ();
-        m_last = m_name.isEmpty() ? StatIdent() : tz;
+        // Some systems (e.g. uClibc) have a default value for $TZ in /etc/TZ:
+        m_name = etcContent(QStringLiteral("/etc/TZ"));
+        if (!m_name.isEmpty()) {
+            m_last = tz;
+            return m_name;
+        }
+
+        // Gentoo still (2020, QTBUG-87326) uses this:
+        m_name = etcContent(QStringLiteral("/etc/timezone"));
+        m_last = m_name.isEmpty() ? StatIdent() : timezone;
         return m_name;
     }
-
 
 private:
     QByteArray m_name;
@@ -1212,10 +1249,8 @@ private:
         return QByteArray();
     }
 
-    static QByteArray etcTZ()
+    static QByteArray etcContent(const QString &path)
     {
-        // Some systems (e.g. uClibc) have a default value for $TZ in /etc/TZ:
-        const QString path = QStringLiteral("/etc/TZ");
         QFile zone(path);
         if (zone.open(QIODevice::ReadOnly))
             return zone.readAll().trimmed();

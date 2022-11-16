@@ -58,7 +58,7 @@ debug-%: CONFIGURATION = Debug
 
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# Test and build (device) destinations
+# Test device destinations
 ifneq ($(filter check%,$(MAKECMDGOALS)),)
   ifeq ($(DEVICES),)
     $(info Enumerating test destinations (you may override this by setting DEVICES explicitly), please wait...)
@@ -72,15 +72,19 @@ endif
 %-device: DEVICES = $(HARDWARE_DEVICES)
 
 GENERIC_DEVICE_DESTINATION := $(EXPORT_GENERIC_DEVICE_DESTINATION)
-GENERIC_SIMULATOR_DESTINATION := "id=$(shell $(MAKEFILE_DIR)devices.py $(EXPORT_DEVICE_FILTER) | tail -n 1)"
+GENERIC_SIMULATOR_DESTINATION := $(EXPORT_GENERIC_SIMULATOR_DESTINATION)
 
-%-simulator: DESTINATION = $(if $(DESTINATION_ID),"id=$(DESTINATION_ID)",$(GENERIC_SIMULATOR_DESTINATION))
-%-device: DESTINATION = $(if $(DESTINATION_ID),"id=$(DESTINATION_ID)",$(GENERIC_DEVICE_DESTINATION))
+%-simulator: DESTINATION = $(if $(DESTINATION_ID),"id=$(DESTINATION_ID)","$(GENERIC_SIMULATOR_DESTINATION)")
+%-device: DESTINATION = $(if $(DESTINATION_ID),"id=$(DESTINATION_ID)","$(GENERIC_DEVICE_DESTINATION)")
 
 XCODE_VERSION_MAJOR := $(shell xcodebuild -version | grep Xcode | sed -e 's/Xcode //' | sed -e 's/\..*//')
 
 ifeq ($(shell test $(XCODE_VERSION_MAJOR) -gt 7; echo $$?),0)
   XCODEBUILD_FLAGS += $(shell echo "$(MAKEFLAGS)" | sed -e 's/\([^ ]*\).*/\1/' | grep -qv 's' || echo -quiet)
+endif
+
+ifeq ($(shell test $(XCODE_VERSION_MAJOR) -ge 9; echo $$?),0)
+  XCODEBUILD_FLAGS += -allowProvisioningUpdates
 endif
 
 # Xcodebuild

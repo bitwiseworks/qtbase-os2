@@ -1079,6 +1079,11 @@ public class QtActivity extends Activity
         QtNative.activityDelegate().resetSoftwareKeyboard();
     }
 
+    public void updateInputItemRectangle(final int x, final int y, final int w, final int h)
+    {
+        QtNative.activityDelegate().updateInputItemRectangle(x, y, w, h);
+    }
+
     public boolean setKeyboardVisibility(boolean visibility, long timeStamp)
     {
         return QtNative.activityDelegate().setKeyboardVisibility(visibility, timeStamp);
@@ -1090,10 +1095,10 @@ public class QtActivity extends Activity
     }
 
     public void showSoftwareKeyboard(final int x, final int y, final int width,
-                                     final int height, final int inputHints,
-                                     final int enterKeyType)
+                                     final int height, final int editorHeight,
+                                     final int inputHints, final int enterKeyType)
     {
-        QtNative.activityDelegate().showSoftwareKeyboard(x, y, width, height, inputHints, enterKeyType);
+        QtNative.activityDelegate().showSoftwareKeyboard(x, y, width, height, editorHeight, inputHints, enterKeyType);
     }
 
     public boolean startApplication()
@@ -1120,5 +1125,29 @@ public class QtActivity extends Activity
     public void setFullScreen(boolean enterFullScreen)
     {
         QtNative.activityDelegate().setFullScreen(enterFullScreen);
+    }
+
+    public void notifyAccessibilityLocationChange()
+    {
+        QtNative.activityDelegate().notifyAccessibilityLocationChange();
+    }
+
+    public void notifyObjectHide(int viewId)
+    {
+        QtNative.activityDelegate().notifyObjectHide(viewId);
+    }
+
+    public void notifyObjectFocus(int viewId)
+    {
+        QtNative.activityDelegate().notifyObjectFocus(viewId);
+    }
+    public boolean isKeyboardVisible()
+    {
+        return QtNative.activityDelegate().isKeyboardVisible();
+    }
+
+    public void notifyQtAndroidPluginRunning(boolean running)
+    {
+        QtNative.activityDelegate().notifyQtAndroidPluginRunning(running);
     }
 }

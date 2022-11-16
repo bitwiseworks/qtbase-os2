@@ -219,6 +219,7 @@ Type Moc::parseType()
         case DOUBLE:
         case VOID:
         case BOOL:
+        case AUTO:
             type.name += lexem();
             isVoid |= (lookup(0) == VOID);
             break;
@@ -261,6 +262,12 @@ Type Moc::parseType()
     return type;
 }
 
+enum class IncludeState {
+    IncludeBegin,
+    IncludeEnd,
+    NoInclude,
+};
+
 bool Moc::parseEnum(EnumDef *def)
 {
     bool isTypdefEnum = false; // typedef enum { ... } Foo;
@@ -281,18 +288,27 @@ bool Moc::parseEnum(EnumDef *def)
     }
     if (!test(LBRACE))
         return false;
-    auto handleInclude = [this]() {
-        if (test(MOC_INCLUDE_BEGIN))
+    auto handleInclude = [this]() -> IncludeState  {
+        bool hadIncludeBegin = false;
+        if (test(MOC_INCLUDE_BEGIN)) {
             currentFilenames.push(symbol().unquotedLexem());
+            // we do not return early to handle empty headers in one go
+            hadIncludeBegin = true;
+        }
         if (test(NOTOKEN)) {
             next(MOC_INCLUDE_END);
             currentFilenames.pop();
+            return IncludeState::IncludeEnd;
         }
+        if (hadIncludeBegin)
+            return IncludeState::IncludeBegin;
+        else
+            return IncludeState::NoInclude;
     };
     do {
+        handleInclude();
         if (lookup() == RBRACE) // accept trailing comma
             break;
-        handleInclude();
         next(IDENTIFIER);
         def->values += lexem();
         handleInclude();
@@ -442,15 +458,6 @@ bool Moc::parseFunction(FunctionDef *def, bool inMacro)
         scopedFunctionName = tempType.isScoped;
     }
 
-    // we don't support references as return types, it's too dangerous
-    if (def->type.referenceType == Type::Reference) {
-        QByteArray rawName = def->type.rawName;
-        def->type = Type("void");
-        def->type.rawName = rawName;
-    }
-
-    def->normalizedType = normalizeType(def->type.name);
-
     if (!test(RPAREN)) {
         parseFunctionArguments(def);
         next(RPAREN);
@@ -473,6 +480,10 @@ bool Moc::parseFunction(FunctionDef *def, bool inMacro)
             next(LPAREN);
             until(RPAREN);
         }
+
+        if (def->type.name == "auto" && test(ARROW))
+            def->type = parseType(); // Parse trailing return-type
+
         if (test(SEMIC))
             ;
         else if ((def->inlineCode = test(LBRACE)))
@@ -490,6 +501,22 @@ bool Moc::parseFunction(FunctionDef *def, bool inMacro)
         warning(msg.constData());
         return false;
     }
+
+    QList<QByteArray> typeNameParts = normalizeType(def->type.name).split(' ');
+    if (typeNameParts.contains("auto")) {
+        // We expected a trailing return type but we haven't seen one
+        error("Function declared with auto as return type but missing trailing return type. "
+              "Return type deduction is not supported.");
+    }
+
+    // we don't support references as return types, it's too dangerous
+    if (def->type.referenceType == Type::Reference) {
+        QByteArray rawName = def->type.rawName;
+        def->type = Type("void");
+        def->type.rawName = rawName;
+    }
+
+    def->normalizedType = normalizeType(def->type.name);
     return true;
 }
 

@@ -54,9 +54,11 @@
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
+#include <QtWidgets/QHeaderView>
 #include <QtWidgets/private/qapplication_p.h>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/qproxystyle.h>
+#include <QtWidgets/QTextEdit>
 
 #include <qpa/qwindowsysteminterface.h>
 #include <qpa/qwindowsysteminterface_p.h>
@@ -89,6 +91,7 @@ private slots:
 
     void setFont_data();
     void setFont();
+    void setFontForClass();
 
     void args_data();
     void args();
@@ -117,6 +120,7 @@ private slots:
 
     void setActiveWindow();
 
+    void focusWidget();
     void focusChanged();
     void focusOut();
     void focusMouseClick();
@@ -383,6 +387,46 @@ void tst_QApplication::setFont()
         QApplication::setFont( font );
 
     QCOMPARE( app.font(), font );
+}
+
+class tstHeaderView : public QHeaderView
+{
+    Q_OBJECT
+public:
+    explicit tstHeaderView(Qt::Orientation orientation, QWidget *parent = nullptr)
+        : QHeaderView(orientation, parent)
+    {}
+};
+class tstFrame : public QFrame { Q_OBJECT };
+class tstWidget : public QWidget { Q_OBJECT };
+
+void tst_QApplication::setFontForClass()
+{
+    // QTBUG-89910
+    // If a default font was not registered for the widget's class,
+    // it returns the default font of its nearest registered superclass.
+    int argc = 0;
+    QApplication app(argc, nullptr);
+
+    QFont font;
+    int pointSize = 10;
+    const QByteArrayList classNames{"QHeaderView", "QAbstractItemView", "QAbstractScrollView", "QFrame", "QWidget", "QObject"};
+    for (auto className : classNames) {
+        font.setPointSizeF(pointSize++);
+        app.setFont(font, className.constData());
+    }
+
+    tstHeaderView headView(Qt::Horizontal);
+    tstFrame frame;
+    tstWidget widget;
+
+    QFont headViewFont = QApplication::font(&headView);
+    QFont frameFont = QApplication::font(&frame);
+    QFont widgetFont = QApplication::font(&widget);
+
+    QCOMPARE(headViewFont.pointSize(), QApplication::font("QHeaderView").pointSize());
+    QCOMPARE(frameFont.pointSize(), QApplication::font("QFrame").pointSize());
+    QCOMPARE(widgetFont.pointSize(), QApplication::font("QWidget").pointSize());
 }
 
 void tst_QApplication::args_data()
@@ -1449,6 +1493,11 @@ void tst_QApplication::desktopSettingsAware()
 {
 #if QT_CONFIG(process)
     QProcess testProcess;
+#ifdef Q_OS_MACOS
+    QStringList environment = QProcess::systemEnvironment();
+    environment += QLatin1String("QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1");
+    testProcess.setEnvironment(environment);
+#endif
     testProcess.start("desktopsettingsaware_helper");
     QVERIFY2(testProcess.waitForStarted(),
              qPrintable(QString::fromLatin1("Cannot start 'desktopsettingsaware_helper': %1").arg(testProcess.errorString())));
@@ -1482,6 +1531,44 @@ void tst_QApplication::setActiveWindow()
     delete w;
 }
 
+void tst_QApplication::focusWidget()
+{
+    int argc = 0;
+    QApplication app(argc, nullptr);
+
+    // The focus widget is the active window itself
+    {
+        QTextEdit te;
+        te.show();
+
+        QApplication::setActiveWindow(&te);
+        QVERIFY(QTest::qWaitForWindowActive(&te));
+
+        const auto focusWidget = QApplication::focusWidget();
+        QVERIFY(focusWidget);
+        QVERIFY(focusWidget->hasFocus());
+        QVERIFY(te.hasFocus());
+        QCOMPARE(focusWidget, te.focusWidget());
+    }
+
+    // The focus widget is a child of the active window
+    {
+        QWidget w;
+        QTextEdit te(&w);
+        w.show();
+
+        QApplication::setActiveWindow(&w);
+        QVERIFY(QTest::qWaitForWindowActive(&w));
+
+        const auto focusWidget = QApplication::focusWidget();
+        QVERIFY(focusWidget);
+        QVERIFY(focusWidget->hasFocus());
+        QVERIFY(!w.hasFocus());
+        QVERIFY(te.hasFocus());
+        QCOMPARE(te.focusWidget(), w.focusWidget());
+        QCOMPARE(focusWidget, w.focusWidget());
+    }
+}
 
 /* This might fail on some X11 window managers? */
 void tst_QApplication::focusChanged()

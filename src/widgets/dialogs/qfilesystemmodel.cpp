@@ -397,8 +397,11 @@ QFileSystemModelPrivate::QFileSystemNode *QFileSystemModelPrivate::node(const QS
         if (absolutePath.endsWith(QLatin1Char('/')))
             trailingSeparator = QLatin1String("\\");
         int r = 0;
-        QFileSystemModelPrivate::QFileSystemNode *rootNode = const_cast<QFileSystemModelPrivate::QFileSystemNode*>(&root);
-        if (!root.children.contains(host.toLower())) {
+        auto rootNode = const_cast<QFileSystemModelPrivate::QFileSystemNode*>(&root);
+        auto it = root.children.constFind(host);
+        if (it != root.children.cend()) {
+            host = it.key(); // Normalize case for lookup in visibleLocation()
+        } else {
             if (pathElements.count() == 1 && !absolutePath.endsWith(QLatin1Char('/')))
                 return rootNode;
             QFileInfo info(host);
@@ -723,6 +726,9 @@ QVariant QFileSystemModel::data(const QModelIndex &index, int role) const
 
     switch (role) {
     case Qt::EditRole:
+        if (index.column() == 0)
+            return d->name(index);
+        Q_FALLTHROUGH();
     case Qt::DisplayRole:
         switch (index.column()) {
         case 0: return d->displayName(index);

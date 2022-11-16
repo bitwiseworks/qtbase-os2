@@ -271,14 +271,12 @@ void QNetworkDiskCachePrivate::storeItem(QCacheItem *cacheItem)
     Q_ASSERT(!fileName.isEmpty());
 
     if (QFile::exists(fileName)) {
-        if (!QFile::remove(fileName)) {
+        if (!removeFile(fileName)) {
             qWarning() << "QNetworkDiskCache: couldn't remove the cache file " << fileName;
             return;
         }
     }
 
-    if (currentCacheSize > 0)
-        currentCacheSize += 1024 + cacheItem->size();
     currentCacheSize = q->expire();
     if (!cacheItem->file) {
         QString templateName = tmpCacheFileName();
@@ -417,18 +415,7 @@ QIODevice *QNetworkDiskCache::data(const QUrl &url)
             buffer->setData(d->lastItem.data.data());
         } else {
             buffer.reset(new QBuffer);
-            // ### verify that QFile uses the fd size and not the file name
-            qint64 size = file->size() - file->pos();
-            const uchar *p = nullptr;
-#if !defined(Q_OS_INTEGRITY)
-            p = file->map(file->pos(), size);
-#endif
-            if (p) {
-                buffer->setData((const char *)p, size);
-                file.take()->setParent(buffer.data());
-            } else {
-                buffer->setData(file->readAll());
-            }
+            buffer->setData(file->readAll());
         }
     }
     buffer->open(QBuffer::ReadOnly);

@@ -35,6 +35,8 @@
 #include <qstyle.h>
 #include <qstyleoption.h>
 
+class TabBar;
+
 class tst_QTabBar : public QObject
 {
     Q_OBJECT
@@ -57,6 +59,7 @@ private slots:
     void testCurrentChanged();
 
     void insertAtCurrentIndex();
+    void insertAfterCurrentIndex();
 
     void removeTab_data();
     void removeTab();
@@ -94,6 +97,12 @@ private slots:
     void autoHide();
 
     void mouseReleaseOutsideTabBar();
+
+    void scrollButtons_data();
+    void scrollButtons();
+
+private:
+    void checkPositions(const TabBar &tabbar, const QList<int> &positions);
 };
 
 // Testing get/set functions
@@ -210,6 +219,14 @@ void tst_QTabBar::testCurrentChanged()
     QCOMPARE(spy.count(), expectedCount);
 }
 
+class TabBar : public QTabBar
+{
+public:
+    using QTabBar::initStyleOption;
+    using QTabBar::moveTab;
+    using QTabBar::QTabBar;
+};
+
 void tst_QTabBar::insertAtCurrentIndex()
 {
     QTabBar tabBar;
@@ -221,6 +238,31 @@ void tst_QTabBar::insertAtCurrentIndex()
     QCOMPARE(tabBar.currentIndex(), 2);
     tabBar.insertTab(2, "Tab4");
     QCOMPARE(tabBar.currentIndex(), 3);
+}
+
+void tst_QTabBar::insertAfterCurrentIndex()
+{
+    TabBar tabBar;
+
+    tabBar.addTab("Tab10");
+    checkPositions(tabBar, { QStyleOptionTab::OnlyOneTab });
+
+    tabBar.addTab("Tab20");
+    checkPositions(tabBar, { QStyleOptionTab::Beginning, QStyleOptionTab::End });
+
+    tabBar.insertTab(1, "Tab15");
+    checkPositions(tabBar,
+                   { QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::End });
+
+    tabBar.insertTab(3, "Tab30");
+    checkPositions(tabBar,
+                   { QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::Middle,
+                     QStyleOptionTab::End });
+
+    tabBar.insertTab(3, "Tab25");
+    checkPositions(tabBar,
+                   { QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::Middle,
+                     QStyleOptionTab::Middle, QStyleOptionTab::End });
 }
 
 void tst_QTabBar::removeTab_data()
@@ -282,53 +324,36 @@ void tst_QTabBar::hideTab()
     QTEST(tabbar.currentIndex(), "finalIndex");
 }
 
-class TabBar : public QTabBar
-{
-public:
-    using QTabBar::QTabBar;
-    using QTabBar::initStyleOption;
-    using QTabBar::moveTab;
-};
-
 void tst_QTabBar::hideAllTabs()
 {
     TabBar tabbar;
-    auto checkPositions = [&tabbar](const QVector<int> &positions)
-    {
-        QStyleOptionTab option;
-        int iPos = 0;
-        for (int i = 0; i < tabbar.count(); ++i) {
-            if (!tabbar.isTabVisible(i))
-                continue;
-            tabbar.initStyleOption(&option, i);
-            QCOMPARE(option.position, positions.at(iPos++));
-        }
-    };
 
     tabbar.addTab("foo");
     tabbar.addTab("bar");
     tabbar.addTab("baz");
     tabbar.setCurrentIndex(0);
-    checkPositions({QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::End});
+    checkPositions(tabbar,
+                   { QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::End });
 
     // Check we don't crash trying to hide an unexistant tab
     QSize prevSizeHint = tabbar.sizeHint();
     tabbar.setTabVisible(3, false);
-    checkPositions({QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::End});
+    checkPositions(tabbar,
+                   { QStyleOptionTab::Beginning, QStyleOptionTab::Middle, QStyleOptionTab::End });
     QCOMPARE(tabbar.currentIndex(), 0);
     QSize sizeHint = tabbar.sizeHint();
     QVERIFY(sizeHint.width() == prevSizeHint.width());
     prevSizeHint = sizeHint;
 
     tabbar.setTabVisible(1, false);
-    checkPositions({QStyleOptionTab::Beginning, QStyleOptionTab::End});
+    checkPositions(tabbar, { QStyleOptionTab::Beginning, QStyleOptionTab::End });
     QCOMPARE(tabbar.currentIndex(), 0);
     sizeHint = tabbar.sizeHint();
     QVERIFY(sizeHint.width() < prevSizeHint.width());
     prevSizeHint = sizeHint;
 
     tabbar.setTabVisible(2, false);
-    checkPositions({QStyleOptionTab::OnlyOneTab});
+    checkPositions(tabbar, { QStyleOptionTab::OnlyOneTab });
     QCOMPARE(tabbar.currentIndex(), 0);
     sizeHint = tabbar.sizeHint();
     QVERIFY(sizeHint.width() < prevSizeHint.width());
@@ -833,6 +858,84 @@ void tst_QTabBar::mouseReleaseOutsideTabBar()
     repaintChecker.rectToBeRepainted = tabRect;
     QTest::mouseRelease(&tabBar, Qt::LeftButton, {}, tabCenter + QPoint(tabCenter.x(), tabCenter.y() + tabRect.height()));
     QTRY_VERIFY(repaintChecker.repainted);
+}
+
+void tst_QTabBar::checkPositions(const TabBar &tabbar, const QList<int> &positions)
+{
+    QStyleOptionTab option;
+    int iPos = 0;
+    for (int i = 0; i < tabbar.count(); ++i) {
+        if (!tabbar.isTabVisible(i))
+            continue;
+        tabbar.initStyleOption(&option, i);
+        QCOMPARE(option.position, positions.at(iPos++));
+    }
+}
+
+void tst_QTabBar::scrollButtons_data()
+{
+    QTest::addColumn<QTabWidget::TabPosition>("tabPosition");
+    QTest::addColumn<Qt::LayoutDirection>("layoutDirection");
+
+    for (auto ld : {Qt::LeftToRight, Qt::RightToLeft}) {
+        const char *ldStr = ld == Qt::LeftToRight ? "LTR" : "RTL";
+        QTest::addRow("North, %s", ldStr) << QTabWidget::North << ld;
+        QTest::addRow("South, %s", ldStr) << QTabWidget::South << ld;
+        QTest::addRow("West, %s", ldStr) << QTabWidget::West << ld;
+        QTest::addRow("East, %s", ldStr) << QTabWidget::East << ld;
+    }
+}
+
+void tst_QTabBar::scrollButtons()
+{
+    QFETCH(QTabWidget::TabPosition, tabPosition);
+    QFETCH(Qt::LayoutDirection, layoutDirection);
+
+    QWidget window;
+    QTabWidget tabWidget(&window);
+    tabWidget.setLayoutDirection(layoutDirection);
+    tabWidget.setTabPosition(tabPosition);
+    tabWidget.setElideMode(Qt::ElideNone);
+    tabWidget.setUsesScrollButtons(true);
+
+    const int tabCount = 5;
+    for (int i = 0; i < tabCount; ++i)
+    {
+        const QString num = QString::number(i);
+        tabWidget.addTab(new QPushButton(num), num + " - Really long tab name to force arrows");
+    }
+    tabWidget.move(0, 0);
+    tabWidget.resize(tabWidget.minimumSizeHint());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+
+    auto *leftB = tabWidget.tabBar()->findChild<QAbstractButton*>(QStringLiteral("ScrollLeftButton"));
+    auto *rightB = tabWidget.tabBar()->findChild<QAbstractButton*>(QStringLiteral("ScrollRightButton"));
+
+    QVERIFY(leftB->isVisible());
+    QVERIFY(!leftB->isEnabled());
+    QVERIFY(rightB->isVisible());
+    QVERIFY(rightB->isEnabled());
+    QVERIFY(!tabWidget.tabBar()->tabRect(1).intersects(tabWidget.tabBar()->rect()));
+
+    int index = 0;
+    for (; index < tabWidget.count(); ++index) {
+        QCOMPARE(leftB->isEnabled(), index > 0);
+        QCOMPARE(rightB->isEnabled(), index < tabWidget.count() - 1);
+        QVERIFY(tabWidget.tabBar()->tabRect(index).intersects(tabWidget.tabBar()->rect()));
+        QCOMPARE(tabWidget.tabBar()->tabAt(tabWidget.tabBar()->rect().center()), index);
+        if (rightB->isEnabled())
+            rightB->click();
+    }
+    for (--index; index >= 0; --index) {
+        QCOMPARE(leftB->isEnabled(), index >= 0);
+        QCOMPARE(rightB->isEnabled(), index < tabWidget.count() - 1);
+
+        QVERIFY(tabWidget.tabBar()->tabRect(index).intersects(tabWidget.tabBar()->rect()));
+        if (leftB->isEnabled())
+            leftB->click();
+    }
+    QVERIFY(!leftB->isEnabled());
 }
 
 QTEST_MAIN(tst_QTabBar)

@@ -887,9 +887,8 @@ static const uint *QT_FASTCALL fetchGrayscale16ToRGB32(uint *buffer, const uchar
 static const QRgba64 *QT_FASTCALL convertGrayscale16ToRGBA64(QRgba64 *buffer, const uint *src, int count,
                                                            const QVector<QRgb> *, QDitherInfo *)
 {
-    const unsigned short *s = reinterpret_cast<const unsigned short *>(src);
     for (int i = 0; i < count; ++i)
-        buffer[i] = QRgba64::fromRgba64(s[i], s[i], s[i], 65535);
+        buffer[i] = QRgba64::fromRgba64(src[i], src[i], src[i], 65535);
     return buffer;
 }
 
@@ -1420,7 +1419,7 @@ static void QT_FASTCALL storeRGB64FromRGB32(uchar *dest, const uint *src, int in
 {
     QRgba64 *d = reinterpret_cast<QRgba64 *>(dest) + index;
     for (int i = 0; i < count; ++i)
-        d[i] = QRgba64::fromArgb32(src[i]);
+        d[i] = QRgba64::fromArgb32(src[i] | 0xff000000);
 }
 
 static const uint *QT_FASTCALL fetchRGBA64ToARGB32PM(uint *buffer, const uchar *src, int index, int count,
@@ -1432,12 +1431,24 @@ static const uint *QT_FASTCALL fetchRGBA64ToARGB32PM(uint *buffer, const uchar *
     return buffer;
 }
 
+template<bool Mask>
 static void QT_FASTCALL storeRGBA64FromARGB32PM(uchar *dest, const uint *src, int index, int count,
                                                 const QVector<QRgb> *, QDitherInfo *)
 {
     QRgba64 *d = reinterpret_cast<QRgba64 *>(dest) + index;
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < count; ++i) {
         d[i] = QRgba64::fromArgb32(src[i]).unpremultiplied();
+        if (Mask)
+            d[i].setAlpha(65535);
+    }
+}
+
+static void QT_FASTCALL storeRGBA64FromARGB32(uchar *dest, const uint *src, int index, int count,
+                                              const QVector<QRgb> *, QDitherInfo *)
+{
+    QRgba64 *d = reinterpret_cast<QRgba64 *>(dest) + index;
+    for (int i = 0; i < count; ++i)
+        d[i] = QRgba64::fromArgb32(src[i]);
 }
 
 // Note:
@@ -1524,15 +1535,15 @@ QPixelLayout qPixelLayouts[QImage::NImageFormats] = {
     { false, false, QPixelLayout::BPP64, nullptr,
       convertPassThrough, nullptr,
       fetchRGB64ToRGB32, fetchPassThrough64,
-      storeRGB64FromRGB32, storeRGB64FromRGB32 }, // Format_RGBX64
+      storeRGBA64FromARGB32PM<true>, storeRGB64FromRGB32 }, // Format_RGBX64
     { true, false, QPixelLayout::BPP64, nullptr,
       convertARGB32ToARGB32PM, nullptr,
       fetchRGBA64ToARGB32PM, fetchRGBA64ToRGBA64PM,
-      storeRGBA64FromARGB32PM, storeRGB64FromRGB32 }, // Format_RGBA64
+      storeRGBA64FromARGB32PM<false>, storeRGB64FromRGB32 }, // Format_RGBA64
     { true, true, QPixelLayout::BPP64, nullptr,
       convertPassThrough, nullptr,
       fetchRGB64ToRGB32, fetchPassThrough64,
-      storeRGB64FromRGB32, storeRGB64FromRGB32 }, // Format_RGBA64_Premultiplied
+      storeRGBA64FromARGB32, storeRGB64FromRGB32 }, // Format_RGBA64_Premultiplied
     { false, false, QPixelLayout::BPP16, nullptr,
       convertGrayscale16ToRGB32, convertGrayscale16ToRGBA64,
       fetchGrayscale16ToRGB32, fetchGrayscale16ToRGBA64,
@@ -4018,6 +4029,7 @@ static inline SourceFetchProc64 getSourceFetch64(TextureBlendType blendType, QIm
 
 #define FIXPT_BITS 8
 #define FIXPT_SIZE (1<<FIXPT_BITS)
+#define FIXPT_MAX (INT_MAX >> (FIXPT_BITS + 1))
 
 static uint qt_gradient_pixel_fixed(const QGradientData *data, int fixed_pos)
 {
@@ -4114,10 +4126,12 @@ static inline const BlendType * QT_FASTCALL qt_fetch_linear_gradient_template(
     const BlendType *end = buffer + length;
     if (affine) {
         if (inc > qreal(-1e-5) && inc < qreal(1e-5)) {
-            GradientBase::memfill(buffer, GradientBase::fetchSingle(data->gradient, int(t * FIXPT_SIZE)), length);
+            if (std::abs(t) < FIXPT_MAX)
+                GradientBase::memfill(buffer, GradientBase::fetchSingle(data->gradient, int(t * FIXPT_SIZE)), length);
+            else
+                GradientBase::memfill(buffer, GradientBase::fetchSingle(data->gradient, t / GRADIENT_STOPTABLE_SIZE), length);
         } else {
-            if (t+inc*length < qreal(INT_MAX >> (FIXPT_BITS + 1)) &&
-                t+inc*length > qreal(INT_MIN >> (FIXPT_BITS + 1))) {
+            if (std::abs(t) < FIXPT_MAX && std::abs(inc) < FIXPT_MAX && std::abs(t + inc * length) < FIXPT_MAX) {
                 // we can use fixed point math
                 int t_fixed = int(t * FIXPT_SIZE);
                 int inc_fixed = int(inc * FIXPT_SIZE);

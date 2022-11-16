@@ -104,7 +104,7 @@ static bool isMouseEvent(NSEvent *ev)
 
     // Unfortunately there's no NSWindowListOrderedBackToFront,
     // so we have to manually reverse the order using an array.
-    NSMutableArray<NSWindow *> *windows = [NSMutableArray<NSWindow *> new];
+    NSMutableArray<NSWindow *> *windows = [[NSMutableArray<NSWindow *> new] autorelease];
     [application enumerateWindowsWithOptions:NSWindowListOrderedFrontToBack
         usingBlock:^(NSWindow *window, BOOL *) {
             // For some reason AppKit will give us nil-windows, skip those
@@ -177,6 +177,14 @@ static bool isMouseEvent(NSEvent *ev)
 
     if (!NSApp.modalWindow)
         return NO;
+
+    // Special case popup windows (menus, completions, etc), as these usually
+    // don't have a transient parent set, and we don't want to block them. The
+    // assumption is that these windows are only opened intermittently, from
+    // within windows that can already be interacted with in this modal session.
+    Qt::WindowType type = m_platformWindow->window()->type();
+    if (type == Qt::Popup)
+        return YES;
 
     // If the current modal window (top level modal session) is not a Qt window we
     // have no way of knowing if this window is transient child of the modal window.
@@ -313,8 +321,18 @@ OSStatus CGSClearWindowTags(const CGSConnectionID, const CGSWindowID, int *, int
 
 - (NSColor *)backgroundColor
 {
-    return self.styleMask == NSWindowStyleMaskBorderless ?
-        [NSColor clearColor] : [super backgroundColor];
+    // FIXME: Plumb to a WA_NoSystemBackground-like window flag,
+    // or a QWindow::backgroundColor() property. In the meantime
+    // we assume that if you have translucent content, without a
+    // frame then you intend to do all background drawing yourself.
+    const QWindow *window = m_platformWindow ? m_platformWindow->window() : nullptr;
+    if (!self.opaque && window && window->flags().testFlag(Qt::FramelessWindowHint))
+        return [NSColor clearColor];
+
+    // This still allows you to have translucent content with a frame,
+    // where the system background (or color set via NSWindow) will
+    // shine through.
+    return [super backgroundColor];
 }
 
 - (void)sendEvent:(NSEvent*)theEvent
@@ -339,18 +357,29 @@ OSStatus CGSClearWindowTags(const CGSConnectionID, const CGSWindowID, int *, int
         return;
     }
 
+    const bool mouseEventInFrameStrut = [theEvent, self]{
+        if (isMouseEvent(theEvent)) {
+            const NSPoint loc = theEvent.locationInWindow;
+            const NSRect windowFrame = [self convertRectFromScreen:self.frame];
+            const NSRect contentFrame = self.contentView.frame;
+            if (NSMouseInRect(loc, windowFrame, NO) && !NSMouseInRect(loc, contentFrame, NO))
+                return true;
+        }
+        return false;
+    }();
+    // Any mouse-press in the frame of the window, including the title bar buttons, should
+    // close open popups. Presses within the window's content are handled to do that in the
+    // NSView::mouseDown implementation.
+    if (theEvent.type == NSEventTypeLeftMouseDown && mouseEventInFrameStrut)
+        [qnsview_cast(m_platformWindow->view()) closePopups:theEvent];
+
     [super sendEvent:theEvent];
 
     if (!m_platformWindow)
         return; // Platform window went away while processing event
 
-    if (m_platformWindow->frameStrutEventsEnabled() && isMouseEvent(theEvent)) {
-        NSPoint loc = [theEvent locationInWindow];
-        NSRect windowFrame = [self convertRectFromScreen:self.frame];
-        NSRect contentFrame = self.contentView.frame;
-        if (NSMouseInRect(loc, windowFrame, NO) && !NSMouseInRect(loc, contentFrame, NO))
-            [qnsview_cast(m_platformWindow->view()) handleFrameStrutMouseEvent:theEvent];
-    }
+    if (m_platformWindow->frameStrutEventsEnabled() && mouseEventInFrameStrut)
+        [qnsview_cast(m_platformWindow->view()) handleFrameStrutMouseEvent:theEvent];
 }
 
 - (void)closeAndRelease

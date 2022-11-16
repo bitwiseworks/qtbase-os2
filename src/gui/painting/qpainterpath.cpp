@@ -1222,6 +1222,11 @@ void QPainterPath::addText(const QPointF &point, const QFont &f, const QString &
 
     QTextLayout layout(text, f);
     layout.setCacheEnabled(true);
+
+    QTextOption opt = layout.textOption();
+    opt.setUseDesignMetrics(true);
+    layout.setTextOption(opt);
+
     QTextEngine *eng = layout.engine();
     layout.beginLayout();
     QTextLine line = layout.createLine();
@@ -1367,7 +1372,7 @@ void QPainterPath::addRegion(const QRegion &region)
 */
 Qt::FillRule QPainterPath::fillRule() const
 {
-    return isEmpty() ? Qt::OddEvenFill : d_func()->fillRule;
+    return !d_func() ? Qt::OddEvenFill : d_func()->fillRule;
 }
 
 /*!

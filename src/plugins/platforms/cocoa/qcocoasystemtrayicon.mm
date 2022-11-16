@@ -101,7 +101,7 @@ void QCocoaSystemTrayIcon::init()
 
     m_statusItem.button.target = m_delegate;
     m_statusItem.button.action = @selector(statusItemClicked);
-    [m_statusItem.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp | NSEventMaskOtherMouseUp];
+    [m_statusItem.button sendActionOn:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown];
 }
 
 void QCocoaSystemTrayIcon::cleanup()
@@ -203,6 +203,7 @@ void QCocoaSystemTrayIcon::updateIcon(const QIcon &icon)
         r.moveCenter(fullHeightPixmap.rect().center());
         p.drawPixmap(r, pixmap);
     }
+    fullHeightPixmap.setDevicePixelRatio(devicePixelRatio);
 
     auto *nsimage = [NSImage imageFromQImage:fullHeightPixmap.toImage()];
     [nsimage setTemplate:icon.isMask()];

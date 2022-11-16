@@ -313,8 +313,8 @@ QModelIndex QConcatenateTablesProxyModel::parent(const QModelIndex &index) const
 int QConcatenateTablesProxyModel::rowCount(const QModelIndex &parent) const
 {
     Q_D(const QConcatenateTablesProxyModel);
-    Q_ASSERT(checkIndex(parent, QAbstractItemModel::CheckIndexOption::ParentIsInvalid)); // flat model
-    Q_UNUSED(parent);
+    if (parent.isValid())
+        return 0; // flat model
     return d->m_rowCount;
 }
 
@@ -622,9 +622,14 @@ void QConcatenateTablesProxyModelPrivate::_q_slotDataChanged(const QModelIndex &
     Q_Q(QConcatenateTablesProxyModel);
     Q_ASSERT(from.isValid());
     Q_ASSERT(to.isValid());
+    if (from.column() >= m_columnCount)
+        return;
+    QModelIndex adjustedTo = to;
+    if (to.column() >= m_columnCount)
+        adjustedTo = to.siblingAtColumn(m_columnCount - 1);
     const QModelIndex myFrom = q->mapFromSource(from);
     Q_ASSERT(q->checkIndex(myFrom, QAbstractItemModel::CheckIndexOption::IndexIsValid));
-    const QModelIndex myTo = q->mapFromSource(to);
+    const QModelIndex myTo = q->mapFromSource(adjustedTo);
     Q_ASSERT(q->checkIndex(myTo, QAbstractItemModel::CheckIndexOption::IndexIsValid));
     emit q->dataChanged(myFrom, myTo, roles);
 }

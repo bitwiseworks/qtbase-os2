@@ -510,8 +510,8 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
                 channels[i].authenticator = QAuthenticator();
 
             // authentication is cancelled, send the current contents to the user.
-            emit channels[i].reply->headerChanged();
-            emit channels[i].reply->readyRead();
+            emit reply->headerChanged();
+            emit reply->readyRead();
             QNetworkReply::NetworkError errorCode =
                 isProxy
                 ? QNetworkReply::ProxyAuthenticationRequiredError
@@ -1077,8 +1077,10 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
     case QHttpNetworkConnection::ConnectionTypeHTTP2Direct:
     case QHttpNetworkConnection::ConnectionTypeHTTP2:
     case QHttpNetworkConnection::ConnectionTypeSPDY: {
-        if (channels[0].spdyRequestsToSend.isEmpty() && channels[0].switchedToHttp2)
+        if (channels[0].spdyRequestsToSend.isEmpty() && !channels[0].reply
+            && highPriorityQueue.isEmpty() && lowPriorityQueue.isEmpty()) {
             return;
+        }
 
         if (networkLayerState == IPv4)
             channels[0].networkLayerPreference = QAbstractSocket::IPv4Protocol;
@@ -1118,30 +1120,49 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
         int normalRequests = queuedRequests - preConnectRequests;
         neededOpenChannels = qMax(normalRequests, preConnectRequests);
     }
-    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
-        bool connectChannel = false;
-        if (channels[i].socket) {
-            if ((channels[i].socket->state() == QAbstractSocket::ConnectingState)
-                    || (channels[i].socket->state() == QAbstractSocket::HostLookupState)
-                    || channels[i].pendingEncrypt) // pendingEncrypt == "EncryptingState"
-                neededOpenChannels--;
 
-            if (neededOpenChannels <= 0)
-                break;
-            if (!channels[i].reply && !channels[i].isSocketBusy() && (channels[i].socket->state() == QAbstractSocket::UnconnectedState))
-                connectChannel = true;
-        } else { // not previously used channel
-            connectChannel = true;
+    if (neededOpenChannels <= 0)
+        return;
+
+    QQueue<int> channelsToConnect;
+
+    // use previously used channels first
+    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
+        if (!channels[i].socket)
+            continue;
+
+        if ((channels[i].socket->state() == QAbstractSocket::ConnectingState)
+            || (channels[i].socket->state() == QAbstractSocket::HostLookupState)
+            || channels[i].pendingEncrypt) { // pendingEncrypt == "EncryptingState"
+            neededOpenChannels--;
+            continue;
         }
 
-        if (connectChannel) {
-            if (networkLayerState == IPv4)
-                channels[i].networkLayerPreference = QAbstractSocket::IPv4Protocol;
-            else if (networkLayerState == IPv6)
-                channels[i].networkLayerPreference = QAbstractSocket::IPv6Protocol;
-            channels[i].ensureConnection();
+        if (!channels[i].reply && !channels[i].isSocketBusy()
+            && (channels[i].socket->state() == QAbstractSocket::UnconnectedState)) {
+            channelsToConnect.enqueue(i);
             neededOpenChannels--;
         }
+    }
+
+    // use other channels
+    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
+        if (channels[i].socket)
+            continue;
+
+        channelsToConnect.enqueue(i);
+        neededOpenChannels--;
+    }
+
+    while (!channelsToConnect.isEmpty()) {
+        const int channel = channelsToConnect.dequeue();
+
+        if (networkLayerState == IPv4)
+            channels[channel].networkLayerPreference = QAbstractSocket::IPv4Protocol;
+        else if (networkLayerState == IPv6)
+            channels[channel].networkLayerPreference = QAbstractSocket::IPv6Protocol;
+
+        channels[channel].ensureConnection();
     }
 }
 

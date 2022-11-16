@@ -153,6 +153,7 @@ protected:
     void verifyCompilers();
     virtual void init();
     void initOutPaths();
+    virtual bool inhibitMakeDirOutPath(const ProKey &path) const;
     struct Compiler
     {
         QString variable_in;
@@ -194,10 +195,7 @@ protected:
     virtual bool doDepends() const { return Option::mkfile::do_deps; }
 
     void filterIncludedFiles(const char *);
-    void processSources() {
-        filterIncludedFiles("SOURCES");
-        filterIncludedFiles("GENERATED_SOURCES");
-    }
+    void processSources();
 
     //for installs
     virtual QString defaultInstall(const QString &);
@@ -251,8 +249,9 @@ public:
 protected:
     QString fileFixify(const QString &file, FileFixifyTypes fix = FileFixifyDefault, bool canon = true) const;
     QStringList fileFixify(const QStringList &files, FileFixifyTypes fix = FileFixifyDefault, bool canon = true) const;
-
-    QString installMetaFile(const ProKey &replace_rule, const QString &src, const QString &dst);
+    QString createSedArgs(const ProKey &replace_rule, const QString &file_type = QString()) const;
+    QString installMetaFile(const ProKey &replace_rule, const QString &src,
+                            const QString &dst) const;
 
     virtual bool processPrlFileBase(QString &origFile, const QStringRef &origName,
                                     const QStringRef &fixedBase, int slashOff);
@@ -278,7 +277,7 @@ public:
     virtual bool mergeBuildProject(MakefileGenerator * /*other*/) { return false; }
     virtual bool openOutput(QFile &, const QString &build) const;
     bool isWindowsShell() const { return Option::dir_sep == QLatin1String("\\"); }
-    QString shellQuote(const QString &str);
+    QString shellQuote(const QString &str) const;
     virtual ProKey fullTargetVariable() const;
 };
 Q_DECLARE_TYPEINFO(MakefileGenerator::Compiler, Q_MOVABLE_TYPE);

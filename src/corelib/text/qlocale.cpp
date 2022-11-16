@@ -337,22 +337,6 @@ QByteArray QLocalePrivate::bcp47Name(char separator) const
     return localeId.withLikelySubtagsRemoved().name(separator);
 }
 
-/*!
-  \internal
- */
-QByteArray QLocalePrivate::rawName(char separator) const
-{
-    QByteArrayList parts;
-    if (m_data->m_language_id != QLocale::AnyLanguage)
-        parts.append(languageCode().latin1());
-    if (m_data->m_script_id != QLocale::AnyScript)
-        parts.append(scriptCode().latin1());
-    if (m_data->m_country_id != QLocale::AnyCountry)
-        parts.append(countryCode().latin1());
-
-    return parts.join(separator);
-}
-
 static const QLocaleData *findLocaleDataById(const QLocaleId &localeId)
 {
     const uint idx = locale_index[localeId.language_id];
@@ -2042,13 +2026,22 @@ QString QLocale::toString(const QDate &date, const QString &format) const
 #endif
 
 /*!
-    \since 5.10
+    \since 5.14
 
     Returns a localized string representation of the given \a date in the
-    specified \a format.
+    specified \a format, optionally for a specified calendar \a cal.
     If \a format is an empty string, an empty string is returned.
 
     \sa QDate::toString()
+*/
+QString QLocale::toString(const QDate &date, QStringView format, QCalendar cal) const
+{
+    return cal.dateTimeToString(format, QDateTime(), date, QTime(), *this);
+}
+
+/*!
+    \since 5.10
+    \overload
 */
 QString QLocale::toString(const QDate &date, QStringView format) const
 {
@@ -2056,13 +2049,39 @@ QString QLocale::toString(const QDate &date, QStringView format) const
 }
 
 /*!
+    \since 5.14
+
     Returns a localized string representation of the given \a date according
-    to the specified \a format (see dateFormat()).
+    to the specified \a format (see dateFormat()), optionally for a specified
+    calendar \a cal.
 
     \note Some locales may use formats that limit the range of years they can
     represent.
 */
+QString QLocale::toString(const QDate &date, FormatType format, QCalendar cal) const
+{
+    if (!date.isValid())
+        return QString();
 
+#ifndef QT_NO_SYSTEMLOCALE
+    if (cal.isGregorian() && d->m_data == systemData()) {
+        QVariant res = systemLocale()->query(format == LongFormat
+                                             ? QSystemLocale::DateToStringLong
+                                             : QSystemLocale::DateToStringShort,
+                                             date);
+        if (!res.isNull())
+            return res.toString();
+    }
+#endif
+
+    QString format_str = dateFormat(format);
+    return toString(date, format_str, cal);
+}
+
+/*!
+    \since 4.5
+    \overload
+*/
 QString QLocale::toString(const QDate &date, FormatType format) const
 {
     if (!date.isValid())
@@ -2115,7 +2134,7 @@ QString QLocale::toString(const QTime &time, const QString &format) const
 #endif
 
 /*!
-    \since 5.10
+    \since 4.5
 
     Returns a localized string representation of the given \a time according
     to the specified \a format.
@@ -2146,46 +2165,39 @@ QString QLocale::toString(const QDateTime &dateTime, const QString &format) cons
 #endif
 
 /*!
-    \since 5.10
+    \since 5.14
 
     Returns a localized string representation of the given \a dateTime according
-    to the specified \a format.
+    to the specified \a format, optionally for a specified calendar \a cal.
     If \a format is an empty string, an empty string is returned.
 
     \sa QDateTime::toString(), QDate::toString(), QTime::toString()
+*/
+QString QLocale::toString(const QDateTime &dateTime, QStringView format, QCalendar cal) const
+{
+    return cal.dateTimeToString(format, dateTime, QDate(), QTime(), *this);
+}
+
+/*!
+    \since 5.10
+    \overload
 */
 QString QLocale::toString(const QDateTime &dateTime, QStringView format) const
 {
     return QCalendar().dateTimeToString(format, dateTime, QDate(), QTime(), *this);
 }
 
-QString QLocale::toString(const QDate &date, QStringView format, QCalendar cal) const
-{
-    return cal.dateTimeToString(format, QDateTime(), date, QTime(), *this);
-}
+/*!
+    \since 5.14
 
-QString QLocale::toString(const QDate &date, QLocale::FormatType format, QCalendar cal) const
-{
-    if (!date.isValid())
-        return QString();
+    Returns a localized string representation of the given \a dateTime according
+    to the specified \a format (see dateTimeFormat()), optionally for a
+    specified calendar \a cal.
 
-#ifndef QT_NO_SYSTEMLOCALE
-    if (cal.isGregorian() && d->m_data == systemData()) {
-        QVariant res = systemLocale()->query(format == LongFormat
-                                             ? QSystemLocale::DateToStringLong
-                                             : QSystemLocale::DateToStringShort,
-                                             date);
-        if (!res.isNull())
-            return res.toString();
-    }
-#endif
-
-    QString format_str = dateFormat(format);
-    return toString(date, format_str, cal);
-}
-
-QString QLocale::toString(const QDateTime &dateTime, QLocale::FormatType format,
-                          QCalendar cal) const
+    \note Some locales may use formats that limit the range of years they can
+    represent.
+*/
+QString QLocale::toString(const QDateTime &dateTime, FormatType format, QCalendar cal) const
 {
     if (!dateTime.isValid())
         return QString();
@@ -2205,21 +2217,10 @@ QString QLocale::toString(const QDateTime &dateTime, QLocale::FormatType format,
     return toString(dateTime, format_str, cal);
 }
 
-QString QLocale::toString(const QDateTime &dateTime, QStringView format, QCalendar cal) const
-{
-    return cal.dateTimeToString(format, dateTime, QDate(), QTime(), *this);
-}
-
 /*!
     \since 4.4
-
-    Returns a localized string representation of the given \a dateTime according
-    to the specified \a format (see dateTimeFormat()).
-
-    \note Some locales may use formats that limit the range of years they can
-    represent.
+    \overload
 */
-
 QString QLocale::toString(const QDateTime &dateTime, FormatType format) const
 {
     if (!dateTime.isValid())
@@ -2551,7 +2552,12 @@ QDate QLocale::toDate(const QString &string, const QString &format, QCalendar ca
     \note The month and day names used must be given in the user's local
     language.
 
-    If the string could not be parsed, returns an invalid QDateTime.
+    If the string could not be parsed, returns an invalid QDateTime.  If the
+    string can be parsed and represents an invalid date-time (e.g. in a gap
+    skipped by a time-zone transition), an invalid QDateTime is returned, whose
+    toMSecsSinceEpoch() represents a near-by date-time that is valid. Passing
+    that to fromMSecsSinceEpoch() will produce a valid date-time that isn't
+    faithfully represented by the string parsed.
 
     \sa dateTimeFormat(), toTime(), toDate(), QDateTime::fromString()
 */
@@ -2571,7 +2577,7 @@ QDateTime QLocale::toDateTime(const QString &string, const QString &format, QCal
 
     QDateTimeParser dt(QMetaType::QDateTime, QDateTimeParser::FromString, cal);
     dt.setDefaultLocale(*this);
-    if (dt.parseFormat(format) && dt.fromString(string, &datetime))
+    if (dt.parseFormat(format) && (dt.fromString(string, &datetime) || !datetime.isValid()))
         return datetime;
 #else
     Q_UNUSED(string);
@@ -4532,13 +4538,8 @@ QStringList QLocale::uiLanguages() const
         if (i < uiLanguages.size()) {
             // Adding likely-adjusted forms to system locale's list.
             // Name the locale is derived from:
-            const QString &name = uiLanguages.at(i);
-            prior = name.toLatin1();
-            // Don't try to likely-adjust if construction's likely-adjustments
-            // were so drastic the result doesn't match the prior name:
-            if (locale.name() != name && locale.d->rawName() != prior)
-                continue;
-            // Insert just after prior:
+            prior = uiLanguages.at(i).toLatin1();
+            // Insert just after the entry we're supplementing:
             j = i + 1;
         } else {
             // Plain locale, not system locale; just append.

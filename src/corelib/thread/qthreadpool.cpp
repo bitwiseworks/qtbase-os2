@@ -195,6 +195,11 @@ bool QThreadPoolPrivate::tryStart(QRunnable *task)
         ++activeThreads;
 
         thread->runnable = task;
+
+        // Ensure that the thread has actually finished, otherwise the following
+        // start() has no effect.
+        thread->wait();
+        Q_ASSERT(thread->isFinished());
         thread->start();
         return true;
     }
@@ -788,6 +793,7 @@ bool QThreadPool::contains(const QThread *thread) const
     const QThreadPoolThread *poolThread = qobject_cast<const QThreadPoolThread *>(thread);
     if (!poolThread)
         return false;
+    QMutexLocker locker(&d->mutex);
     return d->allThreads.contains(const_cast<QThreadPoolThread *>(poolThread));
 }
 

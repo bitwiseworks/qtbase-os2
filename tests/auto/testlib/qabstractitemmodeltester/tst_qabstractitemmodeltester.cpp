@@ -40,6 +40,7 @@ private slots:
     void stringListModel();
     void treeWidgetModel();
     void standardItemModel();
+    void standardItemModelZeroColumns();
     void testInsertThroughProxy();
     void moveSourceItems();
     void testResetThroughProxy();
@@ -102,6 +103,18 @@ void tst_QAbstractItemModelTester::standardItemModel()
 
     model.insertRows(0, 5, model.index(1, 1));
     model.insertColumns(0, 5, model.index(1, 3));
+}
+
+void tst_QAbstractItemModelTester::standardItemModelZeroColumns()
+{
+    QStandardItemModel model;
+    QAbstractItemModelTester t1(&model);
+    // QTBUG-92220
+    model.insertRows(0, 5);
+    model.removeRows(0, 5);
+    // QTBUG-92886
+    model.insertRows(0, 5);
+    model.removeRows(1, 2);
 }
 
 void tst_QAbstractItemModelTester::testInsertThroughProxy()

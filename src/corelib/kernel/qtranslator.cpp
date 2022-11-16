@@ -601,9 +601,14 @@ bool QTranslatorPrivate::do_load(const QString &realname, const QString &directo
         }
     }
 
-    if (ok && d->do_load(reinterpret_cast<const uchar *>(d->unmapPointer), d->unmapLength, directory)) {
-        d->filePath = realname;
-        return true;
+    if (ok) {
+        const QString base_dir =
+                !directory.isEmpty() ? directory : QFileInfo(realname).absolutePath();
+        if (d->do_load(reinterpret_cast<const uchar *>(d->unmapPointer), d->unmapLength,
+                       base_dir)) {
+            d->filePath = realname;
+            return true;
+        }
     }
 
 #if defined(QT_USE_MMAP)
@@ -647,7 +652,6 @@ static QString find_translation(const QLocale & locale,
     QString realname;
     realname += path + filename + prefix; // using += in the hope for some reserve capacity
     const int realNameBaseSize = realname.size();
-    QStringList fuzzyLocales;
 
     // see http://www.unicode.org/reports/tr35/#LanguageMatching for inspiration
 
@@ -661,32 +665,12 @@ static QString find_translation(const QLocale & locale,
     }
 #endif
 
-    // try explicit locales names first
     for (QString localeName : qAsConst(languages)) {
         localeName.replace(QLatin1Char('-'), QLatin1Char('_'));
 
-        realname += localeName + suffixOrDotQM;
-        if (is_readable_file(realname))
-            return realname;
-
-        realname.truncate(realNameBaseSize + localeName.size());
-        if (is_readable_file(realname))
-            return realname;
-
-        realname.truncate(realNameBaseSize);
-        fuzzyLocales.append(localeName);
-    }
-
-    // start guessing
-    for (const QString &fuzzyLocale : qAsConst(fuzzyLocales)) {
-        QStringRef localeName(&fuzzyLocale);
+        // try the complete locale name first and progressively truncate from
+        // the end until a matching language tag is found (with or without suffix)
         for (;;) {
-            int rightmost = localeName.lastIndexOf(QLatin1Char('_'));
-            // no truncations? fail
-            if (rightmost <= 0)
-                break;
-            localeName.truncate(rightmost);
-
             realname += localeName + suffixOrDotQM;
             if (is_readable_file(realname))
                 return realname;
@@ -696,6 +680,11 @@ static QString find_translation(const QLocale & locale,
                 return realname;
 
             realname.truncate(realNameBaseSize);
+
+            int rightmost = localeName.lastIndexOf(QLatin1Char('_'));
+            if (rightmost <= 0)
+                break; // no truncations anymore, break
+            localeName.truncate(rightmost);
         }
     }
 
@@ -754,10 +743,10 @@ static QString find_translation(const QLocale & locale,
     \li \c /opt/foolib/foo.es
     \li \c /opt/foolib/foo.fr_CA.qm
     \li \c /opt/foolib/foo.fr_CA
-    \li \c /opt/foolib/foo.de.qm
-    \li \c /opt/foolib/foo.de
     \li \c /opt/foolib/foo.fr.qm
     \li \c /opt/foolib/foo.fr
+    \li \c /opt/foolib/foo.de.qm
+    \li \c /opt/foolib/foo.de
     \li \c /opt/foolib/foo.qm
     \li \c /opt/foolib/foo.
     \li \c /opt/foolib/foo

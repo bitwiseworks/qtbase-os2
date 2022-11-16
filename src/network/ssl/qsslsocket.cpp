@@ -2172,7 +2172,7 @@ qint64 QSslSocket::readData(char *data, qint64 maxlen)
 #endif
     } else {
         // possibly trigger another transmit() to decrypt more data from the socket
-        if (d->plainSocket->bytesAvailable())
+        if (d->plainSocket->bytesAvailable() || d->hasUndecryptedData())
             QMetaObject::invokeMethod(this, "_q_flushReadBuffer", Qt::QueuedConnection);
         else if (d->state != QAbstractSocket::ConnectedState)
             return maxlen ? qint64(-1) : qint64(0);
@@ -2709,7 +2709,7 @@ void QSslSocketPrivate::_q_errorSlot(QAbstractSocket::SocketError error)
     qCDebug(lcSsl) << "\terrorString =" << q->errorString();
 #endif
     // this moves encrypted bytes from plain socket into our buffer
-    if (plainSocket->bytesAvailable()) {
+    if (plainSocket->bytesAvailable() && mode != QSslSocket::UnencryptedMode) {
         qint64 tmpReadBufferMaxSize = readBufferMaxSize;
         readBufferMaxSize = 0; // reset temporarily so the plain sockets completely drained drained
         transmit();

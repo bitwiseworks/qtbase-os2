@@ -386,8 +386,8 @@ bool qt_apple_isSandboxed()
 {
     static bool isSandboxed = []() {
         QCFType<SecStaticCodeRef> staticCode = nullptr;
-        NSURL *bundleUrl = [[NSBundle mainBundle] bundleURL];
-        if (SecStaticCodeCreateWithPath((__bridge CFURLRef)bundleUrl,
+        NSURL *executableUrl = NSBundle.mainBundle.executableURL;
+        if (SecStaticCodeCreateWithPath((__bridge CFURLRef)executableUrl,
             kSecCSDefaultFlags, &staticCode) != errSecSuccess)
             return false;
 
@@ -654,7 +654,7 @@ void QMacKeyValueObserver::removeObserver() {
 KeyValueObserver *QMacKeyValueObserver::observer = [[KeyValueObserver alloc] init];
 
 QT_END_NAMESPACE
-@implementation KeyValueObserver
+@implementation QT_MANGLE_NAMESPACE(KeyValueObserver)
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
         change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context
 {
