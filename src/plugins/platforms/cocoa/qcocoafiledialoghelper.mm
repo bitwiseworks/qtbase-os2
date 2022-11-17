@@ -179,30 +179,31 @@ static QString strippedText(QString s)
 - (void)closePanel
 {
     *mCurrentSelection = QString::fromNSString([[mSavePanel URL] path]).normalized(QString::NormalizationForm_C);
-    if ([mSavePanel respondsToSelector:@selector(close)])
+
+    if (mSavePanel.sheet)
+        [NSApp endSheet:mSavePanel];
+    else if (NSApp.modalWindow == mSavePanel)
+        [NSApp stopModal];
+    else
         [mSavePanel close];
-    if ([mSavePanel isSheet])
-        [NSApp endSheet: mSavePanel];
 }
 
 - (void)showModelessPanel
 {
-    if (mOpenPanel){
-        QFileInfo info(*mCurrentSelection);
-        NSString *filepath = info.filePath().toNSString();
-        NSURL *url = [NSURL fileURLWithPath:filepath isDirectory:info.isDir()];
-        bool selectable = (mOptions->acceptMode() == QFileDialogOptions::AcceptSave)
-            || [self panel:mOpenPanel shouldEnableURL:url];
+    QFileInfo info(*mCurrentSelection);
+    NSString *filepath = info.filePath().toNSString();
+    NSURL *url = [NSURL fileURLWithPath:filepath isDirectory:info.isDir()];
+    bool selectable = (mOptions->acceptMode() == QFileDialogOptions::AcceptSave)
+        || [self panel:mSavePanel shouldEnableURL:url];
 
-        [self updateProperties];
-        [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
+    [self updateProperties];
+    [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
 
-        [mOpenPanel beginWithCompletionHandler:^(NSInteger result){
-            mReturnCode = result;
-            if (mHelper)
-                mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSModalResponseOK);
-        }];
-    }
+    [mSavePanel beginWithCompletionHandler:^(NSInteger result){
+        mReturnCode = result;
+        if (mHelper)
+            mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSModalResponseOK);
+    }];
 }
 
 - (BOOL)runApplicationModalPanel
@@ -326,14 +327,7 @@ static QString strippedText(QString s)
 - (NSString *)panel:(id)sender userEnteredFilename:(NSString *)filename confirmed:(BOOL)okFlag
 {
     Q_UNUSED(sender);
-    if (!okFlag)
-        return filename;
-    if (!mOptions->testOption(QFileDialogOptions::DontConfirmOverwrite))
-        return filename;
-
-    // User has clicked save, and no overwrite confirmation should occur.
-    // To get the latter, we need to change the name we return (hence the prefix):
-    return [@"___qt_very_unlikely_prefix_" stringByAppendingString:filename];
+    return filename;
 }
 
 - (void)setNameFilters:(const QStringList &)filters hideDetails:(BOOL)hideDetails
@@ -391,7 +385,7 @@ static QString strippedText(QString s)
         if (fileInfo.suffix().isEmpty() && !defaultSuffix.isEmpty()) {
                 filename.append('.').append(defaultSuffix);
         }
-        result << QUrl::fromLocalFile(filename.remove(QLatin1String("___qt_very_unlikely_prefix_")));
+        result << QUrl::fromLocalFile(filename);
         return result;
     }
 }
@@ -724,11 +718,14 @@ bool QCocoaFileDialogHelper::showCocoaFilePanel(Qt::WindowModality windowModalit
     createNSOpenSavePanelDelegate();
     if (!mDelegate)
         return false;
-    if (windowModality == Qt::NonModal)
-        [mDelegate showModelessPanel];
-    else if (windowModality == Qt::WindowModal && parent)
+
+    if (windowModality == Qt::WindowModal && parent)
         [mDelegate showWindowModalSheet:parent];
-    // no need to show a Qt::ApplicationModal dialog here, since it will be done in _q_platformRunNativeAppModalPanel()
+    else if (windowModality == Qt::ApplicationModal)
+        return true; // Defer until exec()
+    else
+        [mDelegate showModelessPanel];
+
     return true;
 }
 
@@ -740,6 +737,10 @@ bool QCocoaFileDialogHelper::hideCocoaFilePanel()
         return false;
     } else {
         [mDelegate closePanel];
+
+        if (m_eventLoop)
+            m_eventLoop->exit();
+
         // Even when we hide it, we are still using a
         // native dialog, so return true:
         return true;
@@ -748,16 +749,28 @@ bool QCocoaFileDialogHelper::hideCocoaFilePanel()
 
 void QCocoaFileDialogHelper::exec()
 {
-    // Note: If NSApp is not running (which is the case if e.g a top-most
-    // QEventLoop has been interrupted, and the second-most event loop has not
-    // yet been reactivated (regardless if [NSApp run] is still on the stack)),
-    // showing a native modal dialog will fail.
-    QMacAutoReleasePool pool;
-    if ([mDelegate runApplicationModalPanel])
-        emit accept();
-    else
-        emit reject();
+    Q_ASSERT(mDelegate);
 
+    if (mDelegate->mSavePanel.visible) {
+        // WindowModal or NonModal, so already shown above
+        QEventLoop eventLoop;
+        m_eventLoop = &eventLoop;
+        eventLoop.exec(QEventLoop::DialogExec);
+        m_eventLoop = nullptr;
+    } else {
+        // ApplicationModal, so show and block using native APIs
+
+        // Note: If NSApp is not running (which is the case if e.g a top-most
+        // QEventLoop has been interrupted, and the second-most event loop has not
+        // yet been reactivated (regardless if [NSApp run] is still on the stack)),
+        // showing a native modal dialog will fail.
+
+        QMacAutoReleasePool pool;
+        if ([mDelegate runApplicationModalPanel])
+            emit accept();
+        else
+            emit reject();
+    }
 }
 
 bool QCocoaFileDialogHelper::defaultNameFilterDisables() const

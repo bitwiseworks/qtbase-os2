@@ -783,6 +783,8 @@ void QWidget::setAutoFillBackground(bool enabled)
     and a compositing window manager.
     \li Windows: The widget needs to have the Qt::FramelessWindowHint window flag set
     for the translucency to work.
+    \li \macos: The widget needs to have the Qt::FramelessWindowHint window flag set
+    for the translucency to work.
     \endlist
 
 
@@ -2958,9 +2960,9 @@ bool QWidget::isFullScreen() const
 
     Calling this function only affects \l{isWindow()}{windows}.
 
-    To return from full-screen mode, call showNormal().
+    To return from full-screen mode, call showNormal() or close().
 
-    Full-screen mode works fine under Windows, but has certain
+    \note Full-screen mode works fine under Windows, but has certain
     problems under X. These problems are due to limitations of the
     ICCCM protocol that specifies the communication between X11
     clients and the window manager. ICCCM simply does not understand
@@ -2980,7 +2982,14 @@ bool QWidget::isFullScreen() const
     X11 window managers that follow modern post-ICCCM specifications
     support full-screen mode properly.
 
-    \sa showNormal(), showMaximized(), show(), hide(), isVisible()
+    On macOS, showing a window full screen puts the entire application in
+    full-screen mode, providing it with a dedicated desktop. Showing another
+    window while the application runs in full-screen mode might automatically
+    make that window full screen as well. To prevent that, exit full-screen
+    mode by calling showNormal() or by close() on the full screen window
+    before showing another window.
+
+    \sa showNormal(), showMaximized(), show(), isVisible(), close()
 */
 void QWidget::showFullScreen()
 {
@@ -4682,7 +4691,9 @@ void QWidgetPrivate::resolveLayoutDirection()
 /*!
     \property QWidget::layoutDirection
 
-    \brief the layout direction for this widget
+    \brief the layout direction for this widget.
+
+    \note This method no longer affects text layout direction since Qt 4.7.
 
     By default, this property is set to Qt::LeftToRight.
 
@@ -4693,7 +4704,6 @@ void QWidgetPrivate::resolveLayoutDirection()
     has been called for the parent do not inherit the parent's layout
     direction.
 
-    This method no longer affects text layout direction since Qt 4.7.
 
     \sa QApplication::layoutDirection
 */
@@ -6476,6 +6486,9 @@ void QWidget::clearFocus()
         QCoreApplication::sendEvent(this, &focusAboutToChange);
     }
 
+    QTLWExtra *extra = window()->d_func()->maybeTopData();
+    QObject *originalFocusObject = (extra && extra->window) ? extra->window->focusObject() : nullptr;
+
     QWidget *w = this;
     while (w) {
         // Just like setFocus(), we update (clear) the focus_child of our parents
@@ -6484,14 +6497,12 @@ void QWidget::clearFocus()
         w = w->parentWidget();
     }
 
-    // Since we've unconditionally cleared the focus_child of our parents, we need
+    // We've potentially cleared the focus_child of our parents, so we need
     // to report this to the rest of Qt. Note that the focus_child is not the same
     // thing as the application's focusWidget, which is why this piece of code is
-    // not inside the hasFocus() block below.
-    if (QTLWExtra *extra = window()->d_func()->maybeTopData()) {
-        if (extra->window)
-            emit extra->window->focusObjectChanged(extra->window->focusObject());
-    }
+    // not inside a hasFocus() block.
+    if (originalFocusObject && originalFocusObject != extra->window->focusObject())
+        emit extra->window->focusObjectChanged(extra->window->focusObject());
 
 #if QT_CONFIG(graphicsview)
     const auto &topData = d_func()->extra;
@@ -6744,8 +6755,21 @@ void QWidget::setTabOrder(QWidget* first, QWidget *second)
         lastFocusChild = target;
 
         QWidget *focusProxy = target->d_func()->deepestFocusProxy();
-        if (!focusProxy || !target->isAncestorOf(focusProxy))
+        if (!focusProxy || !target->isAncestorOf(focusProxy)) {
+            // QTBUG-81097: Another case is possible here. We can have a child
+            // widget, that sets its focusProxy() to the parent (target).
+            // An example of such widget is a QLineEdit, nested into
+            // a QAbstractSpinBox. In this case such widget should be considered
+            // the last focus child.
+            for (auto *object : target->children()) {
+                QWidget *w = qobject_cast<QWidget*>(object);
+                if (w && w->focusProxy() == target) {
+                    lastFocusChild = w;
+                    break;
+                }
+            }
             return;
+        }
 
         lastFocusChild = focusProxy;
 
@@ -11400,7 +11424,7 @@ QString QWidget::accessibleName() const
   \brief the widget's description as seen by assistive technologies
 
   The accessible description of a widget should convey what a widget does.
-  While the \l accessibleName should be a short and consise string (e.g. \gui{Save}),
+  While the \l accessibleName should be a short and concise string (e.g. \gui{Save}),
   the description should give more context, such as \gui{Saves the current document}.
 
   This property has to be \l{Internationalization with Qt}{localized}.
@@ -12107,7 +12131,7 @@ void QWidget::destroy(bool destroyWindow, bool destroySubWindows)
 {
     Q_D(QWidget);
 
-    d->aboutToDestroy();
+    d->aboutToDestroy(destroyWindow);
     if (!isWindow() && parentWidget())
         parentWidget()->d_func()->invalidateBackingStore(d->effectiveRectFor(geometry()));
     d->deactivateWidgetCleanup();

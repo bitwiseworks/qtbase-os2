@@ -1489,15 +1489,19 @@ void QSortFilterProxyModelPrivate::_q_sourceDataChanged(const QModelIndex &sourc
                 while (source_left_column < source_bottom_right.column()
                        && m->proxy_columns.at(source_left_column) == -1)
                     ++source_left_column;
-                const QModelIndex proxy_top_left = create_index(
-                    proxy_start_row, m->proxy_columns.at(source_left_column), it);
-                int source_right_column = source_bottom_right.column();
-                while (source_right_column > source_top_left.column()
-                       && m->proxy_columns.at(source_right_column) == -1)
-                    --source_right_column;
-                const QModelIndex proxy_bottom_right = create_index(
-                    proxy_end_row, m->proxy_columns.at(source_right_column), it);
-                emit q->dataChanged(proxy_top_left, proxy_bottom_right, roles);
+                if (m->proxy_columns.at(source_left_column) != -1) {
+                    const QModelIndex proxy_top_left = create_index(
+                        proxy_start_row, m->proxy_columns.at(source_left_column), it);
+                    int source_right_column = source_bottom_right.column();
+                    while (source_right_column > source_top_left.column()
+                           && m->proxy_columns.at(source_right_column) == -1)
+                        --source_right_column;
+                    if (m->proxy_columns.at(source_right_column) != -1) {
+                        const QModelIndex proxy_bottom_right = create_index(
+                            proxy_end_row, m->proxy_columns.at(source_right_column), it);
+                        emit q->dataChanged(proxy_top_left, proxy_bottom_right, roles);
+                    }
+                }
             }
         }
 
@@ -1564,6 +1568,7 @@ void QSortFilterProxyModelPrivate::_q_sourceReset()
     _q_clearMapping();
     // All internal structures are deleted in clear()
     q->endResetModel();
+    create_mapping(QModelIndex());
     update_source_sort_column();
     if (dynamic_sortfilter && update_source_sort_column())
         sort();
@@ -1797,7 +1802,10 @@ void QSortFilterProxyModelPrivate::_q_sourceColumnsRemoved(
             source_sort_column = -1;
     }
 
-    proxy_sort_column = q->mapFromSource(model->index(0,source_sort_column, source_parent)).column();
+    if (source_sort_column >= 0)
+        proxy_sort_column = q->mapFromSource(model->index(0,source_sort_column, source_parent)).column();
+    else
+        proxy_sort_column = -1;
 }
 
 void QSortFilterProxyModelPrivate::_q_sourceColumnsAboutToBeMoved(
@@ -2141,6 +2149,7 @@ void QSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     connect(d->model, SIGNAL(modelReset()), this, SLOT(_q_sourceReset()));
 
     endResetModel();
+    d->create_mapping(QModelIndex());
     if (d->update_source_sort_column() && d->dynamic_sortfilter)
         d->sort();
 }

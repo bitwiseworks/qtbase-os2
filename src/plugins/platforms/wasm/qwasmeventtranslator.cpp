@@ -43,6 +43,7 @@
 #include <QtCore/qdeadlinetimer.h>
 #include <private/qmakearray_p.h>
 #include <QtCore/qnamespace.h>
+#include <QCursor>
 
 #include <emscripten/bind.h>
 
@@ -135,139 +136,11 @@ static constexpr const auto KeyTbl = qMakeArray(
         Emkb2Qt< Qt::Key_F21,           'F','2','1' >,
         Emkb2Qt< Qt::Key_F22,           'F','2','2' >,
         Emkb2Qt< Qt::Key_F23,           'F','2','3' >,
-        Emkb2Qt< Qt::Key_Space,         ' ' >,
-        Emkb2Qt< Qt::Key_Comma,         ',' >,
-        Emkb2Qt< Qt::Key_Minus,         '-' >,
-        Emkb2Qt< Qt::Key_Period,        '.' >,
-        Emkb2Qt< Qt::Key_Slash,         '/' >,
-        Emkb2Qt< Qt::Key_0,             'D','i','g','i','t','0' >,
-        Emkb2Qt< Qt::Key_1,             'D','i','g','i','t','1' >,
-        Emkb2Qt< Qt::Key_2,             'D','i','g','i','t','2' >,
-        Emkb2Qt< Qt::Key_3,             'D','i','g','i','t','3' >,
-        Emkb2Qt< Qt::Key_4,             'D','i','g','i','t','4' >,
-        Emkb2Qt< Qt::Key_5,             'D','i','g','i','t','5' >,
-        Emkb2Qt< Qt::Key_6,             'D','i','g','i','t','6' >,
-        Emkb2Qt< Qt::Key_7,             'D','i','g','i','t','7' >,
-        Emkb2Qt< Qt::Key_8,             'D','i','g','i','t','8' >,
-        Emkb2Qt< Qt::Key_9,             'D','i','g','i','t','9' >,
-        Emkb2Qt< Qt::Key_Semicolon,     ';' >,
-        Emkb2Qt< Qt::Key_Equal,         '=' >,
-        Emkb2Qt< Qt::Key_A,             'K','e','y','A' >,
-        Emkb2Qt< Qt::Key_B,             'K','e','y','B' >,
-        Emkb2Qt< Qt::Key_C,             'K','e','y','C' >,
-        Emkb2Qt< Qt::Key_D,             'K','e','y','D' >,
-        Emkb2Qt< Qt::Key_E,             'K','e','y','E' >,
-        Emkb2Qt< Qt::Key_F,             'K','e','y','F' >,
-        Emkb2Qt< Qt::Key_G,             'K','e','y','G' >,
-        Emkb2Qt< Qt::Key_H,             'K','e','y','H' >,
-        Emkb2Qt< Qt::Key_I,             'K','e','y','I' >,
-        Emkb2Qt< Qt::Key_J,             'K','e','y','J' >,
-        Emkb2Qt< Qt::Key_K,             'K','e','y','K' >,
-        Emkb2Qt< Qt::Key_L,             'K','e','y','L' >,
-        Emkb2Qt< Qt::Key_M,             'K','e','y','M' >,
-        Emkb2Qt< Qt::Key_N,             'K','e','y','N' >,
-        Emkb2Qt< Qt::Key_O,             'K','e','y','O' >,
-        Emkb2Qt< Qt::Key_P,             'K','e','y','P' >,
-        Emkb2Qt< Qt::Key_Q,             'K','e','y','Q' >,
-        Emkb2Qt< Qt::Key_R,             'K','e','y','R' >,
-        Emkb2Qt< Qt::Key_S,             'K','e','y','S' >,
-        Emkb2Qt< Qt::Key_T,             'K','e','y','T' >,
-        Emkb2Qt< Qt::Key_U,             'K','e','y','U' >,
-        Emkb2Qt< Qt::Key_V,             'K','e','y','V' >,
-        Emkb2Qt< Qt::Key_W,             'K','e','y','W' >,
-        Emkb2Qt< Qt::Key_X,             'K','e','y','X' >,
-        Emkb2Qt< Qt::Key_Y,             'K','e','y','Y' >,
-        Emkb2Qt< Qt::Key_Z,             'K','e','y','Z' >,
-        Emkb2Qt< Qt::Key_BracketLeft,   '[' >,
-        Emkb2Qt< Qt::Key_Backslash,     '\\' >,
-        Emkb2Qt< Qt::Key_BracketRight,  ']' >,
-        Emkb2Qt< Qt::Key_Apostrophe,    '\'' >,
-        Emkb2Qt< Qt::Key_QuoteLeft,     'B','a','c','k','q','u','o','t','e' >,
-        Emkb2Qt< Qt::Key_multiply,      'N','u','m','p','a','d','M','u','l','t','i','p','l','y' >,
-        Emkb2Qt< Qt::Key_Minus,         'N','u','m','p','a','d','S','u','b','t','r','a','c','t' >,
-        Emkb2Qt< Qt::Key_Period,        'N','u','m','p','a','d','D','e','c','i','m','a','l' >,
-        Emkb2Qt< Qt::Key_Plus,          'N','u','m','p','a','d','A','d','d' >,
-        Emkb2Qt< Qt::Key_division,      'N','u','m','p','a','d','D','i','v','i','d','e' >,
-        Emkb2Qt< Qt::Key_Equal,         'N','u','m','p','a','d','E','q','u','a','l' >,
-        Emkb2Qt< Qt::Key_0,             'N','u','m','p','a','d','0' >,
-        Emkb2Qt< Qt::Key_1,             'N','u','m','p','a','d','1' >,
-        Emkb2Qt< Qt::Key_2,             'N','u','m','p','a','d','2' >,
-        Emkb2Qt< Qt::Key_3,             'N','u','m','p','a','d','3' >,
-        Emkb2Qt< Qt::Key_4,             'N','u','m','p','a','d','4' >,
-        Emkb2Qt< Qt::Key_5,             'N','u','m','p','a','d','5' >,
-        Emkb2Qt< Qt::Key_6,             'N','u','m','p','a','d','6' >,
-        Emkb2Qt< Qt::Key_7,             'N','u','m','p','a','d','7' >,
-        Emkb2Qt< Qt::Key_8,             'N','u','m','p','a','d','8' >,
-        Emkb2Qt< Qt::Key_9,             'N','u','m','p','a','d','9' >,
-        Emkb2Qt< Qt::Key_Comma,         'N','u','m','p','a','d','C','o','m','m','a' >,
-        Emkb2Qt< Qt::Key_Enter,         'N','u','m','p','a','d','E','n','t','e','r' >,
         Emkb2Qt< Qt::Key_Paste,         'P','a','s','t','e' >,
         Emkb2Qt< Qt::Key_AltGr,         'A','l','t','R','i','g','h','t' >,
         Emkb2Qt< Qt::Key_Help,          'H','e','l','p' >,
-        Emkb2Qt< Qt::Key_Equal,         '=' >,
         Emkb2Qt< Qt::Key_yen,           'I','n','t','l','Y','e','n' >,
-
-        Emkb2Qt< Qt::Key_Exclam,        '\x21' >,
-        Emkb2Qt< Qt::Key_QuoteDbl,      '\x22' >,
-        Emkb2Qt< Qt::Key_NumberSign,    '\x23' >,
-        Emkb2Qt< Qt::Key_Dollar,        '\x24' >,
-        Emkb2Qt< Qt::Key_Percent,       '\x25' >,
-        Emkb2Qt< Qt::Key_Ampersand,     '\x26' >,
-        Emkb2Qt< Qt::Key_ParenLeft,     '\x28' >,
-        Emkb2Qt< Qt::Key_ParenRight,    '\x29' >,
-        Emkb2Qt< Qt::Key_Asterisk,      '\x2a' >,
-        Emkb2Qt< Qt::Key_Plus,          '\x2b' >,
-        Emkb2Qt< Qt::Key_Colon,         '\x3a' >,
-        Emkb2Qt< Qt::Key_Semicolon,     '\x3b' >,
-        Emkb2Qt< Qt::Key_Less,          '\x3c' >,
-        Emkb2Qt< Qt::Key_Equal,         '\x3d' >,
-        Emkb2Qt< Qt::Key_Greater,       '\x3e' >,
-        Emkb2Qt< Qt::Key_Question,      '\x3f' >,
-        Emkb2Qt< Qt::Key_At,            '\x40' >,
-        Emkb2Qt< Qt::Key_BracketLeft,   '\x5b' >,
-        Emkb2Qt< Qt::Key_Backslash,     '\x5c' >,
-        Emkb2Qt< Qt::Key_BracketRight,  '\x5d' >,
-        Emkb2Qt< Qt::Key_AsciiCircum,   '\x5e' >,
-        Emkb2Qt< Qt::Key_Underscore,    '\x5f' >,
-        Emkb2Qt< Qt::Key_QuoteLeft,     '\x60'>,
-        Emkb2Qt< Qt::Key_BraceLeft,     '\x7b'>,
-        Emkb2Qt< Qt::Key_Bar,           '\x7c'>,
-        Emkb2Qt< Qt::Key_BraceRight,    '\x7d'>,
-        Emkb2Qt< Qt::Key_AsciiTilde,    '\x7e'>,
-        Emkb2Qt< Qt::Key_Space,         '\x20' >,
-        Emkb2Qt< Qt::Key_Comma,         '\x2c' >,
-        Emkb2Qt< Qt::Key_Minus,         '\x2d' >,
-        Emkb2Qt< Qt::Key_Period,        '\x2e' >,
-        Emkb2Qt< Qt::Key_Slash,         '\x2f' >,
-        Emkb2Qt< Qt::Key_Apostrophe,    '\x27' >,
-        Emkb2Qt< Qt::Key_Menu,          'C','o','n','t','e','x','t','M','e','n','u' >,
-
-        Emkb2Qt< Qt::Key_Agrave,        '\xc3','\xa0' >,
-        Emkb2Qt< Qt::Key_Aacute,        '\xc3','\xa1' >,
-        Emkb2Qt< Qt::Key_Acircumflex,   '\xc3','\xa2' >,
-        Emkb2Qt< Qt::Key_Adiaeresis,    '\xc3','\xa4' >,
-        Emkb2Qt< Qt::Key_AE,            '\xc3','\xa6' >,
-        Emkb2Qt< Qt::Key_Atilde,        '\xc3','\xa3' >,
-        Emkb2Qt< Qt::Key_Aring,         '\xc3','\xa5' >,
-        Emkb2Qt< Qt::Key_Ccedilla,      '\xc3','\xa7' >,
-        Emkb2Qt< Qt::Key_Egrave,        '\xc3','\xa8' >,
-        Emkb2Qt< Qt::Key_Eacute,        '\xc3','\xa9' >,
-        Emkb2Qt< Qt::Key_Ecircumflex,   '\xc3','\xaa' >,
-        Emkb2Qt< Qt::Key_Ediaeresis,    '\xc3','\xab' >,
-        Emkb2Qt< Qt::Key_Icircumflex,   '\xc3','\xae' >,
-        Emkb2Qt< Qt::Key_Idiaeresis,    '\xc3','\xaf' >,
-        Emkb2Qt< Qt::Key_Ocircumflex,   '\xc3','\xb4' >,
-        Emkb2Qt< Qt::Key_Odiaeresis,    '\xc3','\xb6' >,
-        Emkb2Qt< Qt::Key_Ograve,        '\xc3','\xb2' >,
-        Emkb2Qt< Qt::Key_Oacute,        '\xc3','\xb3' >,
-        Emkb2Qt< Qt::Key_Ooblique,      '\xc3','\xb8' >,
-        Emkb2Qt< Qt::Key_Otilde,        '\xc3','\xb5' >,
-        Emkb2Qt< Qt::Key_Ucircumflex,   '\xc3','\xbb' >,
-        Emkb2Qt< Qt::Key_Udiaeresis,    '\xc3','\xbc' >,
-        Emkb2Qt< Qt::Key_Ugrave,        '\xc3','\xb9' >,
-        Emkb2Qt< Qt::Key_Uacute,        '\xc3','\xba' >,
-        Emkb2Qt< Qt::Key_Ntilde,        '\xc3','\xb1' >,
-        Emkb2Qt< Qt::Key_ydiaeresis,    '\xc3','\xbf' >
+        Emkb2Qt< Qt::Key_Menu,          'C','o','n','t','e','x','t','M','e','n','u' >
             >::Data{}
         );
 
@@ -329,10 +202,18 @@ QWasmEventTranslator::QWasmEventTranslator(QWasmScreen *screen)
     , pressedButtons(Qt::NoButton)
     , resizeMode(QWasmWindow::ResizeNone)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    touchDevice = new QPointingDevice("touchscreen", 1, QInputDevice::DeviceType::TouchScreen,
+    QPointingDevice::PointerType::Finger,
+    QPointingDevice::Capability::Position | QPointingDevice::Capability::Area | QPointingDevice::Capability::NormalizedPosition,
+    10, 0);
+    QWindowSystemInterface::registerInputDevice(touchDevice);
+#else
     touchDevice = new QTouchDevice;
     touchDevice->setType(QTouchDevice::TouchScreen);
     touchDevice->setCapabilities(QTouchDevice::Position | QTouchDevice::Area | QTouchDevice::NormalizedPosition);
     QWindowSystemInterface::registerTouchDevice(touchDevice);
+#endif
 
     initEventHandlers();
 }
@@ -460,10 +341,10 @@ Qt::Key QWasmEventTranslator::translateEmscriptKey(const EmscriptenKeyboardEvent
             if (it1 != KeyTbl.end() && (qstrcmp(searchKey1.em, it1->em) == 0)) {
                 qtKey = static_cast<Qt::Key>(it1->qt);
             }
-
-    } else if (qstrncmp(emscriptKey->code, "Key", 3) == 0 || qstrncmp(emscriptKey->code, "Numpad", 6) == 0 ||
-                 qstrncmp(emscriptKey->code, "Digit", 5) == 0) {
-        emkb2qt_t searchKey{emscriptKey->code, 0}; // search emcsripten code
+    }
+    if (qtKey == Qt::Key_unknown) {
+        emkb2qt_t searchKey{emscriptKey->key, 0};
+        // search key
         auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
         if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
             qtKey = static_cast<Qt::Key>(it1->qt);
@@ -471,18 +352,10 @@ Qt::Key QWasmEventTranslator::translateEmscriptKey(const EmscriptenKeyboardEvent
     }
 
     if (qtKey == Qt::Key_unknown) {
-        emkb2qt_t searchKey{emscriptKey->key, 0}; // search unicode key
-        auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
-        if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
-            qtKey = static_cast<Qt::Key>(it1->qt);
-        }
-    }
-    if (qtKey == Qt::Key_unknown) {//try harder with shifted number keys
-        emkb2qt_t searchKey1{emscriptKey->key, 0};
-        for (auto it1 = KeyTbl.cbegin(); it1 != KeyTbl.end(); ++it1)
-            if (it1 != KeyTbl.end() && (qstrcmp(searchKey1.em, it1->em) == 0)) {
-                qtKey = static_cast<Qt::Key>(it1->qt);
-            }
+        // cast to unicode key
+        QString str = QString::fromUtf8(emscriptKey->key);
+        ushort c = str.unicode()->toUpper().unicode(); // uppercase
+        qtKey = static_cast<Qt::Key>(c);
     }
 
     return qtKey;
@@ -566,7 +439,6 @@ void resizeWindow(QWindow *window, QWasmWindow::ResizeMode mode,
 
 void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEvent *mouseEvent)
 {
-    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent->targetX, mouseEvent->targetY);
     QPoint globalPoint = screen()->geometry().topLeft() + targetPoint;
 
@@ -574,8 +446,13 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
     Qt::MouseButton button = translateMouseButton(mouseEvent->button);
     Qt::KeyboardModifiers modifiers = translateMouseEventModifier(mouseEvent);
 
-    QWindow *window2 = screen()->compositor()->windowAt(globalPoint, 5);
+    QWindow *window2 = nullptr;
+    if (resizeMode == QWasmWindow::ResizeNone)
+        window2 = screen()->compositor()->windowAt(globalPoint, 5);
 
+    if (lastWindow && lastWindow->cursor() != Qt::ArrowCursor) {
+        lastWindow->setCursor(Qt::ArrowCursor);
+    }
     if (window2 == nullptr) {
         window2 = lastWindow;
     } else {
@@ -630,11 +507,17 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
 
         if (oldWindow)
             oldWindow->injectMouseReleased(localPoint, globalPoint, button, modifiers);
+        else
+            htmlWindow->injectMouseReleased(localPoint, globalPoint, button, modifiers);
         break;
     }
     case EMSCRIPTEN_EVENT_MOUSEMOVE: // drag event
     {
         buttonEventType = QEvent::MouseMove;
+
+        if (htmlWindow && htmlWindow->isPointOnResizeRegion(globalPoint))
+            window2->setCursor(cursorForMode(htmlWindow->resizeModeAtPoint(globalPoint)));
+
         if (!(htmlWindow->m_windowState & Qt::WindowFullScreen) && !(htmlWindow->m_windowState & Qt::WindowMaximized)) {
             if (resizeMode == QWasmWindow::ResizeNone && draggedWindow) {
                 draggedWindow->setX(draggedWindow->x() + mouseEvent->movementX);
@@ -658,7 +541,7 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
     }
     if (window2 && interior) {
         QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-            window2, timestamp, localPoint, globalPoint, pressedButtons, button, buttonEventType, modifiers);
+            window2, getTimestamp(), localPoint, globalPoint, pressedButtons, button, buttonEventType, modifiers);
     }
 }
 
@@ -692,7 +575,6 @@ int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wh
 
     QWasmEventTranslator *translator = (QWasmEventTranslator*)userData;
     Qt::KeyboardModifiers modifiers = translator->translateMouseEventModifier(&mouseEvent);
-    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent.targetX, mouseEvent.targetY);
     QPoint globalPoint = eventTranslator->screen()->geometry().topLeft() + targetPoint;
 
@@ -706,7 +588,7 @@ int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wh
     if (wheelEvent->deltaY != 0) pixelDelta.setY(wheelEvent->deltaY * scrollFactor);
     if (wheelEvent->deltaX != 0) pixelDelta.setX(wheelEvent->deltaX * scrollFactor);
 
-    QWindowSystemInterface::handleWheelEvent(window2, timestamp, localPoint,
+    QWindowSystemInterface::handleWheelEvent(window2, getTimestamp(), localPoint,
                                              globalPoint, QPoint(), pixelDelta, modifiers);
     QWasmEventDispatcher::maintainTimers();
 
@@ -799,7 +681,7 @@ int QWasmEventTranslator::handleTouch(int eventType, const EmscriptenTouchEvent 
 
 quint64 QWasmEventTranslator::getTimestamp()
 {
-    return QDeadlineTimer::current().deadlineNSecs() / 1000;
+     return static_cast<quint64>(emscripten_performance_now());
 }
 
 struct KeyMapping { Qt::Key from, to; };
@@ -987,6 +869,29 @@ bool QWasmEventTranslator::processKeyboard(int eventType, const EmscriptenKeyboa
     QWasmEventDispatcher::maintainTimers();
 
     return accepted;
+}
+
+QCursor QWasmEventTranslator::cursorForMode(QWasmWindow::ResizeMode m)
+{
+    switch (m) {
+    case QWasmWindow::ResizeTopLeft:
+    case QWasmWindow::ResizeBottomRight:
+        return Qt::SizeFDiagCursor;
+        break;
+    case QWasmWindow::ResizeBottomLeft:
+    case QWasmWindow::ResizeTopRight:
+        return Qt::SizeBDiagCursor;
+        break;
+    case QWasmWindow::ResizeTop:
+    case QWasmWindow::ResizeBottom:
+        return Qt::SizeVerCursor;
+        break;
+    case QWasmWindow::ResizeLeft:
+    case QWasmWindow::ResizeRight:
+        return Qt::SizeHorCursor;
+        break;
+    }
+    return Qt::ArrowCursor;
 }
 
 QT_END_NAMESPACE

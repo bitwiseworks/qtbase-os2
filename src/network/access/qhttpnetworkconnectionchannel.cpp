@@ -697,17 +697,19 @@ bool QHttpNetworkConnectionChannel::resetUploadData()
         //this happens if server closes connection while QHttpNetworkConnectionPrivate::_q_startNextRequest is pending
         return false;
     }
-    QNonContiguousByteDevice* uploadByteDevice = request.uploadByteDevice();
-    if (!uploadByteDevice)
-        return true;
-
-    if (uploadByteDevice->reset()) {
+    if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct
+        || switchedToHttp2) {
+        // The else branch doesn't make any sense for HTTP/2, since 1 channel is multiplexed into
+        // many streams. And having one stream fail to reset upload data should not completely close
+        // the channel. Handled in the http2 protocol handler.
+    } else if (QNonContiguousByteDevice *uploadByteDevice = request.uploadByteDevice()) {
+        if (!uploadByteDevice->reset()) {
+            connection->d_func()->emitReplyError(socket, reply, QNetworkReply::ContentReSendError);
+            return false;
+        }
         written = 0;
-        return true;
-    } else {
-        connection->d_func()->emitReplyError(socket, reply, QNetworkReply::ContentReSendError);
-        return false;
     }
+    return true;
 }
 
 #ifndef QT_NO_NETWORKPROXY
@@ -1005,7 +1007,6 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
                         && switchedToHttp2)) {
                     auto h2Handler = static_cast<QHttp2ProtocolHandler *>(protocolHandler.data());
                     h2Handler->handleConnectionClosure();
-                    protocolHandler.reset();
                 }
             }
             return;
@@ -1134,9 +1135,12 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
         for (int a = 0; a < spdyPairs.count(); ++a) {
             // emit error for all replies
             QHttpNetworkReply *currentReply = spdyPairs.at(a).second;
+            currentReply->d_func()->errorString = errorString;
+            currentReply->d_func()->httpErrorCode = errorCode;
             Q_ASSERT(currentReply);
             emit currentReply->finishedWithError(errorCode, errorString);
         }
+        spdyRequestsToSend.clear();
     }
 
     // send the next request
@@ -1282,6 +1286,10 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
         connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
         // we call setSpdyWasUsed(true) on the replies in the SPDY handler when the request is sent
         if (spdyRequestsToSend.count() > 0) {
+            // Similar to HTTP/1.1 counterpart below:
+            const auto &pairs = spdyRequestsToSend.values(); // (request, reply)
+            const auto &pair = pairs.first();
+            emit pair.second->encrypted();
             // In case our peer has sent us its settings (window size, max concurrent streams etc.)
             // let's give _q_receiveReply a chance to read them first ('invokeMethod', QueuedConnection).
             QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);

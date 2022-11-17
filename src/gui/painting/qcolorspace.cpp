@@ -146,13 +146,17 @@ QColorMatrix QColorSpacePrimaries::toXyzMatrix() const
         QColorVector srcCone = abrad.map(wXyz);
         QColorVector dstCone = abrad.map(wXyzD50);
 
-        QColorMatrix wToD50 = { { dstCone.x / srcCone.x, 0, 0 },
-                                { 0, dstCone.y / srcCone.y, 0 },
-                                { 0, 0, dstCone.z / srcCone.z } };
+        if (srcCone.x && srcCone.y && srcCone.z) {
+            QColorMatrix wToD50 = { { dstCone.x / srcCone.x, 0, 0 },
+                                    { 0, dstCone.y / srcCone.y, 0 },
+                                    { 0, 0, dstCone.z / srcCone.z } };
 
 
-        QColorMatrix chromaticAdaptation = abradinv * (wToD50 * abrad);
-        toXyz = chromaticAdaptation * toXyz;
+            QColorMatrix chromaticAdaptation = abradinv * (wToD50 * abrad);
+            toXyz = chromaticAdaptation * toXyz;
+        } else {
+            toXyz.r = {0, 0, 0}; // set to invalid value
+        }
     }
 
     return toXyz;
@@ -198,9 +202,9 @@ QColorSpacePrivate::QColorSpacePrivate(QColorSpace::NamedColorSpace namedColorSp
     initialize();
 }
 
-QColorSpacePrivate::QColorSpacePrivate(QColorSpace::Primaries primaries, QColorSpace::TransferFunction fun, float gamma)
+QColorSpacePrivate::QColorSpacePrivate(QColorSpace::Primaries primaries, QColorSpace::TransferFunction transferFunction, float gamma)
         : primaries(primaries)
-        , transferFunction(fun)
+        , transferFunction(transferFunction)
         , gamma(gamma)
 {
     identifyColorSpace();
@@ -208,10 +212,10 @@ QColorSpacePrivate::QColorSpacePrivate(QColorSpace::Primaries primaries, QColorS
 }
 
 QColorSpacePrivate::QColorSpacePrivate(const QColorSpacePrimaries &primaries,
-                                       QColorSpace::TransferFunction fun,
+                                       QColorSpace::TransferFunction transferFunction,
                                        float gamma)
         : primaries(QColorSpace::Primaries::Custom)
-        , transferFunction(fun)
+        , transferFunction(transferFunction)
         , gamma(gamma)
 {
     Q_ASSERT(primaries.areValid());
@@ -331,6 +335,7 @@ void QColorSpacePrivate::setTransferFunction()
     }
     trc[1] = trc[0];
     trc[2] = trc[0];
+    lut.generated.storeRelease(0);
 }
 
 QColorTransform QColorSpacePrivate::transformationToColorSpace(const QColorSpacePrivate *out) const
@@ -456,11 +461,11 @@ QColorSpace::QColorSpace(NamedColorSpace namedColorSpace)
 }
 
 /*!
-    Creates a custom color space with the primaries \a primaries, using the transfer function \a fun and
+    Creates a custom color space with the primaries \a primaries, using the transfer function \a transferFunction and
     optionally \a gamma.
  */
-QColorSpace::QColorSpace(QColorSpace::Primaries primaries, QColorSpace::TransferFunction fun, float gamma)
-        : d_ptr(new QColorSpacePrivate(primaries, fun, gamma))
+QColorSpace::QColorSpace(QColorSpace::Primaries primaries, QColorSpace::TransferFunction transferFunction, float gamma)
+        : d_ptr(new QColorSpacePrivate(primaries, transferFunction, gamma))
 {
     d_ptr->ref.ref();
 }
@@ -477,11 +482,11 @@ QColorSpace::QColorSpace(QColorSpace::Primaries primaries, float gamma)
 
 /*!
     Creates a custom colorspace with a primaries based on the chromaticities of the primary colors \a whitePoint,
-    \a redPoint, \a greenPoint and \a bluePoint, and using the transfer function \a fun and optionally \a gamma.
+    \a redPoint, \a greenPoint and \a bluePoint, and using the transfer function \a transferFunction and optionally \a gamma.
  */
 QColorSpace::QColorSpace(const QPointF &whitePoint, const QPointF &redPoint,
                          const QPointF &greenPoint, const QPointF &bluePoint,
-                         QColorSpace::TransferFunction fun, float gamma)
+                         QColorSpace::TransferFunction transferFunction, float gamma)
 {
     QColorSpacePrimaries primaries(whitePoint, redPoint, greenPoint, bluePoint);
     if (!primaries.areValid()) {
@@ -489,7 +494,7 @@ QColorSpace::QColorSpace(const QPointF &whitePoint, const QPointF &redPoint,
         d_ptr = nullptr;
         return;
     }
-    d_ptr = new QColorSpacePrivate(primaries, fun, gamma);
+    d_ptr = new QColorSpacePrivate(primaries, transferFunction, gamma);
     d_ptr->ref.ref();
 }
 

@@ -418,6 +418,9 @@ inline void QDirPrivate::initFileEngine()
     a QDir is using a relative or an absolute file path. Call
     makeAbsolute() to convert a relative QDir to an absolute one.
 
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
     \section1 Navigation and Directory Operations
 
     A directory's path can be obtained with the path() function, and
@@ -1724,6 +1727,9 @@ bool QDir::isRoot() const
     Returns \c true if the directory's path is absolute; otherwise
     returns \c false. See isAbsolutePath().
 
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
     \sa isRelative(), makeAbsolute(), cleanPath()
 */
 
@@ -1733,9 +1739,8 @@ bool QDir::isRoot() const
     Returns \c true if \a path is absolute; returns \c false if it is
     relative.
 
-    \note If \a path starts with ':', this function will return \c true
-    because paths starting with ':' are treated specially as they denote
-    a QResource.
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
 
     \sa isAbsolute(), isRelativePath(), makeAbsolute(), cleanPath(), QResource
 */
@@ -1744,6 +1749,9 @@ bool QDir::isRoot() const
     Returns \c true if the directory path is relative; otherwise returns
     false. (Under Unix a path is relative if it does not start with a
     "/").
+
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
 
     \sa makeAbsolute(), isAbsolute(), isAbsolutePath(), cleanPath()
 */
@@ -2017,6 +2025,8 @@ QChar QDir::separator()
     Sets the application's current working directory to \a path.
     Returns \c true if the directory was successfully changed; otherwise
     returns \c false.
+
+    \snippet code/src_corelib_io_qdir.cpp 16
 
     \sa current(), currentPath(), home(), root(), temp()
 */
@@ -2410,6 +2420,9 @@ QString QDir::cleanPath(const QString &path)
 /*!
     Returns \c true if \a path is relative; returns \c false if it is
     absolute.
+
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
 
     \sa isRelative(), isAbsolutePath(), makeAbsolute()
 */

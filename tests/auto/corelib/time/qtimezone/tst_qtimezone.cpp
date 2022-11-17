@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -62,6 +62,7 @@ private slots:
     void windowsId();
     void isValidId_data();
     void isValidId();
+    void malformed();
     // Backend tests
     void utcTest();
     void icuTest();
@@ -154,25 +155,23 @@ void tst_QTimeZone::printTimeZone(const QTimeZone &tz)
 
 void tst_QTimeZone::createTest()
 {
-    QTimeZone tz("Pacific/Auckland");
+    const QTimeZone tz("Pacific/Auckland");
 
     if (debug)
         printTimeZone(tz);
 
     // If the tz is not valid then skip as is probably using the UTC backend which is tested later
     if (!tz.isValid())
-        return;
+        QSKIP("System lacks zone used for test"); // This returns.
 
-    // Validity tests
-    QCOMPARE(tz.isValid(), true);
-
-    // Comparison tests
-    QTimeZone tz2("Pacific/Auckland");
-    QTimeZone tz3("Australia/Sydney");
-    QCOMPARE((tz == tz2), true);
-    QCOMPARE((tz != tz2), false);
-    QCOMPARE((tz == tz3), false);
-    QCOMPARE((tz != tz3), true);
+    QCOMPARE(tz.id(), "Pacific/Auckland");
+    // Comparison tests:
+    const QTimeZone same("Pacific/Auckland");
+    QCOMPARE((tz == same), true);
+    QCOMPARE((tz != same), false);
+    const QTimeZone other("Australia/Sydney");
+    QCOMPARE((tz == other), false);
+    QCOMPARE((tz != other), true);
 
     QCOMPARE(tz.country(), QLocale::NewZealand);
 
@@ -448,6 +447,7 @@ void tst_QTimeZone::utcOffsetId_data()
     ROW("UTC+12:00", true, 43200);
     ROW("UTC+13:00", true, 46800);
     ROW("UTC+14:00", true, 50400);
+
     // Windows IDs known to CLDR v35.1:
     ROW("UTC-11", true, -39600);
     ROW("UTC-09", true, -32400);
@@ -500,6 +500,7 @@ void tst_QTimeZone::utcOffsetId()
         QFETCH(int, offset);
         QCOMPARE(zone.offsetFromUtc(epoch), offset);
         QVERIFY(!zone.hasDaylightTime());
+        QCOMPARE(zone.id(), id);
     }
 }
 
@@ -609,10 +610,6 @@ void tst_QTimeZone::transitionEachZone()
         if (zone == "Europe/Samara" && i == -3) {
             continue;
         }
-#endif
-#ifdef Q_OS_ANDROID
-        if (zone == "America/Mazatlan" || zone == "Mexico/BajaSur")
-            QSKIP("Crashes on Android, see QTBUG-69132");
 #endif
         qint64 here = secs + i * 3600;
         QDateTime when = QDateTime::fromMSecsSinceEpoch(here * 1000, named);
@@ -935,6 +932,21 @@ void tst_QTimeZone::isValidId()
 #endif
 }
 
+void tst_QTimeZone::malformed()
+{
+    // Regression test for QTBUG-92808
+    // Strings that look enough like a POSIX zone specifier that the constructor
+    // accepts them, but the specifier is invalid.
+    // Must not crash or trigger assertions when calling offsetFromUtc()
+    const QDateTime now = QDateTime::currentDateTime();
+    QTimeZone barf("QUT4tCZ0 , /");
+    if (barf.isValid())
+        barf.offsetFromUtc(now);
+    barf = QTimeZone("QtC+09,,MA");
+    if (barf.isValid())
+        barf.offsetFromUtc(now);
+}
+
 void tst_QTimeZone::utcTest()
 {
 #ifdef QT_BUILD_INTERNAL
@@ -951,11 +963,11 @@ void tst_QTimeZone::utcTest()
     QCOMPARE(tzp.hasDaylightTime(), false);
     QCOMPARE(tzp.hasTransitions(), false);
 
-    // Test create from UTC Offset
+    // Test create from UTC Offset (uses minimal id, skipping minutes if 0)
     QDateTime now = QDateTime::currentDateTime();
     QTimeZone tz(36000);
-    QCOMPARE(tz.isValid(),   true);
-    QCOMPARE(tz.id(), QByteArray("UTC+10:00"));
+    QVERIFY(tz.isValid());
+    QCOMPARE(tz.id(), QByteArray("UTC+10"));
     QCOMPARE(tz.offsetFromUtc(now), 36000);
     QCOMPARE(tz.standardTimeOffset(now), 36000);
     QCOMPARE(tz.daylightTimeOffset(now), 0);
@@ -970,9 +982,9 @@ void tst_QTimeZone::utcTest()
     QCOMPARE(QTimeZone(max).isValid(), true);
     QCOMPARE(QTimeZone(max + 1).isValid(), false);
 
-    // Test create from standard name
+    // Test create from standard name (preserves :00 for minutes in id):
     tz = QTimeZone("UTC+10:00");
-    QCOMPARE(tz.isValid(),   true);
+    QVERIFY(tz.isValid());
     QCOMPARE(tz.id(), QByteArray("UTC+10:00"));
     QCOMPARE(tz.offsetFromUtc(now), 36000);
     QCOMPARE(tz.standardTimeOffset(now), 36000);
@@ -1153,11 +1165,14 @@ void tst_QTimeZone::tzTest()
     QCOMPARE(dat.standardTimeOffset, 3600);
     QCOMPARE(dat.daylightTimeOffset, 0);
 
-    // Known high datetimes
-    qint64 stdHi = QDateTime(QDate(2100, 1, 1), QTime(0, 0, 0), Qt::UTC).toMSecsSinceEpoch();
-    qint64 dstHi = QDateTime(QDate(2100, 6, 1), QTime(0, 0, 0), Qt::UTC).toMSecsSinceEpoch();
+    // Date-times late enough to exercise POSIX rules:
+    qint64 stdHi = QDate(2100, 1, 1).startOfDay(Qt::UTC).toMSecsSinceEpoch();
+    qint64 dstHi = QDate(2100, 6, 1).startOfDay(Qt::UTC).toMSecsSinceEpoch();
+    // Relevant last Sundays in October and March:
+    QCOMPARE(Qt::DayOfWeek(QDate(2099, 10, 25).dayOfWeek()), Qt::Sunday);
+    QCOMPARE(Qt::DayOfWeek(QDate(2100, 3, 28).dayOfWeek()), Qt::Sunday);
+    QCOMPARE(Qt::DayOfWeek(QDate(2100, 10, 31).dayOfWeek()), Qt::Sunday);
 
-    // Tets high dates use the POSIX rule
     dat = tzp.data(stdHi);
     QCOMPARE(dat.atMSecsSinceEpoch - stdHi, (qint64)0);
     QCOMPARE(dat.offsetFromUtc, 3600);
@@ -1171,29 +1186,33 @@ void tst_QTimeZone::tzTest()
     QCOMPARE(dat.daylightTimeOffset, 3600);
 
     dat = tzp.previousTransition(stdHi);
-    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::OffsetFromUTC, 3600),
-             QDateTime(QDate(2099, 10, 26), QTime(2, 0), Qt::OffsetFromUTC, 3600));
+    QCOMPARE(dat.abbreviation, QStringLiteral("CET"));
+    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::UTC),
+             QDateTime(QDate(2099, 10, 25), QTime(3, 0), Qt::OffsetFromUTC, 7200));
     QCOMPARE(dat.offsetFromUtc, 3600);
     QCOMPARE(dat.standardTimeOffset, 3600);
     QCOMPARE(dat.daylightTimeOffset, 0);
 
     dat = tzp.previousTransition(dstHi);
-    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::OffsetFromUTC, 3600),
-             QDateTime(QDate(2100, 3, 29), QTime(2, 0), Qt::OffsetFromUTC, 3600));
+    QCOMPARE(dat.abbreviation, QStringLiteral("CEST"));
+    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::UTC),
+             QDateTime(QDate(2100, 3, 28), QTime(2, 0), Qt::OffsetFromUTC, 3600));
     QCOMPARE(dat.offsetFromUtc, 7200);
     QCOMPARE(dat.standardTimeOffset, 3600);
     QCOMPARE(dat.daylightTimeOffset, 3600);
 
     dat = tzp.nextTransition(stdHi);
-    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::OffsetFromUTC, 3600),
-             QDateTime(QDate(2100, 3, 29), QTime(2, 0), Qt::OffsetFromUTC, 3600));
+    QCOMPARE(dat.abbreviation, QStringLiteral("CEST"));
+    QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::UTC),
+             QDateTime(QDate(2100, 3, 28), QTime(2, 0), Qt::OffsetFromUTC, 3600));
     QCOMPARE(dat.offsetFromUtc, 7200);
     QCOMPARE(dat.standardTimeOffset, 3600);
     QCOMPARE(dat.daylightTimeOffset, 3600);
 
     dat = tzp.nextTransition(dstHi);
+    QCOMPARE(dat.abbreviation, QStringLiteral("CET"));
     QCOMPARE(QDateTime::fromMSecsSinceEpoch(dat.atMSecsSinceEpoch, Qt::OffsetFromUTC, 3600),
-             QDateTime(QDate(2100, 10, 25), QTime(2, 0), Qt::OffsetFromUTC, 3600));
+             QDateTime(QDate(2100, 10, 31), QTime(3, 0), Qt::OffsetFromUTC, 7200));
     QCOMPARE(dat.offsetFromUtc, 3600);
     QCOMPARE(dat.standardTimeOffset, 3600);
     QCOMPARE(dat.daylightTimeOffset, 0);

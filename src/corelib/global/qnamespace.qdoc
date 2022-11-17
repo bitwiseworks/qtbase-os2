@@ -117,7 +117,9 @@
     \value AA_DontShowShortcutsInContextMenus Actions with the Shortcut property
            won't be shown in any shortcut menus unless specifically set by the
            QAction::shortcutVisibleInContextMenu property. This value was added
-           in Qt 5.10.
+           in Qt 5.10, and defaults to the preference reported by the implementation
+           of QPlatformIntegration::styleHint. To override the platform integration,
+           set this attribute after QCoreApplication has been instantiated.
 
     \value AA_NativeWindows Ensures that widgets have native windows.
 
@@ -768,10 +770,26 @@
 /*!
     \enum Qt::TimeSpec
 
-    \value LocalTime Locale dependent time (Timezones and Daylight Savings Time).
-    \value UTC Coordinated Universal Time, replaces Greenwich Mean Time.
+    \value LocalTime Local time, controlled by a system time-zone setting.
+    \value UTC Coordinated Universal Time.
     \value OffsetFromUTC An offset in seconds from Coordinated Universal Time.
-    \value TimeZone A named time zone using a specific set of Daylight Savings rules.
+    \value TimeZone A named time zone.
+
+    Both LocalTime and TimeZone will take care of transitions, such as
+    the start and end of daylight-saving time. UTC is the standard
+    time relative to which time-zones are usually specified: Greenwich
+    Mean Time has zero offset from it. Neither UTC nor OffsetFromUTC
+    has any transitions.
+
+    \note After a change to the system time-zone setting, the behavior
+    of LocalTime-based QDateTime objects created before the change is
+    undefined: QDateTime may have cached data that the change
+    invalidates. (This is not triggered by transitions of the system
+    time-zone.) In long-running processes, updates to the system's
+    time-zone data (e.g. when politicians change the rules for a zone)
+    may likewise lead to conflicts between the updated time-zone
+    information and data cached by QDateTime objects created before
+    the update, using either LocalTime or TimeZone.
 */
 
 /*!
@@ -2194,6 +2212,8 @@
                    QDialog::open(), instead.
 
     \value Drawer  Indicates that the widget is a drawer on \macos.
+                   This feature is obsolete. Setting the flag
+                   has no effect.
 
     \value Popup   Indicates that the widget is a pop-up top-level
                    window, i.e. that it is modal, but has a window
@@ -2894,6 +2914,11 @@
            the search reaches the last item in the model, it begins again at
            the first item and continues until all items have been examined.
     \value MatchRecursive          Searches the entire hierarchy.
+
+    \note Qt::MatchExactly, Qt::MatchContains, Qt::MatchStartsWith,
+          Qt::MatchEndsWith, Qt::MatchRegularExpression, Qt::MatchWildcard, and
+          Qt::MatchFixedString are mutually exclusive. The behavior achieved by
+          setting several of them in a Qt::MatchFlags argument is undefined.
 
     \sa QString::compare(), QRegExp, QRegularExpression
 */

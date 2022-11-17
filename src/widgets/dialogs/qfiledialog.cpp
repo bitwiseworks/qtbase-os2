@@ -224,12 +224,15 @@ Q_GLOBAL_STATIC(QUrl, lastVisitedDir)
     \value DontConfirmOverwrite Don't ask for confirmation if an
     existing file is selected.  By default confirmation is requested.
 
+    Note: This opption is not supported on macOS when using the
+    native file dialog.
+
     \value DontUseNativeDialog Don't use the native file dialog. By
     default, the native file dialog is used unless you use a subclass
     of QFileDialog that contains the Q_OBJECT macro, or the platform
     does not have a native dialog of the type that you require.
 
-    \note This option must be set before changing dialog properties
+    \b{Note:} This option must be set before changing dialog properties
     or showing the dialog.
 
     \value ReadOnly Indicates that the model is readonly.

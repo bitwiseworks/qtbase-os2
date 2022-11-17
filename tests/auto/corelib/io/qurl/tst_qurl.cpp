@@ -1334,6 +1334,10 @@ void tst_QUrl::fromLocalFile_data()
                 << QString(QString("//somehost") + suffix).replace('/', '\\')
                 << QString("file://somehost") + suffix
                 << QString(suffix);
+        QTest::addRow("windows-backslash-extlen-%s", pathDescription)
+                << QString(QString("//?") + suffix).replace('/', '\\')
+                << QString("file:////%3F") + suffix
+                << QString("//?") + suffix;
 #endif
         QTest::addRow("windows-extlen-%s", pathDescription)
                 << QString("//?") + suffix
@@ -1913,6 +1917,8 @@ void tst_QUrl::ipv6_data()
     QTest::addColumn<QString>("ipv6Auth");
     QTest::addColumn<bool>("isValid");
     QTest::addColumn<QString>("output");
+
+    QTest::newRow("empty") << "//[]" << false << "";
 
     QTest::newRow("case 1") << QString::fromLatin1("//[56:56:56:56:56:56:56:56]") << true
                             << "//[56:56:56:56:56:56:56:56]";

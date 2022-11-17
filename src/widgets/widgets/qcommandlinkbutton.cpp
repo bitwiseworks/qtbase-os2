@@ -216,6 +216,7 @@ void QCommandLinkButtonPrivate::init()
     Q_Q(QCommandLinkButton);
     QPushButtonPrivate::init();
     q->setAttribute(Qt::WA_Hover);
+    q->setAttribute(Qt::WA_MacShowFocusRect, false);
 
     QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred, QSizePolicy::PushButton);
     policy.setHeightForWidth(true);
@@ -272,6 +273,7 @@ QCommandLinkButton::QCommandLinkButton(QWidget *parent)
 : QPushButton(*new QCommandLinkButtonPrivate, parent)
 {
     Q_D(QCommandLinkButton);
+    d->commandLink = true;
     d->init();
 }
 

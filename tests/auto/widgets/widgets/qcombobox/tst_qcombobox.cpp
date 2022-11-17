@@ -166,6 +166,8 @@ private slots:
     void inputMethodUpdate();
     void task_QTBUG_52027_mapCompleterIndex();
     void checkMenuItemPosWhenStyleSheetIsSet();
+    void checkEmbeddedLineEditWhenStyleSheetIsSet();
+    void propagateStyleChanges();
 
 private:
     PlatformInputContext m_platformInputContext;
@@ -3557,6 +3559,77 @@ void tst_QComboBox::checkMenuItemPosWhenStyleSheetIsSet()
     QCOMPARE(menuHeight, menuItemRect.y() + menuItemRect.height());
 
     qApp->setStyleSheet(oldCss);
+}
+
+void tst_QComboBox::checkEmbeddedLineEditWhenStyleSheetIsSet()
+{
+    QString newCss = "QWidget { background-color: red; color: white; }";
+    QString oldCss = qApp->styleSheet();
+    qApp->setStyleSheet(newCss);
+
+    QWidget topLevel;
+    auto layout = new QVBoxLayout(&topLevel);
+    topLevel.setLayout(layout);
+    auto comboBox = new QComboBox;
+    layout->addWidget(comboBox);
+    topLevel.show();
+    comboBox->setEditable(true);
+    QApplication::setActiveWindow(&topLevel);
+    QVERIFY(QTest::qWaitForWindowActive(&topLevel));
+
+    QImage grab = comboBox->grab().toImage();
+    auto color = grab.pixelColor(grab.rect().center());
+
+    QVERIFY(color.red() > 240);
+    QVERIFY(color.green() < 20);
+    QVERIFY(color.blue() < 20);
+
+    qApp->setStyleSheet(oldCss);
+}
+
+/*!
+    Tests that the style-based frame style propagates to the internal container
+    widget of QComboBox when the style changes by verifying that the respective
+    styleHint is asked for when the style changes.
+
+    See QTBUG-92488
+*/
+void tst_QComboBox::propagateStyleChanges()
+{
+    class FrameStyle : public QProxyStyle
+    {
+    public:
+        FrameStyle(int frameStyle, QStyle *style = nullptr)
+            : QProxyStyle(style), frameStyle(frameStyle)
+        {}
+
+        int styleHint(QStyle::StyleHint hint, const QStyleOption *opt,
+                      const QWidget *widget, QStyleHintReturn *returnData) const
+        {
+            if (hint == QStyle::SH_ComboBox_PopupFrameStyle) {
+                inquired = true;
+                return frameStyle;
+            }
+            return QProxyStyle::styleHint(hint, opt, widget, returnData);
+        }
+
+        int frameStyle;
+        mutable bool inquired = false;
+    };
+
+    FrameStyle framelessStyle(QFrame::NoFrame);
+    FrameStyle frameStyle(QFrame::Plain | QFrame::Sunken);
+
+    QComboBox combo;
+    // container will be created and take settings from this style
+    combo.setStyle(&framelessStyle);
+    QVERIFY(framelessStyle.inquired);
+    combo.addItem(QLatin1String("Open"));
+    combo.addItem(QLatin1String("Close"));
+    // needed because of QComboBox's adjustSizeTimer not doing anything otherwise
+    combo.setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    combo.setStyle(&frameStyle);
+    QVERIFY(frameStyle.inquired);
 }
 
 QTEST_MAIN(tst_QComboBox)

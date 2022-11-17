@@ -51,7 +51,8 @@
 // We mean it.
 //
 
-#include <qglobal.h>
+#include <QtTest/qttestglobal.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -60,7 +61,7 @@ QT_BEGIN_NAMESPACE
 class QBenchmarkResult;
 class QTestData;
 
-class QAbstractTestLogger
+class Q_TESTLIB_EXPORT QAbstractTestLogger
 {
 public:
     enum IncidentTypes {
@@ -105,6 +106,8 @@ public:
 
     virtual void addMessage(MessageTypes type, const QString &message,
                             const char *file = nullptr, int line = 0) = 0;
+
+    bool isLoggingToStdout() const;
 
     void outputString(const char *msg);
 
@@ -182,7 +185,7 @@ namespace QTest
 namespace QTestPrivate
 {
     enum IdentifierPart { TestObject = 0x1, TestFunction = 0x2, TestDataTag = 0x4, AllParts = 0xFFFF };
-    void generateTestIdentifier(QTestCharBuffer *identifier, int parts = AllParts);
+    void Q_TESTLIB_EXPORT generateTestIdentifier(QTestCharBuffer *identifier, int parts = AllParts);
 }
 
 QT_END_NAMESPACE

@@ -250,7 +250,7 @@ void QCosmeticStroker::setup()
         strokeSelection |= AntiAliased;
 
     const QVector<qreal> &penPattern = state->lastPen.dashPattern();
-    if (penPattern.isEmpty()) {
+    if (penPattern.isEmpty() || penPattern.size() > 1024) {
         Q_ASSERT(!pattern && !reversePattern);
         pattern = nullptr;
         reversePattern = nullptr;
@@ -263,12 +263,12 @@ void QCosmeticStroker::setup()
 
         patternLength = 0;
         for (int i = 0; i < patternSize; ++i) {
-            patternLength += (int) qMax(1. , penPattern.at(i)*64.);
+            patternLength += (int)qBound(1., penPattern.at(i) * 64, 65536.);
             pattern[i] = patternLength;
         }
         patternLength = 0;
         for (int i = 0; i < patternSize; ++i) {
-            patternLength += (int) qMax(1., penPattern.at(patternSize - 1 - i)*64.);
+            patternLength += (int)qBound(1., penPattern.at(patternSize - 1 - i) * 64, 65536.);
             reversePattern[i] = patternLength;
         }
         strokeSelection |= Dashed;
@@ -311,6 +311,8 @@ void QCosmeticStroker::setup()
 // returns true if the whole line gets clipped away
 bool QCosmeticStroker::clipLine(qreal &x1, qreal &y1, qreal &x2, qreal &y2)
 {
+    if (!qIsFinite(x1) || !qIsFinite(y1) || !qIsFinite(x2) || !qIsFinite(y2))
+        return true;
     // basic/rough clipping is done in floating point coordinates to avoid
     // integer overflow problems.
     if (x1 < xmin) {
@@ -365,13 +367,13 @@ bool QCosmeticStroker::clipLine(qreal &x1, qreal &y1, qreal &x2, qreal &y2)
 
 void QCosmeticStroker::drawLine(const QPointF &p1, const QPointF &p2)
 {
-    if (p1 == p2) {
+    QPointF start = p1 * state->matrix;
+    QPointF end = p2 * state->matrix;
+
+    if (start == end) {
         drawPoints(&p1, 1);
         return;
     }
-
-    QPointF start = p1 * state->matrix;
-    QPointF end = p2 * state->matrix;
 
     patternOffset = state->lastPen.dashOffset()*64;
     lastPixel.x = INT_MIN;

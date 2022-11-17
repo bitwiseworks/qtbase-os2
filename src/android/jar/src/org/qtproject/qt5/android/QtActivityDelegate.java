@@ -154,6 +154,7 @@ public class QtActivityDelegate
     private CursorHandle m_leftSelectionHandle;
     private CursorHandle m_rightSelectionHandle;
     private EditPopupMenu m_editPopupMenu;
+    private boolean m_isPluginRunning = false;
 
     public void setFullScreen(boolean enterFullScreen)
     {
@@ -188,6 +189,11 @@ public class QtActivityDelegate
             m_fullScreen = false;
             setFullScreen(true);
         }
+    }
+
+    public boolean isKeyboardVisible()
+    {
+        return m_keyboardIsVisible;
     }
 
     // input method hints - must be kept in sync with QTDIR/src/corelib/global/qnamespace.h
@@ -231,6 +237,7 @@ public class QtActivityDelegate
     public static final int ApplicationInactive = 0x2;
     public static final int ApplicationActive = 0x4;
 
+    private QtAccessibilityDelegate m_accessibilityDelegate = null;
 
     public boolean setKeyboardVisibility(boolean visibility, long timeStamp)
     {
@@ -241,7 +248,7 @@ public class QtActivityDelegate
         if (m_keyboardIsVisible == visibility)
             return false;
         m_keyboardIsVisible = visibility;
-        QtNative.keyboardVisibilityChanged(m_keyboardIsVisible);
+        QtNative.keyboardVisibilityUpdated(m_keyboardIsVisible);
 
         if (visibility == false)
             updateFullScreen(); // Hiding the keyboard clears the immersive mode, so we need to set it again.
@@ -261,7 +268,7 @@ public class QtActivityDelegate
         }, 5);
     }
 
-    public void showSoftwareKeyboard(final int x, final int y, final int width, final int height, final int inputHints, final int enterKeyType)
+    public void showSoftwareKeyboard(final int x, final int y, final int width, final int height, final int editorHeight, final int inputHints, final int enterKeyType)
     {
         if (m_imm == null)
             return;
@@ -283,7 +290,7 @@ public class QtActivityDelegate
             if (softInputIsHidden)
                 return;
         } else {
-            if (height > visibleHeight)
+            if (editorHeight > visibleHeight)
                 m_activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             else
                 m_activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
@@ -332,29 +339,32 @@ public class QtActivityDelegate
             if ((inputHints & (ImhDate | ImhTime)) != (ImhDate | ImhTime)) {
                 if ((inputHints & ImhDate) != 0)
                     inputType |= android.text.InputType.TYPE_DATETIME_VARIATION_DATE;
-                if ((inputHints & ImhTime) != 0)
+                else
                     inputType |= android.text.InputType.TYPE_DATETIME_VARIATION_TIME;
             } // else {  TYPE_DATETIME_VARIATION_NORMAL(0) }
         } else { // CLASS_TEXT
-            if ((inputHints & (ImhEmailCharactersOnly | ImhUrlCharactersOnly)) != 0) {
-                if ((inputHints & ImhUrlCharactersOnly) != 0) {
-                    inputType |= android.text.InputType.TYPE_TEXT_VARIATION_URI;
-
-                    if (enterKeyType == 0) // not explicitly overridden
-                        imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO;
-                } else if ((inputHints & ImhEmailCharactersOnly) != 0) {
-                    inputType |= android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
-                }
-            } else if ((inputHints & ImhHiddenText) != 0) {
+            if ((inputHints & ImhHiddenText) != 0) {
                 inputType |= android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;
             } else if ((inputHints & ImhSensitiveData) != 0 ||
                 ((inputHints & ImhNoPredictiveText) != 0 &&
                   System.getenv("QT_ANDROID_ENABLE_WORKAROUND_TO_DISABLE_PREDICTIVE_TEXT") != null)) {
                 inputType |= android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
+            } else if ((inputHints & ImhUrlCharactersOnly) != 0) {
+                inputType |= android.text.InputType.TYPE_TEXT_VARIATION_URI;
+                if (enterKeyType == 0) // not explicitly overridden
+                    imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO;
+            } else if ((inputHints & ImhEmailCharactersOnly) != 0) {
+                inputType |= android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
             }
 
-            if ((inputHints & ImhMultiLine) != 0)
+            if ((inputHints & ImhMultiLine) != 0) {
                 inputType |= android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+                // Clear imeOptions for Multi-Line Type
+                // User should be able to insert new line in such case
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE;
+            }
+            if ((inputHints & (ImhNoPredictiveText | ImhSensitiveData | ImhHiddenText)) != 0)
+                inputType |= android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
 
             if ((inputHints & ImhUppercaseOnly) != 0) {
                 initialCapsMode |= android.text.TextUtils.CAP_MODE_CHARACTERS;
@@ -362,11 +372,6 @@ public class QtActivityDelegate
             } else if ((inputHints & ImhLowercaseOnly) == 0 && (inputHints & ImhNoAutoUppercase) == 0) {
                 initialCapsMode |= android.text.TextUtils.CAP_MODE_SENTENCES;
                 inputType |= android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
-            }
-
-            if ((inputHints & ImhNoPredictiveText) != 0 || (inputHints & ImhSensitiveData) != 0
-                || (inputHints & ImhHiddenText) != 0) {
-                inputType |= android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
             }
         }
 
@@ -406,12 +411,12 @@ public class QtActivityDelegate
                                                     if (metrics.widthPixels > metrics.heightPixels) { // landscape
                                                         if (m_landscapeKeyboardHeight != r.bottom) {
                                                             m_landscapeKeyboardHeight = r.bottom;
-                                                            showSoftwareKeyboard(x, y, width, height, inputHints, enterKeyType);
+                                                            showSoftwareKeyboard(x, y, width, height, editorHeight, inputHints, enterKeyType);
                                                         }
                                                     } else {
                                                         if (m_portraitKeyboardHeight != r.bottom) {
                                                             m_portraitKeyboardHeight = r.bottom;
-                                                            showSoftwareKeyboard(x, y, width, height, inputHints, enterKeyType);
+                                                            showSoftwareKeyboard(x, y, width, height, editorHeight, inputHints, enterKeyType);
                                                         }
                                                     }
                                                 } else {
@@ -560,6 +565,13 @@ public class QtActivityDelegate
             if (m_editPopupMenu != null)
                 m_editPopupMenu.hide();
         }
+    }
+
+    public void updateInputItemRectangle(final int x, final int y, final int w, final int h)
+    {
+        if (m_layout == null || m_editText == null || !m_keyboardIsVisible)
+            return;
+        m_layout.setLayoutParams(m_editText, new QtLayout.LayoutParams(w, h, x, y), true);
     }
 
     public boolean loadApplication(Activity activity, ClassLoader classLoader, Bundle loaderParams)
@@ -859,10 +871,35 @@ public class QtActivityDelegate
         m_splashScreen.startAnimation(fadeOut);
     }
 
+    public void notifyAccessibilityLocationChange()
+    {
+        if (m_accessibilityDelegate == null)
+            return;
+        m_accessibilityDelegate.notifyLocationChange();
+    }
+
+    public void notifyObjectHide(int viewId)
+    {
+        if (m_accessibilityDelegate == null)
+            return;
+        m_accessibilityDelegate.notifyObjectHide(viewId);
+    }
+
+    public void notifyObjectFocus(int viewId)
+    {
+        if (m_accessibilityDelegate == null)
+            return;
+        m_accessibilityDelegate.notifyObjectFocus(viewId);
+    }
+
+    public void notifyQtAndroidPluginRunning(boolean running)
+    {
+        m_isPluginRunning = running;
+    }
 
     public void initializeAccessibility()
     {
-        new QtAccessibilityDelegate(m_activity, m_layout, this);
+        m_accessibilityDelegate = new QtAccessibilityDelegate(m_activity, m_layout, this);
     }
 
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -967,7 +1004,7 @@ public class QtActivityDelegate
 
     public boolean onKeyDown(int keyCode, KeyEvent event)
     {
-        if (!m_started)
+        if (!m_started || !m_isPluginRunning)
             return false;
 
         m_metaState = MetaKeyKeyListener.handleKeyDown(m_metaState, keyCode, event);
@@ -1001,7 +1038,7 @@ public class QtActivityDelegate
 
     public boolean onKeyUp(int keyCode, KeyEvent event)
     {
-        if (!m_started)
+        if (!m_started || !m_isPluginRunning)
             return false;
 
         if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP

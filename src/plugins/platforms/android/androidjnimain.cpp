@@ -137,8 +137,13 @@ namespace QtAndroid
         m_androidPlatformIntegration = androidPlatformIntegration;
 
         // flush the pending state if necessary.
-        if (m_androidPlatformIntegration && (m_pendingApplicationState != -1))
+        if (m_androidPlatformIntegration && (m_pendingApplicationState != -1)) {
+            if (m_pendingApplicationState == Qt::ApplicationActive)
+                QtAndroidPrivate::handleResume();
+            else if (m_pendingApplicationState == Qt::ApplicationInactive)
+                QtAndroidPrivate::handlePause();
             QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationState(m_pendingApplicationState));
+        }
 
         m_pendingApplicationState = -1;
     }
@@ -216,6 +221,26 @@ namespace QtAndroid
 
         QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "setFullScreen", "(Z)V", true);
         m_statusBarShowing = false;
+    }
+
+    void notifyAccessibilityLocationChange()
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyAccessibilityLocationChange");
+    }
+
+    void notifyObjectHide(uint accessibilityObjectId)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyObjectHide","(I)V", accessibilityObjectId);
+    }
+
+    void notifyObjectFocus(uint accessibilityObjectId)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyObjectFocus","(I)V", accessibilityObjectId);
+    }
+
+    void notifyQtAndroidPluginRunning(bool running)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyQtAndroidPluginRunning","(Z)V", running);
     }
 
     jobject createBitmap(QImage img, JNIEnv *env)
@@ -513,7 +538,7 @@ static void waitForServiceSetup(JNIEnv *env, jclass /*clazz*/)
         QtAndroidPrivate::waitForServiceSetup();
 }
 
-static jboolean startQtApplication(JNIEnv */*env*/, jclass /*clazz*/)
+static void startQtApplication(JNIEnv */*env*/, jclass /*clazz*/)
 {
     {
         JNIEnv* env = nullptr;
@@ -552,7 +577,8 @@ static jboolean startQtApplication(JNIEnv */*env*/, jclass /*clazz*/)
     sem_destroy(&m_exitSemaphore);
 
     // We must call exit() to ensure that all global objects will be destructed
-    exit(ret);
+    if (!qEnvironmentVariableIsSet("QT_ANDROID_NO_EXIT_CALL"))
+        exit(ret);
 }
 
 static void quitQtCoreApplication(JNIEnv *env, jclass /*clazz*/)
@@ -623,11 +649,12 @@ static void setDisplayMetrics(JNIEnv */*env*/, jclass /*clazz*/,
                             jint widthPixels, jint heightPixels,
                             jint desktopWidthPixels, jint desktopHeightPixels,
                             jdouble xdpi, jdouble ydpi,
-                            jdouble scaledDensity, jdouble density)
+                            jdouble scaledDensity, jdouble density, bool forceUpdate)
 {
     // Android does not give us the correct screen size for immersive mode, but
     // the surface does have the right size
 
+    bool updateDesktopSize = m_desktopWidthPixels != desktopWidthPixels;
     widthPixels = qMax(widthPixels, desktopWidthPixels);
     heightPixels = qMax(heightPixels, desktopHeightPixels);
 
@@ -648,7 +675,9 @@ static void setDisplayMetrics(JNIEnv */*env*/, jclass /*clazz*/,
         m_androidPlatformIntegration->setDisplayMetrics(qRound(double(widthPixels)  / xdpi * 25.4),
                                                         qRound(double(heightPixels) / ydpi * 25.4));
         m_androidPlatformIntegration->setScreenSize(widthPixels, heightPixels);
-        m_androidPlatformIntegration->setDesktopSize(desktopWidthPixels, desktopHeightPixels);
+        if (updateDesktopSize || forceUpdate) {
+            m_androidPlatformIntegration->setDesktopSize(desktopWidthPixels, desktopHeightPixels);
+        }
     }
 }
 
@@ -774,7 +803,7 @@ static JNINativeMethod methods[] = {
     {"quitQtCoreApplication", "()V", (void *)quitQtCoreApplication},
     {"terminateQt", "()V", (void *)terminateQt},
     {"waitForServiceSetup", "()V", (void *)waitForServiceSetup},
-    {"setDisplayMetrics", "(IIIIDDDD)V", (void *)setDisplayMetrics},
+    {"setDisplayMetrics", "(IIIIDDDDZ)V", (void *)setDisplayMetrics},
     {"setSurface", "(ILjava/lang/Object;II)V", (void *)setSurface},
     {"updateWindow", "()V", (void *)updateWindow},
     {"updateApplicationState", "(I)V", (void *)updateApplicationState},

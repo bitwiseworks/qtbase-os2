@@ -220,8 +220,10 @@ QFontPrivate::~QFontPrivate()
     if (engineData && !engineData->ref.deref())
         delete engineData;
     engineData = nullptr;
-    if (scFont && scFont != this)
-        scFont->ref.deref();
+    if (scFont && scFont != this) {
+        if (!scFont->ref.deref())
+            delete scFont;
+    }
     scFont = nullptr;
 }
 
@@ -630,8 +632,10 @@ void QFont::detach()
         if (d->engineData && !d->engineData->ref.deref())
             delete d->engineData;
         d->engineData = nullptr;
-        if (d->scFont && d->scFont != d.data())
-            d->scFont->ref.deref();
+        if (d->scFont && d->scFont != d.data()) {
+            if (!d->scFont->ref.deref())
+                delete d->scFont;
+        }
         d->scFont = nullptr;
         return;
     }
@@ -2080,7 +2084,26 @@ QString QFont::key() const
 /*!
     Returns a description of the font. The description is a
     comma-separated list of the attributes, perfectly suited for use
-    in QSettings.
+    in QSettings, and consists of the following:
+
+    \list
+      \li Font family
+      \li Point size
+      \li Pixel size
+      \li Style hint
+      \li Font weight
+      \li Font style
+      \li Underline
+      \li Strike out
+      \li Fixed pitch
+      \li Always \e{0}
+      \li Capitalization
+      \li Letter spacing
+      \li Word spacing
+      \li Stretch
+      \li Style strategy
+      \li Font style (omitted when unavailable)
+    \endlist
 
     \sa fromString()
  */

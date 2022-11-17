@@ -605,28 +605,28 @@ public:
         SkipEmptyParts Q_DECL_ENUMERATOR_DEPRECATED
     };
 
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use split(const QString &sep, Qt::SplitBehavior ...) variant instead")
     QStringList split(const QString &sep, SplitBehavior behavior,
                                         Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use splitRef(const QString &sep, Qt::SplitBehavior ...) variant instead")
     QVector<QStringRef> splitRef(const QString &sep, SplitBehavior behavior,
                                                    Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use split(QChar sep, Qt::SplitBehavior ...) variant instead")
     QStringList split(QChar sep, SplitBehavior behavior,
                                         Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use splitRef(QChar sep, Qt::SplitBehavior ...) variant instead")
     QVector<QStringRef> splitRef(QChar sep, SplitBehavior behavior,
                                                    Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
 #ifndef QT_NO_REGEXP
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use split(const QRegularExpression &, Qt::SplitBehavior) variant instead")
     QStringList split(const QRegExp &sep, SplitBehavior behavior) const;
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use splitRef(const QRegularExpression &, Qt::SplitBehavior) variant instead")
     QVector<QStringRef> splitRef(const QRegExp &sep, SplitBehavior behavior) const;
 #endif
 #if QT_CONFIG(regularexpression)
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use split(const QRegularExpression &, Qt::SplitBehavior) variant instead")
     QStringList split(const QRegularExpression &sep, SplitBehavior behavior) const;
-    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use Qt::SplitBehavior variant instead")
+    Q_REQUIRED_RESULT QT_DEPRECATED_VERSION_X_5_15("Use splitRef(const QRegularExpression &, Qt::SplitBehavior) variant instead")
     QVector<QStringRef> splitRef(const QRegularExpression &sep, SplitBehavior behavior) const;
 #endif
 #endif // 5.15 deprecations
@@ -1231,6 +1231,10 @@ public:
     { return operator=(QChar::fromLatin1(c)); }
     inline QT_ASCII_CAST_WARN QCharRef &operator=(uchar c)
     { return operator=(QChar::fromLatin1(c)); }
+#else
+    // prevent char -> int promotion, bypassing QT_NO_CAST_FROM_ASCII
+    QCharRef &operator=(char c) = delete;
+    QCharRef &operator=(uchar c) = delete;
 #endif
     inline QCharRef &operator=(const QCharRef &c) { return operator=(QChar(c)); }
     inline QCharRef &operator=(ushort rc) { return operator=(QChar(rc)); }
@@ -2024,13 +2028,13 @@ inline int QStringRef::localeAwareCompare(const QString &s) const
 inline int QStringRef::localeAwareCompare(const QStringRef &s) const
 { return QString::localeAwareCompare_helper(constData(), length(), s.constData(), s.length()); }
 inline int QStringRef::localeAwareCompare(QStringView s) const
-{ return QString::localeAwareCompare_helper(constData(), length(), s.data(), s.size()); }
+{ return QString::localeAwareCompare_helper(constData(), length(), s.data(), int(s.size())); }
 inline int QStringRef::localeAwareCompare(const QStringRef &s1, const QString &s2)
 { return QString::localeAwareCompare_helper(s1.constData(), s1.length(), s2.constData(), s2.length()); }
 inline int QStringRef::localeAwareCompare(const QStringRef &s1, const QStringRef &s2)
 { return QString::localeAwareCompare_helper(s1.constData(), s1.length(), s2.constData(), s2.length()); }
 inline int QStringRef::localeAwareCompare(QStringView s1, QStringView s2)
-{ return QString::localeAwareCompare_helper(s1.data(), s1.size(), s2.data(), s2.size()); }
+{ return QString::localeAwareCompare_helper(s1.data(), int(s1.size()), s2.data(), int(s2.size())); }
 
 #if QT_STRINGVIEW_LEVEL < 2
 inline bool QStringRef::contains(const QString &s, Qt::CaseSensitivity cs) const

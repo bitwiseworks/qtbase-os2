@@ -850,6 +850,10 @@ QTextLine QTextLayout::createLine()
     int l = d->lines.size();
     if (l && d->lines.at(l-1).length < 0) {
         QTextLine(l-1, d).setNumColumns(INT_MAX);
+        if (d->maxWidth > QFIXED_MAX / 2) {
+            qWarning("QTextLayout: text too long, truncated.");
+            return QTextLine();
+        }
     }
     int from = l > 0 ? d->lines.at(l-1).from + d->lines.at(l-1).length + d->lines.at(l-1).trailingSpaces : 0;
     int strlen = d->layoutData->string.length();
@@ -1169,10 +1173,17 @@ void QTextLayout::draw(QPainter *p, const QPointF &pos, const QVector<FormatRang
                 QRectF fullLineRect(tl.rect());
                 fullLineRect.translate(position);
                 fullLineRect.setRight(QFIXED_MAX);
-                if (!selectionEndInLine)
-                    region.addRect(clipIfValid(QRectF(lineRect.topRight(), fullLineRect.bottomRight()), clip));
-                if (!selectionStartInLine)
-                    region.addRect(clipIfValid(QRectF(fullLineRect.topLeft(), lineRect.bottomLeft()), clip));
+
+                const bool rightToLeft = d->isRightToLeft();
+
+                if (!selectionEndInLine) {
+                    region.addRect(clipIfValid(rightToLeft ? QRectF(fullLineRect.topLeft(), lineRect.bottomLeft())
+                                                           : QRectF(lineRect.topRight(), fullLineRect.bottomRight()), clip));
+                }
+                if (!selectionStartInLine) {
+                    region.addRect(clipIfValid(rightToLeft ? QRectF(lineRect.topRight(), fullLineRect.bottomRight())
+                                                           : QRectF(fullLineRect.topLeft(), lineRect.bottomLeft()), clip));
+                }
             } else if (!selectionEndInLine
                 && isLastLineInBlock
                 &&!(d->option.flags() & QTextOption::ShowLineAndParagraphSeparators)) {
@@ -1976,7 +1987,8 @@ void QTextLine::layout_helper(int maxGlyphs)
 
                 if (lbh.currentPosition >= eng->layoutData->string.length()
                     || isBreakableSpace
-                    || attributes[lbh.currentPosition].lineBreak) {
+                    || attributes[lbh.currentPosition].lineBreak
+                    || lbh.tmpData.textWidth >= QFIXED_MAX) {
                     sb_or_ws = true;
                     break;
                 } else if (attributes[lbh.currentPosition].graphemeBoundary) {
@@ -2535,6 +2547,9 @@ void QTextLine::draw(QPainter *p, const QPointF &pos, const QTextLayout::FormatR
         return;
     }
 
+    static QRectF maxFixedRect(QPointF(-QFIXED_MAX, -QFIXED_MAX), QPointF(QFIXED_MAX, QFIXED_MAX));
+    if (!maxFixedRect.contains(pos))
+        return;
 
     QTextLineItemIterator iterator(eng, index, pos, selection);
     QFixed lineBase = line.base();

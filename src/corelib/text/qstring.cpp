@@ -1331,11 +1331,11 @@ const QString::Null QString::null = { };
   \macro QT_RESTRICTED_CAST_FROM_ASCII
   \relates QString
 
-  Defining this macro disables most automatic conversions from source
-  literals and 8-bit data to unicode QStrings, but allows the use of
+  Disables most automatic conversions from source literals and 8-bit data
+  to unicode QStrings, but allows the use of
   the \c{QChar(char)} and \c{QString(const char (&ch)[N]} constructors,
-  and the \c{QString::operator=(const char (&ch)[N])} assignment operator
-  giving most of the type-safety benefits of \c QT_NO_CAST_FROM_ASCII
+  and the \c{QString::operator=(const char (&ch)[N])} assignment operator.
+  This gives most of the type-safety benefits of \c QT_NO_CAST_FROM_ASCII
   but does not require user code to wrap character and string literals
   with QLatin1Char, QLatin1String or similar.
 
@@ -1358,7 +1358,7 @@ const QString::Null QString::null = { };
   \macro QT_NO_CAST_TO_ASCII
   \relates QString
 
-  disables automatic conversion from QString to 8-bit strings (char *)
+  Disables automatic conversion from QString to 8-bit strings (char *).
 
   \sa QT_NO_CAST_FROM_ASCII, QT_RESTRICTED_CAST_FROM_ASCII, QT_NO_CAST_FROM_BYTEARRAY
 */
@@ -1616,22 +1616,17 @@ const QString::Null QString::null = { };
     Latin-1, but there is always the risk that an implicit conversion
     from or to \c{const char *} is done using the wrong 8-bit
     encoding. To minimize these risks, you can turn off these implicit
-    conversions by defining the following two preprocessor symbols:
+    conversions by defining some of the following preprocessor symbols:
 
     \list
-    \li \c QT_NO_CAST_FROM_ASCII disables automatic conversions from
+    \li \l QT_NO_CAST_FROM_ASCII disables automatic conversions from
        C string literals and pointers to Unicode.
-    \li \c QT_RESTRICTED_CAST_FROM_ASCII allows automatic conversions
+    \li \l QT_RESTRICTED_CAST_FROM_ASCII allows automatic conversions
        from C characters and character arrays, but disables automatic
        conversions from character pointers to Unicode.
-    \li \c QT_NO_CAST_TO_ASCII disables automatic conversion from QString
+    \li \l QT_NO_CAST_TO_ASCII disables automatic conversion from QString
        to C strings.
     \endlist
-
-    One way to define these preprocessor symbols globally for your
-    application is to add the following entry to your \l {Creating Project Files}{qmake project file}:
-
-    \snippet code/src_corelib_tools_qstring.cpp 0
 
     You then need to explicitly call fromUtf8(), fromLatin1(),
     or fromLocal8Bit() to construct a QString from an
@@ -1769,7 +1764,7 @@ const QString::Null QString::null = { };
     and the \c{'+'} will automatically be performed as the
     \c{QStringBuilder} \c{'%'} everywhere.
 
-    \section1 Maximum size and out-of-memory conditions
+    \section1 Maximum Size and Out-of-memory Conditions
 
     The current version of QString is limited to just under 2 GB (2^31 bytes)
     in size. The exact value is architecture-dependent, since it depends on the
@@ -3296,7 +3291,7 @@ QString& QString::replace(QChar ch, const QString &after, Qt::CaseSensitivity cs
 
         replace_helper(indices, pos, 1, after.constData(), after.d->size);
 
-        if (Q_LIKELY(index == -1)) // Nothing left to replace
+        if (Q_LIKELY(index == size())) // Nothing left to replace
             break;
         // The call to replace_helper just moved what index points at:
         index += pos*(after.d->size - 1);
@@ -4555,6 +4550,10 @@ int QString::lastIndexOf(const QRegularExpression &re, int from) const
     Example:
 
     \snippet qstring/main.cpp 100
+
+    \note Due to how the regular expression matching algorithm works,
+    this function will actually match repeatedly from the beginning of
+    the string until the position \a from is reached.
 */
 int QString::lastIndexOf(const QRegularExpression &re, int from, QRegularExpressionMatch *rmatch) const
 {
@@ -4626,10 +4625,16 @@ bool QString::contains(const QRegularExpression &re, QRegularExpressionMatch *rm
     Returns the number of times the regular expression \a re matches
     in the string.
 
-    This function counts overlapping matches, so in the example
-    below, there are four instances of "ana" or "ama":
+    For historical reasons, this function counts overlapping matches,
+    so in the example below, there are four instances of "ana" or
+    "ama":
 
     \snippet qstring/main.cpp 95
+
+    This behavior is different from simply iterating over the matches
+    in the string using QRegularExpressionMatchIterator.
+
+    \sa QRegularExpression::globalMatch()
 */
 int QString::count(const QRegularExpression &re) const
 {
@@ -4640,7 +4645,7 @@ int QString::count(const QRegularExpression &re) const
     int count = 0;
     int index = -1;
     int len = length();
-    while (index < len - 1) {
+    while (index <= len - 1) {
         QRegularExpressionMatch match = re.match(*this, index + 1);
         if (!match.hasMatch())
             break;
@@ -7179,13 +7184,17 @@ QString QString::vasprintf(const char *cformat, va_list ap)
                 if (length_mod == lm_l) {
                     const ushort *buff = va_arg(ap, const ushort*);
                     const ushort *ch = buff;
-                    while (*ch != 0)
+                    while (precision != 0 && *ch != 0) {
                         ++ch;
+                        --precision;
+                    }
                     subst.setUtf16(buff, ch - buff);
-                } else
+                } else if (precision == -1) {
                     subst = QString::fromUtf8(va_arg(ap, const char*));
-                if (precision != -1)
-                    subst.truncate(precision);
+                } else {
+                    const char *buff = va_arg(ap, const char*);
+                    subst = QString::fromUtf8(buff, qstrnlen(buff, precision));
+                }
                 ++c;
                 break;
             }
@@ -7867,6 +7876,8 @@ QStringList QString::split(const QString &sep, Qt::SplitBehavior behavior, Qt::C
 #if QT_DEPRECATED_SINCE(5, 15)
 /*!
     \overload
+    Use QString::split(const QString &sep, Qt::SplitBehavior behavior, Qt::CaseSensitivity cs) instead.
+
     \obsolete
 */
 QStringList QString::split(const QString &sep, SplitBehavior behavior, Qt::CaseSensitivity cs) const
@@ -7899,6 +7910,8 @@ QVector<QStringRef> QString::splitRef(const QString &sep, Qt::SplitBehavior beha
 /*!
     \overload
     \obsolete
+    Use QString::splitRef(const QString &sep, Qt::SplitBehavior behavior, Qt::CaseSensitivity cs) instead.
+
     \since 5.4
 */
 QVector<QStringRef> QString::splitRef(const QString &sep, SplitBehavior behavior, Qt::CaseSensitivity cs) const
@@ -7920,6 +7933,8 @@ QStringList QString::split(QChar sep, Qt::SplitBehavior behavior, Qt::CaseSensit
 /*!
     \overload
     \obsolete
+    Use QString::split(QChar sep, Qt::SplitBehavior behavior, Qt::CaseSensitivity cs) instead.
+
 */
 QStringList QString::split(QChar sep, SplitBehavior behavior, Qt::CaseSensitivity cs) const
 {
@@ -7970,6 +7985,7 @@ QVector<QStringRef> QStringRef::split(const QString &sep, Qt::SplitBehavior beha
     \overload
     \since 5.4
     \obsolete
+    Use QString::split(const QString &sep, Qt::SplitBehavior behavior, Qt::CaseSensitivity cs) instead.
 */
 QVector<QStringRef> QStringRef::split(const QString &sep, QString::SplitBehavior behavior, Qt::CaseSensitivity cs) const
 {
@@ -7991,6 +8007,7 @@ QVector<QStringRef> QStringRef::split(QChar sep, Qt::SplitBehavior behavior, Qt:
     \overload
     \since 5.4
     \obsolete
+    Use QString::split(QChar sep, Qt::SplitBehavior behavior, Qt::CaseSensitivity cs) instead.
 */
 QVector<QStringRef> QStringRef::split(QChar sep, QString::SplitBehavior behavior, Qt::CaseSensitivity cs) const
 {
@@ -8057,6 +8074,7 @@ QStringList QString::split(const QRegExp &rx, Qt::SplitBehavior behavior) const
 /*!
     \overload
     \obsolete
+    Use QString::split(const QRegularExpression &sep, Qt::SplitBehavior behavior) instead.
 */
 QStringList QString::split(const QRegExp &rx, SplitBehavior behavior) const
 {
@@ -8088,6 +8106,7 @@ QVector<QStringRef> QString::splitRef(const QRegExp &rx, Qt::SplitBehavior behav
     \overload
     \since 5.4
     \obsolete
+    Use QString::splitRef(const QRegularExpression &sep, Qt::SplitBehavior behavior) instead.
 */
 QVector<QStringRef> QString::splitRef(const QRegExp &rx, SplitBehavior behavior) const
 {
@@ -8163,6 +8182,7 @@ QStringList QString::split(const QRegularExpression &re, Qt::SplitBehavior behav
     \overload
     \since 5.0
     \obsolete
+    Use QString::split(const QRegularExpression &sep, Qt::SplitBehavior behavior) instead.
 */
 QStringList QString::split(const QRegularExpression &re, SplitBehavior behavior) const
 {
@@ -8194,6 +8214,8 @@ QVector<QStringRef> QString::splitRef(const QRegularExpression &re, Qt::SplitBeh
     \overload
     \since 5.4
     \obsolete
+    Use QString::splitRef(const QRegularExpression &sep, Qt::SplitBehavior behavior) instead.
+
 */
 QVector<QStringRef> QString::splitRef(const QRegularExpression &re, SplitBehavior behavior) const
 {
@@ -8213,7 +8235,7 @@ QVector<QStringRef> QString::splitRef(const QRegularExpression &re, SplitBehavio
     \value NormalizationForm_KC  Compatibility Decomposition followed by Canonical Composition
 
     \sa normalized(),
-        {http://www.unicode.org/reports/tr15/}{Unicode Standard Annex #15}
+        {https://www.unicode.org/reports/tr15/}{Unicode Standard Annex #15}
 */
 
 /*!

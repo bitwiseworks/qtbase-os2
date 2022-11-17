@@ -46,6 +46,7 @@
 
 #include <qguiapplication.h>
 #include <qpa/qwindowsysteminterface.h>
+#include <private/qhighdpiscaling_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -58,6 +59,22 @@ QAndroidPlatformWindow::QAndroidPlatformWindow(QWindow *window)
     m_windowState = Qt::WindowNoState;
     m_windowId = winIdGenerator.fetchAndAddRelaxed(1) + 1;
     setWindowState(window->windowStates());
+
+    // the following is in relation to the virtual geometry
+    const bool forceMaximize = m_windowState & (Qt::WindowMaximized | Qt::WindowFullScreen);
+    const QRect requestedNativeGeometry =
+            forceMaximize ? QRect() : QHighDpi::toNativePixels(window->geometry(), window);
+    const QRect availableDeviceIndependentGeometry = (window->parent())
+            ? window->parent()->geometry()
+            : QHighDpi::fromNativePixels(platformScreen()->availableGeometry(), window);
+
+    // initialGeometry returns in native pixels
+    const QRect finalNativeGeometry = QPlatformWindow::initialGeometry(
+            window, requestedNativeGeometry, availableDeviceIndependentGeometry.width(),
+            availableDeviceIndependentGeometry.height());
+
+    if (requestedNativeGeometry != finalNativeGeometry)
+        setGeometry(finalNativeGeometry);
 }
 
 void QAndroidPlatformWindow::lower()
@@ -73,6 +90,7 @@ void QAndroidPlatformWindow::raise()
 
 void QAndroidPlatformWindow::setGeometry(const QRect &rect)
 {
+    QPlatformWindow::setGeometry(rect);
     QWindowSystemInterface::handleGeometryChange(window(), rect);
 }
 

@@ -28,181 +28,64 @@
 /*  Locks                                                                   */
 /* ------------------------------------------------------------------------ */
 
-#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR) || (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
+/* Executable Allocator */
 
+#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR) \
+	&& !(defined SLJIT_WX_EXECUTABLE_ALLOCATOR && SLJIT_WX_EXECUTABLE_ALLOCATOR)
 #if (defined SLJIT_SINGLE_THREADED && SLJIT_SINGLE_THREADED)
-
-#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
-
-static SLJIT_INLINE void allocator_grab_lock(void)
-{
-	/* Always successful. */
-}
-
-static SLJIT_INLINE void allocator_release_lock(void)
-{
-	/* Always successful. */
-}
-
-#endif /* SLJIT_EXECUTABLE_ALLOCATOR */
-
-#if (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_grab_lock(void)
-{
-	/* Always successful. */
-}
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_release_lock(void)
-{
-	/* Always successful. */
-}
-
-#endif /* SLJIT_UTIL_GLOBAL_LOCK */
-
-#elif defined(_WIN32) /* SLJIT_SINGLE_THREADED */
-
-#include "windows.h"
-
-#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
-
-static HANDLE allocator_mutex = 0;
-
-static SLJIT_INLINE void allocator_grab_lock(void)
-{
-	/* No idea what to do if an error occures. Static mutexes should never fail... */
-	if (!allocator_mutex)
-		allocator_mutex = CreateMutex(NULL, TRUE, NULL);
-	else
-		WaitForSingleObject(allocator_mutex, INFINITE);
-}
-
-static SLJIT_INLINE void allocator_release_lock(void)
-{
-	ReleaseMutex(allocator_mutex);
-}
-
-#endif /* SLJIT_EXECUTABLE_ALLOCATOR */
-
-#if (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
-
-static HANDLE global_mutex = 0;
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_grab_lock(void)
-{
-	/* No idea what to do if an error occures. Static mutexes should never fail... */
-	if (!global_mutex)
-		global_mutex = CreateMutex(NULL, TRUE, NULL);
-	else
-		WaitForSingleObject(global_mutex, INFINITE);
-}
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_release_lock(void)
-{
-	ReleaseMutex(global_mutex);
-}
-
-#endif /* SLJIT_UTIL_GLOBAL_LOCK */
-
+#define SLJIT_ALLOCATOR_LOCK()
+#define SLJIT_ALLOCATOR_UNLOCK()
 #elif defined(__OS2__)
-
-/* Preserve BOOL definition in pcre2_internal.h */
-#define BOOL __OS2_BOOL
-
-#define INCL_BASE
-#include <os2.h>
-
-#undef BOOL
-
-#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
-
-static HMTX allocator_mutex = NULLHANDLE;
+static HMTX allocator_lock = NULLHANDLE;
 
 static SLJIT_INLINE void allocator_grab_lock(void)
 {
 	/* No idea what to do if an error occures. Static mutexes should never fail... */
-	if (allocator_mutex == NULLHANDLE)
-		DosCreateMutexSem(NULL, &allocator_mutex, 0, TRUE);
+	if (allocator_lock == NULLHANDLE)
+		DosCreateMutexSem(NULL, &allocator_lock, 0, TRUE);
 	else
-		DosRequestMutexSem(allocator_mutex, SEM_INDEFINITE_WAIT);
+		DosRequestMutexSem(allocator_lock, SEM_INDEFINITE_WAIT);
 }
 
-static SLJIT_INLINE void allocator_release_lock(void)
-{
-	DosReleaseMutexSem(allocator_mutex);
-}
-
-#endif /* SLJIT_EXECUTABLE_ALLOCATOR */
-
-#if (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
-
-static HMTX global_mutex = NULLHANDLE;
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_grab_lock(void)
-{
-	/* No idea what to do if an error occures. Static mutexes should never fail... */
-	if (global_mutex == NULLHANDLE)
-		DosCreateMutexSem(NULL, &global_mutex, 0, TRUE);
-	else
-		DosRequestMutexSem(global_mutex, SEM_INDEFINITE_WAIT);
-}
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_CALL sljit_release_lock(void)
-{
-	DosReleaseMutexSem(global_mutex);
-}
-
-#endif /* SLJIT_UTIL_GLOBAL_LOCK */
-
-#else /* __OS2__ */
-
-#if (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
-
+#define SLJIT_ALLOCATOR_LOCK() allocator_grab_lock()
+#define SLJIT_ALLOCATOR_UNLOCK() DosReleaseMutexSem(allocator_lock)
+#elif !(defined _WIN32)
 #include <pthread.h>
 
-static pthread_mutex_t allocator_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t allocator_lock = PTHREAD_MUTEX_INITIALIZER;
+
+#define SLJIT_ALLOCATOR_LOCK() pthread_mutex_lock(&allocator_lock)
+#define SLJIT_ALLOCATOR_UNLOCK() pthread_mutex_unlock(&allocator_lock)
+#else /* windows */
+static HANDLE allocator_lock;
 
 static SLJIT_INLINE void allocator_grab_lock(void)
 {
-	pthread_mutex_lock(&allocator_mutex);
+	HANDLE lock;
+	if (SLJIT_UNLIKELY(!InterlockedCompareExchangePointer(&allocator_lock, NULL, NULL))) {
+		lock = CreateMutex(NULL, FALSE, NULL);
+		if (InterlockedCompareExchangePointer(&allocator_lock, lock, NULL))
+			CloseHandle(lock);
+	}
+	WaitForSingleObject(allocator_lock, INFINITE);
 }
 
-static SLJIT_INLINE void allocator_release_lock(void)
-{
-	pthread_mutex_unlock(&allocator_mutex);
-}
-
-#endif /* SLJIT_EXECUTABLE_ALLOCATOR */
-
-#if (defined SLJIT_UTIL_GLOBAL_LOCK && SLJIT_UTIL_GLOBAL_LOCK)
-
-#include <pthread.h>
-
-static pthread_mutex_t global_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_grab_lock(void)
-{
-	pthread_mutex_lock(&global_mutex);
-}
-
-SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_release_lock(void)
-{
-	pthread_mutex_unlock(&global_mutex);
-}
-
-#endif /* SLJIT_UTIL_GLOBAL_LOCK */
-
-#endif /* _WIN32 || __OS2__ */
+#define SLJIT_ALLOCATOR_LOCK() allocator_grab_lock()
+#define SLJIT_ALLOCATOR_UNLOCK() ReleaseMutex(allocator_lock)
+#endif /* thread implementation */
+#endif /* SLJIT_EXECUTABLE_ALLOCATOR && !SLJIT_WX_EXECUTABLE_ALLOCATOR */
 
 /* ------------------------------------------------------------------------ */
 /*  Stack                                                                   */
 /* ------------------------------------------------------------------------ */
 
-#if (defined SLJIT_UTIL_STACK && SLJIT_UTIL_STACK) || (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
+#if ((defined SLJIT_UTIL_STACK && SLJIT_UTIL_STACK) \
+	&& !(defined SLJIT_UTIL_SIMPLE_STACK_ALLOCATION && SLJIT_UTIL_SIMPLE_STACK_ALLOCATION)) \
+	|| ((defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR) \
+	&& !((defined SLJIT_PROT_EXECUTABLE_ALLOCATOR && SLJIT_PROT_EXECUTABLE_ALLOCATOR) \
+	|| (defined SLJIT_WX_EXECUTABLE_ALLOCATOR && SLJIT_WX_EXECUTABLE_ALLOCATOR)))
 
-#ifdef _WIN32
-#include "windows.h"
-#elif !defined(__OS2__)
+#if !defined(_WIN32) && !defined(__OS2__)
 /* Provides mmap function. */
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -213,56 +96,101 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_release_lock(void)
 #endif /* MAP_ANONYMOUS */
 #endif /* !MAP_ANON */
 
-#ifndef MADV_DONTNEED
-#ifdef POSIX_MADV_DONTNEED
-#define MADV_DONTNEED POSIX_MADV_DONTNEED
-#endif /* POSIX_MADV_DONTNEED */
-#endif /* !MADV_DONTNEED */
-
-/* For detecting the page size. */
-#include <unistd.h>
-
 #ifndef MAP_ANON
 
 #include <fcntl.h>
 
-/* Some old systems does not have MAP_ANON. */
-static sljit_s32 dev_zero = -1;
+#ifdef O_CLOEXEC
+#define SLJIT_CLOEXEC	O_CLOEXEC
+#else /* !O_CLOEXEC */
+#define SLJIT_CLOEXEC	0
+#endif /* O_CLOEXEC */
+
+/* Some old systems do not have MAP_ANON. */
+static int dev_zero = -1;
 
 #if (defined SLJIT_SINGLE_THREADED && SLJIT_SINGLE_THREADED)
 
-static SLJIT_INLINE sljit_s32 open_dev_zero(void)
+static SLJIT_INLINE int open_dev_zero(void)
 {
-	dev_zero = open("/dev/zero", O_RDWR);
+	dev_zero = open("/dev/zero", O_RDWR | SLJIT_CLOEXEC);
+
 	return dev_zero < 0;
 }
 
-#else /* SLJIT_SINGLE_THREADED */
+#else /* !SLJIT_SINGLE_THREADED */
 
 #include <pthread.h>
 
 static pthread_mutex_t dev_zero_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static SLJIT_INLINE sljit_s32 open_dev_zero(void)
+static SLJIT_INLINE int open_dev_zero(void)
 {
 	pthread_mutex_lock(&dev_zero_mutex);
-	/* The dev_zero might be initialized by another thread during the waiting. */
-	if (dev_zero < 0) {
-		dev_zero = open("/dev/zero", O_RDWR);
-	}
+	if (SLJIT_UNLIKELY(dev_zero < 0))
+		dev_zero = open("/dev/zero", O_RDWR | SLJIT_CLOEXEC);
+
 	pthread_mutex_unlock(&dev_zero_mutex);
 	return dev_zero < 0;
 }
 
 #endif /* SLJIT_SINGLE_THREADED */
-
+#undef SLJIT_CLOEXEC
 #endif /* !MAP_ANON */
+#endif /* !_WIN32 */
+#endif /* open_dev_zero */
+
+#if (defined SLJIT_UTIL_STACK && SLJIT_UTIL_STACK) \
+	|| (defined SLJIT_EXECUTABLE_ALLOCATOR && SLJIT_EXECUTABLE_ALLOCATOR)
+
+#ifdef _WIN32
+
+static SLJIT_INLINE sljit_sw get_page_alignment(void) {
+	SYSTEM_INFO si;
+	static sljit_sw sljit_page_align;
+	if (!sljit_page_align) {
+		GetSystemInfo(&si);
+		sljit_page_align = si.dwPageSize - 1;
+	}
+	return sljit_page_align;
+}
+
+#elif defined(__OS2__)
+
+SLJIT_INLINE static sljit_sw get_page_alignment(void) {
+	static sljit_sw sljit_page_align;
+	if (!sljit_page_align) {
+		ULONG pgsize = 0;
+		if (DosQuerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE, &pgsize, sizeof(pgsize)))
+			pgsize = 4096; /* Should never happen. */
+		sljit_page_align = pgsize - 1;
+	}
+	return sljit_page_align;
+}
+
+#else
+
+#include <unistd.h>
+
+static SLJIT_INLINE sljit_sw get_page_alignment(void) {
+	static sljit_sw sljit_page_align = -1;
+	if (sljit_page_align < 0) {
+#ifdef _SC_PAGESIZE
+		sljit_page_align = sysconf(_SC_PAGESIZE);
+#else
+		sljit_page_align = getpagesize();
+#endif
+		/* Should never happen. */
+		if (sljit_page_align < 0)
+			sljit_page_align = 4096;
+		sljit_page_align--;
+	}
+	return sljit_page_align;
+}
 
 #endif /* _WIN32 */
 
-#endif /* SLJIT_UTIL_STACK || SLJIT_EXECUTABLE_ALLOCATOR */
-
-#endif /* SLJIT_EXECUTABLE_ALLOCATOR || SLJIT_UTIL_GLOBAL_LOCK */
+#endif /* get_page_alignment() */
 
 #if (defined SLJIT_UTIL_STACK && SLJIT_UTIL_STACK)
 
@@ -314,16 +242,6 @@ SLJIT_API_FUNC_ATTRIBUTE sljit_u8 *SLJIT_FUNC sljit_stack_resize(struct sljit_st
 
 #ifdef _WIN32
 
-SLJIT_INLINE static sljit_sw get_page_alignment(void) {
-	SYSTEM_INFO si;
-	static sljit_sw sljit_page_align;
-	if (!sljit_page_align) {
-		GetSystemInfo(&si);
-		sljit_page_align = si.dwPageSize - 1;
-	}
-	return sljit_page_align;
-}
-
 SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *stack, void *allocator_data)
 {
 	SLJIT_UNUSED_ARG(allocator_data);
@@ -333,17 +251,6 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *st
 
 #elif defined(__OS2__)
 
-SLJIT_INLINE static sljit_sw get_page_alignment(void) {
-	static sljit_sw sljit_page_align;
-	if (!sljit_page_align) {
-		ULONG pgsize = 0;
-		if (DosQuerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE, &pgsize, sizeof(pgsize)))
-			pgsize = 4096; /* Should never happen. */
-		sljit_page_align = pgsize - 1;
-	}
-	return sljit_page_align;
-}
-
 SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *stack, void *allocator_data)
 {
 	SLJIT_UNUSED_ARG(allocator_data);
@@ -351,19 +258,7 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *st
 	SLJIT_FREE(stack, allocator_data);
 }
 
-#else /* ! (defined _WIN32 || defined __OS2__) */
-
-SLJIT_INLINE static sljit_sw get_page_alignment(void) {
-	static sljit_sw sljit_page_align;
-	if (!sljit_page_align) {
-		sljit_page_align = sysconf(_SC_PAGESIZE);
-		/* Should never happen. */
-		if (sljit_page_align < 0)
-			sljit_page_align = 4096;
-		sljit_page_align--;
-	}
-	return sljit_page_align;
-}
+#else /* !_WIN32 && !__OS2__ */
 
 SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *stack, void *allocator_data)
 {
@@ -372,7 +267,7 @@ SLJIT_API_FUNC_ATTRIBUTE void SLJIT_FUNC sljit_free_stack(struct sljit_stack *st
 	SLJIT_FREE(stack, allocator_data);
 }
 
-#endif /* defined _WIN32 */
+#endif /* _WIN32 && !__OS2__ */
 
 SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_FUNC sljit_allocate_stack(sljit_uw start_size, sljit_uw max_size, void *allocator_data)
 {
@@ -427,11 +322,9 @@ SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_FUNC sljit_allocate_stack(slj
 #ifdef MAP_ANON
 	ptr = mmap(NULL, max_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 #else /* !MAP_ANON */
-	if (dev_zero < 0) {
-		if (open_dev_zero() != 0) {
-			SLJIT_FREE(stack, allocator_data);
-			return NULL;
-		}
+	if (SLJIT_UNLIKELY((dev_zero < 0) && open_dev_zero())) {
+		SLJIT_FREE(stack, allocator_data);
+		return NULL;
 	}
 	ptr = mmap(NULL, max_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, dev_zero, 0);
 #endif /* MAP_ANON */
@@ -450,7 +343,7 @@ SLJIT_API_FUNC_ATTRIBUTE struct sljit_stack* SLJIT_FUNC sljit_allocate_stack(slj
 
 SLJIT_API_FUNC_ATTRIBUTE sljit_u8 *SLJIT_FUNC sljit_stack_resize(struct sljit_stack *stack, sljit_u8 *new_start)
 {
-#if defined _WIN32 || defined(__OS2__) || defined(MADV_DONTNEED)
+#if defined _WIN32 || defined(__OS2__) || ddefined(POSIX_MADV_DONTNEED)
 	sljit_uw aligned_old_start;
 	sljit_uw aligned_new_start;
 	sljit_sw page_align;
@@ -489,15 +382,19 @@ SLJIT_API_FUNC_ATTRIBUTE sljit_u8 *SLJIT_FUNC sljit_stack_resize(struct sljit_st
 				return NULL;
 		}
 	}
-#elif defined(MADV_DONTNEED)
+#elif defined(POSIX_MADV_DONTNEED)
 	if (stack->start < new_start) {
 		page_align = get_page_alignment();
 
 		aligned_new_start = (sljit_uw)new_start & ~page_align;
 		aligned_old_start = ((sljit_uw)stack->start) & ~page_align;
-		/* If madvise is available, we release the unnecessary space. */
-		if (aligned_new_start > aligned_old_start)
-			madvise((void*)aligned_old_start, aligned_new_start - aligned_old_start, MADV_DONTNEED);
+
+		if (aligned_new_start > aligned_old_start) {
+			posix_madvise((void*)aligned_old_start, aligned_new_start - aligned_old_start, POSIX_MADV_DONTNEED);
+#ifdef MADV_FREE
+			madvise((void*)aligned_old_start, aligned_new_start - aligned_old_start, MADV_FREE);
+#endif /* MADV_FREE */
+		}
 	}
 #endif /* _WIN32 || __OS2__ */
 

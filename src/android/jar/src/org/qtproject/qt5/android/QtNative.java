@@ -43,6 +43,7 @@ package org.qtproject.qt5.android;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.io.IOException;
 import java.util.HashMap;
@@ -64,6 +65,7 @@ import android.os.Looper;
 import android.content.ClipboardManager;
 import android.content.ClipboardManager.OnPrimaryClipChangedListener;
 import android.content.ClipData;
+import android.content.ClipDescription;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.ContextMenu;
@@ -96,6 +98,7 @@ public class QtNative
     public static final String QtTAG = "Qt JAVA"; // string used for Log.x
     private static ArrayList<Runnable> m_lostActions = new ArrayList<Runnable>(); // a list containing all actions which could not be performed (e.g. the main activity is destroyed, etc.)
     private static boolean m_started = false;
+    private static boolean m_isKeyboardHiding = false;
     private static int m_displayMetricsScreenWidthPixels = 0;
     private static int m_displayMetricsScreenHeightPixels = 0;
     private static int m_displayMetricsDesktopWidthPixels = 0;
@@ -111,7 +114,6 @@ public class QtNative
     private static Boolean m_tabletEventSupported = null;
     private static boolean m_usePrimaryClip = false;
     public static QtThread m_qtThread = new QtThread();
-    private static Method m_addItemMethod = null;
     private static HashMap<String, Uri> m_cachedUris = new HashMap<String, Uri>();
     private static ArrayList<String> m_knownDirs = new ArrayList<String>();
 
@@ -270,8 +272,8 @@ public class QtNative
         if (uri == null) {
             Log.e(QtTAG, "getSize(): No permissions to open Uri");
             return size;
-        } else {
-            m_cachedUris.putIfAbsent(contentUrl, uri);
+        } else if (!m_cachedUris.containsKey(contentUrl)) {
+            m_cachedUris.put(contentUrl, uri);
         }
 
         try {
@@ -611,7 +613,8 @@ public class QtNative
                                       m_displayMetricsXDpi,
                                       m_displayMetricsYDpi,
                                       m_displayMetricsScaledDensity,
-                                      m_displayMetricsDensity);
+                                      m_displayMetricsDensity,
+                                      true);
                 }
             });
             m_qtThread.post(new Runnable() {
@@ -633,7 +636,8 @@ public class QtNative
                                                     double XDpi,
                                                     double YDpi,
                                                     double scaledDensity,
-                                                    double density)
+                                                    double density,
+                                                    boolean forceUpdate)
     {
         /* Fix buggy dpi report */
         if (XDpi < android.util.DisplayMetrics.DENSITY_LOW)
@@ -650,7 +654,8 @@ public class QtNative
                                   XDpi,
                                   YDpi,
                                   scaledDensity,
-                                  density);
+                                  density,
+                                  forceUpdate);
             } else {
                 m_displayMetricsScreenWidthPixels = screenWidthPixels;
                 m_displayMetricsScreenHeightPixels = screenHeightPixels;
@@ -709,7 +714,7 @@ public class QtNative
         }
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN && index == event.getActionIndex()) {
             return 0;
-        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP && index == event.getActionIndex()) {
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP && index == event.getActionIndex()) {
             return 3;
         }
         return 2;
@@ -878,10 +883,25 @@ public class QtNative
         });
     }
 
+    private static void updateInputItemRectangle(final int x,
+                                                 final int y,
+                                                 final int w,
+                                                 final int h)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                m_activityDelegate.updateInputItemRectangle(x, y, w, h);
+            }
+        });
+    }
+
+
     private static void showSoftwareKeyboard(final int x,
                                              final int y,
                                              final int width,
                                              final int height,
+                                             final int editorHeight,
                                              final int inputHints,
                                              final int enterKeyType)
     {
@@ -889,7 +909,7 @@ public class QtNative
             @Override
             public void run() {
                 if (m_activityDelegate != null)
-                    m_activityDelegate.showSoftwareKeyboard(x, y, width, height, inputHints, enterKeyType);
+                    m_activityDelegate.showSoftwareKeyboard(x, y, width, height, editorHeight, inputHints, enterKeyType);
             }
         });
     }
@@ -907,6 +927,7 @@ public class QtNative
 
     private static void hideSoftwareKeyboard()
     {
+        m_isKeyboardHiding = true;
         runAction(new Runnable() {
             @Override
             public void run() {
@@ -927,6 +948,54 @@ public class QtNative
                 updateWindow();
             }
         });
+    }
+
+    public static boolean isSoftwareKeyboardVisible()
+    {
+        if (m_activityDelegate == null)
+            return false;
+        return m_activityDelegate.isKeyboardVisible() && !m_isKeyboardHiding;
+    }
+
+    private static void notifyAccessibilityLocationChange()
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                if (m_activityDelegate != null) {
+                    m_activityDelegate.notifyAccessibilityLocationChange();
+                }
+            }
+        });
+    }
+
+    private static void notifyObjectHide(final int viewId)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                if (m_activityDelegate != null) {
+                    m_activityDelegate.notifyObjectHide(viewId);
+                }
+            }
+        });
+    }
+
+    private static void notifyObjectFocus(final int viewId)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                if (m_activityDelegate != null) {
+                    m_activityDelegate.notifyObjectFocus(viewId);
+                }
+            }
+        });
+    }
+
+    public static void notifyQtAndroidPluginRunning(final boolean running)
+    {
+        m_activityDelegate.notifyQtAndroidPluginRunning(running);
     }
 
     private static void registerClipboardManager()
@@ -958,9 +1027,9 @@ public class QtNative
 
     private static void clearClipData()
     {
-        if (Build.VERSION.SDK_INT >= 28 && m_clipboardManager != null && m_usePrimaryClip)
+        if (Build.VERSION.SDK_INT >= 28 && m_clipboardManager != null)
             m_clipboardManager.clearPrimaryClip();
-        m_usePrimaryClip = false;
+         m_usePrimaryClip = false;
     }
     private static void setClipboardText(String text)
     {
@@ -974,10 +1043,8 @@ public class QtNative
     {
         try {
             if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < primaryClip.getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getText() != null)
-                        return true;
+                ClipDescription primaryClipDescription = m_clipboardManager.getPrimaryClipDescription();
+                return primaryClipDescription.hasMimeType("text/*");
             }
         } catch (Exception e) {
             Log.e(QtTAG, "Failed to get clipboard data", e);
@@ -1006,25 +1073,9 @@ public class QtNative
             if (m_usePrimaryClip) {
                 ClipData clip = m_clipboardManager.getPrimaryClip();
                 if (Build.VERSION.SDK_INT >= 26) {
-                    if (m_addItemMethod == null) {
-                        Class[] cArg = new Class[2];
-                        cArg[0] = ContentResolver.class;
-                        cArg[1] = ClipData.Item.class;
-                        try {
-                            m_addItemMethod = m_clipboardManager.getClass().getMethod("addItem", cArg);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-                if (m_addItemMethod != null) {
-                    try {
-                        m_addItemMethod.invoke(m_activity.getContentResolver(), clipData.getItemAt(0));
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    Objects.requireNonNull(clip).addItem(m_activity.getContentResolver(), clipData.getItemAt(0));
                 } else {
-                    clip.addItem(clipData.getItemAt(0));
+                    Objects.requireNonNull(clip).addItem(clipData.getItemAt(0));
                 }
                 m_clipboardManager.setPrimaryClip(clip);
             } else {
@@ -1048,10 +1099,8 @@ public class QtNative
     {
         try {
             if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < primaryClip.getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getHtmlText() != null)
-                        return true;
+                ClipDescription primaryClipDescription = m_clipboardManager.getPrimaryClipDescription();
+                return primaryClipDescription.hasMimeType("text/html");
             }
         } catch (Exception e) {
             Log.e(QtTAG, "Failed to get clipboard data", e);
@@ -1087,10 +1136,8 @@ public class QtNative
     {
         try {
             if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < primaryClip.getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getUri() != null)
-                        return true;
+                ClipDescription primaryClipDescription = m_clipboardManager.getPrimaryClipDescription();
+                return primaryClipDescription.hasMimeType("text/uri-list");
             }
         } catch (Exception e) {
             Log.e(QtTAG, "Failed to get clipboard data", e);
@@ -1274,6 +1321,12 @@ public class QtNative
         });
     }
 
+    public static void keyboardVisibilityUpdated(boolean visibility)
+    {
+        m_isKeyboardHiding = false;
+        keyboardVisibilityChanged(visibility);
+    }
+
     private static String[] listAssetContent(android.content.res.AssetManager asset, String path) {
         String [] list;
         ArrayList<String> res = new ArrayList<String>();
@@ -1305,7 +1358,8 @@ public class QtNative
                                                 double XDpi,
                                                 double YDpi,
                                                 double scaledDensity,
-                                                double density);
+                                                double density,
+                                                boolean forceUpdate);
     public static native void handleOrientationChanged(int newRotation, int nativeOrientation);
     // screen methods
 

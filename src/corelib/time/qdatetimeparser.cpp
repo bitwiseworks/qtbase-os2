@@ -1385,21 +1385,34 @@ QDateTimeParser::scanString(const QDateTime &defaultValue,
 
     // If hour wasn't specified, check the default we're using exists on the
     // given date (which might be a spring-forward, skipping an hour).
-    if (parserType == QMetaType::QDateTime && !(isSet & HourSectionMask) && !when.isValid()) {
-        qint64 msecs = when.toMSecsSinceEpoch();
-        // Fortunately, that gets a useful answer, even though when is invalid ...
-        const QDateTime replace =
+    if (!(isSet & HourSectionMask) && !when.isValid()) {
+        switch (parserType) {
+        case QMetaType::QDateTime: {
+            qint64 msecs = when.toMSecsSinceEpoch();
+            // Fortunately, that gets a useful answer, even though when is invalid ...
+            const QDateTime replace =
 #if QT_CONFIG(timezone)
-            tspec == Qt::TimeZone
-            ? QDateTime::fromMSecsSinceEpoch(msecs, timeZone) :
+                tspec == Qt::TimeZone ? QDateTime::fromMSecsSinceEpoch(msecs, timeZone) :
 #endif
-            QDateTime::fromMSecsSinceEpoch(msecs, tspec, zoneOffset);
-        const QTime tick = replace.time();
-        if (replace.date() == date
-            && (!(isSet & MinuteSection) || tick.minute() == minute)
-            && (!(isSet & SecondSection) || tick.second() == second)
-            && (!(isSet & MSecSection)   || tick.msec() == msec)) {
-            return StateNode(replace, state, padding, conflicts);
+                QDateTime::fromMSecsSinceEpoch(msecs, tspec, zoneOffset);
+            const QTime tick = replace.time();
+            if (replace.date() == date
+                && (!(isSet & MinuteSection) || tick.minute() == minute)
+                && (!(isSet & SecondSection) || tick.second() == second)
+                && (!(isSet & MSecSection)   || tick.msec() == msec)) {
+                return StateNode(replace, state, padding, conflicts);
+            }
+        } break;
+        case QMetaType::QDate:
+            // Don't care about time, so just use start of day (and ignore spec):
+            return StateNode(date.startOfDay(Qt::UTC), state, padding, conflicts);
+            break;
+        case QMetaType::QTime:
+            // Don't care about date or spec, so pick a safe spec:
+            return StateNode(QDateTime(date, time, Qt::UTC), state, padding, conflicts);
+        default:
+            Q_UNREACHABLE();
+            return StateNode();
         }
     }
 
@@ -1736,6 +1749,24 @@ QDateTimeParser::findTimeZoneName(QStringRef str, const QDateTime &when) const
     };
     int index = std::distance(str.cbegin(),
                               std::find_if(str.cbegin(), str.cend(), invalidZoneNameCharacter));
+
+    // Limit name fragments (between slashes) to 20 characters.
+    // (Valid time-zone IDs are allowed up to 14 and Android has quirks up to 17.)
+    // Limit number of fragments to six; no known zone name has more than four.
+    int lastSlash = -1;
+    int count = 0;
+    Q_ASSERT(index <= str.size());
+    while (lastSlash < index) {
+        int slash = str.indexOf(QLatin1Char('/'), lastSlash + 1);
+        if (slash < 0)
+            slash = index; // i.e. the end of the candidate text
+        else if (++count > 5)
+            index = slash; // Truncate
+        if (slash - lastSlash > 20)
+            index = lastSlash + 20; // Truncate
+        // If any of those conditions was met, index <= slash, so this exits the loop:
+        lastSlash = slash;
+    }
 
     for (; index > systemLength; --index) {  // Find longest match
         str.truncate(index);
