@@ -14,6 +14,7 @@ SOURCES = \
     qos2keymapper.cpp \
     qos2mime.cpp \
     qos2screen.cpp \
+    qos2services.cpp \
     qos2theme.cpp \
     qos2window.cpp
 
@@ -26,6 +27,7 @@ HEADERS = \
     qos2keymapper.h \
     qos2mime.h \
     qos2screen.h \
+    qos2services.h \
     qos2theme.h \
     qos2window.h
 

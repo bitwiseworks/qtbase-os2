@@ -42,6 +42,7 @@
 #include "qos2backingstore.h"
 #include "qos2keymapper.h"
 #include "qos2screen.h"
+#include "qos2services.h"
 #include "qos2theme.h"
 #include "qos2window.h"
 
@@ -89,6 +90,8 @@ QOS2Integration::QOS2Integration(const QStringList &paramList)
 #endif
 
     mKeyMapper = new QOS2KeyMapper();
+
+    mplatformServices = new QOS2Services();
 }
 
 QOS2Integration::~QOS2Integration()
@@ -99,6 +102,7 @@ QOS2Integration::~QOS2Integration()
     delete mClipboard;
 #endif
 
+    delete mplatformServices;
     QWindowSystemInterface::handleScreenRemoved(mScreen);
     delete mFontDatabase;
 
@@ -182,6 +186,11 @@ Qt::KeyboardModifiers QOS2Integration::queryKeyboardModifiers() const
 QList<int> QOS2Integration::possibleKeys(const QKeyEvent *e) const
 {
     return mKeyMapper->possibleKeys(e);
+}
+
+QPlatformServices *QOS2Integration::services() const
+{
+    return mplatformServices;
 }
 
 void QOS2Integration::beep() const

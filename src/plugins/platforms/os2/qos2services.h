@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 bww bitwise works GmbH.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -37,69 +37,21 @@
 **
 ****************************************************************************/
 
-#ifndef QOS2INTEGRATION_H
-#define QOS2INTEGRATION_H
+#ifndef QWINDOWSDESKTOPSERVICES_H
+#define QWINDOWSDESKTOPSERVICES_H
 
-#include <qpa/qplatformintegration.h>
+#include <QtCore/qt_os2.h>
+#include <qpa/qplatformservices.h>
 
 QT_BEGIN_NAMESPACE
 
-class QOS2Clipboard;
-class QOS2KeyMapper;
-class QOS2Services;
-
-class QOS2Integration : public QPlatformIntegration
+class QOS2Services : public QPlatformServices
 {
 public:
-    explicit QOS2Integration(const QStringList &paramList);
-    virtual ~QOS2Integration();
-
-    bool hasCapability(QPlatformIntegration::Capability cap) const override;
-
-    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
-    QAbstractEventDispatcher *createEventDispatcher() const override;
-
-#if QT_CONFIG(clipboard)
-    QPlatformClipboard *clipboard() const override;
-#endif
-
-    QPlatformFontDatabase *fontDatabase() const override;
-
-    QStringList themeNames() const override;
-    QPlatformTheme *createPlatformTheme(const QString &name) const override;
-
-    QVariant styleHint(StyleHint hint) const override;
-
-    Qt::KeyboardModifiers queryKeyboardModifiers() const override;
-    QList<int> possibleKeys(const QKeyEvent *e) const override;
-
-    QPlatformServices *services() const override;
-
-    void beep() const override;
-
-    // OS/2 specifics
-
-    QOS2KeyMapper *keyMapper() const { return mKeyMapper; }
-
-    //QOS2Services  *mplatformServices() const { return mplatformServices; }
-
-    static QOS2Integration *instance() { return sInstance; }
-
-private:
-    QPlatformScreen *mScreen = nullptr;
-    QPlatformFontDatabase *mFontDatabase = nullptr;
-#if QT_CONFIG(clipboard)
-    QOS2Clipboard *mClipboard = nullptr;
-#endif
-
-    QOS2KeyMapper *mKeyMapper = nullptr;
-
-    QOS2Services  *mplatformServices = nullptr;
-
-    static QOS2Integration * sInstance;
+    bool openUrl(const QUrl &url) override;
+    bool openDocument(const QUrl &url) override;
 };
 
 QT_END_NAMESPACE
 
-#endif
+#endif // QWINDOWSDESKTOPSERVICES_H
